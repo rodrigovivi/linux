@@ -656,6 +656,7 @@ struct i915_drrs {
 
 struct intel_dp;
 struct i915_psr {
+	struct mutex lock;
 	bool sink_support;
 	bool source_ok;
 	struct intel_dp *enabled;
