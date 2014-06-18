@@ -605,6 +605,7 @@ struct i915_ctx_hang_stats {
  */
 struct intel_context {
 	struct kref ref;
+	unsigned long fbc_address;
 	int user_handle;
 	uint8_t remap_slice;
 	struct drm_i915_file_private *file_priv;
