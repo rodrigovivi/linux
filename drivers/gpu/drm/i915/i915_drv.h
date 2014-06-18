@@ -1374,6 +1374,13 @@ struct i915_frontbuffer_tracking {
 	unsigned flip_bits;
 };
 
+struct intel_vblank_notify {
+	void (*notify)(struct intel_vblank_notify *notify);
+	struct intel_crtc *crtc;
+	struct list_head list;
+	u32 vbl_count;
+};
+
 struct drm_i915_private {
 	struct drm_device *dev;
 	struct kmem_cache *slab;
@@ -1448,6 +1455,11 @@ struct drm_i915_private {
 	u32 hpd_event_bits;
 	struct timer_list hotplug_reenable_timer;
 
+	struct {
+		struct intel_crtc *crtc;
+		struct work_struct work;
+		struct intel_vblank_notify notify;
+	} hsw_ips;
 	struct i915_fbc fbc;
 	struct i915_drrs drrs;
 	struct intel_opregion opregion;
