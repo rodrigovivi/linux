@@ -1112,11 +1112,11 @@ legacy_ringbuffer_submission(struct drm_device *dev, struct drm_file *file,
 		}
 	}
 
-	ret = i915_gem_execbuffer_move_to_gpu(ring, vmas);
+	ret = i915_switch_context(ring, ctx);
 	if (ret)
 		goto error;
 
-	ret = i915_switch_context(ring, ctx);
+	ret = i915_gem_execbuffer_move_to_gpu(ring, vmas);
 	if (ret)
 		goto error;
 
