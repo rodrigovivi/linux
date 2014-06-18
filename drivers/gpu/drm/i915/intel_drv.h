@@ -736,6 +736,7 @@ const char *intel_output_name(int output);
 bool intel_has_pending_fb_unpin(struct drm_device *dev);
 int intel_pch_rawclk(struct drm_device *dev);
 void intel_mark_busy(struct drm_device *dev);
+bool intel_fb_obj_has_fbc(struct drm_i915_gem_object *obj);
 void intel_fb_obj_invalidate(struct drm_i915_gem_object *obj,
 			     struct intel_engine_cs *ring);
 void intel_frontbuffer_flip_prepare(struct drm_device *dev,

@@ -8954,8 +8954,6 @@ static void intel_mark_fb_busy(struct drm_device *dev,
 			continue;
 
 		intel_increase_pllclock(dev, pipe);
-		if (ring && intel_fbc_enabled(dev))
-			ring->fbc_dirty = true;
 	}
 }
 
