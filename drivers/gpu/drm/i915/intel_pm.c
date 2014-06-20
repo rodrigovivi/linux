@@ -214,6 +214,9 @@ static void ironlake_enable_fbc(struct drm_device *dev)
 	if (IS_GEN5(dev))
 		dpfc_ctl |= dev_priv->fbc.fence_reg;
 
+	if (dev_priv->fbc.false_color)
+		dpfc_ctl |= FBC_CTL_FALSE_COLOR;
+
 	I915_WRITE(ILK_DPFC_FENCE_YOFF, dev_priv->fbc.y);
 	/* enable it... */
 	I915_WRITE(ILK_DPFC_CONTROL, dpfc_ctl | DPFC_CTL_EN);
@@ -274,6 +277,9 @@ static void gen7_enable_fbc(struct drm_device *dev)
 	}
 
 	dpfc_ctl |= IVB_DPFC_CTL_FENCE_EN;
+
+	if (dev_priv->fbc.false_color)
+		dpfc_ctl |= FBC_CTL_FALSE_COLOR;
 
 	I915_WRITE(ILK_DPFC_CONTROL, dpfc_ctl | DPFC_CTL_EN);
 

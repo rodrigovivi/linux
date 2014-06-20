@@ -640,6 +640,7 @@ struct i915_fbc {
 	struct intel_ring_notify notify;
 
 	struct work_struct enable_work, update_work;
+	bool false_color;
 
 	enum no_fbc_reason {
 		FBC_OK, /* FBC is enabled */
