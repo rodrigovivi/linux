@@ -513,21 +513,72 @@ ilk_dummy_write(struct drm_i915_private *dev_priv)
 	__raw_i915_write32(dev_priv, MI_MODE, 0);
 }
 
+/**
+ * hsw_unclaimed_reg_debug - tries to find unclaimed registers
+ * @dev_priv: device private data
+ * @reg: register we're about to touch or just have touched
+ * @read: are we reading or writing a register now?
+ * @before: are we running this before or after we touch the register?
+ *
+ * This function tries to detect unclaimed registers and provide as much
+ * information as possible. It will only do something if the i915.mmio_debug
+ * option is enabled.
+ *
+ * If we detect an unclaimed register when @before is true, it means some
+ * unknown code wrote to an unclaimed register, and we're just detecting it now.
+ * The bad code can be i915.ko, some other Kernel module (e.g., snd_hda_intel,
+ * vgacon) or even user space. If we detect it when @before is false, then
+ * there's a really good chance that the read/write operation we just did to
+ * @reg is what triggered the unclaimed register message, but there's also the
+ * possibility that after the operation we did, and before this function,
+ * something else touched another unclaimed register, and we are detecting it
+ * now.
+ *
+ * The unclaimed register bit can get set when we touch a register that does not
+ * exist and when we touch a register that exists but is powered down. Please
+ * also notice that the HW can only check some register ranges, so there's no
+ * guarantee that all read and write operations to inexistent registers will be
+ * caught by this function.
+ *
+ * Also please notice that we don't run this function on __raw operations and in
+ * many other cases, so the case where @before is true is quite common.
+ */
 static void
-hsw_unclaimed_reg_clear(struct drm_i915_private *dev_priv, u32 reg)
+hsw_unclaimed_reg_debug(struct drm_i915_private *dev_priv, u32 reg, bool read,
+			bool before)
 {
+	const char *op = read ? "reading" : "writing to";
+	const char *when = before ? "before" : "after";
+
+	if (!i915.mmio_debug)
+		return;
+
 	if (__raw_i915_read32(dev_priv, FPGA_DBG) & FPGA_DBG_RM_NOCLAIM) {
-		DRM_ERROR("Unknown unclaimed register before writing to %x\n",
-			  reg);
+		WARN(1, "Unclaimed register detected %s %s register 0x%x\n",
+		     when, op, reg);
 		__raw_i915_write32(dev_priv, FPGA_DBG, FPGA_DBG_RM_NOCLAIM);
 	}
 }
 
+/**
+ * hsw_unclaimed_reg_detect - tries to find unclaimed registers
+ * @dev_priv: device private data
+ *
+ * This function will try to detect if something touched and unclaimed register,
+ * triggering the FPGA_DBG bit. If this happens, we will print a message telling
+ * the user to use i915.mmio_debug=1 so we can properly debug the problem.
+ *
+ * This way, we can still detect our bugs without giving the user the
+ * performance impact of hsw_unclaimed_reg_debug().
+ */
 static void
-hsw_unclaimed_reg_check(struct drm_i915_private *dev_priv, u32 reg)
+hsw_unclaimed_reg_detect(struct drm_i915_private *dev_priv)
 {
+	if (i915.mmio_debug)
+		return;
+
 	if (__raw_i915_read32(dev_priv, FPGA_DBG) & FPGA_DBG_RM_NOCLAIM) {
-		DRM_ERROR("Unclaimed write to %x\n", reg);
+		DRM_ERROR("Unclaimed register detected. Please use the i915.mmio_debug=1 to debug this problem.");
 		__raw_i915_write32(dev_priv, FPGA_DBG, FPGA_DBG_RM_NOCLAIM);
 	}
 }
@@ -564,6 +615,7 @@ gen5_read##x(struct drm_i915_private *dev_priv, off_t reg, bool trace) { \
 static u##x \
 gen6_read##x(struct drm_i915_private *dev_priv, off_t reg, bool trace) { \
 	REG_READ_HEADER(x); \
+	hsw_unclaimed_reg_debug(dev_priv, reg, true, true); \
 	if (dev_priv->uncore.forcewake_count == 0 && \
 	    NEEDS_FORCE_WAKE((dev_priv), (reg))) { \
 		dev_priv->uncore.funcs.force_wake_get(dev_priv, \
@@ -574,6 +626,7 @@ gen6_read##x(struct drm_i915_private *dev_priv, off_t reg, bool trace) { \
 	} else { \
 		val = __raw_i915_read##x(dev_priv, reg); \
 	} \
+	hsw_unclaimed_reg_debug(dev_priv, reg, true, false); \
 	REG_READ_FOOTER; \
 }
 
@@ -700,12 +753,13 @@ hsw_write##x(struct drm_i915_private *dev_priv, off_t reg, u##x val, bool trace)
 	if (NEEDS_FORCE_WAKE((dev_priv), (reg))) { \
 		__fifo_ret = __gen6_gt_wait_for_fifo(dev_priv); \
 	} \
-	hsw_unclaimed_reg_clear(dev_priv, reg); \
+	hsw_unclaimed_reg_debug(dev_priv, reg, false, true); \
 	__raw_i915_write##x(dev_priv, reg, val); \
 	if (unlikely(__fifo_ret)) { \
 		gen6_gt_check_fifodbg(dev_priv); \
 	} \
-	hsw_unclaimed_reg_check(dev_priv, reg); \
+	hsw_unclaimed_reg_debug(dev_priv, reg, false, false); \
+	hsw_unclaimed_reg_detect(dev_priv); \
 	REG_WRITE_FOOTER; \
 }
 
