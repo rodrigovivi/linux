@@ -1,0 +1,12 @@
+origin/drm-intel-next-queued 03872064f77f4beb61d1afc22adf62da47cf087b
+	drm/i915: get/put runtime PM at i915_semaphore_status
+origin/drm-intel-fixes 92ae62076957c5904509f755eea0075ad60f74c6
+	Revert "drm/i915: Don't set the 8to6 dither flag when not scaling"
+drm-upstream/drm-next 62eb3e20f8f3ca9de4a17f87effe534d6a691176
+	drm/tilcdc: Fix build breakage
+drm-upstream/drm-fixes 2db38e06ecda80063d748df7bd79b7186c8831e0
+	Merge tag 'drm-intel-fixes-2014-07-09' of git://anongit.freedesktop.org/drm-intel into drm-fixes
+origin/topic/core-stuff 46e9c5eaa88fd7d4547462230721edb24cadad8c
+	drm/plane-helper: Use proper plane init function
+sound-upstream/for-next 50dd9050e45ce11c575eabcaee8a914caf78fb74
+	ALSA: hda - add capture mute led support in led_power_filter
