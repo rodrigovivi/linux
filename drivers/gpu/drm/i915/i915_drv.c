@@ -519,7 +519,6 @@ static int i915_drm_freeze(struct drm_device *dev)
 		flush_delayed_work(&dev_priv->rps.delayed_resume_work);
 
 		intel_runtime_pm_disable_interrupts(dev);
-		dev_priv->enable_hotplug_processing = false;
 
 		intel_suspend_gt_powersave(dev);
 
@@ -658,7 +657,6 @@ static int __i915_drm_thaw(struct drm_device *dev, bool restore_gtt_mappings)
 		 * notifications.
 		 * */
 		intel_hpd_init(dev);
-		dev_priv->enable_hotplug_processing = true;
 		/* Config may have changed between suspend and resume */
 		drm_helper_hpd_irq_event(dev);
 	}

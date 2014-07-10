@@ -1156,10 +1156,6 @@ static void i915_hotplug_work_func(struct work_struct *work)
 	bool changed = false;
 	u32 hpd_event_bits;
 
-	/* HPD irq before everything is fully set up. */
-	if (!dev_priv->enable_hotplug_processing)
-		return;
-
 	mutex_lock(&mode_config->mutex);
 	DRM_DEBUG_KMS("running encoder hotplug functions\n");
 

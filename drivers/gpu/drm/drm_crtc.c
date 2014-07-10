@@ -888,6 +888,8 @@ int drm_connector_init(struct drm_device *dev,
 	drm_object_attach_property(&connector->base,
 				      dev->mode_config.dpms_property, 0);
 
+	connector->debugfs_entry = NULL;
+
 out_put:
 	if (ret)
 		drm_mode_object_put(dev, &connector->base);
@@ -928,6 +930,47 @@ void drm_connector_cleanup(struct drm_connector *connector)
 EXPORT_SYMBOL(drm_connector_cleanup);
 
 /**
+ * drm_connector_register - register a connector
+ * @connector: the connector to register
+ *
+ * Register userspace interfaces for a connector
+ *
+ * Returns:
+ * Zero on success, error code on failure.
+ */
+int drm_connector_register(struct drm_connector *connector)
+{
+	int ret;
+
+	ret = drm_sysfs_connector_add(connector);
+	if (ret)
+		return ret;
+
+	ret = drm_debugfs_connector_add(connector);
+	if (ret) {
+		drm_sysfs_connector_remove(connector);
+		return ret;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(drm_connector_register);
+
+/**
+ * drm_connector_unregister - unregister a connector
+ * @connector: the connector to unregister
+ *
+ * Unregister userspace interfaces for a connector
+ */
+void drm_connector_unregister(struct drm_connector *connector)
+{
+	drm_sysfs_connector_remove(connector);
+	drm_debugfs_connector_remove(connector);
+}
+EXPORT_SYMBOL(drm_connector_unregister);
+
+
+/**
  * drm_connector_unplug_all - unregister connector userspace interfaces
  * @dev: drm device
  *
@@ -941,7 +984,7 @@ void drm_connector_unplug_all(struct drm_device *dev)
 
 	/* taking the mode config mutex ends up in a clash with sysfs */
 	list_for_each_entry(connector, &dev->mode_config.connector_list, head)
-		drm_sysfs_connector_remove(connector);
+		drm_connector_unregister(connector);
 
 }
 EXPORT_SYMBOL(drm_connector_unplug_all);
@@ -1221,6 +1264,7 @@ static int drm_mode_create_standard_connector_properties(struct drm_device *dev)
 {
 	struct drm_property *edid;
 	struct drm_property *dpms;
+	struct drm_property *dev_path;
 
 	/*
 	 * Standard properties (apply to all connectors)
@@ -1234,6 +1278,12 @@ static int drm_mode_create_standard_connector_properties(struct drm_device *dev)
 				   "DPMS", drm_dpms_enum_list,
 				   ARRAY_SIZE(drm_dpms_enum_list));
 	dev->mode_config.dpms_property = dpms;
+
+	dev_path = drm_property_create(dev,
+				       DRM_MODE_PROP_BLOB |
+				       DRM_MODE_PROP_IMMUTABLE,
+				       "PATH", 0);
+	dev->mode_config.path_property = dev_path;
 
 	return 0;
 }
@@ -1476,6 +1526,15 @@ int drm_mode_group_init_legacy_group(struct drm_device *dev,
 	return 0;
 }
 EXPORT_SYMBOL(drm_mode_group_init_legacy_group);
+
+void drm_reinit_primary_mode_group(struct drm_device *dev)
+{
+	drm_modeset_lock_all(dev);
+	drm_mode_group_destroy(&dev->primary->mode_group);
+	drm_mode_group_init_legacy_group(dev, &dev->primary->mode_group);
+	drm_modeset_unlock_all(dev);
+}
+EXPORT_SYMBOL(drm_reinit_primary_mode_group);
 
 /**
  * drm_crtc_convert_to_umode - convert a drm_display_mode into a modeinfo
@@ -3856,6 +3915,25 @@ done:
 	return ret;
 }
 
+int drm_mode_connector_set_path_property(struct drm_connector *connector,
+					 char *path)
+{
+	struct drm_device *dev = connector->dev;
+	int ret, size;
+	size = strlen(path) + 1;
+
+	connector->path_blob_ptr = drm_property_create_blob(connector->dev,
+							    size, path);
+	if (!connector->path_blob_ptr)
+		return -EINVAL;
+
+	ret = drm_object_property_set_value(&connector->base,
+					    dev->mode_config.path_property,
+					    connector->path_blob_ptr->base.id);
+	return ret;
+}
+EXPORT_SYMBOL(drm_mode_connector_set_path_property);
+
 /**
  * drm_mode_connector_update_edid_property - update the edid property of a connector
  * @connector: drm connector
@@ -3872,6 +3950,10 @@ int drm_mode_connector_update_edid_property(struct drm_connector *connector,
 {
 	struct drm_device *dev = connector->dev;
 	int ret, size;
+
+	/* ignore requests to set edid when overridden */
+	if (connector->override_edid)
+		return 0;
 
 	if (connector->edid_blob_ptr)
 		drm_property_destroy_blob(dev, connector->edid_blob_ptr);
