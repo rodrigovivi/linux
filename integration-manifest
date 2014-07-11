@@ -1,0 +1,12 @@
+origin/drm-intel-next-queued d4ef41ce151988411dec8b089636d9ecbd1da559
+	Documentation: drm: describing rotation property
+origin/drm-intel-fixes 92ae62076957c5904509f755eea0075ad60f74c6
+	Revert "drm/i915: Don't set the 8to6 dither flag when not scaling"
+drm-upstream/drm-next 62eb3e20f8f3ca9de4a17f87effe534d6a691176
+	drm/tilcdc: Fix build breakage
+drm-upstream/drm-fixes bf38b025d3f58f4c1273714ff1be5bfbf99574a4
+	Merge branch 'drm-fixes-3.16' of git://people.freedesktop.org/~agd5f/linux into drm-fixes
+origin/topic/core-stuff 46e9c5eaa88fd7d4547462230721edb24cadad8c
+	drm/plane-helper: Use proper plane init function
+sound-upstream/for-next 50dd9050e45ce11c575eabcaee8a914caf78fb74
+	ALSA: hda - add capture mute led support in led_power_filter
