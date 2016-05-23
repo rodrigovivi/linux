@@ -660,22 +660,44 @@ function dim_apply_next_fixes
 	dim_apply_branch drm-intel-next-fixes "$@"
 }
 
+function commit_list_references
+{
+	local commit remote log
+
+	cd $DIM_PREFIX/drm-tip
+	remote=$(url_to_remote $drm_tip_ssh)
+	git fetch -q $remote || true
+
+	commit="$1"
+	log=$(mktemp)
+
+	git log --regexp-ignore-case --grep="${commit:0:8}" --oneline \
+	    $commit..$remote/drm-tip > $log
+
+	if [ "$(cat $log)" != "" ]; then
+		echo "Commit ${commit:0:8} is referenced by later commits:"
+		sed 's/^/\t/' < $log
+	fi
+
+	rm -f $log
+
+	cd - >/dev/null
+}
+
 function dim_cherry_pick
 {
-	local remote sha sha_short
-
-	remote=`url_to_remote $drm_tip_ssh`
+	local commit
 
 	if [[ "x$1" = "x" ]]; then
 		echo "usage: $dim $subcommand commit-ish"
 		exit 1
 	fi
-	sha=`git rev-parse $1`
-	sha_short=${sha:0:8}
+	commit=$(git rev-parse $1)
 
 	git_fetch_helper $remote
-	echo Possible fixup patches for your cherry-pick:
-	git log --grep=$sha_short --pretty=oneline $sha..$remote/drm-tip
+
+	commit_list_references $commit
+
 	$DRY git cherry-pick -s -x -e $1
 }
 
@@ -721,6 +743,7 @@ function dim_cherry_pick_branch
 			echo "Already backported as:"
 			sed 's/^/\t/' < $log
 		fi
+
 		rm -f $log
 	done
 }
