@@ -1419,6 +1419,11 @@ function dim_cite
 	local sha1
 
 	sha1=$1
+	if [[ -z "$sha1" ]]; then
+		echoerr "usage: $dim $subcommand <commit-ish>"
+		return 1
+	fi
+
 	cd $DIM_PREFIX/$DIM_DRM_INTEL
 
 	git log -1 $sha1 "--pretty=format:%H (\"%s\")%n" | \
@@ -1429,9 +1434,13 @@ function dim_fixes
 {
 	local sha1 tag
 
-	cd $DIM_PREFIX/$DIM_DRM_INTEL
 	sha1=$1
+	if [[ -z "$sha1" ]]; then
+		echoerr "usage: $dim $subcommand <commit-ish>"
+		return 1
+	fi
 
+	cd $DIM_PREFIX/$DIM_DRM_INTEL
 	echo "Fixes: $(dim_cite $sha1)"
 
 	(
