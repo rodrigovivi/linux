@@ -85,10 +85,9 @@ always maintained from the same machine, even if different branches are
 maintained on different machines (by different maintainers), there's no need to
 run this command.
 
-rebuild-nightly
----------------
-Rebuilds the nightly branch. Useful when ad-hoc trees are
-included in -nightly.
+rebuild-tip
+-----------
+Rebuild and push the integration tree.
 
 revert-rerere *rerere-cache-commit-ish*
 ---------------------------------------

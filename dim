@@ -376,7 +376,8 @@ function dim_revert_rerere
 	rm `rr_cache_dir`/* -Rf
 }
 
-function dim_rebuild_nightly
+dim_alias_rebuild_nightly=rebuild-tip
+function dim_rebuild_tip
 {
 	local integration_branch=drm-tip
 	local specfile=`mktemp`
@@ -514,7 +515,7 @@ function dim_push_branch
 	update_linux_next $branch drm-intel-next-queued drm-intel-next-fixes drm-intel-fixes
 	update_linux_next $branch drm-misc-next drm-misc-next-fixes drm-misc-fixes
 
-	dim_rebuild_nightly
+	dim_rebuild_tip
 }
 
 dim_alias_pq=push-queued
