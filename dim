@@ -314,6 +314,8 @@ function update_linux_next # branch next next-fixes fixes
 
 	local remote=`repo_to_remote $repo`
 
+	git fetch -q $remote || true
+
 	# always update drm-intel-fixes
 	echo -n "Pushing $linux_fixes to for-linux-next-fixes... "
 	git push $DRY_RUN $remote +$remote/$linux_fixes:for-linux-next-fixes # >& /dev/null
@@ -407,7 +409,7 @@ function dim_rebuild_nightly
 		local remote=$(url_to_remote $url)
 		echo -n "Fetching $repo (as $remote) ... "
 		# git fetch returns 128 if there's nothing to be fetched
-		git fetch $remote >& /dev/null || true
+		git fetch -q $remote || true
 		echo "Done."
 	done
 
@@ -600,7 +602,7 @@ function dim_cherry_pick
 	sha_short=${sha:0:8}
 
 	# need latest -nightly
-	git fetch $remote
+	git fetch -q $remote || true
 	echo Possible fixup patches for your cherry-pick:
 	git log --grep=$sha_short --pretty=oneline $sha..$remote/drm-tip
 	$DRY git cherry-pick -s -x -e $1
@@ -825,7 +827,7 @@ function dim_checkout
 		if [ "$remote" == "" ] ; then
 			exit 1
 		fi
-		git fetch $remote
+		git fetch -q $remote || true
 		git checkout -t $remote/$branch
 	else
 		git checkout $branch
@@ -1120,7 +1122,7 @@ function dim_pull_request
 		cd $DIM_PREFIX/$DIM_DRM_INTEL
 	fi
 
-	git fetch ${upstream%%/*} >& /dev/null || true
+	git fetch -q ${upstream%%/*} || true
 	echo "Using $upstream as the upstream"
 
 	if [ "$branch" = "drm-intel-next" ]; then
@@ -1190,7 +1192,7 @@ function dim_update_branches
 {
 	cd $DIM_PREFIX/$DIM_DRM_INTEL
 	for remote in $DIM_DRM_INTEL_REMOTE `url_to_remote $drm_upstream_git` origin; do
-		git fetch $remote
+		git fetch -q $remote || true
 	done
 
 	assert_repo_clean
@@ -1227,7 +1229,7 @@ function setup_aux_checkout # name url directory
 			cd $DIM_PREFIX/$DIM_DRM_INTEL
 			remote=`url_to_remote $url`
 			if [[ `git branch --list $name` == "" ]] ; then
-				git fetch $remote
+				git fetch -q $remote || true
 				git branch --track $name $remote/$name
 			fi
 			git worktree add $DIM_PREFIX/$dir $name
@@ -1386,7 +1388,7 @@ function dim_fixes
 			echo "Cc: <stable@vger.kernel.org> # ${tag}+"
 		fi
 	else
-		git fetch $DIM_DRM_INTEL_REMOTE
+		git fetch -q $DIM_DRM_INTEL_REMOTE || true
 		# Check whether it's already in a feature pile tag
 		if git merge-base --is-ancestor $sha1 $DIM_DRM_INTEL_REMOTE/drm-intel-next ; then
 			# Make sure we're in the critical window where we might
