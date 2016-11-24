@@ -1222,7 +1222,11 @@ function dim_list_upstreams
 {
 	local dim_drm_upstream_remote
 
-	dim_drm_upstream_remote=`url_to_remote $drm_upstream_git`
+	# Handle failures gracefully
+	if ! dim_drm_upstream_remote=$(url_to_remote $drm_upstream_git 2>/dev/null); then
+		return 0
+	fi
+
 	echo origin/master
 	echo $dim_drm_upstream_remote/drm-next
 	echo $dim_drm_upstream_remote/drm-fixes
