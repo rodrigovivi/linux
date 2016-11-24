@@ -199,14 +199,16 @@ fi
 
 function url_to_remote # url
 {
-	local url="$1"
+	local url remote
+
+	url="$1"
 
 	if [[ -z "$url" ]]; then
 		echoerr "$0 without url"
 		exit 1
 	fi
 
-	local remote=$(git remote -v | grep -m 1 "$url" | cut -f 1)
+	remote=$(git remote -v | grep -m 1 "$url" | cut -f 1)
 
 	if [[ -z "$remote" ]]; then
 		echoerr "No git remote for url $url found in $(pwd)"
@@ -221,7 +223,9 @@ function url_to_remote # url
 
 function branch_to_remote # branch
 {
-	local remote=`git rev-parse --abbrev-ref --symbolic-full-name $1@{upstream}`
+	local remote
+
+	remote=`git rev-parse --abbrev-ref --symbolic-full-name $1@{upstream}`
 	remote=${remote%%/*}
 
 	echo $remote
@@ -248,7 +252,9 @@ function branch_to_repo # branch
 
 function dim_uptodate
 {
-	local using="${BASH_SOURCE[0]}"
+	local using
+
+	using="${BASH_SOURCE[0]}"
 
 	if [[ ! -e "$using" ]]; then
 		echoerr "could not figure out the version being used ($using)."
@@ -300,19 +306,21 @@ function dim_commit_add_tag
 # update for-linux-next and for-linux-next-fixes branches
 function update_linux_next # branch next next-fixes fixes
 {
-	cd $DIM_PREFIX/drm-tip
-	local branch=$1
-	local linux_next=$2
-	local linux_next_fixes=$3
-	local linux_fixes=$4
+	local branch linux_next linux_next_fixes linux_fixes repo remote
 
-	local repo=`branch_to_repo $branch`
+	cd $DIM_PREFIX/drm-tip
+	branch=$1
+	linux_next=$2
+	linux_next_fixes=$3
+	linux_fixes=$4
+
+	repo=`branch_to_repo $branch`
 
 	if [[ $repo != `branch_to_repo $linux_next` ]] ; then
 		return
 	fi
 
-	local remote=`repo_to_remote $repo`
+	remote=`repo_to_remote $repo`
 
 	git fetch -q $remote || true
 
@@ -379,12 +387,14 @@ function dim_revert_rerere
 dim_alias_rebuild_nightly=rebuild-tip
 function dim_rebuild_tip
 {
-	local integration_branch=drm-tip
-	local specfile=`mktemp`
-	local time="`date --utc +%Yy-%mm-%dd-%Hh-%Mm-%Ss` UTC"
-	local first=1
+	local integration_branch specfile time first rerere repo url remote
 
-	local rerere=$DIM_PREFIX/drm-rerere
+	integration_branch=drm-tip
+	specfile=`mktemp`
+	time="`date --utc +%Yy-%mm-%dd-%Hh-%Mm-%Ss` UTC"
+	first=1
+
+	rerere=$DIM_PREFIX/drm-rerere
 
 	cd $rerere
 	if [[ `git status --porcelain | grep -v "^[ ?][ ?]" | wc -l` -gt 0 ]]; then
@@ -406,8 +416,8 @@ function dim_rebuild_tip
 	fi
 
 	for repo in "${!drm_tip_repos[@]}"; do
-		local url=${drm_tip_repos[$repo]}
-		local remote=$(url_to_remote $url)
+		url=${drm_tip_repos[$repo]}
+		remote=$(url_to_remote $url)
 		echo -n "Fetching $repo (as $remote) ... "
 		# git fetch returns 128 if there's nothing to be fetched
 		git fetch -q $remote || true
@@ -416,11 +426,12 @@ function dim_rebuild_tip
 
 	# merge -fixes
 	for conf in "${drm_tip_config[@]}"; do
-		local repo branch override
+		local branch override sha1 fixup_file
+
 		read repo branch override <<< $conf
-		local url=${drm_tip_repos[$repo]}
-		local remote=$(url_to_remote $url)
-		local sha1=$remote/$branch
+		url=${drm_tip_repos[$repo]}
+		remote=$(url_to_remote $url)
+		sha1=$remote/$branch
 
 		echo -n "Merging $repo (local remote $remote) $branch... "
 
@@ -438,7 +449,7 @@ function dim_rebuild_tip
 			echo "Fast-forward. Done."
 			true
 		else
-			local fixup_file=$rerere/$repo-${branch//\//-}-fixup.patch
+			fixup_file=$rerere/$repo-${branch//\//-}-fixup.patch
 			echo $fixup_file > .fixup_file_path
 
 			git merge --rerere-autoupdate --no-commit $sha1 >& /dev/null || true
@@ -466,15 +477,15 @@ function dim_rebuild_tip
 	git commit --quiet -m "$integration_branch: $time integration manifest"
 	echo "Done."
 
-	local tip_remote=`url_to_remote $drm_tip_ssh`
+	remote=`url_to_remote $drm_tip_ssh`
 
 	echo -n "Pushing $integration_branch... "
-	git push $DRY_RUN $tip_remote +HEAD >& /dev/null && echo "Done."
+	git push $DRY_RUN $remote +HEAD >& /dev/null && echo "Done."
 
 	echo -n "Updating rerere cache... "
 	cd $rerere
 	if git branch --list rerere-cache | grep -q '\*' ; then
-		local rerere_remote=`branch_to_remote rerere-cache`
+		remote=`branch_to_remote rerere-cache`
 
 		git pull >& /dev/null
 		rm `rr_cache_dir`/rr-cache -Rf &> /dev/null || true
@@ -488,7 +499,7 @@ function dim_rebuild_tip
 			echo -n "Nothing changed. "
 		fi
 		echo -n "Pushing rerere cache... "
-		git push $DRY_RUN $rerere_remote HEAD >& /dev/null && echo "Done."
+		git push $DRY_RUN $remote HEAD >& /dev/null && echo "Done."
 	else
 		echo "Fail: Branch setup for the rerere-cache is borked."
 		exit 1
@@ -498,17 +509,19 @@ function dim_rebuild_tip
 # push.
 function dim_push_branch
 {
+	local branch remote
+
 	if [[ "x$1" = "x" ]]; then
 		echo "usage: $dim $subcommand branch"
 		exit 1
 	fi
 
-	local branch=$1
+	branch=$1
 	shift
 
 	assert_branch $branch
 
-	local remote=`branch_to_remote $branch`
+	remote=`branch_to_remote $branch`
 
 	git push $DRY_RUN $remote $branch "$@"
 
@@ -542,20 +555,21 @@ dim_alias_ab=apply-branch
 dim_alias_sob=apply-branch
 function dim_apply_branch
 {
-	local branch=$1
+	local branch file message_id commiter_email patch_from sob
+
+	branch=$1
 	shift
-	local file=`mktemp`
+	file=`mktemp`
 
 	assert_branch $branch
 	assert_repo_clean
 
 	cat > $file
 
-	local message_id=$(message_get_id $file)
+	message_id=$(message_get_id $file)
 
-	local commiter_email=$(git config --get user.email)
-	local patch_from=$(grep "From:" "$file" | head -1)
-	local sob
+	commiter_email=$(git config --get user.email)
+	patch_from=$(grep "From:" "$file" | head -1)
 	if [[ "$patch_from" != *"$commiter_email"* ]] ; then
 		sob=-s
 	fi
@@ -593,7 +607,9 @@ function dim_apply_next_fixes
 
 function dim_cherry_pick
 {
-	local remote=`url_to_remote $drm_tip_ssh`
+	local remote sha sha_short
+
+	remote=`url_to_remote $drm_tip_ssh`
 
 	if [[ "x$1" = "x" ]]; then
 		echo "usage: $dim $subcommand commit-ish"
@@ -694,11 +710,13 @@ function dim_apply_igt
 dim_alias_mp=magic-patch
 function dim_magic_patch
 {
+	local conflict_files
+
 	if [[ "$1" = "-a" ]]; then
 		cd `cat ~/.dim-last-path`
 	fi
 
-	local conflict_files=`patch -p1 | grep "saving rejects" | sed -e "s/.*saving rejects to file \(.*\)/\1/"`
+	conflict_files=`patch -p1 | grep "saving rejects" | sed -e "s/.*saving rejects to file \(.*\)/\1/"`
 
 	if [[ $conflict_files != "" ]] ; then
 		echo conflicts found!
@@ -714,12 +732,14 @@ function dim_magic_patch
 
 function dim_create_branch
 {
+	local branch repo remote
+
 	if [[ "x$1" = "x" ]]; then
 		echo "usage: $dim $subcommand branch [commit-ish]"
 		exit 1
 	fi
-	local branch=$1
-	local repo="drm-intel"
+	branch=$1
+	repo="drm-intel"
 
 	if [[ "x$2" = "x" ]]; then
 		start=HEAD
@@ -734,7 +754,7 @@ function dim_create_branch
 		branch=${branch#*/}
 	fi
 
-	local remote=`repo_to_remote $repo`
+	remote=`repo_to_remote $repo`
 
 	$DRY git branch $branch $start
 	git push $DRY_RUN $remote +$branch --set-upstream
@@ -748,11 +768,13 @@ function dim_create_branch
 
 function dim_remove_branch
 {
+	local branch repo remote
+
 	if [[ "x$1" = "x" ]]; then
 		echo "usage: $dim $subcommand branch"
 		exit 1
 	fi
-	local branch=$1
+	branch=$1
 
 	cd $DIM_PREFIX/$DIM_DRM_INTEL
 
@@ -768,14 +790,14 @@ function dim_remove_branch
 
 	cd $DIM_PREFIX/drm-tip
 
-	local repo=`branch_to_repo $branch`
+	repo=`branch_to_repo $branch`
 
 	if [[ $repo == "" ]] ; then
 		echoerr "$branch not found in $integration_config"
 		exit 1
 	fi
 
-	local remote=`repo_to_remote $repo`
+	remote=`repo_to_remote $repo`
 
 	git push $DRY_RUN $remote --delete $branch
 	$DRY git fetch $remote --prune
@@ -803,15 +825,17 @@ function dim_cd
 dim_alias_co=checkout
 function dim_checkout
 {
+	local branch repo remote
+
 	if [[ "x$1" = "x" ]]; then
 		echo "usage: $dim $subcommand branch"
 		exit 1
 	fi
-	local branch=$1
+	branch=$1
 
 	dim_cd $branch
 	if [[ `git branch --list $branch` ==  "" ]] ; then
-		local repo=`branch_to_repo $branch`
+		repo=`branch_to_repo $branch`
 
 		if [[ $branch == "drm-intel-next" ]] ; then
 			repo="drm-intel"
@@ -822,7 +846,7 @@ function dim_checkout
 			exit 1
 		fi
 
-		local remote=`repo_to_remote $repo`
+		remote=`repo_to_remote $repo`
 
 		if [ "$remote" == "" ] ; then
 			exit 1
@@ -852,18 +876,24 @@ function dim_conf
 # $1 is the git sha1 to check
 function checkpatch_commit
 {
-	local commit=$1
-	local cmd="git show --pretty=email $commit"
+	local commit cmd bug_lines non_i915_files
+
+	commit=$1
+	cmd="git show --pretty=email $commit"
 
 	git --no-pager log --oneline -1 $commit
 	$cmd | scripts/checkpatch.pl -q --emacs --strict - || true
 
+	# FIXME: this relies on local assignment not failing on command
+	# substitution failures
 	local bug_lines=$($cmd | grep -m 1 -B 1 '^\+.*\WBUG' | grep -c '^[+-].*\WBUG')
 	if test "$bug_lines" -eq 1; then
 		warn_or_fail "New BUG macro added"
 	fi
 
         if [ "$branch" = "drm-intel-next-queued" ]; then
+		# FIXME: this relies on local assignment not failing on command
+		# substitution failures
 		local non_i915_files=$(git diff-tree --no-commit-id --name-only -r $commit | \
 			grep -v "^\(drivers/gpu/drm/i915/\|include/drm/i915\|include/uapi/drm/i915\)")
 
@@ -891,7 +921,9 @@ dim_alias_check_patch=checkpatch
 dim_alias_cp=checkpatch
 function dim_checkpatch
 {
-	local range=$(rangeish "$1")
+	local range
+
+	range=$(rangeish "$1")
 
 	for commit in $(git rev-list --reverse $range); do
 		checkpatch_commit $commit || true
@@ -900,7 +932,9 @@ function dim_checkpatch
 
 function dim_sparse
 {
-	local range=$(rangeish "$1")
+	local range
+
+	range=$(rangeish "$1")
 
 	make $DIM_MAKE_OPTIONS
 	touch --no-create `git diff --name-only $range` `git diff --name-only`
@@ -943,11 +977,13 @@ function prep_pull_mail_signature
 # without tags, print a reminder
 function prep_pull_mail_overview
 {
+	local obj
+
 	if [ "$#" = "0" ]; then
 		echo "*** insert pull request overview here ***"
 	else
 		for tag in $@ ; do
-			local obj=`git rev-parse $tag`
+			obj=`git rev-parse $tag`
 			if [[ `git cat-file -t $obj` == "tag" ]] ; then
 				echo $tag:
 				git cat-file -p $obj | tail -n+6
@@ -967,8 +1003,9 @@ function prep_pull_mail
 
 function dim_create_workdir
 {
-	cd $DIM_PREFIX
 	local branches
+
+	cd $DIM_PREFIX
 
 	if [[ "x$1" = "x" ]]; then
 		echo "usage: $dim $subcommand branch|all"
@@ -1013,9 +1050,11 @@ function dim_for_each_workdirs
 
 function dim_update_next
 {
+	local remote
+
 	assert_branch drm-intel-next-queued
 
-	local remote=`url_to_remote $drm_tip_ssh`
+	remote=`url_to_remote $drm_tip_ssh`
 
 	git pull --ff-only
 
@@ -1046,9 +1085,11 @@ function dim_update_next
 
 function dim_update_next_continue
 {
+	local remote
+
 	assert_branch drm-intel-next-queued
 
-	local remote=`url_to_remote $drm_tip_ssh`
+	remote=`url_to_remote $drm_tip_ssh`
 
 	git push $DRY_RUN -f $DIM_DRM_INTEL_REMOTE drm-intel-next-queued:drm-intel-next
 	tag=drm-intel-next-$today
@@ -1107,14 +1148,16 @@ function dim_tag_next
 # dim_pull_request branch upstream
 function dim_pull_request
 {
+	local branch upstream remote repo url git_url
+
 	if [[ "x$1" = "x" || "x$2" = "x" ]]; then
 		echo "usage: $dim $subcommand branch upstream"
 		exit 1
 	fi
 
-	local branch=$1
-	local upstream=$2
-	local remote=`branch_to_remote $branch`
+	branch=$1
+	upstream=$2
+	remote=`branch_to_remote $branch`
 
 	if [ "$branch" != "drm-intel-next" ]; then
 		assert_branch $branch
@@ -1131,18 +1174,18 @@ function dim_pull_request
 		prep_pull_mail $drm_intel_next_tags
 		tag=`git describe --all --exact $branch@{upstream}`
 
-		local repo="drm-intel"
+		repo="drm-intel"
 	else
 		tag=$branch-$today
 		$DRY git tag -f $tag $branch@{upstream}
 		$DRY git push -f $remote $tag
 		prep_pull_mail
 
-		local repo=`branch_to_repo $branch`
+		repo=`branch_to_repo $branch`
 	fi
 
-	local url=${drm_tip_repos[$repo]}
-	local git_url=`echo $url | sed -e 's/git\./anongit./' -e 's/ssh:/git:/'`
+	url=${drm_tip_repos[$repo]}
+	git_url=`echo $url | sed -e 's/git\./anongit./' -e 's/ssh:/git:/'`
 
 	git request-pull $upstream $git_url $tag >> ~/tmp/dim-pull-request
 	$DRY $DIM_MUA -s "[PULL] $branch" \
@@ -1175,7 +1218,9 @@ function dim_pull_request_next_fixes
 # Note: used by bash completion
 function dim_list_upstreams
 {
-	local dim_drm_upstream_remote=`url_to_remote $drm_upstream_git`
+	local dim_drm_upstream_remote
+
+	dim_drm_upstream_remote=`url_to_remote $drm_upstream_git`
 	echo origin/master
 	echo $dim_drm_upstream_remote/drm-next
 	echo $dim_drm_upstream_remote/drm-fixes
@@ -1190,6 +1235,8 @@ function dim_list_branches
 dim_alias_ub=update-branches
 function dim_update_branches
 {
+	local repo remote
+
 	cd $DIM_PREFIX/$DIM_DRM_INTEL
 	for remote in $DIM_DRM_INTEL_REMOTE `url_to_remote $drm_upstream_git` origin; do
 		git fetch -q $remote || true
@@ -1199,8 +1246,8 @@ function dim_update_branches
 
 	for branch in $dim_branches ; do
 		dim_checkout $branch
-		local repo=`branch_to_repo $branch`
-		local remote=`repo_to_remote $repo`
+		repo=`branch_to_repo $branch`
+		remote=`repo_to_remote $repo`
 
 		if git diff --quiet $remote/$branch; then
 			$DRY git rebase
@@ -1216,10 +1263,11 @@ function dim_update_branches
 
 function setup_aux_checkout # name url directory
 {
-	local name=$1
-	local url=$2
-	local dir=$3
-	local remote
+	local name url dir remote
+
+	name=$1
+	url=$2
+	dir=$3
 
 	echo "Setting up $dir ..."
 
@@ -1299,7 +1347,9 @@ function dim_setup
 
 function assert_branch
 {
-	local branch=$1
+	local branch
+
+	branch=$1
 
 	dim_cd $branch
 
@@ -1341,12 +1391,14 @@ function dim_cat_to_fixup
 
 function dim_tc
 {
+	local tag dim_drm_upstream_remote
+
 	cd $DIM_PREFIX/$DIM_DRM_INTEL
-	local tag=$(git tag --contains $1 | grep ^v | sort -V | head -n 1)
+	tag=$(git tag --contains $1 | grep ^v | sort -V | head -n 1)
 	if [[ -n "$tag" ]]; then
 		echo "$tag"
 	else
-		local dim_drm_upstream_remote=`url_to_remote $drm_upstream_git`
+		dim_drm_upstream_remote=`url_to_remote $drm_upstream_git`
 		# not in a tagged release, show upstream branches
 		git branch -r --contains $1 \
 		    $DIM_DRM_INTEL_REMOTE/* \
@@ -1358,7 +1410,9 @@ function dim_tc
 
 function dim_cite
 {
-	local sha1=$1
+	local sha1
+
+	sha1=$1
 	cd $DIM_PREFIX/$DIM_DRM_INTEL
 
 	git log -1 $sha1 "--pretty=format:%H (\"%s\")%n" | \
@@ -1367,8 +1421,10 @@ function dim_cite
 
 function dim_fixes
 {
+	local sha1 tag
+
 	cd $DIM_PREFIX/$DIM_DRM_INTEL
-	local sha1=$1
+	sha1=$1
 
 	echo "Fixes: $(dim_cite $sha1)"
 
@@ -1379,7 +1435,7 @@ function dim_fixes
 		git show $sha1 | scripts/get_maintainer.pl  --email --norolestats --pattern-depth 1 | sed -e "s/^/Cc: /"
 	) | awk '!x[$0]++'
 
-	local tag=$(git tag --contains $1 | grep ^v | sort -V | head -n 1)
+	tag=$(git tag --contains $1 | grep ^v | sort -V | head -n 1)
 	if [[ -n "$tag" ]]; then
 		if echo "$tag" | grep -q -e "-rc" ; then
 			echo "Cc: <drm-intel-fixes@lists.freedesktop.org> # ${tag}+"
