@@ -205,7 +205,7 @@ function url_to_remote # url
 
 	if [[ -z "$url" ]]; then
 		echoerr "$0 without url"
-		exit 1
+		return 1
 	fi
 
 	remote=$(git remote -v | grep -m 1 "$url" | cut -f 1)
@@ -215,10 +215,12 @@ function url_to_remote # url
 		echoerr "Please set it up using:"
 		echoerr "    $ git remote add <name> $url"
 		echoerr "with a name of your choice."
-		exit 1
+		return 1
 	fi
 
 	echo $remote
+
+	return 0
 }
 
 function branch_to_remote # branch
