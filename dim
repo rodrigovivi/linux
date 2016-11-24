@@ -420,7 +420,7 @@ function dim_rebuild_tip
 	for repo in "${!drm_tip_repos[@]}"; do
 		url=${drm_tip_repos[$repo]}
 		remote=$(url_to_remote $url)
-		echo -n "Fetching $repo (as $remote) ... "
+		echo -n "Fetching $repo (local remote $remote)... "
 		# git fetch returns 128 if there's nothing to be fetched
 		git fetch -q $remote || true
 		echo "Done."
