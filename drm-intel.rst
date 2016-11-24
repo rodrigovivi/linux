@@ -241,9 +241,9 @@ when it's tricky or something fails in the below procedure.
 1. First check that drm-intel-next-queued was indeed pushed correctly and that
    your local and remote branches match.
 
-2. Then re-run the -nightly generation just to confirm: ::
+2. Then rebuild the integration branch just to confirm: ::
 
-        $ dim rebuild-nightly
+        $ dim rebuild-tip
 
    It's handy to keep the log output for context so that you know which branch
    caused the conflicts, and which branches are already included.
@@ -268,7 +268,7 @@ when it's tricky or something fails in the below procedure.
    match up your resolution with the conflict for odd reasons) and to make sure
    there's no other conflict in later merges: ::
 
-        $ dim rebuild-nightly
+        $ dim rebuild-tip
 
    This will also push the stored conflict resolution to the drm-intel-rerere
    branch and therefore publishes your resolution. Everything before this step

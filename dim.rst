@@ -72,11 +72,6 @@ setup *prefix*
 --------------
 Setup git maintainer branches in the given prefix.
 
-nightly-forget
---------------
-Forget git rerere solutions for nightly merges in case they
-contain a bogus merge resolution.
-
 update-branches
 ---------------
 Updates all maintainer branches. Only needs to be run to synchronize branches
@@ -96,13 +91,13 @@ When a stored conflict resolution in the integration tree is wrong, this command
 can be used to fix up the mess. First figure out which commit in the
 *rerere-cache* branch contains the bogus conflict resolution, then revert it
 using this command. This ensures the resolution is also purged from any local
-caches, to make sure it doesn't get resurrected. Then run *rebuild-nightly* to
+caches, to make sure it doesn't get resurrected. Then run *rebuild-tip* to
 redo the merges, correctly.
 
 cat-to-fixup
 ------------
 
-Pipes stdin into the fixup patch file for the current -nightly merge.
+Pipes stdin into the fixup patch file for the current drm-tip merge.
 
 push-branch branch [*git push arguments*]
 -----------------------------------------
@@ -245,12 +240,12 @@ goes wrong.
 update-next
 -----------
 Pushes out the latest dinq to drm-intel-next and tags it. Also
-pushes out the latest nightly to drm-intel-testing. For an
+pushes out the latest drm-tip to drm-intel-testing. For an
 overview a gitk view of the currently unmerged feature pile is
 opened.
 
 Also checks that the drm-intel-fixes|-next-queued are fully
-merged into -nightly to avoid operator error.
+merged into drm-tip to avoid operator error.
 
 tag-next
 --------

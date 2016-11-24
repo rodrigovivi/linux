@@ -344,7 +344,7 @@ function check_conflicts # tree
 		# we need an empty line to make it look pretty
 		echoerr ""
 		echoerr "FAILURE: Could not merge $1"
-		echoerr "See the section \"Resolving Conflicts when Rebuilding drm-intel-nightly\""
+		echoerr "See the section \"Resolving Conflicts when Rebuilding drm-tip\""
 		echoerr "in the drm-intel.rst documentation for how to handle this situation."
 		exit 1
 	fi
@@ -466,10 +466,10 @@ function dim_rebuild_tip
 	git commit --quiet -m "$integration_branch: $time integration manifest"
 	echo "Done."
 
-	local nightly_remote=`url_to_remote $drm_tip_ssh`
+	local tip_remote=`url_to_remote $drm_tip_ssh`
 
 	echo -n "Pushing $integration_branch... "
-	git push $DRY_RUN $nightly_remote +HEAD >& /dev/null && echo "Done."
+	git push $DRY_RUN $tip_remote +HEAD >& /dev/null && echo "Done."
 
 	echo -n "Updating rerere cache... "
 	cd $rerere
@@ -494,7 +494,7 @@ function dim_rebuild_tip
 		exit 1
 	fi
 }
-# push branch $1, rebuild nightly. the rest of the arguments are passed to git
+# push branch $1, rebuild drm-tip. the rest of the arguments are passed to git
 # push.
 function dim_push_branch
 {
@@ -602,7 +602,6 @@ function dim_cherry_pick
 	sha=`git rev-parse $1`
 	sha_short=${sha:0:8}
 
-	# need latest -nightly
 	git fetch -q $remote || true
 	echo Possible fixup patches for your cherry-pick:
 	git log --grep=$sha_short --pretty=oneline $sha..$remote/drm-tip
@@ -772,7 +771,7 @@ function dim_remove_branch
 	local repo=`branch_to_repo $branch`
 
 	if [[ $repo == "" ]] ; then
-		echoerr "$branch not found in nightly.conf"
+		echoerr "$branch not found in $integration_config"
 		exit 1
 	fi
 
@@ -819,7 +818,7 @@ function dim_checkout
 		fi
 
 		if [[ $repo == "" ]] ; then
-			echoerr "$branch not found in nightly.conf"
+			echoerr "$branch not found in $integration_config"
 			exit 1
 		fi
 
@@ -1056,7 +1055,7 @@ function dim_update_next_continue
 	$DRY git tag -f -a $tag $DIM_DRM_INTEL_REMOTE/drm-intel-next
 	git push $DRY_RUN -f $DIM_DRM_INTEL_REMOTE $tag
 
-	echo "Updating -testing to latest -nightly"
+	echo "Updating drm-intel-testing to latest drm-tip"
 	git push $DRY_RUN $DIM_DRM_INTEL_REMOTE +$remote/drm-tip:drm-intel-testing
 	$DRY git tag -f drm-intel-testing-$today $DIM_DRM_INTEL_REMOTE/drm-intel-testing
 	$DRY git push -f $DIM_DRM_INTEL_REMOTE drm-intel-testing-$today
@@ -1211,8 +1210,7 @@ function dim_update_branches
 	done
 	dim_checkout drm-intel-next
 	$DRY git reset --hard $DIM_DRM_INTEL_REMOTE/drm-intel-next
-	# TODO: Restore -nightly merge state from the rerere-cache
-	# branch
+
 	update_rerere_cache
 }
 
