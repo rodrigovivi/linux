@@ -171,6 +171,13 @@ fi
 # Sanity checks.
 #
 
+# Make sure we use 'dim_foo' within dim instead of 'dim foo'.
+if [[ -n "$__dim_running" ]]; then
+	echoerr "INTERNAL ERROR: do not recurse back to dim"
+	exit 1
+fi
+export __dim_running=1
+
 if [ "$subcommand" != "setup" -a "$subcommand" != "help" -a "$subcommand" != "usage" ]; then
 	for d in $DIM_PREFIX $DIM_PREFIX/$DIM_DRM_INTEL $DIM_PREFIX/drm-rerere $DIM_PREFIX/drm-tip; do
 		if [ ! -d $d ]; then
@@ -697,7 +704,7 @@ dim_alias_mrr=magic-rebase-resolve
 function dim_magic_rebase_resolve
 {
 	git diff HEAD | patch -p1 -R
-	cat .git/rebase-merge/patch | dim mp
+	cat .git/rebase-merge/patch | dim_magic_patch
 	make $DIM_MAKE_OPTIONS
 	git add -u
 	git rebase --continue
@@ -1081,7 +1088,7 @@ function dim_update_next
 	gitk drm-intel-next-queued ^`url_to_remote $drm_upstream_git`/drm-next &
 
 	# try to push dinq first in case someone raced
-	dim push-queued
+	dim_push_queued
 
 	dim_update_next_continue
 }
