@@ -577,7 +577,10 @@ function dim_apply_branch
 
 	message_id=$(message_get_id $file)
 
-	commiter_email=$(git config --get user.email)
+	if ! commiter_email=$(git config --get user.email) ; then
+		commiter_email=$EMAIL
+	fi
+
 	patch_from=$(grep "From:" "$file" | head -1)
 	if [[ "$patch_from" != *"$commiter_email"* ]] ; then
 		sob=-s
