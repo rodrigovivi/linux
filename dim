@@ -1255,8 +1255,15 @@ function dim_update_branches
 	local repo remote
 
 	cd $DIM_PREFIX/$DIM_DRM_INTEL
-	for remote in $DIM_DRM_INTEL_REMOTE `url_to_remote $drm_upstream_git` origin; do
+	for repo in "${!drm_tip_repos[@]}"; do
+		url=${drm_tip_repos[$repo]}
+		if ! remote=$(url_to_remote $url 2>/dev/null); then
+			continue
+		fi
+		echo -n "Fetching $repo (local remote $remote)... "
+		# git fetch returns 128 if there's nothing to be fetched
 		git fetch -q $remote || true
+		echo "Done."
 	done
 
 	assert_repo_clean
