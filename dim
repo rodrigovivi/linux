@@ -424,6 +424,12 @@ function dim_rebuild_tip
 		exit 1
 	fi
 
+	echo -n "Fetching drm-tip (local remote $remote)... "
+	remote=$(url_to_remote $drm_tip_ssh)
+	# git fetch returns 128 if there's nothing to be fetched
+	git fetch -q $remote || true
+	echo "Done."
+
 	for repo in "${!drm_tip_repos[@]}"; do
 		url=${drm_tip_repos[$repo]}
 		remote=$(url_to_remote $url)
