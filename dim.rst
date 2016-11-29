@@ -80,6 +80,11 @@ always maintained from the same machine, even if different branches are
 maintained on different machines (by different maintainers), there's no need to
 run this command.
 
+status
+------
+
+Lists all branches with unmerged patches, and how many patches are unmerged.
+
 rebuild-tip
 -----------
 Rebuild and push the integration tree.

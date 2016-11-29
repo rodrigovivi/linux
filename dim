@@ -1285,6 +1285,28 @@ function dim_update_branches
 	update_rerere_cache
 }
 
+function dim_status
+{
+	local repo remote drm_remote patches
+
+	cd $DIM_PREFIX/$DIM_DRM_INTEL
+
+	drm_remote=$(url_to_remote $drm_upstream_git)
+
+	for branch in $dim_branches ; do
+		repo=`branch_to_repo $branch`
+		if ! remote=`repo_to_remote $repo` ; then
+			continue
+		fi
+
+		patches=$(git log --oneline $remote/$branch ^origin/master ^$drm_remote/drm-next ^$drm_remote/drm-fixes | wc -l)
+
+		if [[ $patches -ne 0 ]] ; then
+			echo $repo/$branch: $patches unmerged patches
+		fi
+	done
+}
+
 function setup_aux_checkout # name url directory
 {
 	local name url dir remote
