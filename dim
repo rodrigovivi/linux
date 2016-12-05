@@ -1123,7 +1123,6 @@ function dim_update_next_continue
 	cat > ~/tmp/test-request <<-HERE
 		Hi all,
 
-		New -testing cycle with cool stuff:
 		HERE
 	obj=`git rev-parse $tag`
 	if [[ `git cat-file -t $obj` == "tag" ]] ; then
