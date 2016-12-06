@@ -1286,9 +1286,7 @@ function dim_update_branches
 		repo=`branch_to_repo $branch`
 		remote=`repo_to_remote $repo`
 
-		if git diff --quiet $remote/$branch; then
-			$DRY git rebase
-		else
+		if ! $DRY git merge --ff-only $remote/$branch; then
 			$DRY git rebase -i
 		fi
 	done
