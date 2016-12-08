@@ -74,11 +74,8 @@ Setup git maintainer branches in the given prefix.
 
 update-branches
 ---------------
-Updates all maintainer branches. Only needs to be run to synchronize branches
-between different machines (or maintainers fwiw). As long a given branch is
-always maintained from the same machine, even if different branches are
-maintained on different machines (by different maintainers), there's no need to
-run this command.
+Updates all maintainer branches. Useful to synchronize all branches when other
+maintainers and committers pushed patches meanwhile.
 
 status
 ------
@@ -407,6 +404,10 @@ You should now have a main repository for patch application. The directory
 corresponding to this repository is defined by DIM_DRM_INTEL in your .dimrc.
 You should also have directories called maintainer-tools, drm-tip (for
 rebuilding the tree), and drm-intel-rerere for some dim-internal book-keeping.
+
+If someone else has pushed patches first resync using::
+
+   $ dim update-branches
 
 Applying patches to dinq is done in the main repository with::
 

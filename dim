@@ -1293,6 +1293,12 @@ function dim_update_branches
 	dim_checkout drm-intel-next
 	$DRY git reset --hard $DIM_DRM_INTEL_REMOTE/drm-intel-next
 
+	cd $DIM_PREFIX/maintainer-tools
+	if git branch | grep maintainer-tools | grep '\*' ; then
+		echo "Updating maintainer-tools ..."
+		git pull --rebase
+	fi
+
 	update_rerere_cache
 }
 
