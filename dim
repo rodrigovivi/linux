@@ -282,6 +282,21 @@ function dim_uptodate
 	fi
 }
 
+function git_fetch_helper # remote
+{
+	local remote
+
+	remote=$1
+
+	if ! git fetch -q $remote ; then
+		# old git versions returned 128 if there was nothing to fetch
+		if [[ $? -ne "128" ]] ; then
+			echoerr "Failed to fetch $remote"
+			return 1
+		fi
+	fi
+}
+
 if [[ "$((`date +%s` % 100))" -eq "0" ]] ; then
         dim_uptodate
 fi
@@ -331,7 +346,7 @@ function update_linux_next # branch next next-fixes fixes
 
 	remote=`repo_to_remote $repo`
 
-	git fetch -q $remote || true
+	git_fetch_helper $remote
 
 	# always update drm-intel-fixes
 	echo -n "Pushing $linux_fixes to for-linux-next-fixes... "
@@ -426,16 +441,14 @@ function dim_rebuild_tip
 
 	echo -n "Fetching drm-tip (local remote $remote)... "
 	remote=$(url_to_remote $drm_tip_ssh)
-	# git fetch returns 128 if there's nothing to be fetched
-	git fetch -q $remote || true
+	git_fetch_helper $remote
 	echo "Done."
 
 	for repo in "${!drm_tip_repos[@]}"; do
 		url=${drm_tip_repos[$repo]}
 		remote=$(url_to_remote $url)
 		echo -n "Fetching $repo (local remote $remote)... "
-		# git fetch returns 128 if there's nothing to be fetched
-		git fetch -q $remote || true
+		git_fetch_helper $remote
 		echo "Done."
 	done
 
@@ -636,7 +649,7 @@ function dim_cherry_pick
 	sha=`git rev-parse $1`
 	sha_short=${sha:0:8}
 
-	git fetch -q $remote || true
+	git_fetch_helper $remote
 	echo Possible fixup patches for your cherry-pick:
 	git log --grep=$sha_short --pretty=oneline $sha..$remote/drm-tip
 	$DRY git cherry-pick -s -x -e $1
@@ -870,7 +883,7 @@ function dim_checkout
 		if [ "$remote" == "" ] ; then
 			exit 1
 		fi
-		git fetch -q $remote || true
+		git_fetch_helper $remote
 		git checkout -t $remote/$branch
 	else
 		git checkout $branch
@@ -1183,7 +1196,7 @@ function dim_pull_request
 		cd $DIM_PREFIX/$DIM_DRM_INTEL
 	fi
 
-	git fetch -q ${upstream%%/*} || true
+	git_fetch_helper ${upstream%%/*}
 	echo "Using $upstream as the upstream"
 
 	if [ "$branch" = "drm-intel-next" ]; then
@@ -1263,8 +1276,7 @@ function dim_update_branches
 
 	if remote=$(url_to_remote $linux_upstream_git 2>/dev/null); then
 		echo -n "Fetching linux (local remote $remote)... "
-		# git fetch returns 128 if there's nothing to be fetched
-		git fetch -q $remote || true
+		git_fetch_helper $remote
 		echo "Done."
 	fi
 
@@ -1274,8 +1286,7 @@ function dim_update_branches
 			continue
 		fi
 		echo -n "Fetching $repo (local remote $remote)... "
-		# git fetch returns 128 if there's nothing to be fetched
-		git fetch -q $remote || true
+		git_fetch_helper $remote
 		echo "Done."
 	done
 
@@ -1339,7 +1350,7 @@ function setup_aux_checkout # name url directory
 			cd $DIM_PREFIX/$DIM_DRM_INTEL
 			remote=`url_to_remote $url`
 			if [[ `git branch --list $name` == "" ]] ; then
-				git fetch -q $remote || true
+				git_fetch_helper $remote
 				git branch --track $name $remote/$name
 			fi
 			git worktree add $DIM_PREFIX/$dir $name
@@ -1515,7 +1526,7 @@ function dim_fixes
 			echo "Cc: <stable@vger.kernel.org> # ${tag}+"
 		fi
 	else
-		git fetch -q $DIM_DRM_INTEL_REMOTE || true
+		git_fetch_helper $DIM_DRM_INTEL_REMOTE
 		# Check whether it's already in a feature pile tag
 		if git merge-base --is-ancestor $sha1 $DIM_DRM_INTEL_REMOTE/drm-intel-next ; then
 			# Make sure we're in the critical window where we might
