@@ -307,6 +307,15 @@ function git_is_current_branch # branch
 	git branch --list $1 | grep -q '\*'
 }
 
+function git_branch_exists # branch
+{
+	if [[ `git branch --list $1` == "" ]] ; then
+		false
+	else
+		true
+	fi
+}
+
 if [[ "$((`date +%s` % 100))" -eq "0" ]] ; then
         dim_uptodate
 fi
@@ -825,7 +834,7 @@ function dim_remove_branch
 		git worktree prune &> /dev/null || true
 	fi
 
-	if [[ `git branch --list $branch`  != "" ]] &&
+	if git_branch_exists $branch &&
 	   ! $DRY git branch -d $branch  ; then
 			warn_or_fail "Can't remove $branch in working repo"
 	fi
@@ -876,7 +885,7 @@ function dim_checkout
 	branch=$1
 
 	dim_cd $branch
-	if [[ `git branch --list $branch` ==  "" ]] ; then
+	if ! git_branch_exists $branch ; then
 		repo=`branch_to_repo $branch`
 
 		if [[ $branch == "drm-intel-next" ]] ; then
@@ -1359,7 +1368,7 @@ function setup_aux_checkout # name url directory
 		if git help worktree &> /dev/null ; then
 			cd $DIM_PREFIX/$DIM_DRM_INTEL
 			remote=`url_to_remote $url`
-			if [[ `git branch --list $name` == "" ]] ; then
+			if ! git_branch_exists $name ; then
 				git_fetch_helper $remote
 				git branch --track $name $remote/$name
 			fi
@@ -1376,7 +1385,7 @@ function setup_aux_checkout # name url directory
 		cd $dir
 		remote=`url_to_remote $url`
 	fi
-	if [[ `git branch --list $name` == "" ]] ; then
+	if ! git_branch_exists $name ; then
 		git checkout -t $remote/$name
 	fi
 	cd - > /dev/null
