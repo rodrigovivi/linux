@@ -23,40 +23,66 @@ DESCRIPTION
 
 drm-intel maintainer script.
 
-Branch Model
-------------
+Used to maintain drm-intel_ and drm-misc_ git repositories.
 
-The dim flow has 3 main development branches:
+.. _drm-intel: drm-intel.html
+.. _drm-misc: drm-misc.html
 
-- drm-intel-next-queued for feature work. This branch gets regularly pushed to
-  drm-intel-next and tagged and then sent on to the upstream drm-next branch
-  using *update-next*.  The cut-off for the last pull request to drm-next is
-  around -rc5. After that point patches in drm-intel-next-queued already aim at
-  the next but one and not the next merge window.
+QUICKSTART
+==========
 
-- drm-intel-next-fixes is to collect fixes for the current merge window after
-  the -rc5 feature cut-off in drm-next.
+For getting started grab the latest drm (drm-intel-maintainer) script from::
 
-- drm-intel-fixes is for fixes for the current -rc1 kernel. This is separate
-  from drm-intel-next-fixes since the merge window feature cutoff at -rc5 is a
-  few weeks ahead of the final release of the previous kernel.
+    http://cgit.freedesktop.org/drm-intel/tree/dim?h=maintainer-tools
 
-  There's separate tracking branches for inclusion into linux-next to make sure
-  that the feature work in drm-intel-next-queued aimed for the next but one
-  merge window doesn't cause unecassary conflicts in linux-next - in that case
-  only drm-intel-next-fixes is included in linux-next. The switchover happens
-  when drm-intel-fixes has caught up (in git terms: drm-intel-next-fixes is
-  direct ancestor of drm-intel-fixes). Therefore only roll drm-intel-fixes
-  forward once -rc1 is released
+There's also a sample config file for ~/.dimrc::
 
-In addition there's 2 permanent topic branches:
+    http://cgit.freedesktop.org/drm-intel/tree/dimrc.sample?h=maintainer-tools
 
-- topic/drm-misc carries core drm patches aimed at the next merge window.
+Plus, there's bash completion in the same directory if you feel like using that.
+Run::
 
-- topic/drm-fixes carries core drm fixes for the current -rc kernels.
+    $ dim help
 
-Additional topic branches are created as needed using *create-branch* and
-*remove-branch*.
+for tons of details about how this thing works. Also see the git repository
+specific pages for details on the patch merging process for each tree. Adjust
+your .dimrc to match your setup and then run::
+
+    $ dim setup
+
+This will also check out the latest maintainer-tools branches, so please replace
+the dim you just downloaded with a symlink after this step. And by the way, if
+you have improvements for dim, please submit them to intel-gfx.
+
+You should now have a main repository for patch application. The directory
+corresponding to this repository is defined by DIM_DRM_INTEL in your .dimrc.
+You should also have directories called maintainer-tools, drm-tip (for
+rebuilding the tree), and drm-rerere for some dim-internal book-keeping.
+
+If someone else has pushed patches first resync using::
+
+   $ dim update-branches
+
+Since dim supports lots of different branches in different repositories you
+first need to check out the right branch using::
+
+   $ dim checkout <branch>
+
+Applying patches is done in the main repository with::
+
+    $ cat patch.mbox | dim apply-branch <branch>
+
+This works like a glorified version of git apply-mbox and does basic patch
+checking and adds stuff like patchwork links of the merged patch. It is
+preferred to use the patch email file instead of the original patch file since
+it contains some interesting headers like the message ID. When you're happy
+(remember that with a shared tree any mistake is permanent and there's no
+rebasing) push out the new tree with::
+
+    $ dim push-branch <branch>
+
+This will also rebuild a new drm-tip integration tree. For historical reasons
+there's shortcut for the drm-intel specific branches for most of these commands.
 
 OPTIONS
 =======
@@ -374,68 +400,6 @@ Path to a file containing a greeting template for pull request mails.
 DIM_TEMPLATE_SIGNATURE
 ----------------------
 Path to a file containing a signature template for pull request mails.
-
-QUICKSTART
-==========
-
-For getting started grab the latest drm (drm-intel-maintainer) script from::
-
-    http://cgit.freedesktop.org/drm-intel/tree/dim?h=maintainer-tools
-
-There's also a sample config file for ~/.dimrc::
-
-    http://cgit.freedesktop.org/drm-intel/tree/dimrc.sample?h=maintainer-tools
-
-Plus, there's bash completion in the same directory if you feel like using that.
-Run::
-
-    $ dim help
-
-for tons of details about how this thing works. Adjust your .dimrc to match your
-setup and then run::
-
-    $ dim setup
-
-This will also check out the latest maintainer-tools branches, so please replace
-the dim you just downloaded with a symlink after this step. And by the way, if
-you have improvements for dim, please submit them to intel-gfx.
-
-You should now have a main repository for patch application. The directory
-corresponding to this repository is defined by DIM_DRM_INTEL in your .dimrc.
-You should also have directories called maintainer-tools, drm-tip (for
-rebuilding the tree), and drm-intel-rerere for some dim-internal book-keeping.
-
-If someone else has pushed patches first resync using::
-
-   $ dim update-branches
-
-Applying patches to dinq is done in the main repository with::
-
-    $ cat patch.mbox | dim apply-queued
-
-This works like a glorified version of git apply-mbox and does basic patch
-checking and adds stuff like patchwork links of the merged patch. It is
-preferred to use the patch email file instead of the original patch file since
-it contains some interesting headers like the message ID. When you're happy
-(remember that with a shared tree any mistake is permanent and there's no
-rebasing) push out the new tree with::
-
-    $ dim push-queued
-
-This will also rebuild a new drm-tip integration tree. If that fails, ask
-maintainers for help with resolving conflicts. One thing to note here is that
-the script syncs saved git rerere conflict resolutions around. One does the
-resolution, everyone has it. The drawback is, someone screws up the conflict
-resolution, everyone has it...
-
-Note that every two weeks Daniel cuts a new drm-intel-next by tagging what's in
-drm-intel-next-queued. To increase the chances that the tree isn't totally
-broken, only push bug fixes for serious problems on Thu/Fri (and weekend) every
-second week (at the moment the release cycle is aligned with odd work weeks, but
-just check out when the last tagged happened).
-
-If you need to push something to drm-intel-fixes or
-drm-intel-next-fixes, please quickly coordinate with Jani.
 
 CONTRIBUTING
 ============
