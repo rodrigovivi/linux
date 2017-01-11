@@ -302,6 +302,11 @@ function git_fetch_helper # remote
 	fi
 }
 
+function git_is_current_branch # branch
+{
+	git branch --list $1 | grep -q '\*'
+}
+
 if [[ "$((`date +%s` % 100))" -eq "0" ]] ; then
         dim_uptodate
 fi
@@ -439,7 +444,7 @@ function dim_rebuild_tip
 	echo "Done."
 
 	cd $DIM_PREFIX/$integration_branch
-	if ! git branch --list $integration_branch | grep -q '\*' ; then
+	if ! git_is_current_branch $integration_branch ; then
 		echo "Branch setup for the integration repo is borked"
 		exit 1
 	fi
@@ -517,7 +522,7 @@ function dim_rebuild_tip
 
 	echo -n "Updating rerere cache... "
 	cd $rerere
-	if git branch --list rerere-cache | grep -q '\*' ; then
+	if git_is_current_branch rerere-cache ; then
 		remote=`branch_to_remote rerere-cache`
 
 		git pull >& /dev/null
@@ -1310,7 +1315,7 @@ function dim_update_branches
 	$DRY git reset --hard $DIM_DRM_INTEL_REMOTE/drm-intel-next
 
 	cd $DIM_PREFIX/maintainer-tools
-	if git branch | grep maintainer-tools | grep '\*' ; then
+	if git_is_current_branch maintainer-tools ; then
 		echo "Updating maintainer-tools ..."
 		git pull --rebase
 	fi
@@ -1425,7 +1430,7 @@ function assert_branch
 
 	dim_cd $branch
 
-	if git branch | grep $branch | grep '\*' ; then
+	if git_is_current_branch $branch ; then
 		return 0
 	else
 		echo "You're on the wrong branch, expected $branch in $PWD"
