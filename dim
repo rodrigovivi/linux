@@ -1312,6 +1312,9 @@ function dim_update_branches
 	assert_repo_clean
 
 	for branch in $dim_branches ; do
+		if ! git_branch_exists $branch ; then
+			continue
+		fi
 		dim_checkout $branch
 		repo=`branch_to_repo $branch`
 		remote=`repo_to_remote $repo`
@@ -1320,8 +1323,10 @@ function dim_update_branches
 			$DRY git rebase -i
 		fi
 	done
-	dim_checkout drm-intel-next
-	$DRY git reset --hard $DIM_DRM_INTEL_REMOTE/drm-intel-next
+	if git_branch_exists drm-intel-next ; then
+		dim_checkout drm-intel-next
+		$DRY git reset --hard $DIM_DRM_INTEL_REMOTE/drm-intel-next
+	fi
 
 	cd $DIM_PREFIX/maintainer-tools
 	if git_is_current_branch maintainer-tools ; then
