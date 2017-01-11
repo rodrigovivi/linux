@@ -218,11 +218,16 @@ function url_to_remote # url
 	remote=$(git remote -v | grep -m 1 "$url" | cut -f 1)
 
 	if [[ -z "$remote" ]]; then
-		echoerr "No git remote for url $url found in $(pwd)"
-		echoerr "Please set it up using:"
-		echoerr "    $ git remote add <name> $url"
-		echoerr "with a name of your choice."
-		return 1
+		git_url=`echo $url | sed -e 's/git\./anongit./' -e 's/ssh:/git:/'`
+		remote=$(git remote -v | grep -m 1 "$git_url" | cut -f 1)
+
+		if [[ -z "$remote" ]]; then
+			echoerr "No git remote for url $url or $git_url found in $(pwd)"
+			echoerr "Please set it up using:"
+			echoerr "    $ git remote add <name> $url"
+			echoerr "with a name of your choice."
+			return 1
+		fi
 	fi
 
 	echo $remote
