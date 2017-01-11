@@ -1394,13 +1394,6 @@ function dim_setup
 		exit 1
 	fi
 
-	cd $DIM_DRM_INTEL
-
-	# check remote configuration
-	remote=`url_to_remote $linux_upstream_git`
-	remote=`url_to_remote $drm_intel_ssh`
-	remote=`url_to_remote $drm_upstream_git`
-
 	cd $DIM_PREFIX
 
 	setup_aux_checkout maintainer-tools $drm_intel_ssh maintainer-tools
