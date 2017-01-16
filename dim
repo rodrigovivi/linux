@@ -439,8 +439,8 @@ function dim_rebuild_tip
 		exit 1
 	fi
 
-	echo -n "Fetching drm-tip (local remote $remote)... "
 	remote=$(url_to_remote $drm_tip_ssh)
+	echo -n "Fetching drm-tip (local remote $remote)... "
 	git_fetch_helper $remote
 	echo "Done."
 
