@@ -276,6 +276,39 @@ when it's tricky or something fails in the below procedure.
 
 And if any step fails or the conflict is tricky just ping maintainers.
 
+If the Conflict Reappears
+-------------------------
+
+In some odd cases git rerere fails to recognize the conflict, and doesn't store
+conflict resolution. This needs to be handled with a manual fixup patch, and the
+best way to go about this is:
+
+1. Try to resolve the conflict normally, but then running ::
+
+       $ dim rebuild-tip
+
+   fails. First, store the current state, including the conflict markers and
+   with no other changes applied::
+
+       $ cd $DIM_PREFIX/drm-tip
+       $ git add -u
+       $ git commmit
+
+2. Resolve the conflict normally, but don't stage it or commit it in any
+   fashion. Check that the resolution looks correct and removes all the conflict
+   markers you've just committed::
+
+       $ git diff
+
+   Then store it as a manual fixup patch::
+
+       $ git diff | dim cat-to-fixup
+
+   And finally rebuild the integration tree, which should now go through
+   smoothly, at least for this merge::
+
+       $ dim rebuild-tip
+
 Merge Timeline
 ==============
 

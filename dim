@@ -500,6 +500,11 @@ function dim_rebuild_tip
 			echo $fixup_file > .fixup_file_path
 
 			git merge --rerere-autoupdate --no-commit $sha1 >& /dev/null || true
+			# normalize conflict markers
+			if git grep -l '^>>>>>>> ' &> /dev/null ; then
+				git grep -l '^>>>>>>> ' | xargs sed -e "s/^>>>>>>> .*$/>>>>>>> $repo\/$branch/" -i
+			fi
+
 			if [ -f $fixup_file ] ; then
 				echo -n "Applying manual fixup patch for $integration_branch merge... "
 				patch -p1 -i $fixup_file
