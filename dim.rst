@@ -330,8 +330,9 @@ Run the given command in all active workdirs including the main repository under
 
 list-aliases
 ------------
-
 List all aliases for the subcommand names. Useful for autocompletion scripts.
+
+See \$dim_alias_<alias> under ENVIRONMENT below on how to define aliases.
 
 list-branches
 -------------
@@ -400,6 +401,14 @@ Path to a file containing a greeting template for pull request mails.
 DIM_TEMPLATE_SIGNATURE
 ----------------------
 Path to a file containing a signature template for pull request mails.
+
+dim_alias_<alias>
+-----------------
+Make **<alias>** an alias for the subcommand defined as the value. For example,
+`dim_alias_ub=update-branches`. There are some built-in aliases. Aliases can be
+listed using the **list-aliases** subcommand.
+
+The alias functionality requires **bash(1)** version 4.3 or later to work.
 
 CONTRIBUTING
 ============
