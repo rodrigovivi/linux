@@ -1598,9 +1598,9 @@ function dim_usage
 	echo "See '$dim help' for more information."
 }
 
-# dim subcommand aliases
-declare -n subcmd=dim_alias_${subcommand//-/_}
-if [ -z "$subcmd" ]; then
+# dim subcommand aliases (with bash 4.3+)
+if ! declare -n subcmd=dim_alias_${subcommand//-/_} &> /dev/null || \
+		test -z "$subcmd"; then
 	subcmd="$subcommand"
 fi
 
