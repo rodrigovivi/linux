@@ -93,6 +93,37 @@ Right now the only hard merge criteria are:
 * See also the extensive `committer guidelines for drm-intel
   <drm-intel.html#committer-guidelines>`_.
 
+Small Drivers
+=============
+
+Small drivers, where a full tree is overkill, can be maintained in drm-misc. For
+now it's just an experiment with a few drivers to figure out a working process.
+Slightly different rules apply:
+
+* Small is measured in patches merged per kernel release. The occasional big
+  patch series is still acceptable if it's not a common thing (e.g. new hw
+  enabling once a year), and if the series is really big (more than 20 patches)
+  it should probably be managed through a topic branch in drm-misc and with a
+  separate pull request to drm maintainer. dim_ supports this with the
+  create-branch command. Everything that doesn't justify a topic branch goes
+  into the normal drm-misc branches directly.
+
+* Group maintainership is assumed, i.e. all regular contributors (not just
+  the primary maintainer) will get commit rights.
+
+* Since even a broken driver is more useful than no driver minimal review
+  standards are a lot lower. The default should be some notes about what could
+  be improved in follow-up work and accepting patches by default. Maintainer
+  group for drivers can agree on stricter rules, especially when they have a
+  bigger user base that shouldn't suffer from regressions.
+
+* Minimal peer-review is also expected for drivers with just one contributor,
+  but obviously then only focuses on best practices for the interaction with drm
+  core and helpers. Plus a bit looking for common patterns in dealing with the
+  hardware, since display IP all has to handle the same issues in the end. In
+  most cases this will just along the lines of "Looks good, Ack".  drm-misc
+  maintainers will help out with getting that review market going.
+
 Tooling
 =======
 
