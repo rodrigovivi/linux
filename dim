@@ -1232,9 +1232,9 @@ function dim_pull_request
 		repo="drm-intel"
 	else
 		tag=$branch-$today
-		$DRY git tag -f $tag $branch@{upstream}
+		$DRY git tag -f -a $tag $branch@{upstream}
 		$DRY git push -f $remote $tag
-		prep_pull_mail
+		prep_pull_mail $tag
 
 		repo=`branch_to_repo $branch`
 	fi
