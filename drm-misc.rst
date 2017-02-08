@@ -20,6 +20,14 @@ reality, it is your assumed responsibility to update the rules.
 The workflow is heavily based upon the one used to maintain the Intel drm
 driver, see `drm-intel <drm-intel.html>`_:
 
+Getting Started
+===============
+
+First you need a `freedesktop.org account with the drm-misc group permission
+<https://www.freedesktop.org/wiki/AccountRequests/>`_. Then you need to setup the
+branches and tooling, see the `getting started with dim <dim.html#quickstart>`_
+guide.
+
 Branches
 ========
 
