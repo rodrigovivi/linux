@@ -502,7 +502,7 @@ function dim_rebuild_tip
 			git merge --rerere-autoupdate --no-commit $sha1 >& /dev/null || true
 			# normalize conflict markers
 			if git grep -l '^>>>>>>> ' &> /dev/null ; then
-				git grep -l '^>>>>>>> ' | xargs sed -e "s/^>>>>>>> .*$/>>>>>>> $repo\/$branch/" -i
+				git grep -l '^>>>>>>> ' | xargs sed -e "s|^>>>>>>> .*$|>>>>>>> $repo\/$branch|" -i
 			fi
 
 			if [ -f $fixup_file ] ; then
