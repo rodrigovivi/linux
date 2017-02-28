@@ -54,6 +54,13 @@ This will also check out the latest maintainer-tools branches, so please replace
 the dim you just downloaded with a symlink after this step. And by the way, if
 you have improvements for dim, please submit them to intel-gfx.
 
+If you have a freedesktop.org account and plan to push things on one of the
+drm-xxx repos, you should use the ssh://git.freedesktop.org/git/drm-xxx urls
+when adding a remote and, if it's not already done, you should add new entry in
+~/.ssh/config::
+
+    $ printf '\nHost git.freedesktop.org\n\tUser <username>' >> ~/.ssh/config
+
 You should now have a main repository for patch application. The directory
 corresponding to this repository is defined by DIM_DRM_INTEL in your .dimrc.
 You should also have directories called maintainer-tools, drm-tip (for
