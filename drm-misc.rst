@@ -72,7 +72,7 @@ Merge Criteria
 
 Right now the only hard merge criteria are:
 
-* Patch is properly reviewed or at least ack, i.e. don't just push your own
+* Patch is properly reviewed or at least Ack, i.e. don't just push your own
   stuff directly.
 
 * drm-misc is for drm core (non-driver) patches, subsystem-wide refactorings,
@@ -131,6 +131,16 @@ Slightly different rules apply:
   hardware, since display IP all has to handle the same issues in the end. In
   most cases this will just along the lines of "Looks good, Ack".  drm-misc
   maintainers will help out with getting that review market going.
+
+* Best practice for review: When you have some suggestions and comments for
+  future work, please make sure you don't forget your Ack tag to unblock the
+  original patch. And if you think something really must be fixed before
+  merging, please give a conditional Ack along the lines of "Fix
+  $specific_thing, with that addressed, Ack". The goal is to always have a clear
+  and reasonable speedy path towards getting the patch merged. For authors on
+  the other side, just do the minimal rework and push the patch, and do any
+  more involved rework in follow-up work. This way lenghty review cycles get
+  avoided, which are a drag for both reviewer and author.
 
 Tooling
 =======
