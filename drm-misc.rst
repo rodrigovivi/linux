@@ -139,7 +139,7 @@ Slightly different rules apply:
   $specific_thing, with that addressed, Ack". The goal is to always have a clear
   and reasonable speedy path towards getting the patch merged. For authors on
   the other side, just do the minimal rework and push the patch, and do any
-  more involved rework in follow-up work. This way lenghty review cycles get
+  more involved rework in follow-up work. This way lengthy review cycles get
   avoided, which are a drag for both reviewer and author.
 
 Tooling
