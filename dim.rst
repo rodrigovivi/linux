@@ -362,6 +362,12 @@ uptodate
 --------
 Try to check if you're running an up-to-date version of **dim**.
 
+retip [*branch*] [*git-rebase option* ...]
+------------------------------------------
+
+Rebase the given local branch, current branch by default, onto drm-tip. Options
+after the branch will be passed to **git-rebase**.
+
 help
 ----
 Show this help. Install **rst2man(1)** for best results.

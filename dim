@@ -345,6 +345,29 @@ function dim_commit_add_tag
 	done
 }
 
+# $1: branch [optional]
+function git_find_tip
+{
+	git log $1 -1 --format=%H --grep="^drm-tip: .* integration manifest$"
+}
+
+# $1: branch [optional]
+function dim_retip
+{
+	local branch upstream remote
+
+	branch="$1"
+	shift
+	remote=$(url_to_remote $drm_tip_ssh)
+	upstream=$(git_find_tip "$branch")
+
+	if [[ -z "$upstream" ]]; then
+		echoerr "$branch is not based on drm-tip"
+		return 1
+	fi
+
+	git rebase --onto $remote/drm-tip $upstream $branch "$@"
+}
 
 # update for-linux-next and for-linux-next-fixes branches
 function update_linux_next # branch next next-fixes fixes
