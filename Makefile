@@ -19,6 +19,30 @@ drm-intel.html: drm-intel.rst drm-intel-flow.svg drm-intel-timeline.rst drm-inte
 
 dim.html: dim.rst
 
+SC_EXCLUDE := \
+	-e SC1083 \
+	-e SC2001 \
+	-e SC2002 \
+	-e SC2003 \
+	-e SC2005 \
+	-e SC2006 \
+	-e SC2034 \
+	-e SC2035 \
+	-e SC2046 \
+	-e SC2053 \
+	-e SC2068 \
+	-e SC2070 \
+	-e SC2086 \
+	-e SC2089 \
+	-e SC2090 \
+	-e SC2119 \
+	-e SC2120 \
+	-e SC2126 \
+	-e SC2145
+
+shellcheck:
+	shellcheck $(SC_EXCLUDE) dim
+
 clean:
 	rm -f drm-intel.html drm-intel-flow.svg dim.html drm-misc.html
 
