@@ -257,7 +257,7 @@ function branch_to_repo # branch
 		local repo branch override
 		read repo branch override <<< $conf
 
-		if [[ $branch == $1 ]] ; then
+		if [[ "$branch" == "$1" ]] ; then
 			echo $repo
 		fi
 	done
