@@ -20,7 +20,6 @@ drm-intel.html: drm-intel.rst drm-intel-flow.svg drm-intel-timeline.rst drm-inte
 dim.html: dim.rst
 
 SC_EXCLUDE := \
-	-e SC1083 \
 	-e SC2001 \
 	-e SC2002 \
 	-e SC2005 \

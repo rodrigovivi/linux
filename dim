@@ -237,9 +237,10 @@ function url_to_remote # url
 
 function branch_to_remote # branch
 {
-	local remote
+	local branch remote
 
-	remote=`git rev-parse --abbrev-ref --symbolic-full-name $1@{upstream}`
+	branch=$1
+	remote=$(git rev-parse --abbrev-ref --symbolic-full-name "$branch@{upstream}")
 	remote=${remote%%/*}
 
 	echo $remote
@@ -280,7 +281,7 @@ function dim_uptodate
 		exit 1
 	fi
 
-	if ! git --git-dir=$DIM_PREFIX/maintainer-tools/.git show @{upstream}:dim |\
+	if ! git --git-dir=$DIM_PREFIX/maintainer-tools/.git show "@{upstream}:dim" |\
 			diff "$using" - >& /dev/null; then
 		echoerr "not running upstream version of the script."
 		exit 1
@@ -1365,7 +1366,7 @@ function dim_tag_next
 	cd $DIM_PREFIX/$DIM_DRM_INTEL
 	git fetch $DIM_DRM_INTEL_REMOTE
 
-	if [ $(git rev-parse drm-intel-next) == $(git rev-parse drm-intel-next@{u}) ] ; then
+	if [ $(git rev-parse drm-intel-next) == $(git rev-parse "drm-intel-next@{u}") ] ; then
 		echo "Tagging current drm-intel-next"
 
 		tag=drm-intel-next-$today
@@ -1403,14 +1404,14 @@ function dim_pull_request
 
 	if [ "$branch" = "drm-intel-next" ]; then
 		# drm-intel-next pulls have been tagged using dim update-next
-		drm_intel_next_tags=`git log $branch@{upstream} ^$upstream --decorate | grep "(.*tag: drm-intel-next-" | sed -e "s/^.*(.*tag: \(drm-intel-next-[^ ,]*\).*)$/\1/"`
+		drm_intel_next_tags=$(git log "$branch@{upstream}" ^$upstream --decorate | grep "(.*tag: drm-intel-next-" | sed -e "s/^.*(.*tag: \(drm-intel-next-[^ ,]*\).*)$/\1/")
 		prep_pull_mail $drm_intel_next_tags
-		tag=`git describe --all --exact $branch@{upstream}`
+		tag=$(git describe --all --exact "$branch@{upstream}")
 
 		repo="drm-intel"
 	else
 		tag=$branch-$today
-		$DRY git tag -f -a $tag $branch@{upstream}
+		$DRY git tag -f -a $tag "$branch@{upstream}"
 		$DRY git push -f $remote $tag
 		prep_pull_mail $tag
 
