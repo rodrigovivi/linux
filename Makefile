@@ -21,7 +21,6 @@ dim.html: dim.rst
 
 SC_EXCLUDE := \
 	-e SC2001 \
-	-e SC2002 \
 	-e SC2005 \
 	-e SC2006 \
 	-e SC2034 \

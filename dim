@@ -675,7 +675,7 @@ function dim_apply_branch
 		sob=-s
 	fi
 
-	cat $file | git am --scissors -3 $sob "$@"
+	git am --scissors -3 $sob "$@" $file
 
 	if [ -n "$message_id" ]; then
 		dim_commit_add_tag "Link: http://patchwork.freedesktop.org/patch/msgid/$message_id"
@@ -887,7 +887,7 @@ dim_alias_mrr=magic-rebase-resolve
 function dim_magic_rebase_resolve
 {
 	git diff HEAD | patch -p1 -R
-	cat .git/rebase-merge/patch | dim_magic_patch
+	dim_magic_patch < .git/rebase-merge/patch
 	make $DIM_MAKE_OPTIONS
 	git add -u
 	git rebase --continue
