@@ -704,7 +704,7 @@ function dim_add_link
 
 	rm -f $file
 
-	if [ -n $message_id ]; then
+	if [[ -n "$message_id" ]]; then
 		dim_commit_add_tag "Link: http://patchwork.freedesktop.org/patch/msgid/$message_id"
 	else
 		echoerr "No message-id found in the patch file."

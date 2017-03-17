@@ -31,7 +31,6 @@ SC_EXCLUDE := \
 	-e SC2046 \
 	-e SC2053 \
 	-e SC2068 \
-	-e SC2070 \
 	-e SC2086 \
 	-e SC2089 \
 	-e SC2090 \
