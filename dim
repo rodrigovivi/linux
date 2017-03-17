@@ -1216,7 +1216,7 @@ function prep_pull_mail_overview
 	if [ "$#" = "0" ]; then
 		echo "*** insert pull request overview here ***"
 	else
-		for tag in $@ ; do
+		for tag in "$@"; do
 			obj=`git rev-parse $tag`
 			if [[ `git cat-file -t $obj` == "tag" ]] ; then
 				echo $tag:
@@ -1231,7 +1231,7 @@ function prep_pull_mail_overview
 function prep_pull_mail
 {
 	prep_pull_mail_greetings > ~/tmp/dim-pull-request
-	prep_pull_mail_overview $@ >> ~/tmp/dim-pull-request
+	prep_pull_mail_overview "$@" >> ~/tmp/dim-pull-request
 	prep_pull_mail_signature >> ~/tmp/dim-pull-request
 }
 
@@ -1273,11 +1273,11 @@ dim_alias_fw=for-each-workdirs
 function dim_for_each_workdirs
 {
 	cd $DIM_PREFIX/$DIM_DRM_INTEL
-	$@
+	"$@"
 	for branch in $dim_branches ; do
 		if [[ -d $DIM_PREFIX/$branch ]] ; then
 			cd $DIM_PREFIX/$branch
-			$@
+			"$@"
 		fi
 	done
 }
