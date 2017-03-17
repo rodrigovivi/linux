@@ -124,7 +124,7 @@ HELP=
 
 function echoerr
 {
-	echo "$dim: $@" >&2
+	echo "$dim: $*" >&2
 }
 
 function warn_or_fail

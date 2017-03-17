@@ -35,8 +35,7 @@ SC_EXCLUDE := \
 	-e SC2090 \
 	-e SC2119 \
 	-e SC2120 \
-	-e SC2126 \
-	-e SC2145
+	-e SC2126
 
 shellcheck:
 	shellcheck $(SC_EXCLUDE) dim
