@@ -157,7 +157,7 @@ while getopts hdfi opt; do
 			exit
 	esac
 done
-shift `expr $OPTIND - 1`
+shift $((OPTIND - 1))
 
 # first positional argument is the subcommand
 if [ -n "$HELP" -o "$#" = "0" ]; then
