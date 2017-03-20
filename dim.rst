@@ -182,12 +182,42 @@ apply-queued|aq [*git am arguments*]
 Applies a patch to -fixes, -next-fixes or -next-queued respectively, complains
 if it's not the right branch. Additional arguments are passed to git am.
 
+extract-tags *branch* [*git-rangeish*]
+--------------------------------------
+
+extract-queued [*git-rangeish*]
+-------------------------------
+
+extract-fixes [*git-rangeish*]
+------------------------------
+
+extract-next-fixes [*git-rangeish*]
+-----------------------------------
+
+This extracts various tags (eg. Reviwed-by:) from emails and applies them to the
+top commit on the given branch. You can give the comamnd a rangeish to add the
+tags from the same email to multiple already applied patches.
+
 magic-patch|mp [-a]
 -------------------
 Apply a patch using patch and then wiggle in any conflicts. When passing the
 option -a automatically changes the working directory into the git repository
 used by the last previous branch-specific command. This is useful with the
 per-branch workdir model.
+
+add-link *branch*
+-----------------
+
+add-link-queued
+---------------
+
+add-link-fixes
+--------------
+
+add-link-next-fixes
+-------------------
+
+This command adds the Link: tag (for patches that failed to apply directly).
 
 magic-rebase-resolve|mrr
 ------------------------
