@@ -1300,13 +1300,14 @@ function dim_update_next
 	remote=$(url_to_remote $drm_tip_ssh)
 
 	git pull --ff-only
+	git fetch drm-tip
 
 	if ! git branch --merged $remote/drm-tip | grep -q drm-intel-fixes ; then
-		echo "drm-intel-fixes not merged into -nigthly, please update!"
+		echo "drm-intel-fixes not merged into drm-tip, please update!"
 		exit 2
 	fi
 	if ! git branch --merged $remote/drm-tip | grep -q drm-intel-next-queued ; then
-		echo "drm-intel-next-queued not merged into -nigthly, please update!"
+		echo "drm-intel-next-queued not merged into drm-tip, please update!"
 		exit 2
 	fi
 
