@@ -494,7 +494,7 @@ function dim_rebuild_tip
 	rerere=$DIM_PREFIX/drm-rerere
 
 	cd $rerere
-	if [[ $(git status --porcelain | grep -v "^[ ?][ ?]" | wc -l) -gt 0 ]]; then
+	if git status --porcelain | grep -q -v "^[ ?][ ?]"; then
 		warn_or_fail "integration configuration file $integration_config not commited"
 	fi
 

@@ -26,7 +26,6 @@ SC_EXCLUDE := \
 	-e SC2086 \
 	-e SC2119 \
 	-e SC2120 \
-	-e SC2126 \
 	-e SC2143
 
 shellcheck:
