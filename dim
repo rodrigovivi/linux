@@ -388,7 +388,13 @@ function dim_retip
 	local branch upstream remote
 
 	branch="$1"
-	shift
+
+	if [ -n "$branch" ] ; then
+		shift
+	else
+		branch=$(git symbolic-ref --short HEAD)
+	fi
+
 	remote=$(url_to_remote $drm_tip_ssh)
 	upstream=$(git_find_tip "$branch")
 
