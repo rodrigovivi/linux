@@ -104,7 +104,7 @@ function read_integration_config
 	dim_branches=
 	for conf in "${drm_tip_config[@]}"; do
 		local repo branch override
-		read repo branch override <<< $conf
+		read -r repo branch override <<< $conf
 		if [[ "$repo" = "drm-intel" || "$repo" = "drm-misc" ]]; then
 			dim_branches="$dim_branches $branch"
 		fi
@@ -255,7 +255,7 @@ function branch_to_repo # branch
 {
 	for conf in "${drm_tip_config[@]}"; do
 		local repo branch override
-		read repo branch override <<< $conf
+		read -r repo branch override <<< $conf
 
 		if [[ "$branch" == "$1" ]] ; then
 			echo $repo
@@ -521,7 +521,7 @@ function dim_rebuild_tip
 	for conf in "${drm_tip_config[@]}"; do
 		local branch override sha1 fixup_file
 
-		read repo branch override <<< $conf
+		read -r repo branch override <<< $conf
 		url=${drm_tip_repos[$repo]}
 		remote=$(url_to_remote $url)
 		sha1=$remote/$branch
