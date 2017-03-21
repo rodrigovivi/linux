@@ -38,7 +38,8 @@ set -e
 # dim configuration file
 DIM_CONFIG=${DIM_CONFIG:-$HOME/.dimrc}
 if [ -r $DIM_CONFIG ]; then
-    . $DIM_CONFIG
+	# shellcheck source=/dev/null
+	. $DIM_CONFIG
 fi
 
 # prefix for repo directories
@@ -98,6 +99,7 @@ function read_integration_config
 	declare -g -a drm_tip_config
 
 	if [ -r $DIM_PREFIX/drm-rerere/$integration_config ]; then
+		# shellcheck source=/dev/null
 		source $DIM_PREFIX/drm-rerere/$integration_config
 	fi
 
