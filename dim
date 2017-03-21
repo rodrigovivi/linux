@@ -139,6 +139,12 @@ function warn_or_fail
 	fi
 }
 
+function pause
+{
+	read -rsp "Press any key to continue..." -n1 key2
+	echo
+}
+
 while getopts hdfi opt; do
 	case "$opt" in
 		d)
@@ -149,7 +155,7 @@ while getopts hdfi opt; do
 			FORCE=1
 			;;
 		i)
-			INTERACTIVE='eval read -rsp "Press any key to continue..." -n1 key2; echo'
+			INTERACTIVE=pause
 			;;
 		h)
 			HELP=1
