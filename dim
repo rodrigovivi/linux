@@ -1329,7 +1329,7 @@ function dim_update_next
 
 function dim_update_next_continue
 {
-	local remote
+	local remote suffix tag tag_testing
 
 	assert_branch drm-intel-next-queued
 
@@ -1337,13 +1337,20 @@ function dim_update_next_continue
 
 	git push $DRY_RUN -f $DIM_DRM_INTEL_REMOTE drm-intel-next-queued:drm-intel-next
 	tag=drm-intel-next-$today
-	$DRY git tag -f -a $tag $DIM_DRM_INTEL_REMOTE/drm-intel-next
-	git push $DRY_RUN -f $DIM_DRM_INTEL_REMOTE $tag
+	tag=drm-intel-testing-$today
+
+	while git tag -l $tag | grep -q $tag ; do
+		tag="drm-intel-next-$today-$((++suffix))"
+		tag_testing="drm-intel-testing-$today-$((++suffix))"
+	done
+
+	$DRY git tag -a $tag $DIM_DRM_INTEL_REMOTE/drm-intel-next
+	git push $DRY_RUN $DIM_DRM_INTEL_REMOTE $tag
 
 	echo "Updating drm-intel-testing to latest drm-tip"
 	git push $DRY_RUN $DIM_DRM_INTEL_REMOTE +$remote/drm-tip:drm-intel-testing
-	$DRY git tag -f drm-intel-testing-$today $DIM_DRM_INTEL_REMOTE/drm-intel-testing
-	$DRY git push -f $DIM_DRM_INTEL_REMOTE drm-intel-testing-$today
+	$DRY git tag $tag_testing $DIM_DRM_INTEL_REMOTE/drm-intel-testing
+	$DRY git push $DIM_DRM_INTEL_REMOTE $tag_testing
 
 	cat > ~/tmp/test-request <<-HERE
 		Hi all,
@@ -1372,6 +1379,8 @@ function dim_update_next_continue
 
 function dim_tag_next
 {
+	local tag suffix
+
 	cd $DIM_PREFIX/$DIM_DRM_INTEL
 	git fetch $DIM_DRM_INTEL_REMOTE
 
@@ -1379,8 +1388,12 @@ function dim_tag_next
 		echo "Tagging current drm-intel-next"
 
 		tag=drm-intel-next-$today
-		$DRY git tag -f $tag $DIM_DRM_INTEL_REMOTE/drm-intel-next
-		git push $DRY_RUN -f $DIM_DRM_INTEL_REMOTE $tag
+		while git tag -l $tag | grep -q $tag ; do
+			tag="drm-intel-next-$today-$((++suffix))"
+		done
+
+		$DRY git tag $tag $DIM_DRM_INTEL_REMOTE/drm-intel-next
+		git push $DRY_RUN $DIM_DRM_INTEL_REMOTE $tag
 	else
 		echo "drm-intel-next not up-to-date, aborting"
 		exit
@@ -1391,7 +1404,7 @@ function dim_tag_next
 # dim_pull_request branch upstream
 function dim_pull_request
 {
-	local branch upstream remote repo url git_url
+	local branch upstream remote repo url git_url suffix tag
 
 	if [[ "x$1" = "x" || "x$2" = "x" ]]; then
 		echo "usage: $dim $subcommand branch upstream"
@@ -1420,9 +1433,14 @@ function dim_pull_request
 		repo="drm-intel"
 	else
 		tag=$branch-$today
+
+		while git tag -l $tag | grep -q $tag ; do
+			tag="$branch-$today-$((++suffix))"
+		done
+
 		gitk "$branch@{upstream}" ^$upstream &
-		$DRY git tag -f -a $tag "$branch@{upstream}"
-		$DRY git push -f $remote $tag
+		$DRY git tag -a $tag "$branch@{upstream}"
+		$DRY git push $remote $tag
 		prep_pull_mail $tag
 
 		repo=$(branch_to_repo $branch)
