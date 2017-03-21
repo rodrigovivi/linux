@@ -160,7 +160,7 @@ done
 shift $((OPTIND - 1))
 
 # first positional argument is the subcommand
-if [ -n "$HELP" -o "$#" = "0" ]; then
+if [ -n "$HELP" ] || [ "$#" = "0" ]; then
     subcommand="usage"
 else
     subcommand="$1"
@@ -178,7 +178,7 @@ if [[ -n "$__dim_running" ]]; then
 fi
 export __dim_running=1
 
-if [ "$subcommand" != "setup" -a "$subcommand" != "help" -a "$subcommand" != "usage" ]; then
+if [ "$subcommand" != "setup" ] && [ "$subcommand" != "help" ] && [ "$subcommand" != "usage" ]; then
 	for d in $DIM_PREFIX $DIM_PREFIX/$DIM_DRM_INTEL $DIM_PREFIX/drm-rerere $DIM_PREFIX/drm-tip; do
 		if [ ! -d $d ]; then
 			echo "$d is missing, please check your configuration and/or run dim setup"
