@@ -667,7 +667,7 @@ dim_alias_ab=apply-branch
 dim_alias_sob=apply-branch
 function dim_apply_branch
 {
-	local branch file message_id commiter_email patch_from sob
+	local branch file message_id commiter_email patch_from sob rv
 
 	branch=$1
 	shift
@@ -694,13 +694,18 @@ function dim_apply_branch
 	if [ -n "$message_id" ]; then
 		dim_commit_add_tag "Link: http://patchwork.freedesktop.org/patch/msgid/$message_id"
 	else
-		echo "No message-id found in the patch file."
+		echoerr "WARNING: No message-id found in the patch file."
+		rv=1
 	fi
 
-	checkpatch_commit HEAD || true
+	if ! checkpatch_commit HEAD; then
+		rv=1
+	fi
 	check_maintainer $branch HEAD
 
 	eval $DRY $DIM_POST_APPLY_ACTION
+
+	return $rv
 }
 
 function dim_add_link
