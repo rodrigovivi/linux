@@ -1091,10 +1091,7 @@ function checkpatch_commit
 	git --no-pager log --oneline -1 $commit
 	$cmd | scripts/checkpatch.pl -q --emacs --strict - || true
 
-	# FIXME: this relies on local assignment not failing on command
-	# substitution failures
-	bug_lines=$($cmd | grep -m 1 -B 1 '^\+.*\WBUG' | grep -c '^[+-].*\WBUG')
-	if test "$bug_lines" -eq 1; then
+	if bug_lines=$($cmd | grep -m 1 -B 1 '^\+.*\WBUG' | grep -c '^[+-].*\WBUG') && [[ "$bug_lines" = "1" ]]; then
 		warn_or_fail "New BUG macro added"
 	fi
 
