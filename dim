@@ -701,7 +701,9 @@ function dim_apply_branch
 	if ! checkpatch_commit HEAD; then
 		rv=1
 	fi
-	check_maintainer $branch HEAD
+	if ! check_maintainer $branch HEAD; then
+		rv=1
+	fi
 
 	eval $DRY $DIM_POST_APPLY_ACTION
 
@@ -1090,7 +1092,7 @@ function dim_conf
 # $2 commit
 function check_maintainer
 {
-	local branch commit
+	local branch commit rv
 
 	branch=$1
 	commit=$2
@@ -1101,8 +1103,11 @@ function check_maintainer
 			echo -e "The following files are outside of i915 maintenance scope:\n"
 			echo "$non_i915_files"
 			echo -e "\nConfirm you have appropriate Acked-by and Reviewed-by for above files."
+			rv=1
 		fi
 	fi
+
+	return $rv
 }
 
 # $1 is the git sha1 to check
