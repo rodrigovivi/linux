@@ -1179,13 +1179,17 @@ dim_alias_check_patch=checkpatch
 dim_alias_cp=checkpatch
 function dim_checkpatch
 {
-	local range
+	local range rv
 
 	range=$(rangeish "$1")
 
 	for commit in $(git rev-list --reverse $range); do
-		checkpatch_commit $commit || true
+		if ! checkpatch_commit $commit; then
+			rv=1
+		fi
 	done
+
+	return $rv
 }
 
 function dim_sparse
