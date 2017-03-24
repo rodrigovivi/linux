@@ -3,7 +3,7 @@
 dim ()
 {
 	if [[ "x$1" = "xcd" ]]; then
-		cd `cat ~/.dim-last-path`
+		cd $(cat ~/.dim-last-path) || exit
 	else
 		command dim "$@"
 	fi
@@ -12,6 +12,7 @@ dim ()
 _dim ()
 {
 	local args arg cur prev words cword split
+	local nightly_branches upstream_branches opts cmds aliasref
 
 	# require bash-completion with _init_completion
 	type -t _init_completion >/dev/null 2>&1 || return
@@ -26,18 +27,18 @@ _dim ()
 	# args = number of arguments
 	_count_args
 
-	local nightly_branches="$(dim list-branches)"
-	local upstream_branches="$(dim list-upstreams)"
+	nightly_branches="$(dim list-branches)"
+	upstream_branches="$(dim list-upstreams)"
 
 	if [ -z "${arg}" ]; then
 		# top level completion
 		case "${cur}" in
 			-*)
-				local opts="-d -f -i"
+				opts="-d -f -i"
 				COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
 				;;
 			*)
-				local cmds="$(dim list-commands) $(dim list-aliases | sed 's/\t.*//')"
+				cmds="$(dim list-commands) $(dim list-aliases | sed 's/\t.*//')"
 				COMPREPLY=( $(compgen -W "${cmds}" -- ${cur}) )
 				;;
 		esac
@@ -45,7 +46,7 @@ _dim ()
 	fi
 
 	# complete aliases like the actual command
-	local aliasref=$(dim list-aliases | sed -n "s/^${arg}\t\(.*\)/\1/p")
+	aliasref=$(dim list-aliases | sed -n "s/^${arg}\t\(.*\)/\1/p")
 	if [[ -n "$aliasref" ]]; then
 		arg="$aliasref"
 	fi

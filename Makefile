@@ -30,7 +30,7 @@ SC_EXCLUDE := \
 	-e SC2143
 
 shellcheck:
-	shellcheck $(SC_EXCLUDE) dim
+	shellcheck $(SC_EXCLUDE) dim bash_completion
 
 clean:
 	rm -f drm-intel.html drm-intel-flow.svg dim.html drm-misc.html
