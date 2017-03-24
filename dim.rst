@@ -101,8 +101,52 @@ OPTIONS
 COMMANDS
 ========
 
-Many of the commands have default aliases. See **dim list-aliases** for the list
-of aliases.
+The commands are grouped by target audiences and functionality below. Many of
+the commands have default aliases. See **dim list-aliases** for the list of
+aliases.
+
+COMMANDS FOR DEVELOPERS
+=======================
+
+tc *commit-ish*
+---------------
+Print the oldest Linux kernel release or -rc tag that contains the supplied
+*commit-ish*, or, if none do, print the upstream branches that contain it.
+
+cite *commit-ish*
+-----------------
+Cite the supplied *commit-ish* in format 'sha1 ("commit subject")'.
+
+fixes *commit-ish*
+------------------
+Print the Fixes: and Cc: lines for the supplied *commit-ish* in the linux kernel
+CodingStyle approved format.
+
+checkpatch [*commit-ish* [.. *commit-ish*]]
+-------------------------------------------
+Runs the given commit range commit-ish..commit-ish through the check tools.
+
+If no commit-ish is passed, defaults to HEAD^..HEAD. If one commit-ish is passed
+instead of a range, the range commit-ish..HEAD is used.
+
+sparse [*commit-ish* [.. *commit-ish*]]
+---------------------------------------
+Run sparse on the files changed by the given commit range.
+
+If no commit-ish is passed, defaults to HEAD^..HEAD. If one commit-ish is passed
+instead of a range, the range commit-ish..HEAD is used.
+
+checker
+-------
+Run sparse on drm/i915.
+
+retip [*branch*] [*git-rebase option* ...]
+------------------------------------------
+Rebase the given local branch, current branch by default, onto drm-tip. Options
+after the branch will be passed to **git-rebase**.
+
+COMMANDS FOR COMMITTERS AND MAINTAINERS
+=======================================
 
 setup *prefix*
 --------------
@@ -115,44 +159,14 @@ maintainers and committers pushed patches meanwhile.
 
 status
 ------
-
 Lists all branches with unmerged patches, and how many patches are unmerged.
 
-rebuild-tip
------------
-Rebuild and push the integration tree.
-
-revert-rerere *rerere-cache-commit-ish*
----------------------------------------
-
-When a stored conflict resolution in the integration tree is wrong, this command
-can be used to fix up the mess. First figure out which commit in the
-*rerere-cache* branch contains the bogus conflict resolution, then revert it
-using this command. This ensures the resolution is also purged from any local
-caches, to make sure it doesn't get resurrected. Then run *rebuild-tip* to
-redo the merges, correctly.
-
-cat-to-fixup
-------------
-
-Pipes stdin into the fixup patch file for the current drm-tip merge.
-
-push-branch branch [*git push arguments*]
------------------------------------------
-Updates the named branch. Complains if that's not the current branch, assuming
-that patches got merged to the wrong branch. After pushing also updates
-linux-next and drm-tip branches.
-
-push-fixes [*git push arguments*]
----------------------------------
-
-push-next-fixes [*git push arguments*]
---------------------------------------
-
-push-queued [*git push arguments*]
-----------------------------------
-**push-branch** shorthands for *drm-intel-fixes*, *drm-intel-next-fixes*, and
-*drm-intel-next-queued* branches respectively.
+cd
+--
+Changes the working directory into the git repository used by the last previous
+branch-specific command. This is implemented as a bash-function to make it
+useful in interactive shells and scripts. Only available when the bash
+completion is sourced.
 
 checkout *branch*
 -----------------
@@ -201,6 +215,43 @@ extract-queued [*git-rangeish*]
 **extract-tags** shorthands for *drm-intel-fixes*, *drm-intel-next-fixes*, and
 *drm-intel-next-queued* branches respectively.
 
+push-branch branch [*git push arguments*]
+-----------------------------------------
+Updates the named branch. Complains if that's not the current branch, assuming
+that patches got merged to the wrong branch. After pushing also updates
+linux-next and drm-tip branches.
+
+push-fixes [*git push arguments*]
+---------------------------------
+
+push-next-fixes [*git push arguments*]
+--------------------------------------
+
+push-queued [*git push arguments*]
+----------------------------------
+**push-branch** shorthands for *drm-intel-fixes*, *drm-intel-next-fixes*, and
+*drm-intel-next-queued* branches respectively.
+
+rebuild-tip
+-----------
+Rebuild and push the integration tree.
+
+ADVANCED COMMANDS FOR COMMITTERS AND MAINTAINERS
+================================================
+
+revert-rerere *rerere-cache-commit-ish*
+---------------------------------------
+When a stored conflict resolution in the integration tree is wrong, this command
+can be used to fix up the mess. First figure out which commit in the
+*rerere-cache* branch contains the bogus conflict resolution, then revert it
+using this command. This ensures the resolution is also purged from any local
+caches, to make sure it doesn't get resurrected. Then run *rebuild-tip* to redo
+the merges, correctly.
+
+cat-to-fixup
+------------
+Pipes stdin into the fixup patch file for the current drm-tip merge.
+
 magic-patch [-a]
 ----------------
 Apply a patch using patch and then wiggle in any conflicts. When passing the
@@ -229,35 +280,39 @@ Tries to resolve a rebase conflict by first resetting the tree
 and the using the magic patch tool. Then builds the tree, adds
 any changes with git add -u and continues the rebase.
 
-cd
---
-Changes the working directory into the git repository used by the last previous
-branch-specific command. This is implemented as a bash-function to make it
-useful in interactive shells and scripts. Only available when the bash
-completion is sourced.
-
 apply-resolved
 --------------
 Compile-test the current tree and if successfully resolve a
 confilicted git am. Also runs the patch checker afterwards.
 
-tc *commit-ish*
----------------
-Print the oldest Linux kernel release or -rc tag that contains the supplied
-*commit-ish*, or, if none do, print the upstream branches that contain it.
+create-branch *branch* [*commit-ish*]
+-------------------------------------
+Create a new topic branch with the given name. Note that topic/ is not
+automatically prepended. The branch starts at HEAD or the given commit-ish. Note
+that by default the new branch is created in the drm-intel.git repository. If
+you want to create a branch somewhere else, then you need to prepend the remote
+name from nigthly.conf, e.g. "drm-misc/topic/branch".
 
-cite *commit-ish*
------------------
-Cite the supplied *commit-ish* in format 'sha1 ("commit subject")'.
+remove-branch *branch*
+----------------------
+Remove the given topic branch.
 
-fixes *commit-ish*
-------------------
-Print the Fixes: and Cc: lines for the supplied *commit-ish* in the linux kernel
-CodingStyle approved format.
+create-workdir (*branch* | all)
+-------------------------------
+Create a separate workdir for the branch with the given name (requires that
+git-new-workdir from git-core contrib is installed), or for all branches if
+"all" is given.
+
+for-each-workdir|fw *command*
+-----------------------------
+Run the given command in all active workdirs including the main repository under
+\$DIM_DRM_INTEL.
+
+COMMANDS FOR MAINTAINERS
+========================
 
 cherry-pick *commit-ish* [*git cherry-pick arguments*]
 ------------------------------------------------------
-
 Improved git cherry-pick version which also scans drm-tip picked, too. In
 dry-run mode/-d only the patch list is generated.
 
@@ -266,7 +321,6 @@ cherry-pick-fixes
 
 cherry-pick-next-fixes
 ----------------------
-
 Look for non-upstreamed fixes (commits tagged Cc: stable@vger.kernel.org or Cc:
 drm-intel-fixes@lists.freedesktop.org) in drm-intel-next-queued, and try to
 cherry-pick them to drm-intel-fixes or drm-intel-next-fixes.
@@ -314,56 +368,13 @@ merged into drm-tip to avoid operator error.
 
 tag-next
 --------
-
 Pushes a new tag for the current drm-intel-next state after checking that the
 remote is up-to-date. Useful if drm-intel-next has been changed since the last
 run of the update-next command (e.g. to apply a hotfix before sending out the
 pull request).
 
-checkpatch [*commit-ish* [.. *commit-ish*]]
--------------------------------------------
-Runs the given commit range commit-ish..commit-ish through the check tools.
-
-If no commit-ish is passed, defaults to HEAD^..HEAD. If one commit-ish is passed
-instead of a range, the range commit-ish..HEAD is used.
-
-sparse [*commit-ish* [.. *commit-ish*]]
----------------------------------------
-Run sparse on the files changed by the given commit range.
-
-If no commit-ish is passed, defaults to HEAD^..HEAD. If one commit-ish is passed
-instead of a range, the range commit-ish..HEAD is used.
-
-checker
--------
-Run sparse on drm/i915.
-
-create-branch *branch* [*commit-ish*]
--------------------------------------
-
-Create a new topic branch with the given name. Note that topic/ is not
-automatically prepended. The branch starts at HEAD or the given commit-ish. Note
-that by default the new branch is created in the drm-intel.git repository. If
-you want to create a branch somewhere else, then you need to prepend the remote
-name from nigthly.conf, e.g. "drm-misc/topic/branch".
-
-remove-branch *branch*
-----------------------
-
-Remove the given topic branch.
-
-create-workdir (*branch* | all)
--------------------------------
-
-Create a separate workdir for the branch with the given name (requires that
-git-new-workdir from git-core contrib is installed), or for all branches if
-"all" is given.
-
-for-each-workdir|fw *command*
------------------------------
-
-Run the given command in all active workdirs including the main repository under
-\$DIM_DRM_INTEL.
+DIM HELP COMMANDS
+=================
 
 list-aliases
 ------------
@@ -373,18 +384,15 @@ See \$dim_alias_<alias> under ENVIRONMENT below on how to define aliases.
 
 list-branches
 -------------
-
 List all branches (main and topic) managed by dim. Useful for autocompletion
 scripts.
 
 list-commands
 -------------
-
 List all subcommand names, including aliases. Useful for autocompletion scripts.
 
 list-upstreams
 --------------
-
 List of all upstreams commonly used for pull requests. Useful for autocompletion
 scripts.
 
@@ -392,19 +400,12 @@ uptodate
 --------
 Try to check if you're running an up-to-date version of **dim**.
 
-retip [*branch*] [*git-rebase option* ...]
-------------------------------------------
-
-Rebase the given local branch, current branch by default, onto drm-tip. Options
-after the branch will be passed to **git-rebase**.
-
 help
 ----
 Show this help. Install **rst2man(1)** for best results.
 
 usage
 -----
-
 Short form usage help listening all subcommands. Run by default or if an unknown
 subcommand was passed on the cmdline.
 
