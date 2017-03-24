@@ -1840,11 +1840,12 @@ if ! declare -n subcmd=dim_alias_${subcommand//-/_} &> /dev/null || \
 	subcmd="$subcommand"
 fi
 
-# if there's a function by the subcommand name, call it
+# look up the function by the subcommand name
 subcmd_func=dim_${subcmd//-/_}
-if declare -f $subcmd_func >/dev/null; then
-	$subcmd_func "$@"
-else
+if ! declare -f $subcmd_func >/dev/null; then
 	echoerr "'$subcommand' is not a dim command."
 	dim_usage
+	exit 1
 fi
+
+$subcmd_func "$@"
