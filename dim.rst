@@ -456,10 +456,15 @@ The alias functionality requires **bash(1)** version 4.3 or later to work.
 CONTRIBUTING
 ============
 
-Submit patches for any of the maintainer tools to
-intel-gfx@lists.freedesktop.org with [maintainer-tools PATCH] prefix. Use
+Submit patches for any of the maintainer tools to the
+intel-gfx@lists.freedesktop.org mailing list with [maintainer-tools PATCH]
+prefix. Use::
 
-$ git format-patch --subject-prefix="maintainer-tools PATCH"
+  $ git format-patch --subject-prefix="maintainer-tools PATCH"
 
-for that. Push them once you have
-an ack from maintainers (Jani/Daniel).
+for that. Please make sure your patches pass the build and self tests by
+running::
+
+  $ make check
+
+Push the patches once you have an ack from maintainers (Jani/Daniel).

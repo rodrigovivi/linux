@@ -32,6 +32,15 @@ SC_EXCLUDE := \
 shellcheck:
 	shellcheck $(SC_EXCLUDE) dim bash_completion
 
+mancheck:
+	@for cmd in $$(dim list-commands); do \
+		if ! grep -q "^$$cmd" dim.rst; then \
+			echo "$@: $$cmd not documented"; \
+		fi \
+	done
+
+check: shellcheck mancheck all
+
 clean:
 	rm -f drm-intel.html drm-intel-flow.svg dim.html drm-misc.html
 
