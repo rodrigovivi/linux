@@ -139,6 +139,9 @@ Pipes stdin into the fixup patch file for the current drm-tip merge.
 
 push-branch branch [*git push arguments*]
 -----------------------------------------
+Updates the named branch. Complains if that's not the current branch, assuming
+that patches got merged to the wrong branch. After pushing also updates
+linux-next and drm-tip branches.
 
 push-fixes [*git push arguments*]
 ---------------------------------
@@ -148,31 +151,27 @@ push-next-fixes [*git push arguments*]
 
 push-queued [*git push arguments*]
 ----------------------------------
-
-Updates the named branch, or drm-intel-fixes, drm-intel-next-fixes or the
-drm-intel-next-queued branch respectively. Complains if that's not the current
-branch, assuming that patches got merged to the wrong branch. After pushing also
-updates linux-next and drm-tip branches.
+**push-branch** shorthands for *drm-intel-fixes*, *drm-intel-next-fixes*, and
+*drm-intel-next-queued* branches respectively.
 
 checkout *branch*
 -----------------
 Checks out the named branch.
-
-conq
-----
 
 cof
 ---
 
 conf
 ----
-Checks out the drm-intel-fixes branch, dinf or dinq respectively for merging
-patches.
+
+conq
+----
+**checkout** shorthands for *drm-intel-fixes*, *drm-intel-next-fixes*, and
+*drm-intel-next-queued* branches respectively.
 
 apply-branch branch [*git am arguments*]
 ----------------------------------------
-Applys a patch to the given branch, complaining if it is not
-checked out yet.
+Applys a patch to the given branch, complaining if it is not checked out yet.
 
 apply-fixes [*git am arguments*]
 --------------------------------
@@ -182,14 +181,14 @@ apply-next-fixes [*git am arguments*]
 
 apply-queued [*git am arguments*]
 ---------------------------------
-Applies a patch to -fixes, -next-fixes or -next-queued respectively, complains
-if it's not the right branch. Additional arguments are passed to git am.
+**apply-branch** shorthands for *drm-intel-fixes*, *drm-intel-next-fixes*, and
+*drm-intel-next-queued* branches respectively.
 
 extract-tags *branch* [*git-rangeish*]
 --------------------------------------
-
-extract-queued [*git-rangeish*]
--------------------------------
+This extracts various tags (eg. Reviwed-by:) from emails and applies them to the
+top commit on the given branch. You can give the command a rangeish to add the
+tags from the same email to multiple already applied patches.
 
 extract-fixes [*git-rangeish*]
 ------------------------------
@@ -197,9 +196,10 @@ extract-fixes [*git-rangeish*]
 extract-next-fixes [*git-rangeish*]
 -----------------------------------
 
-This extracts various tags (eg. Reviwed-by:) from emails and applies them to the
-top commit on the given branch. You can give the comamnd a rangeish to add the
-tags from the same email to multiple already applied patches.
+extract-queued [*git-rangeish*]
+-------------------------------
+**extract-tags** shorthands for *drm-intel-fixes*, *drm-intel-next-fixes*, and
+*drm-intel-next-queued* branches respectively.
 
 magic-patch [-a]
 ----------------
@@ -210,9 +210,7 @@ per-branch workdir model.
 
 add-link *branch*
 -----------------
-
-add-link-queued
----------------
+This command adds the Link: tag (for patches that failed to apply directly).
 
 add-link-fixes
 --------------
@@ -220,7 +218,10 @@ add-link-fixes
 add-link-next-fixes
 -------------------
 
-This command adds the Link: tag (for patches that failed to apply directly).
+add-link-queued
+---------------
+**add-link** shorthands for *drm-intel-fixes*, *drm-intel-next-fixes*, and
+*drm-intel-next-queued* branches respectively.
 
 magic-rebase-resolve
 --------------------
@@ -282,13 +283,13 @@ regenerated with the same commands if something goes wrong.
 
 pull-request-fixes [*upstream*]
 -------------------------------
-This is a special case of **pull-request**, with *drm-intel-fixes* as the
-branch and *origin/master* as the default upstream.
+**pull-request** shorthand for *drm-intel-fixes* as the branch and
+*origin/master* as the default upstream.
 
 pull-request-next-fixes [*upstream*]
 ------------------------------------
-This is a special case of **pull-request**, with *drm-intel-next-fixes* as
-the branch and *\$DRM_UPSTREAM/drm-next* as the default upstream.
+**pull-request** shorthand for *drm-intel-next-fixes* as the branch and
+*\$DRM_UPSTREAM/drm-next* as the default upstream.
 
 pull-request-next [*upstream*]
 ------------------------------
