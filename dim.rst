@@ -240,10 +240,6 @@ apply-resolved
 Compile-test the current tree and if successfully resolve a
 confilicted git am. Also runs the patch checker afterwards.
 
-apply-igt
----------
-Apply a patch to the i-g-t repository.
-
 tc *commit-ish*
 ---------------
 Print the oldest Linux kernel release or -rc tag that contains the supplied

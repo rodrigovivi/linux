@@ -915,13 +915,6 @@ function dim_magic_rebase_resolve
 	git rebase --continue
 }
 
-dim_alias_ai=apply-igt
-function dim_apply_igt
-{
-	cd ~/xorg/intel-gpu-tools/
-	git am --whitespace=fix -3 -s
-}
-
 dim_alias_mp=magic-patch
 function dim_magic_patch
 {
