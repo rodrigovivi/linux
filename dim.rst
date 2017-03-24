@@ -101,6 +101,9 @@ OPTIONS
 COMMANDS
 ========
 
+Many of the commands have default aliases. See **dim list-aliases** for the list
+of aliases.
+
 setup *prefix*
 --------------
 Setup git maintainer branches in the given prefix.
@@ -137,22 +140,22 @@ Pipes stdin into the fixup patch file for the current drm-tip merge.
 push-branch branch [*git push arguments*]
 -----------------------------------------
 
-push-fixes|pf [*git push arguments*]
-------------------------------------
+push-fixes [*git push arguments*]
+---------------------------------
 
-push-next-fixes|pnf [*git push arguments*]
-------------------------------------------
+push-next-fixes [*git push arguments*]
+--------------------------------------
 
-push-queued|pq [*git push arguments*]
--------------------------------------
+push-queued [*git push arguments*]
+----------------------------------
 
 Updates the named branch, or drm-intel-fixes, drm-intel-next-fixes or the
 drm-intel-next-queued branch respectively. Complains if that's not the current
 branch, assuming that patches got merged to the wrong branch. After pushing also
 updates linux-next and drm-tip branches.
 
-checkout|co *branch*
---------------------
+checkout *branch*
+-----------------
 Checks out the named branch.
 
 conq
@@ -166,19 +169,19 @@ conf
 Checks out the drm-intel-fixes branch, dinf or dinq respectively for merging
 patches.
 
-apply-branch|ab|sob branch [*git am arguments*]
------------------------------------------------
+apply-branch branch [*git am arguments*]
+----------------------------------------
 Applys a patch to the given branch, complaining if it is not
 checked out yet.
 
-apply-fixes|af [*git am arguments*]
------------------------------------
+apply-fixes [*git am arguments*]
+--------------------------------
 
-apply-next-fixes|anf [*git am arguments*]
------------------------------------------
+apply-next-fixes [*git am arguments*]
+-------------------------------------
 
-apply-queued|aq [*git am arguments*]
-------------------------------------
+apply-queued [*git am arguments*]
+---------------------------------
 Applies a patch to -fixes, -next-fixes or -next-queued respectively, complains
 if it's not the right branch. Additional arguments are passed to git am.
 
@@ -198,8 +201,8 @@ This extracts various tags (eg. Reviwed-by:) from emails and applies them to the
 top commit on the given branch. You can give the comamnd a rangeish to add the
 tags from the same email to multiple already applied patches.
 
-magic-patch|mp [-a]
--------------------
+magic-patch [-a]
+----------------
 Apply a patch using patch and then wiggle in any conflicts. When passing the
 option -a automatically changes the working directory into the git repository
 used by the last previous branch-specific command. This is useful with the
@@ -219,8 +222,8 @@ add-link-next-fixes
 
 This command adds the Link: tag (for patches that failed to apply directly).
 
-magic-rebase-resolve|mrr
-------------------------
+magic-rebase-resolve
+--------------------
 Tries to resolve a rebase conflict by first resetting the tree
 and the using the magic patch tool. Then builds the tree, adds
 any changes with git add -u and continues the rebase.
@@ -232,13 +235,13 @@ branch-specific command. This is implemented as a bash-function to make it
 useful in interactive shells and scripts. Only available when the bash
 completion is sourced.
 
-apply-resolved|ar
------------------
+apply-resolved
+--------------
 Compile-test the current tree and if successfully resolve a
 confilicted git am. Also runs the patch checker afterwards.
 
-apply-igt|ai
-------------
+apply-igt
+---------
 Apply a patch to the i-g-t repository.
 
 tc *commit-ish*
@@ -320,8 +323,8 @@ remote is up-to-date. Useful if drm-intel-next has been changed since the last
 run of the update-next command (e.g. to apply a hotfix before sending out the
 pull request).
 
-checkpatch|check-patch|cp [*commit-ish* [.. *commit-ish*]]
-----------------------------------------------------------
+checkpatch [*commit-ish* [.. *commit-ish*]]
+-------------------------------------------
 Runs the given commit range commit-ish..commit-ish through the check tools.
 
 If no commit-ish is passed, defaults to HEAD^..HEAD. If one commit-ish is passed
