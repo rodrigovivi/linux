@@ -2,9 +2,9 @@
  dim
 =====
 
----------------------------
-drm-intel maintainer script
----------------------------
+--------------------------------
+drm inglorious maintainer script
+--------------------------------
 
 :Author: Daniel Vetter <daniel.vetter@ffwll.ch>
 :Author: Jani Nikula <jani.nikula@intel.com>
