@@ -303,8 +303,8 @@ Create a separate workdir for the branch with the given name (requires that
 git-new-workdir from git-core contrib is installed), or for all branches if
 "all" is given.
 
-for-each-workdir|fw *command*
------------------------------
+for-each-workdir *command*
+--------------------------
 Run the given command in all active workdirs including the main repository under
 \$DIM_DRM_INTEL.
 

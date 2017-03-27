@@ -1300,8 +1300,8 @@ function dim_create_workdir
 	done
 }
 
-dim_alias_fw=for-each-workdirs
-function dim_for_each_workdirs
+dim_alias_fw=for-each-workdir
+function dim_for_each_workdir
 {
 	cd $DIM_PREFIX/$DIM_DRM_INTEL
 	"$@"
