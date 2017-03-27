@@ -180,6 +180,9 @@ else
     shift
 fi
 
+# generic usage to be used for ${1:?$usage} style argument references
+usage="Missing arguments(s) for '$dim $subcommand'. See '$dim help' for usage."
+
 #
 # Sanity checks.
 #
@@ -487,8 +490,12 @@ function update_rerere_cache
 
 function dim_revert_rerere
 {
+	local commit
+
+	commit=${1:?$usage}
+
 	cd $DIM_PREFIX/drm-rerere/
-	git revert $1
+	git revert $commit
 	rm $(rr_cache_dir)/* -Rf
 }
 
@@ -628,12 +635,7 @@ function dim_push_branch
 {
 	local branch remote
 
-	if [[ "x$1" = "x" ]]; then
-		echo "usage: $dim $subcommand branch"
-		exit 1
-	fi
-
-	branch=$1
+	branch=${1:?$usage}
 	shift
 
 	assert_branch $branch
@@ -674,7 +676,7 @@ function dim_apply_branch
 {
 	local branch file message_id commiter_email patch_from sob rv
 
-	branch=$1
+	branch=${1:?$usage}
 	shift
 	file=$(mktemp)
 
@@ -719,7 +721,7 @@ function dim_add_link
 {
 	local branch file message_id
 
-	branch=$1
+	branch=${1:?$usage}
 	shift
 	file=$(mktemp)
 
@@ -800,17 +802,13 @@ function dim_cherry_pick
 {
 	local commit
 
-	if [[ "x$1" = "x" ]]; then
-		echo "usage: $dim $subcommand commit-ish"
-		exit 1
-	fi
-	commit=$(git rev-parse $1)
+	commit=$(git rev-parse ${1:?$usage})
 
 	git_fetch_helper $remote
 
 	commit_list_references $commit
 
-	$DRY git cherry-pick -s -x -e $1
+	$DRY git cherry-pick -s -x -e $commit
 }
 
 function git_list_fixes
@@ -826,7 +824,7 @@ function dim_cherry_pick_branch
 {
 	local branch log fail_log needed have_fixes
 
-	branch="$1"
+	branch=${1:?$usage}
 	log=$(mktemp)
 	fail_log=$(mktemp)
 
@@ -947,18 +945,9 @@ function dim_create_branch
 {
 	local branch repo remote
 
-	if [[ "x$1" = "x" ]]; then
-		echo "usage: $dim $subcommand branch [commit-ish]"
-		exit 1
-	fi
-	branch=$1
+	branch=${1:?$usage}
+	start=${2:-HEAD}
 	repo="drm-intel"
-
-	if [[ "x$2" = "x" ]]; then
-		start=HEAD
-	else
-		start=$2
-	fi
 
 	cd $DIM_PREFIX/$DIM_DRM_INTEL
 
@@ -983,11 +972,7 @@ function dim_remove_branch
 {
 	local branch repo remote
 
-	if [[ "x$1" = "x" ]]; then
-		echo "usage: $dim $subcommand branch"
-		exit 1
-	fi
-	branch=$1
+	branch=${1:?$usage}
 
 	cd $DIM_PREFIX/$DIM_DRM_INTEL
 
@@ -1040,11 +1025,7 @@ function dim_checkout
 {
 	local branch repo remote
 
-	if [[ "x$1" = "x" ]]; then
-		echo "usage: $dim $subcommand branch"
-		exit 1
-	fi
-	branch=$1
+	branch=${1:?$usage}
 
 	dim_cd $branch
 	if ! git_branch_exists $branch ; then
@@ -1145,9 +1126,8 @@ function dim_extract_tags
 {
 	local branch range file tags
 
-	branch=$1
-	shift
-	range=$(rangeish "$1")
+	branch=${1:?$usage}
+	range=$(rangeish "${2:-}")
 	file=$(mktemp)
 
 	assert_branch $branch
@@ -1189,7 +1169,7 @@ function dim_checkpatch
 {
 	local range rv
 
-	range=$(rangeish "$1")
+	range=$(rangeish "${1:-}")
 
 	for commit in $(git rev-list --reverse $range); do
 		if ! checkpatch_commit $commit; then
@@ -1204,7 +1184,7 @@ function dim_sparse
 {
 	local range
 
-	range=$(rangeish "$1")
+	range=$(rangeish "${1:-}")
 
 	make $DIM_MAKE_OPTIONS
 	touch --no-create $(git diff --name-only $range) $(git diff --name-only)
@@ -1433,13 +1413,8 @@ function dim_pull_request
 {
 	local branch upstream remote repo url git_url suffix tag
 
-	if [[ "x$1" = "x" || "x$2" = "x" ]]; then
-		echo "usage: $dim $subcommand branch upstream"
-		exit 1
-	fi
-
-	branch=$1
-	upstream=$2
+	branch=${1:?$usage}
+	upstream=${2:?$usage}
 	remote=$(branch_to_remote $branch)
 
 	if [ "$branch" != "drm-intel-next" ]; then
@@ -1721,16 +1696,18 @@ function dim_cat_to_fixup
 
 function dim_tc
 {
-	local tag dim_drm_upstream_remote
+	local sha1 tag dim_drm_upstream_remote
+
+	sha1=${1:?$usage}
 
 	cd $DIM_PREFIX/$DIM_DRM_INTEL
-	tag=$(git tag --contains $1 | grep ^v | sort -V | head -n 1)
+	tag=$(git tag --contains $sha1 | grep ^v | sort -V | head -n 1)
 	if [[ -n "$tag" ]]; then
 		echo "$tag"
 	else
 		dim_drm_upstream_remote=$(url_to_remote $drm_upstream_git)
 		# not in a tagged release, show upstream branches
-		git branch -r --contains $1 \
+		git branch -r --contains $sha1 \
 		    $DIM_DRM_INTEL_REMOTE/* \
 		    $dim_drm_upstream_remote/drm-next \
 		    $dim_drm_upstream_remote/drm-fixes \
@@ -1742,11 +1719,7 @@ function dim_cite
 {
 	local sha1
 
-	sha1=$1
-	if [[ -z "$sha1" ]]; then
-		echoerr "usage: $dim $subcommand <commit-ish>"
-		return 1
-	fi
+	sha1=${1:?$usage}
 
 	cd $DIM_PREFIX/$DIM_DRM_INTEL
 
@@ -1758,11 +1731,7 @@ function dim_fixes
 {
 	local sha1 tag
 
-	sha1=$1
-	if [[ -z "$sha1" ]]; then
-		echoerr "usage: $dim $subcommand <commit-ish>"
-		return 1
-	fi
+	sha1=${1:?$usage}
 
 	cd $DIM_PREFIX/$DIM_DRM_INTEL
 	echo "Fixes: $(dim_cite $sha1)"
@@ -1774,7 +1743,7 @@ function dim_fixes
 		git show $sha1 | scripts/get_maintainer.pl  --email --norolestats --pattern-depth 1 | sed -e "s/^/Cc: /"
 	) | awk '!x[$0]++'
 
-	tag=$(git tag --contains $1 | grep ^v | sort -V | head -n 1)
+	tag=$(git tag --contains $sha1 | grep ^v | sort -V | head -n 1)
 	if [[ -n "$tag" ]]; then
 		if echo "$tag" | grep -q -e "-rc" ; then
 			echo "Cc: <drm-intel-fixes@lists.freedesktop.org> # ${tag}+"
