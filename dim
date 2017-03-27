@@ -145,7 +145,7 @@ function pause
 	echo
 }
 
-while getopts hdfi opt; do
+while getopts hdfis opt; do
 	case "$opt" in
 		d)
 			DRY_RUN=--dry-run
@@ -159,6 +159,11 @@ while getopts hdfi opt; do
 			;;
 		h)
 			HELP=1
+			;;
+		s)
+			# FIXME: transitional, do unconditionally at the top
+			# when there are no more errors about unbound variables
+			set -u
 			;;
 		*)
 			echoerr "See '$dim help' for more information."
@@ -180,7 +185,7 @@ fi
 #
 
 # Make sure we use 'dim_foo' within dim instead of 'dim foo'.
-if [[ -n "$__dim_running" ]]; then
+if [[ -n "${__dim_running:-}" ]]; then
 	echoerr "INTERNAL ERROR: do not recurse back to dim"
 	exit 1
 fi
@@ -1829,7 +1834,7 @@ function dim_usage
 
 # dim subcommand aliases (with bash 4.3+)
 if ! declare -n subcmd=dim_alias_${subcommand//-/_} &> /dev/null || \
-		test -z "$subcmd"; then
+		test -z "${subcmd:-}"; then
 	subcmd="$subcommand"
 fi
 
