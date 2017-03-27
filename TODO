@@ -12,6 +12,7 @@ dim:
   resulting -nightly with the old one. Current the branch must be pushed out
   first for rebuild-nightly to pick it up, which means the merge can't be
   fixed any more.
+- apply-resolved fails to add the Link: tag.
 
 qf:
 - get better at preventing and cleaning up a mess when switching branches

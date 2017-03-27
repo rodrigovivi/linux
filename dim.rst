@@ -283,7 +283,8 @@ any changes with git add -u and continues the rebase.
 apply-resolved
 --------------
 Compile-test the current tree and if successfully resolve a
-confilicted git am. Also runs the patch checker afterwards.
+conflicted git am. Also runs the patch checker afterwards. This fails to add the
+Link: tag, so you'll need to add it manually or use the **add-link** subcommand.
 
 create-branch *branch* [*commit-ish*]
 -------------------------------------
@@ -299,9 +300,8 @@ Remove the given topic branch.
 
 create-workdir (*branch* | all)
 -------------------------------
-Create a separate workdir for the branch with the given name (requires that
-git-new-workdir from git-core contrib is installed), or for all branches if
-"all" is given.
+Create a separate workdir for the branch with the given name, or for all
+branches if "all" is given.
 
 for-each-workdir *command*
 --------------------------
@@ -313,8 +313,8 @@ COMMANDS FOR MAINTAINERS
 
 cherry-pick *commit-ish* [*git cherry-pick arguments*]
 ------------------------------------------------------
-Improved git cherry-pick version which also scans drm-tip picked, too. In
-dry-run mode/-d only the patch list is generated.
+Improved git cherry-pick version which also scans drm-tip for additional
+cherry-pick candidates. In dry-run mode/-d only the patch list is generated.
 
 cherry-pick-fixes
 -----------------
@@ -365,6 +365,13 @@ opened.
 
 Also checks that the drm-intel-fixes|-next-queued are fully
 merged into drm-tip to avoid operator error.
+
+update-next-continue
+--------------------
+
+When **update-next** fails to push the special release commit (because it raced with
+another committer) rebase and push manually, and then continue using this
+command.
 
 tag-next
 --------
