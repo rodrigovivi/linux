@@ -63,7 +63,7 @@ drm-tip
 
 This is the overall integration tree for drm, and lives in
 `git://anongit.freedesktop.org/drm-tip`. Every time one of the above branches is
-update drm-tip gets rebuild. If there's a conflict see section on `resolving
+updated drm-tip gets rebuilt. If there's a conflict see section on `resolving
 conflicts when rebuilding drm-tip
 <drm-intel.html#resolving-conflicts-when-rebuilding-drm-tip>`_.
 

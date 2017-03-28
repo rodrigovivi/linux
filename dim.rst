@@ -31,7 +31,7 @@ Used to maintain drm-intel_ and drm-misc_ git repositories.
 QUICKSTART
 ==========
 
-For getting started grab the latest drm (drm-intel-maintainer) script from::
+For getting started grab the latest dim (drm-intel-maintainer) script from::
 
     http://cgit.freedesktop.org/drm-intel/tree/dim?h=maintainer-tools
 
@@ -56,7 +56,7 @@ you have improvements for dim, please submit them to intel-gfx.
 
 If you have a freedesktop.org account and plan to push things on one of the
 drm-xxx repos, you should use the ssh://git.freedesktop.org/git/drm-xxx urls
-when adding a remote and, if it's not already done, you should add new entry in
+when adding a remote and, if it's not already done, you should add a new entry in
 ~/.ssh/config::
 
     $ printf '\nHost git.freedesktop.org\n\tUser <username>' >> ~/.ssh/config
@@ -200,7 +200,7 @@ apply-queued [*git am arguments*]
 
 extract-tags *branch* [*git-rangeish*]
 --------------------------------------
-This extracts various tags (eg. Reviwed-by:) from emails and applies them to the
+This extracts various tags (e.g. Reviewed-by:) from emails and applies them to the
 top commit on the given branch. You can give the command a rangeish to add the
 tags from the same email to multiple already applied patches.
 
@@ -277,12 +277,12 @@ add-link-queued
 magic-rebase-resolve
 --------------------
 Tries to resolve a rebase conflict by first resetting the tree
-and the using the magic patch tool. Then builds the tree, adds
+and then using the magic patch tool. Then builds the tree, adds
 any changes with git add -u and continues the rebase.
 
 apply-resolved
 --------------
-Compile-test the current tree and if successfully resolve a
+Compile-test the current tree and if successful resolve a
 conflicted git am. Also runs the patch checker afterwards. This fails to add the
 Link: tag, so you'll need to add it manually or use the **add-link** subcommand.
 
@@ -292,7 +292,7 @@ Create a new topic branch with the given name. Note that topic/ is not
 automatically prepended. The branch starts at HEAD or the given commit-ish. Note
 that by default the new branch is created in the drm-intel.git repository. If
 you want to create a branch somewhere else, then you need to prepend the remote
-name from nigthly.conf, e.g. "drm-misc/topic/branch".
+name from nightly.conf, e.g. "drm-misc/topic/branch".
 
 remove-branch *branch*
 ----------------------
@@ -413,7 +413,7 @@ Show this help. Install **rst2man(1)** for best results.
 
 usage
 -----
-Short form usage help listening all subcommands. Run by default or if an unknown
+Short form usage help listing all subcommands. Run by default or if an unknown
 subcommand was passed on the cmdline.
 
 ENVIRONMENT

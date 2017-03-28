@@ -87,7 +87,7 @@ This is the branch where all new features, as well as any non-trivial or
 controversial fixes, are applied.
 
 This branch "hides" the merge window from the drm/i915 developers; patches are
-applied here regardless of the development phase of the Linus' upstream kernel.
+applied here regardless of the development phase of Linus' upstream kernel.
 
 drm-intel-next
 ~~~~~~~~~~~~~~
@@ -220,7 +220,7 @@ Signed-off-by: line in the commit message:
 Resolving Conflicts when Rebuilding drm-tip
 ===========================================
 
-When you push patches with dim drm-tip always gets rebuild and this can
+When you push patches with dim drm-tip always gets rebuilt and this can
 sometimes fail, for example like this: ::
 
         Updating rerere cache and nightly.conf... Done.
@@ -263,7 +263,7 @@ when it's tricky or something fails in the below procedure.
         $ git commit -a
 
    git will then store the conflict resolution internally (see git help rerere
-   for how this is implemented). Then re-run -nigthly generation to confirm the
+   for how this is implemented). Then re-run drm-tip generation to confirm the
    resolution has been captured correctly by git (sometimes git rerere can't
    match up your resolution with the conflict for odd reasons) and to make sure
    there's no other conflict in later merges: ::
@@ -457,7 +457,7 @@ stakeholders. There's three components for that:
   domain experts, maybe maintainers. Also include maintainers and reviewers of
   the userspace component for new ABI, which often means non-Intel people. In
   case of doubt ask maintainers for a reasonable list of people. Make sure you
-  gather their input actively, don't expect them to deliver it on their on -
+  gather their input actively, don't expect them to deliver it on their own -
   most are really busy.
 
 * Have agreement among all these stakeholders what the code should look like in
@@ -485,7 +485,7 @@ stakeholders. There's three components for that:
 Try to reach rough consensus before spending months writing code you might need
 to throw away or at least entirely rewrite again. Also make sure that all
 discussions happen in public forums, and make sure there's a searchable
-permanent record of any discussions for later references. This means that for
+permanent record of any discussions for later reference. This means that for
 most things internal meetings are not the most suitable venue.
 
 Pre-Merge Testing
