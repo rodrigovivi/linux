@@ -49,7 +49,7 @@ DIM_PREFIX=${DIM_PREFIX:-$HOME/linux}
 DIM_DRM_INTEL=${DIM_DRM_INTEL:-src}
 
 # name of the $drm_intel_ssh remote within $DIM_DRM_INTEL
-DIM_DRM_INTEL_REMOTE=${DIM_DRM_INTEL_REMOTE:-danvet}
+DIM_DRM_INTEL_REMOTE=${DIM_DRM_INTEL_REMOTE:-drm-intel}
 
 # mail user agent. must support a subset of mutt(1) command line options:
 # usage: $DIM_MUA [-s subject] [-i file] [-c cc-addr] to-addr [...]
