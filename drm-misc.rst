@@ -105,8 +105,8 @@ Small Drivers
 =============
 
 Small drivers, where a full tree is overkill, can be maintained in drm-misc. For
-now it's just an experiment with a few drivers to figure out a working process.
-Slightly different rules apply:
+now there are just a few drivers maintained in drm-misc, but we can slowly add
+more to figure out how to make this scale. Slightly different rules apply:
 
 * Small is measured in patches merged per kernel release. The occasional big
   patch series is still acceptable if it's not a common thing (e.g. new hw
