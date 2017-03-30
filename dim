@@ -289,18 +289,18 @@ function dim_uptodate
 
 	if [[ ! -e "$using" ]]; then
 		echoerr "could not figure out the version being used ($using)."
-		exit 1
+		return 1
 	fi
 
 	if [[ ! -e "$DIM_PREFIX/maintainer-tools/.git" ]]; then
 		echoerr "could not find the upstream repo for $dim."
-		exit 1
+		return 1
 	fi
 
 	if ! git --git-dir=$DIM_PREFIX/maintainer-tools/.git show "@{upstream}:dim" |\
 			diff "$using" - >& /dev/null; then
 		echoerr "not running upstream version of the script."
-		exit 1
+		return 1
 	fi
 }
 
@@ -334,7 +334,7 @@ function git_branch_exists # branch
 }
 
 if [[ "$(($(date +%s) % 100))" -eq "0" ]] ; then
-        dim_uptodate
+        dim_uptodate || true
 fi
 
 # get message id from file
