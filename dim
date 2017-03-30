@@ -204,6 +204,10 @@ if [ "$subcommand" != "setup" ] && [ "$subcommand" != "help" ] && [ "$subcommand
 fi
 
 #
+# Only function and alias definitions until the subcommand handling at the end.
+#
+
+#
 # Variable naming convetion:
 #
 # repo:
@@ -332,10 +336,6 @@ function git_branch_exists # branch
 		true
 	fi
 }
-
-if [[ "$(($(date +%s) % 100))" -eq "0" ]] ; then
-        dim_uptodate || true
-fi
 
 # get message id from file
 # $1 = file
@@ -1892,6 +1892,11 @@ function dim_usage
 	echo
 	echo "See '$dim help' for more information."
 }
+
+# occasional check for dim updates
+if [[ "$(($(date +%s) % 100))" -eq "0" ]] ; then
+        dim_uptodate || true
+fi
 
 # dim subcommand aliases (with bash 4.3+)
 if ! declare -n subcmd=dim_alias_${subcommand//-/_} &> /dev/null || \
