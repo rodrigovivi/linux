@@ -356,6 +356,10 @@ tag; this must have been done previously using **update-next**. This also means
 that the pull request can be regenerated with the same commands if something
 goes wrong.
 
+apply-pull *branch*
+-------------------
+Reads a pull request mail from stdin and merges it into the given *branch*.
+
 update-next
 -----------
 Pushes out the latest dinq to drm-intel-next and tags it. Also

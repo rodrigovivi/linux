@@ -717,6 +717,38 @@ function dim_apply_branch
 	return $rv
 }
 
+function dim_apply_pull
+{
+	local branch file message_id pull_branch rv
+
+	branch=${1:?$usage}
+	file=$(mktemp)
+
+	assert_branch $branch
+	assert_repo_clean
+
+	cat > $file
+
+	pull_branch=$(sed -e '0,/git repository at:$/d' $file | head -n 2 | tail -n 1)
+
+	echo $pull_branch
+
+	git pull $pull_branch
+
+	message_id=$(message_get_id $file)
+
+	if [ -n "$message_id" ]; then
+		dim_commit_add_tag "\nLink: http://patchwork.freedesktop.org/patch/msgid/$message_id"
+	else
+		echoerr "WARNING: No message-id found in the patch file."
+		rv=1
+	fi
+
+	git commit --amend -s
+
+	return $rv
+}
+
 function dim_add_link
 {
 	local branch file message_id
