@@ -9,6 +9,11 @@ dim ()
 	fi
 }
 
+_dim_git_branches()
+{
+	git for-each-ref --format='%(refname:short)' refs/heads
+}
+
 _dim ()
 {
 	local args arg cur prev words cword split
@@ -106,6 +111,9 @@ _dim ()
 			if [[ $args == 2 ]]; then
 				COMPREPLY=( $( compgen -W "$nightly_branches all" -- $cur ) )
 			fi
+			;;
+		retip)
+			COMPREPLY=($(compgen -W "$(_dim_git_branches)" -- $cur))
 			;;
 	esac
 
