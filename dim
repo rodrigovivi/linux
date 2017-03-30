@@ -114,16 +114,6 @@ function read_integration_config
 }
 read_integration_config
 
-#
-# Command line options.
-#
-
-DRY_RUN=
-INTERACTIVE=
-DRY=
-FORCE=
-HELP=
-
 function echoerr
 {
 	echo "$dim: $*" >&2
@@ -144,6 +134,16 @@ function pause
 	read -rsp "Press any key to continue..." -n1 key2
 	echo
 }
+
+#
+# Command line options.
+#
+
+DRY_RUN=
+INTERACTIVE=
+DRY=
+FORCE=
+HELP=
 
 while getopts hdfis opt; do
 	case "$opt" in
