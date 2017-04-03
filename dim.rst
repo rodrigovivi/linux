@@ -360,6 +360,13 @@ apply-pull *branch*
 -------------------
 Reads a pull request mail from stdin and merges it into the given *branch*.
 
+backmerge *branch* *upstream*
+-----------------------------
+
+Backmerges *upstream* into *branch*, making a few sanity checks on the way. The
+*upstream* we backmerge should be the same as used for sending out pull requests
+using **pull-request**.
+
 update-next
 -----------
 Pushes out the latest dinq to drm-intel-next and tags it. Also

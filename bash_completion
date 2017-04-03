@@ -75,7 +75,7 @@ _dim ()
 		checkpatch)
 			# FIXME needs a git sha1
 			;;
-		pull-request)
+		pull-request|backmerge)
 			if [[ $args == 2 ]]; then
 				COMPREPLY=( $( compgen -W "$nightly_branches" -- $cur ) )
 			elif [[ $args == 3 ]]; then

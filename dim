@@ -749,6 +749,59 @@ function dim_apply_pull
 	return $rv
 }
 
+function dim_backmerge
+{
+	local branch upstream patch_file
+
+	branch=${1:?$usage}
+	upstream=${2:?$usage}
+
+	cd $DIM_PREFIX/drm-tip
+	tip_remote=$(url_to_remote $drm_tip_ssh)
+	git fetch -q $tip_remote || true
+
+	if ! git merge-base --is-ancestor $upstream $tip_remote/drm-tip ; then
+		echoerr "Upstream $upstream not merged into drm-tip, aborting."
+		echoerr "Please make sure any backmerge is tested in drm-tip,"
+		echoerr "to give all the CI bots some time to find bugs."
+		exit 1
+	fi
+
+	assert_branch $branch
+	assert_repo_clean
+
+	git merge --rerere-autoupdate --no-commit $upstream >& /dev/null || true
+
+	if [[ -d .git ]]; then
+		patch_file=".git"
+	else
+		patch_file=$(cut -d ' ' -f 2 .git)
+	fi
+	patch_file=$patch_file/MERGE_MSG
+
+
+	cat > $patch_file <<-HERE
+		Merge $upstream into $branch
+
+		<Explain here why you've done the backmerge, e.g. which patches
+		 or which driver pull request you need to be able to merge
+		 \$feature_work from \$author.>
+
+		HERE
+
+	if git diff | grep -q '\(<<<<<<<\|=======\|>>>>>>>\||||||||\)' ; then
+		echoerr "Conflicts found while merging $upstream into $branch."
+		echoerr "This should only happen when git rerere gets confused"
+		echoerr "or if there's a manual fixup patch in drm-rerere."
+		echoerr "Please proceed with extreme caution."
+		echoerr "Once the conflict is resolved, commit it with"
+		echoerr "   git commit -a"
+	fi
+
+	git add -u
+	git commit -s
+}
+
 function dim_add_link
 {
 	local branch file message_id
