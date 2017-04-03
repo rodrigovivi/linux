@@ -1331,9 +1331,12 @@ function prep_pull_mail_overview
 # $@: tags, if any, to extract into the pull request overview
 function prep_pull_mail
 {
-	prep_pull_mail_greetings > ~/tmp/dim-pull-request
-	prep_pull_mail_overview "$@" >> ~/tmp/dim-pull-request
-	prep_pull_mail_signature >> ~/tmp/dim-pull-request
+	local file
+	file=$1
+	shift
+	prep_pull_mail_greetings > $file
+	prep_pull_mail_overview "$@" >> $file
+	prep_pull_mail_signature >> $file
 }
 
 function dim_create_workdir
@@ -1421,7 +1424,7 @@ function dim_update_next
 
 function dim_update_next_continue
 {
-	local remote suffix tag tag_testing
+	local remote req_file suffix tag tag_testing
 
 	assert_branch drm-intel-next-queued
 
@@ -1444,17 +1447,18 @@ function dim_update_next_continue
 	$DRY git tag $tag_testing $DIM_DRM_INTEL_REMOTE/drm-intel-testing
 	$DRY git push $DIM_DRM_INTEL_REMOTE $tag_testing
 
-	cat > ~/tmp/test-request <<-HERE
+	req_file=$(mktemp)
+	cat > $req_file <<-HERE
 		Hi all,
 
 		HERE
 	obj=$(git rev-parse $tag)
 	if [[ "$(git cat-file -t $obj)" == "tag" ]] ; then
-		git cat-file -p $obj | tail -n+6 >> ~/tmp/test-request
+		git cat-file -p $obj | tail -n+6 >> $req_file
 	else
-		echo "<tag doesn't contain a changelog overview, fix this>" >> ~/tmp/test-request
+		echo "<tag doesn't contain a changelog overview, fix this>" >> $req_file
 	fi
-	cat >> ~/tmp/test-request <<-HERE
+	cat >> $req_file <<-HERE
 
 		Happy testing!
 
@@ -1462,7 +1466,7 @@ function dim_update_next_continue
 		HERE
 
 	$DRY $DIM_MUA -s "Updated drm-intel-testing" \
-	     -i ~/tmp/test-request \
+	     -i $req_file \
 	     -c "$addr_intel_gfx" \
 	     -c "$addr_intel_gfx_maintainer1" \
 	     -c "$addr_intel_gfx_maintainer2" \
@@ -1496,11 +1500,12 @@ function dim_tag_next
 # dim_pull_request branch upstream
 function dim_pull_request
 {
-	local branch upstream remote repo url git_url suffix tag
+	local branch upstream remote repo req_file url git_url suffix tag
 
 	branch=${1:?$usage}
 	upstream=${2:?$usage}
 	remote=$(branch_to_remote $branch)
+	req_file=$(mktemp)
 
 	if [ "$branch" != "drm-intel-next" ]; then
 		assert_branch $branch
@@ -1514,7 +1519,7 @@ function dim_pull_request
 	if [ "$branch" = "drm-intel-next" ]; then
 		# drm-intel-next pulls have been tagged using dim update-next
 		drm_intel_next_tags=$(git log "$branch@{upstream}" ^$upstream --decorate | grep "(.*tag: drm-intel-next-" | sed -e "s/^.*(.*tag: \(drm-intel-next-[^ ,]*\).*)$/\1/")
-		prep_pull_mail $drm_intel_next_tags
+		prep_pull_mail $req_file $drm_intel_next_tags
 		tag=$(git describe --all --exact "$branch@{upstream}")
 
 		repo="drm-intel"
@@ -1528,7 +1533,7 @@ function dim_pull_request
 		gitk "$branch@{upstream}" ^$upstream &
 		$DRY git tag -a $tag "$branch@{upstream}"
 		$DRY git push $remote $tag
-		prep_pull_mail $tag
+		prep_pull_mail $req_file $tag
 
 		repo=$(branch_to_repo $branch)
 	fi
@@ -1536,9 +1541,9 @@ function dim_pull_request
 	url=${drm_tip_repos[$repo]}
 	git_url=$(echo $url | sed -e 's/git\./anongit./' -e 's/ssh:/git:/')
 
-	git request-pull $upstream $git_url $tag >> ~/tmp/dim-pull-request
+	git request-pull $upstream $git_url $tag >> $req_file
 	$DRY $DIM_MUA -s "[PULL] $branch" \
-		-i ~/tmp/dim-pull-request \
+		-i $req_file \
 		-c "$addr_intel_gfx" \
 		-c "$addr_dri_devel" \
 		-c "$addr_intel_gfx_maintainer1" \
