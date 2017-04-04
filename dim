@@ -744,7 +744,9 @@ function dim_apply_pull
 		rv=1
 	fi
 
-	git commit --amend -s
+	git commit --amend -s --no-edit
+
+	eval $DRY $DIM_POST_APPLY_ACTION
 
 	return $rv
 }
