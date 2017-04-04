@@ -737,14 +737,14 @@ function dim_apply_pull
 
 	message_id=$(message_get_id $file)
 
+	git commit --amend -s --no-edit
 	if [ -n "$message_id" ]; then
-		dim_commit_add_tag "\nLink: http://patchwork.freedesktop.org/patch/msgid/$message_id"
+		dim_commit_add_tag "Link: http://patchwork.freedesktop.org/patch/msgid/$message_id"
 	else
 		echoerr "WARNING: No message-id found in the patch file."
 		rv=1
 	fi
 
-	git commit --amend -s --no-edit
 
 	eval $DRY $DIM_POST_APPLY_ACTION
 
