@@ -197,7 +197,7 @@ export __dim_running=1
 if [ "$subcommand" != "setup" ] && [ "$subcommand" != "help" ] && [ "$subcommand" != "usage" ]; then
 	for d in $DIM_PREFIX $DIM_PREFIX/$DIM_DRM_INTEL $DIM_PREFIX/drm-rerere $DIM_PREFIX/drm-tip; do
 		if [ ! -d $d ]; then
-			echo "$d is missing, please check your configuration and/or run dim setup"
+			echoerr "$d is missing, please check your configuration and/or run dim setup"
 			exit 1
 		fi
 	done
