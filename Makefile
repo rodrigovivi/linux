@@ -33,7 +33,7 @@ shellcheck:
 	shellcheck $(SC_EXCLUDE) dim bash_completion
 
 mancheck:
-	@for cmd in $$(dim list-commands); do \
+	@for cmd in $$(./dim list-commands); do \
 		if ! grep -q "^$$cmd" dim.rst; then \
 			echo "$@: $$cmd not documented"; \
 		fi \
