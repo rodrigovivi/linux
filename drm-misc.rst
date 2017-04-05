@@ -86,7 +86,8 @@ Right now the only hard merge criteria are:
 
 * Any non-linear actions (backmerges, merging topic branches and sending out
   pull requests) are only done by the official drm-misc maintainers (currently
-  Daniel, Jani and Sean, see MAINTAINERS), and not by committers.
+  Daniel, Jani and Sean, see MAINTAINERS), and not by committers. See the
+  `examples section in dim <dim.html#examples>`_ for more info
 
 * All the x86, arm and arm64 DRM drivers need to still compile. To simplify this
   we track defconfigs for all three platforms in the `drm-intel-rerere` branch.

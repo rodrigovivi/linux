@@ -472,6 +472,63 @@ listed using the **list-aliases** subcommand.
 
 The alias functionality requires **bash(1)** version 4.3 or later to work.
 
+EXAMPLES
+========
+
+Cross-subsystem topic branches
+------------------------------
+So you want to send a pull request to another subsystem? Maintainers will likely
+get cranky if you ask them to pull a swath of unrelated drm patches, so we'll
+use a topic branch based upon Linus' tree with only the relevant patches.
+
+First select a suitable *baseline* for your topic branch. For topic
+branches shared within the gpu/drm subsystem, base it on the latest
+drm-next branch. For anything else, base it on the latest -rc tag from
+Upstream (not just any random position). In very rare cases you might need
+to apply topic branch pull requests from other maintainers before you can
+apply patches to construct a suitable baseline first.
+
+Next, create the topic branch using dim. Use whichever dim remote is most
+applicable, and name the branch in a manner that describes the set of patches
+you want pulled. The upstream will be Linus' tree.
+
+  $ dim create-branch *dim-remote*/topic/*topic-branch* *baseline*
+
+Once the branch is created, you can apply the patches to be pulled.
+
+  $ dim apply-branch topic/*topic-branch*
+
+Test your new topic branch and push it.
+
+  $ dim push-branch topic/*topic-branch*
+
+Ensure that your topic branch was merged into drm-tip. The drm-tip tree is
+located in $DIM_PREFIX/drm-tip, test it to ensure the new topic branch
+didn't break anything.
+
+Once you're satisfied that nothing is broken, create the pull request.
+
+  $ dim pull-request topic/*topic-branch* *baseline*
+
+You'll be prompted to enter a tag description and your mail user agent will open
+with the pull request email. Change names and emails as appropriate to reflect
+who the sender and recipient of the pull is, and send it.
+
+Once the pull has been acked by your maintainer counterpart, you can pull it
+into the appropriate local dim branch.
+
+  $ dim apply-pull *dim-branch*
+
+Perform a final test, and push *dim-branch* to *dim-remote*.
+
+  $ dim push-branch *dim-branch*
+
+You can now remove the topic branch, as it is no longer useful (you could remove
+it any time after the pull request, since it creates a tag, but this is as good
+a place as any).
+
+  $ dim remove-branch topic/*topic-branch*
+
 CONTRIBUTING
 ============
 
