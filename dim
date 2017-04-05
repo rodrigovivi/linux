@@ -1091,6 +1091,8 @@ function dim_remove_branch
 
 	$DRY git add $integration_config
 	$DRY git commit --quiet -m "Remove $repo $branch from $integration_config"
+
+	dim_rebuild_tip
 }
 
 function dim_cd
