@@ -314,7 +314,7 @@ function git_fetch_helper # remote
 
 	remote=$1
 
-	if ! git fetch -q $remote ; then
+	if ! git fetch --prune -q $remote ; then
 		# old git versions returned 128 if there was nothing to fetch
 		if [[ $? -ne "128" ]] ; then
 			echoerr "Failed to fetch $remote"
