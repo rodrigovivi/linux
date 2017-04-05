@@ -1434,7 +1434,7 @@ function dim_update_next_continue
 
 	git push $DRY_RUN -f $DIM_DRM_INTEL_REMOTE drm-intel-next-queued:drm-intel-next
 	tag=drm-intel-next-$today
-	tag=drm-intel-testing-$today
+	tag_testing=drm-intel-testing-$today
 
 	while git tag -l $tag | grep -q $tag ; do
 		tag="drm-intel-next-$today-$((++suffix))"
