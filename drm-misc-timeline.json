@@ -1,0 +1,67 @@
+{
+	head: {
+		text: 'drm-misc upstream merge timeline',
+		tock: -2,
+	},
+
+	foot: {
+		text: 'time in weeks, releases/rc at the end of each week',
+		tock: -2,
+	},
+
+	signal: [
+		[ 'upstreams',
+			{ name: 'linus',
+			  wave: 'x|==.=====|===.',
+			  data: ['release', 'merge window, -rc1', '-rc2',
+				 '-rc3', '-rc4', '-rc5', '', '-rcN',
+				 'release + 1', 'merge window'],
+			  node: '....123456.8.90' },
+
+			{ name: 'drm-fixes',
+			  wave: '0|..=.....0...=',
+			  data: ['drm fixes for release + 1'],
+			  node: '....abcde.f...p' },
+
+			{ name: 'drm-next',
+			  wave: '=..0.=.......0.',
+			  data: ['drm features for release + 1',
+				 'drm features for release + 2'],
+			  node: '...g.stuvw"..h.' }
+		],
+
+		{ name: 'drm-misc-fixes',
+		  wave: '0|.=.....0.....',
+		  data: ['drm-misc fixes for release + 1'],
+		  node: '...ijklm.n.....' },
+
+		{ name: 'drm-misc-next-fixes',
+		  wave: '=.xxxxxxx=..xxx',
+		  data: ['drm-misc fixes for release + 1',
+			 'drm-misc fixes for release + 2'],
+		  node: '..o.........q..' },
+
+		{ name: 'drm-misc-next',
+		  wave: '=........=.....',
+		  data: ['drm-misc features for release + 2',
+			 'drm-misc features for release + 3'],
+		  node: '....rxyz;:.....' },
+	],
+
+	edge: [
+		/* -fixes to linus */
+		'a~>2', 'b~>3', 'c~>4', 'd~>5', 'e~>6', 'f~>8',
+		/* -next to linus */
+		'g~>1 feature merge', 'h~>0 feature merge',
+		/* misc-fixes to -next */
+		'i~>a', 'j~>b', 'k~>c', 'l~>d', 'm~>e', 'n~>f',
+		/* misc-next-fixes to -next */
+		'o~>g', 'q~>p',
+		/* misc-next to -next */
+		'r~>s', 'x~>t', 'y~>u', 'z~>v', ';~>w', ':~>"'
+
+	],
+
+	config: { hscale:3 },
+}
+

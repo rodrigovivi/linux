@@ -38,20 +38,26 @@ drm-misc-next
 
 This is the main feature branch where most of the patches land. This branch is
 always open to "hide" the merge window from developers. To avoid upsetting
-linux-next and causing mayhem in the merge window in general no pull requests
-are sent to upstream 1-2 weeks before the merge window opens. Outside of that
-feature freeze period pull requests are sent to upstream roughly every week, to
-avoid too much coordination pains.
+linux-next and causing mayhem in the merge window, in general no pull requests
+are sent to upstream after rc6 of the current kernel release. Outside of that
+feature freeze period, pull requests are sent to upstream roughly every 1-2
+weeks, to avoid too much coordination pains. See the timeline below for a
+visualization of patch flow.
 
-If you're unsure apply your patch here, it can always be cherry-picked to one of
-the -fixes patches later on. But in contrast to the drm-intel flow
+If you're unsure, apply your patch here, it can always be cherry-picked to one
+of the -fixes branches later on. But in contrast to the drm-intel flow
 cherry-picking is not the default.
 
 drm-misc-next-fixes
 ~~~~~~~~~~~~~~~~~~~
 
-This is for bugfixes to drm-misc-next after feature freeze, but before -rc1 is
-tagged.
+This branch is only relevant between rc6 of the current kernel version (X) and
+rc1 of the next (X+1). This is the feature freeze period mentioned above in the
+drm-misc-next section. During this time, drm-misc-next will roll over to target
+kernel version X+2, and drm-misc-fixes will still be on kernel version X, so
+drm-misc-next-fixes is used for fixes that target X+1.
+
+See the timeline below for a visualization of patch flow.
 
 drm-misc-fixes
 ~~~~~~~~~~~~~~
@@ -66,6 +72,17 @@ This is the overall integration tree for drm, and lives in
 updated drm-tip gets rebuilt. If there's a conflict see section on `resolving
 conflicts when rebuilding drm-tip
 <drm-intel.html#resolving-conflicts-when-rebuilding-drm-tip>`_.
+
+Merge Timeline
+~~~~~~~~~~~~~~
+
+This chart describes the merge timelines for various branches in terms of one
+kernel release cycle. Worth noting is that we're working on two or three kernel
+releases at the same time. Big features take a long time to hit a kernel
+release. There are no fast paths.
+
+.. include:: drm-misc-timeline.rst
+
 
 Merge Criteria
 ==============
