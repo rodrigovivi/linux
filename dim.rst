@@ -464,6 +464,10 @@ DIM_TEMPLATE_SIGNATURE
 ----------------------
 Path to a file containing a signature template for pull request mails.
 
+DIM_TEMPLATE_TAG_SUMMARY
+-------------------------
+Path to a file containing the template for dim pull-request tag summaries.
+
 dim_alias_<alias>
 -----------------
 Make **<alias>** an alias for the subcommand defined as the value. For example,

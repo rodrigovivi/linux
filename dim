@@ -67,6 +67,9 @@ DIM_TEMPLATE_HELLO=${DIM_TEMPLATE_HELLO:-$HOME/.dim.template.hello}
 # signature pull request template
 DIM_TEMPLATE_SIGNATURE=${DIM_TEMPLATE_SIGNATURE:-$HOME/.dim.template.signature}
 
+# dim pull-request tag summary template
+DIM_TEMPLATE_TAG_SUMMARY=${DIM_TEMPLATE_TAG_SUMMARY:-$HOME/.dim.template.tagsummary}
+
 #
 # Internal configuration.
 #
@@ -1501,6 +1504,24 @@ function dim_tag_next
 
 }
 
+function prep_pull_tag_summary
+{
+	if [ -r $DIM_TEMPLATE_TAG_SUMMARY ]; then
+		cat $DIM_TEMPLATE_TAG_SUMMARY
+	else
+		cat <<-EOF
+		UAPI Changes:
+
+		Cross-subsystem Changes:
+
+		Core Changes:
+
+		Driver Changes:
+
+		EOF
+	fi
+}
+
 # dim_pull_request branch upstream
 function dim_pull_request
 {
@@ -1533,9 +1554,9 @@ function dim_pull_request
 		while git tag -l $tag | grep -q $tag ; do
 			tag="$branch-$today-$((++suffix))"
 		done
-
 		gitk "$branch@{upstream}" ^$upstream &
-		$DRY git tag -a $tag "$branch@{upstream}"
+		prep_pull_tag_summary | $DRY git tag -F- $tag "$branch@{upstream}"
+		$DRY git tag -a -f $tag
 		$DRY git push $remote $tag
 		prep_pull_mail $req_file $tag
 
