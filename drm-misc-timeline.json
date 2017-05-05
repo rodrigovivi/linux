@@ -27,7 +27,7 @@
 			  wave: '=..0.=.......0.',
 			  data: ['drm features for release + 1',
 				 'drm features for release + 2'],
-			  node: '...g.stuvw"..h.' }
+			  node: '...g...uvw"..h.' }
 		],
 
 		{ name: 'drm-misc-fixes',
@@ -45,7 +45,7 @@
 		  wave: '=........=.....',
 		  data: ['drm-misc features for release + 2',
 			 'drm-misc features for release + 3'],
-		  node: '....rxyz;:.....' },
+		  node: '......yz;:.....' },
 	],
 
 	edge: [
@@ -58,7 +58,7 @@
 		/* misc-next-fixes to -next */
 		'o~>g', 'q~>p',
 		/* misc-next to -next */
-		'r~>s', 'x~>t', 'y~>u', 'z~>v', ';~>w', ':~>"'
+		'y~>u', 'z~>v', ';~>w', ':~>"'
 
 	],
 
