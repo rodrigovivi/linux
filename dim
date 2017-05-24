@@ -340,6 +340,15 @@ function git_branch_exists # branch
 	fi
 }
 
+function git_committer_email
+{
+	if ! committer_email=$(git config --get user.email) ; then
+		committer_email=$EMAIL
+	fi
+
+	echo $committer_email
+}
+
 # get message id from file
 # $1 = file
 message_get_id ()
@@ -632,11 +641,32 @@ function dim_rebuild_tip
 		exit 1
 	fi
 }
+
+# additional patch checks before pushing, e.g. for r-b tags
+function checkpatch_commit_push
+{
+	local sha1
+
+	sha1=$1
+
+	# check for a-b/r-b tag
+	if git show -s $sha1 | grep -qi '\(reviewed\|acked\)\S*-by:'  ; then
+		return
+	fi
+
+	# check for committer != author
+	if [[ $(git show -s $sha1 --format="format:%ce") != $(git show -s $sha1 --format="format:%ae") ]]; then
+		return
+	fi
+
+	warn_or_fail "$sha1 is lacking mandatory review"
+}
+
 # push branch $1, rebuild drm-tip. the rest of the arguments are passed to git
 # push.
 function dim_push_branch
 {
-	local branch remote
+	local branch remote committer_email
 
 	branch=${1:?$usage}
 	shift
@@ -644,6 +674,12 @@ function dim_push_branch
 	assert_branch $branch
 
 	remote=$(branch_to_remote $branch)
+
+	committer_email=$(git_committer_email)
+
+	for sha1 in $(git rev-list $branch@{u}..$branch --committer="$committer_email" --no-merges) ; do
+		checkpatch_commit_push $sha1
+	done
 
 	git push $DRY_RUN $remote $branch "$@"
 
@@ -677,7 +713,7 @@ dim_alias_ab=apply-branch
 dim_alias_sob=apply-branch
 function dim_apply_branch
 {
-	local branch file message_id commiter_email patch_from sob rv
+	local branch file message_id committer_email patch_from sob rv
 
 	branch=${1:?$usage}
 	shift
@@ -690,12 +726,10 @@ function dim_apply_branch
 
 	message_id=$(message_get_id $file)
 
-	if ! commiter_email=$(git config --get user.email) ; then
-		commiter_email=$EMAIL
-	fi
+	committer_email=$(git_committer_email)
 
 	patch_from=$(grep "From:" "$file" | head -1)
-	if [[ "$patch_from" != *"$commiter_email"* ]] ; then
+	if [[ "$patch_from" != *"$committer_email"* ]] ; then
 		sob=-s
 	fi
 

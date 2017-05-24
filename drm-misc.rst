@@ -90,7 +90,9 @@ Merge Criteria
 Right now the only hard merge criteria are:
 
 * Patch is properly reviewed or at least Ack, i.e. don't just push your own
-  stuff directly.
+  stuff directly. This rule holds even more for bugfix patches - it would be
+  embarrassing if the bugfix contains a small gotcha that review would have
+  caught.
 
 * drm-misc is for drm core (non-driver) patches, subsystem-wide refactorings,
   and small trivial patches all over (including drivers). For a detailed list of
