@@ -178,6 +178,14 @@ Maintainers mostly provide services to keep drm-misc running smoothly:
   keep it current. We try to avoid backmerges for bugfix branches, and rebasing
   isn't an option with multiple committers.
 
+* Pull requests become noisy if `-fixes` has been fast-forwarded to Linus'
+  latest -rc tag but drm-upstream hasn't done the same yet: The shortlog
+  will contain not just the queued fixes but also anything else that has
+  landed in Linus' tree in the meantime. The best practice is then to base
+  the pull request on Linus' master branch (rather than drm-upstream) by
+  setting the `upstream` argument for ``dim pull-request`` accordingly.
+  Upstream should be warned that they haven't fast-forwarded yet.
+
 * During the merge-windo blackout, i.e. from -rc6 on until the merge window
   closes with the release of -rc1, try to track `drm-next` with the
   `-next-fixes` branch. Do not advance past -rc1, otherwise the automagic in
