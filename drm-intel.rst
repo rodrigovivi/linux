@@ -292,7 +292,7 @@ best way to go about this is:
 
        $ cd $DIM_PREFIX/drm-tip
        $ git add -u
-       $ git commmit
+       $ git commit
 
 2. Resolve the conflict normally, but don't stage it or commit it in any
    fashion. Check that the resolution looks correct and removes all the conflict
