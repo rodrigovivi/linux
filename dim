@@ -1458,7 +1458,7 @@ function dim_update_next
 	gitk drm-intel-next-queued ^$(url_to_remote $drm_upstream_git)/drm-next &
 
 	# try to push dinq first in case someone raced
-	dim_push_queued
+	FORCE=1 dim_push_queued
 
 	dim_update_next_continue
 }
