@@ -997,7 +997,7 @@ function dim_cherry_pick_branch
 		commit_list_references $commit
 		if ! git cherry-pick -x -s $commit; then
 			echo "FAILED: $(dim_cite $commit)"
-			dim_cite $commit >> $fail_log
+			(dim_cite $commit) >> $fail_log
 			git cherry-pick --abort
 		fi
 	done

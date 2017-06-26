@@ -323,7 +323,9 @@ cherry-pick-next-fixes
 ----------------------
 Look for non-upstreamed fixes (commits tagged Cc: stable@vger.kernel.org or Cc:
 drm-intel-fixes@lists.freedesktop.org) in drm-intel-next-queued, and try to
-cherry-pick them to drm-intel-fixes or drm-intel-next-fixes.
+cherry-pick them to drm-intel-fixes or drm-intel-next-fixes. These commands use
+dim cherry-pick internally to make sure bugfixes for fixes are cherry-picked
+too.
 
 pull-request *branch* *upstream*
 --------------------------------
