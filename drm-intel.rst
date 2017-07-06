@@ -188,8 +188,8 @@ The maintainers will cherry-pick labeled patches from drm-intel-next-queued to
 the appropriate branches.
 
 If possible, the commit message should also contain a Fixes: tag as described in
-`Documentation/SubmittingPatches
-<https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/tree/Documentation/SubmittingPatches>`_
+`Documentation/process/submitting-patches
+  <https://01.org/linuxgraphics/gfx-docs/drm/process/submitting-patches.html>`_
 to aid the maintainers in identifying the right branch.
 
 Requesting Fixes Cherry-Pick Afterwards
@@ -199,7 +199,7 @@ It's not uncommon for a patch to have been committed before it's identified as a
 fix needing to be backported.
 
 If the patch is already in Linus' tree, please follow `stable kernel rules
-<https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/tree/Documentation/stable_kernel_rules.txt>`_.
+<https://01.org/linuxgraphics/gfx-docs/drm/process/stable-kernel-rules.html>`_.
 
 Otherwise, send an email to intel-gfx@lists.freedesktop.org and
 drm-intel-fixes@lists.freedesktop.org containing the subject of the patch, the
@@ -359,8 +359,9 @@ Detail Check List
 
 An inexhaustive list of details to check:
 
-* The patch conforms to `Documentation/SubmittingPatches
-  <https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/tree/Documentation/SubmittingPatches>`_.
+* The patch conforms to `Documentation/process/submitting-patches
+
+  <https://01.org/linuxgraphics/gfx-docs/drm/process/submitting-patches.html>`_
 
 * The commit message is sensible, and includes adequate details and references.
 
@@ -409,8 +410,8 @@ On Confidence, Complexity, and Transparency
   list, IRC, in person, in a meeting) but must be added to the commit.
 
 * Reviewed-by. All patches must be reviewed, no exceptions. Please see
-  "Reviewer's statement of oversight" in `Documentation/SubmittingPatches
-  <https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/tree/Documentation/SubmittingPatches>`_
+  "Reviewer's statement of oversight" in `Documentation/process/submitting-patches
+  <https://01.org/linuxgraphics/gfx-docs/drm/process/submitting-patches.html>`_
   and `review training
   <http://blog.ffwll.ch/2014/08/review-training-slides.html>`_.
 
