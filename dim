@@ -493,11 +493,41 @@ function rr_cache_dir
 
 function update_rerere_cache
 {
-	cd $DIM_PREFIX/drm-rerere/
+	echo -n "Updating rerere cache... "
+
 	git pull
 	mkdir $(rr_cache_dir) &> /dev/null || true
-	cp rr-cache/* $(rr_cache_dir) -r
+	cp rr-cache/* $(rr_cache_dir) -r --preserve=timestamps
 	cd - > /dev/null
+
+	echo "Done."
+}
+
+function commit_rerere_cache
+{
+	echo -n "Updating rerere cache... "
+
+	cd $DIM_PREFIX/drm-rerere/
+	if git_is_current_branch rerere-cache ; then
+		remote=$(branch_to_remote rerere-cache)
+
+		git pull >& /dev/null
+		rm $(rr_cache_dir)/rr-cache -Rf &> /dev/null || true
+		cp $(rr_cache_dir)/* rr-cache -r
+		git add ./*.patch >& /dev/null || true
+		git add rr-cache/* > /dev/null
+		git rm rr-cache/rr-cache &> /dev/null || true
+		if git commit -m "$time: $integration_branch rerere cache update" >& /dev/null; then
+			echo -n "New commit. "
+		else
+			echo -n "Nothing changed. "
+		fi
+		echo -n "Pushing rerere cache... "
+		git push $DRY_RUN $remote HEAD >& /dev/null && echo "Done."
+	else
+		echo "Fail: Branch setup for the rerere-cache is borked."
+		exit 1
+	fi
 }
 
 function dim_revert_rerere
@@ -528,9 +558,7 @@ function dim_rebuild_tip
 		warn_or_fail "integration configuration file $integration_config not commited"
 	fi
 
-	echo -n "Updating rerere cache... "
-	update_rerere_cache >& /dev/null
-	echo "Done."
+	update_rerere_cache
 
 	echo -n "Reloading $integration_config... "
 	read_integration_config
@@ -618,28 +646,7 @@ function dim_rebuild_tip
 	echo -n "Pushing $integration_branch... "
 	git push $DRY_RUN $remote +HEAD >& /dev/null && echo "Done."
 
-	echo -n "Updating rerere cache... "
-	cd $rerere
-	if git_is_current_branch rerere-cache ; then
-		remote=$(branch_to_remote rerere-cache)
-
-		git pull >& /dev/null
-		rm $(rr_cache_dir)/rr-cache -Rf &> /dev/null || true
-		cp $(rr_cache_dir)/* rr-cache -r
-		git add ./*.patch >& /dev/null || true
-		git add rr-cache/* > /dev/null
-		git rm rr-cache/rr-cache &> /dev/null || true
-		if git commit -m "$time: $integration_branch rerere cache update" >& /dev/null; then
-			echo -n "New commit. "
-		else
-			echo -n "Nothing changed. "
-		fi
-		echo -n "Pushing rerere cache... "
-		git push $DRY_RUN $remote HEAD >& /dev/null && echo "Done."
-	else
-		echo "Fail: Branch setup for the rerere-cache is borked."
-		exit 1
-	fi
+	commit_rerere_cache
 }
 
 # additional patch checks before pushing, e.g. for r-b tags
