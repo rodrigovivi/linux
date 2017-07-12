@@ -274,6 +274,13 @@ add-link-queued
 **add-link** shorthands for *drm-intel-fixes*, *drm-intel-next-fixes*, and
 *drm-intel-next-queued* branches respectively.
 
+add-missing-cc
+--------------
+Adds all maintainers from scripts/get_maintainer.pl as cc's to the topmost
+commit. Any duplicates by name or email will be removed, so this can be used
+with *git rebase --exec "dim add-missing-cc"* to add cc's for an entire patch
+series that affect multiple drivers each with different maintainers.
+
 magic-rebase-resolve
 --------------------
 Tries to resolve a rebase conflict by first resetting the tree
