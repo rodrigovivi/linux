@@ -513,9 +513,15 @@ function commit_rerere_cache
 
 		git pull >& /dev/null
 		rm $(rr_cache_dir)/rr-cache -Rf &> /dev/null || true
-		cp $(rr_cache_dir)/* rr-cache -r
+		cp $(rr_cache_dir)/* rr-cache -r --preserve=timestamps
 		git add ./*.patch >& /dev/null || true
-		git add rr-cache/* > /dev/null
+		for file  in $(git ls-files); do
+			if ! git log --since="60 days ago" --name-only -- $file | grep $file &> /dev/null; then
+				git rm $file &> /dev/null
+				echo deleting $file
+			fi
+		done
+		find rr-cache/ -ctime -1 -type f -print0 | xargs -0 git add > /dev/null
 		git rm rr-cache/rr-cache &> /dev/null || true
 		if git commit -m "$time: $integration_branch rerere cache update" >& /dev/null; then
 			echo -n "New commit. "
