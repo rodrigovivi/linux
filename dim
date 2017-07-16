@@ -749,7 +749,7 @@ function dim_apply_branch
 	git am --scissors -3 $sob "$@" $file
 
 	if [ -n "$message_id" ]; then
-		dim_commit_add_tag "Link: http://patchwork.freedesktop.org/patch/msgid/$message_id"
+		dim_commit_add_tag "Link: https://patchwork.freedesktop.org/patch/msgid/$message_id"
 	else
 		echoerr "WARNING: No message-id found in the patch file."
 		rv=1
@@ -789,7 +789,7 @@ function dim_apply_pull
 
 	git commit --amend -s --no-edit
 	if [ -n "$message_id" ]; then
-		dim_commit_add_tag "Link: http://patchwork.freedesktop.org/patch/msgid/$message_id"
+		dim_commit_add_tag "Link: https://patchwork.freedesktop.org/patch/msgid/$message_id"
 	else
 		echoerr "WARNING: No message-id found in the patch file."
 		rv=1
@@ -872,7 +872,7 @@ function dim_add_link
 	rm -f $file
 
 	if [[ -n "$message_id" ]]; then
-		dim_commit_add_tag "Link: http://patchwork.freedesktop.org/patch/msgid/$message_id"
+		dim_commit_add_tag "Link: https://patchwork.freedesktop.org/patch/msgid/$message_id"
 	else
 		echoerr "No message-id found in the patch file."
 	fi
