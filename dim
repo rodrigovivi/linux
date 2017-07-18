@@ -495,6 +495,7 @@ function update_rerere_cache
 {
 	echo -n "Updating rerere cache... "
 
+	cd $DIM_PREFIX/drm-rerere/
 	git pull
 	mkdir $(rr_cache_dir) &> /dev/null || true
 	cp rr-cache/* $(rr_cache_dir) -r --preserve=timestamps
