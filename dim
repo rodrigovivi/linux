@@ -546,7 +546,6 @@ function commit_rerere_cache
 	fi
 }
 
-dim_alias_rebuild_nightly=rebuild-tip
 function dim_rebuild_tip
 {
 	local integration_branch specfile time first rerere repo url remote
