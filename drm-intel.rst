@@ -189,7 +189,7 @@ the appropriate branches.
 
 If possible, the commit message should also contain a Fixes: tag as described in
 `Documentation/process/submitting-patches
-  <https://01.org/linuxgraphics/gfx-docs/drm/process/submitting-patches.html>`_
+<https://01.org/linuxgraphics/gfx-docs/drm/process/submitting-patches.html>`_
 to aid the maintainers in identifying the right branch.
 
 Requesting Fixes Cherry-Pick Afterwards
@@ -360,7 +360,6 @@ Detail Check List
 An inexhaustive list of details to check:
 
 * The patch conforms to `Documentation/process/submitting-patches
-
   <https://01.org/linuxgraphics/gfx-docs/drm/process/submitting-patches.html>`_
 
 * The commit message is sensible, and includes adequate details and references.
