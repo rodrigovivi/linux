@@ -18,7 +18,7 @@ drm-intel.html: drm-intel.rst drm-intel-flow.svg drm-intel-timeline.rst drm-inte
 	sed -i 's/<body/<body onload="WaveDrom.ProcessAll()"/' $@
 
 # the sed bit here is a hack to make wavedrom process the timeline
-drm-misc.html: drm-misc.rst drm-misc-timeline.rst drm-misc-timeline.json
+drm-misc.html: drm-misc.rst drm-misc-timeline.rst drm-misc-timeline.json drm-misc-commit-flow.svg
 	rst2html $< > $@
 	sed -i 's/<body/<body onload="WaveDrom.ProcessAll()"/' $@
 

@@ -1,0 +1,22 @@
+digraph {
+	next_0[shape=box, style=rounded, color=blue, label="drm-misc-next"];
+	next_1[shape=box, style=rounded, color=blue, label="drm-misc-next"];
+	fixes_0[shape=box, style=rounded, color=blue, label="drm-misc-fixes"];
+	next_fixes_0[shape=box, style=rounded, color=blue,
+		     label="drm-misc-next-fixes"];
+
+	is_fix[shape=diamond, color=red, label="Is this a bug fix?"];
+	in_origin[shape=diamond, color=red,
+		  label="Is the bug in the current rc?"];
+	is_late[shape=diamond, color=red,
+		label="Is drm in feature freeze?\n(occurs after -rc6)"];
+
+	is_fix -> next_0[label="no"];
+	is_fix -> in_origin[label="yes"];
+
+	in_origin -> fixes_0[label="yes"]
+	in_origin -> is_late[label="no"];
+
+	is_late -> next_1[label="no"]
+	is_late -> next_fixes_0[label="yes"]
+}

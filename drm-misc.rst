@@ -73,6 +73,16 @@ updated drm-tip gets rebuilt. If there's a conflict see section on `resolving
 conflicts when rebuilding drm-tip
 <drm-intel.html#resolving-conflicts-when-rebuilding-drm-tip>`_.
 
+Where Do I Apply My Patch?
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Consult this handy flowchart to determine the best branch for your patch. If in
+doubt, apply to drm-misc-next or ask your favorite maintainer on IRC.
+
+.. Note: This requires SVG support in the browser.
+.. raw:: html
+	:file: drm-misc-commit-flow.svg
+
 Merge Timeline
 ~~~~~~~~~~~~~~
 
