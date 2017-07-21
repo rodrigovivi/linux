@@ -519,7 +519,6 @@ function commit_rerere_cache
 		for file  in $(git ls-files); do
 			if ! git log --since="60 days ago" --name-only -- $file | grep $file &> /dev/null; then
 				git rm $file &> /dev/null
-				echo deleting $file
 			fi
 		done
 		find rr-cache/ -ctime -1 -type f -print0 | xargs -0 git add > /dev/null
