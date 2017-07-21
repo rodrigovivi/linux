@@ -512,9 +512,9 @@ function commit_rerere_cache
 	if git_is_current_branch rerere-cache ; then
 		remote=$(branch_to_remote rerere-cache)
 
-		git pull >& /dev/null
 		rm $(rr_cache_dir)/rr-cache -Rf &> /dev/null || true
 		cp $(rr_cache_dir)/* rr-cache -r --preserve=timestamps
+		git pull >& /dev/null
 		git add ./*.patch >& /dev/null || true
 		for file  in $(git ls-files); do
 			if ! git log --since="60 days ago" --name-only -- $file | grep $file &> /dev/null; then
