@@ -662,13 +662,32 @@ function checkpatch_commit_push
 
 	sha1=$1
 
+	# use real names for people with many different email addresses
+	author=$(git show -s $sha1 --format="format:%an")
+	committer=$(git show -s $sha1 --format="format:%cn")
+
+	# check for author sign-off
+	if ! git show -s $sha1 | grep -qi "S.*-by:.*$author"  ; then
+		warn_or_fail "$sha1 is lacking author of sign-off"
+	fi
+
+	# check for committer sign-off
+	if ! git show -s $sha1 | grep -qi "S.*-by:.*$committer"  ; then
+		warn_or_fail "$sha1 is lacking committer of sign-off"
+	fi
+
+	# check for Link tag
+	if ! git show -s $sha1 | grep -qi 'Link:'  ; then
+		warn_or_fail "$sha1 is lacking of link tag"
+	fi
+
 	# check for a-b/r-b tag
 	if git show -s $sha1 | grep -qi '\(reviewed\|acked\)\S*-by:'  ; then
 		return
 	fi
 
 	# check for committer != author
-	if [[ $(git show -s $sha1 --format="format:%ce") != $(git show -s $sha1 --format="format:%ae") ]]; then
+	if [[ $committer  != $author ]]; then
 		return
 	fi
 
