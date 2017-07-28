@@ -523,7 +523,7 @@ function commit_rerere_cache
 				git rm $file &> /dev/null
 			fi
 		done
-		find rr-cache/ -ctime -1 -type f -print0 | xargs -0 git add > /dev/null
+		find rr-cache/ -mtime -1 -type f -print0 | xargs -0 git add > /dev/null
 		git rm rr-cache/rr-cache &> /dev/null || true
 		if git commit -m "$time: $integration_branch rerere cache update" >& /dev/null; then
 			echo -n "New commit. "
