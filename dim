@@ -335,7 +335,7 @@ function git_current_branch
 
 function git_is_current_branch # branch
 {
-	git branch --list $1 | grep -q '\*'
+	test "$(git_current_branch)" = "$1"
 }
 
 function git_branch_exists # branch
