@@ -198,6 +198,10 @@ apply-queued [*git am arguments*]
 **apply-branch** shorthands for *drm-intel-fixes*, *drm-intel-next-fixes*, and
 *drm-intel-next-queued* branches respectively.
 
+apply [*git am arguments*]
+--------------------------
+**apply-branch** shorthand for the current branch.
+
 extract-tags *branch* [*git-rangeish*]
 --------------------------------------
 This extracts various tags (e.g. Reviewed-by:) from emails and applies them to the
@@ -231,6 +235,10 @@ push-queued [*git push arguments*]
 ----------------------------------
 **push-branch** shorthands for *drm-intel-fixes*, *drm-intel-next-fixes*, and
 *drm-intel-next-queued* branches respectively.
+
+push [*git push arguments*]
+---------------------------
+**push-branch** shorthand for the current branch.
 
 rebuild-tip
 -----------
