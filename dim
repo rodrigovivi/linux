@@ -492,9 +492,9 @@ function check_conflicts # tree
 function rr_cache_dir
 {
 	if [ -d $DIM_PREFIX/drm-tip/.git/ ] ; then
-		echo $DIM_PREFIX/drm-tip/.git/rr-cache/
+		echo $DIM_PREFIX/drm-tip/.git/rr-cache
 	else
-		echo $DIM_PREFIX/$DIM_DRM_INTEL/.git/rr-cache/
+		echo $DIM_PREFIX/$DIM_DRM_INTEL/.git/rr-cache
 	fi
 }
 
@@ -504,10 +504,10 @@ function update_rerere_cache
 
 	cd $DIM_PREFIX/drm-rerere/
 	git pull &> /dev/null
-	if [ -d $(rr_cache_dir) ] ; then
-		rm -Rf $(rr_cache_dir)
-	fi
 	if [ ! -L $(rr_cache_dir) ] ; then
+		if [ -d $(rr_cache_dir) ] ; then
+			rm -Rf $(rr_cache_dir)
+		fi
 		ln -s "$DIM_PREFIX/drm-rerere/rr-cache" $(dirname $(rr_cache_dir))
 	fi
 
