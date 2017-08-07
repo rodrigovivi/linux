@@ -504,8 +504,13 @@ function update_rerere_cache
 
 	cd $DIM_PREFIX/drm-rerere/
 	git pull &> /dev/null
-	mkdir $(rr_cache_dir) &> /dev/null || true
-	cp rr-cache/* $(rr_cache_dir) -r --preserve=timestamps
+	if [ -d $(rr_cache_dir) ] ; then
+		rm -Rf $(rr_cache_dir)
+	fi
+	if [ ! -L $(rr_cache_dir) ] ; then
+		ln -s "$DIM_PREFIX/drm-rerere/rr-cache" $(dirname $(rr_cache_dir))
+	fi
+
 	cd - > /dev/null
 
 	echo "Done."
@@ -519,8 +524,6 @@ function commit_rerere_cache
 	if git_is_current_branch rerere-cache ; then
 		remote=$(branch_to_remote rerere-cache)
 
-		rm $(rr_cache_dir)/rr-cache -Rf &> /dev/null || true
-		cp $(rr_cache_dir)/* rr-cache -r --preserve=timestamps
 		git pull >& /dev/null
 		git add ./*.patch >& /dev/null || true
 		for file  in $(git ls-files); do
@@ -541,17 +544,6 @@ function commit_rerere_cache
 		echo "Fail: Branch setup for the rerere-cache is borked."
 		exit 1
 	fi
-}
-
-function dim_revert_rerere
-{
-	local commit
-
-	commit=${1:?$usage}
-
-	cd $DIM_PREFIX/drm-rerere/
-	git revert $commit
-	rm $(rr_cache_dir)/* -Rf
 }
 
 dim_alias_rebuild_nightly=rebuild-tip

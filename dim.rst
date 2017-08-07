@@ -247,15 +247,6 @@ Rebuild and push the integration tree.
 ADVANCED COMMANDS FOR COMMITTERS AND MAINTAINERS
 ================================================
 
-revert-rerere *rerere-cache-commit-ish*
----------------------------------------
-When a stored conflict resolution in the integration tree is wrong, this command
-can be used to fix up the mess. First figure out which commit in the
-*rerere-cache* branch contains the bogus conflict resolution, then revert it
-using this command. This ensures the resolution is also purged from any local
-caches, to make sure it doesn't get resurrected. Then run *rebuild-tip* to redo
-the merges, correctly.
-
 cat-to-fixup
 ------------
 Pipes stdin into the fixup patch file for the current drm-tip merge.
