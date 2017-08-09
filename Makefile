@@ -48,6 +48,6 @@ mancheck:
 check: shellcheck mancheck all
 
 clean:
-	rm -f drm-intel.html drm-intel-flow.svg dim.html drm-misc.html
+	rm -f drm-intel.html drm-intel-flow.svg drm-misc-commit-flow.svg dim.html drm-misc.html
 
 .PHONY: all clean
