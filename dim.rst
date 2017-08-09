@@ -13,6 +13,8 @@ drm inglorious maintainer script
 :Manual section: 1
 :Manual group: maintainer tools
 
+.. Please use 'make mancheck' to validate updates to this file.
+
 SYNOPSIS
 ========
 

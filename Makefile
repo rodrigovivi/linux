@@ -43,6 +43,7 @@ mancheck:
 			echo "$@: $$cmd not documented"; \
 		fi \
 	done
+	rst2man --strict --no-raw dim.rst >/dev/null
 
 check: shellcheck mancheck all
 
