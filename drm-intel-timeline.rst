@@ -1,22 +1,8 @@
 .. raw:: html
 
-	<script type="text/javascript">
-	/* Embedded WaveDrom skin from http://wavedrom.com/skins/default.js */
-
-.. raw:: html
-	:url: http://wavedrom.com/skins/default.js
-
-.. raw:: html
-
-	</script>
-	<script type="text/javascript">
-	/* Embedded WaveDrom engine from http://wavedrom.com/WaveDrom.js */
-
-.. raw:: html
-	:url: http://wavedrom.com/WaveDrom.js
-
-.. raw:: html
-
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/wavedrom/1.4.1/skins/default.js" type="text/javascript"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/wavedrom/1.4.1/wavedrom.min.js" type="text/javascript"></script>
+	<script>
 	function init() {
 		WaveDrom.ProcessAll();
 	}
