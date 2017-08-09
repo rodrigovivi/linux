@@ -8,6 +8,10 @@
 
 .. raw:: html
 
+	function init() {
+		WaveDrom.ProcessAll();
+	}
+	window.onload = init;
 	</script>
 	<script type="text/javascript">
 	/* Embedded WaveDrom engine from http://wavedrom.com/WaveDrom.js */

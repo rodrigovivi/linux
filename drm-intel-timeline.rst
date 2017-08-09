@@ -17,6 +17,10 @@
 
 .. raw:: html
 
+	function init() {
+		WaveDrom.ProcessAll();
+	}
+	window.onload = init;
 	</script>
 	<script type="WaveDrom">
 
