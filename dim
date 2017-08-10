@@ -707,7 +707,7 @@ function dim_push_branch
 
 	committer_email=$(git_committer_email)
 
-	for sha1 in $(git rev-list $branch@{u}..$branch --committer="$committer_email" --no-merges) ; do
+	for sha1 in $(git rev-list "$branch@{u}..$branch" --committer="$committer_email" --no-merges) ; do
 		checkpatch_commit_push $sha1
 	done
 
