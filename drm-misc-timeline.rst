@@ -8,6 +8,7 @@
 	}
 	window.onload = init;
 	</script>
+	<div style="overflow-x:auto">
 	<script type="WaveDrom">
 
 .. raw:: html
@@ -16,3 +17,4 @@
 .. raw:: html
 
 	</script>
+	</div>
