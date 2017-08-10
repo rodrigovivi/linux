@@ -79,9 +79,7 @@ Where Do I Apply My Patch?
 Consult this handy flowchart to determine the best branch for your patch. If in
 doubt, apply to drm-misc-next or ask your favorite maintainer on IRC.
 
-.. Note: This requires SVG support in the browser.
-.. raw:: html
-	:file: drm-misc-commit-flow.svg
+.. image:: drm-misc-commit-flow.svg
 
 Merge Timeline
 ~~~~~~~~~~~~~~

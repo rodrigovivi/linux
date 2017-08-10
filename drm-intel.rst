@@ -133,9 +133,7 @@ Patch and Merge Flow
 This chart describes the flow of patches to drm-intel branches, and the merge
 flow of the commits to drm-upstream and Linus' tree.
 
-.. Note: This requires SVG support in the browser.
-.. raw:: html
-	:file: drm-intel-flow.svg
+.. image:: drm-intel-flow.svg
 
 Legend: Green = Linus. Red = drm-upstream. Blue = drm-intel. Black = patches.
 Yellow = Additional trees from other subsystems.
