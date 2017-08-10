@@ -685,7 +685,7 @@ function checkpatch_commit_push
 	fi
 
 	# check for committer != author
-	if [[ $committer  != $author ]]; then
+	if [[ "$committer" != "$author" ]]; then
 		return
 	fi
 
