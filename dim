@@ -1959,7 +1959,9 @@ function dim_fixes
 
 function dim_add_missing_cc
 {
-	git show | scripts/get_maintainer.pl --email --norolestats --pattern-depth 1 | while read cc; do
+	local email name matches
+
+	git show | scripts/get_maintainer.pl --email --norolestats --pattern-depth 1 | while read -r cc; do
 		email="$(echo "$cc" | sed -e 's/.*<//' -e 's/>.*//')"
 		name=''
 
@@ -1968,15 +1970,15 @@ function dim_add_missing_cc
 		fi
 
 		# Don't add main mailing lists
-		if [ "$email" = "dri-devel@lists.freedesktop.org" -o \
-		     "$email" = "linux-kernel@vger.kernel.org}" ]; then
+		if [[ "$email" = "dri-devel@lists.freedesktop.org" || \
+		      "$email" = "linux-kernel@vger.kernel.org}" ]]; then
 			continue
 		fi
 
 		# Variables from the while loop don't propagate,
 		# print out a 1 on success
 		matches=$(
-			git show -s | grep -i "^    Cc:" | sed 's/^ *[Cc][Cc]: *//' | while read testcc; do
+			git show -s | grep -i "^    Cc:" | sed 's/^ *[Cc][Cc]: *//' | while read -r testcc; do
 				testemail="$(echo "$testcc" | sed -e 's/.*<//' -e 's/>.*//')"
 
 				if [ "$testemail" != "$email" ]; then
