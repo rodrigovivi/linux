@@ -350,7 +350,7 @@ function git_branch_exists # branch
 function git_committer_email
 {
 	if ! committer_email=$(git config --get user.email) ; then
-		committer_email=$EMAIL
+		committer_email=${EMAIL-}
 	fi
 
 	echo $committer_email
