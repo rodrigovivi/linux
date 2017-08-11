@@ -921,13 +921,11 @@ function dim_apply_queued
 	dim_apply_branch drm-intel-next-queued "$@"
 }
 
-dim_alias_af=apply-fixes
 function dim_apply_fixes
 {
 	dim_apply_branch drm-intel-fixes "$@"
 }
 
-dim_alias_anf=apply-next-fixes
 function dim_apply_next_fixes
 {
 	dim_apply_branch drm-intel-next-fixes "$@"
