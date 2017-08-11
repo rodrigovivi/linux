@@ -204,6 +204,10 @@ apply [*git am arguments*]
 --------------------------
 **apply-branch** shorthand for the current branch.
 
+commit-add-tag *string* [...]
+-----------------------------
+Append each argument at the end of the commit message of HEAD.
+
 extract-tags *branch* [*git-rangeish*]
 --------------------------------------
 This extracts various tags (e.g. Reviewed-by:) from emails and applies them to the
