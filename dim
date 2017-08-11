@@ -89,7 +89,7 @@ addr_intel_gfx_maintainer1="Daniel Vetter <daniel.vetter@ffwll.ch>"
 addr_intel_gfx_maintainer2="Jani Nikula <jani.nikula@linux.intel.com>"
 addr_intel_gfx="intel-gfx@lists.freedesktop.org"
 addr_dri_devel="dri-devel@lists.freedesktop.org"
-addr_intel_qa="\"Christophe Prigent\" <christophe.prigent@intel.com>"
+addr_intel_qa="\"Jari Tahvanainen\" <jari.tahvanainen@intel.com>"
 
 # integration configuration
 integration_config=nightly.conf
