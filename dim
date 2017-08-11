@@ -2053,4 +2053,7 @@ if ! declare -f $subcmd_func >/dev/null; then
 	exit 1
 fi
 
+# throw away to not confuse list-aliases
+unset subcmd
+
 $subcmd_func "$@"
