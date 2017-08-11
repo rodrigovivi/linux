@@ -987,7 +987,7 @@ function git_list_fixes
 	    "$@"
 }
 
-function dim_cherry_pick_branch
+function cherry_pick_branch
 {
 	local branch log fail_log needed have_fixes
 
@@ -1057,13 +1057,13 @@ function dim_cherry_pick_branch
 function dim_cherry_pick_fixes
 {
 	assert_branch drm-intel-fixes
-	dim_cherry_pick_branch drm-intel-fixes "$@"
+	cherry_pick_branch drm-intel-fixes "$@"
 }
 
 function dim_cherry_pick_next_fixes
 {
 	assert_branch drm-intel-next-fixes
-	dim_cherry_pick_branch drm-intel-next-fixes "$@"
+	cherry_pick_branch drm-intel-next-fixes "$@"
 }
 
 dim_alias_ar=apply-resolved
