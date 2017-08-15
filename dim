@@ -503,7 +503,14 @@ function update_rerere_cache
 	echo -n "Updating rerere cache... "
 
 	cd $DIM_PREFIX/drm-rerere/
-	git pull &> /dev/null
+	if ! git pull -q ; then
+		echoerr "Failed to update the rerere cache."
+		echoerr "Please manually run"
+		echoerr "	$ cd $DIM_PREFIX/drm-rerere ; git pull"
+		echoerr "and fixup any issues."
+
+		return 1
+	fi
 	if [ ! -L $(rr_cache_dir) ] ; then
 		if [ -d $(rr_cache_dir) ] ; then
 			rm -Rf $(rr_cache_dir)
@@ -524,7 +531,14 @@ function commit_rerere_cache
 	if git_is_current_branch rerere-cache ; then
 		remote=$(branch_to_remote rerere-cache)
 
-		git pull >& /dev/null
+		if ! git pull -q ; then
+			echoerr "Failed to update the rerere cache."
+			echoerr "Please manually run"
+			echoerr "	$ cd $DIM_PREFIX/drm-rerere ; git pull"
+			echoerr "and fixup any issues."
+
+			return 1
+		fi
 		git add ./*.patch >& /dev/null || true
 		for file  in $(git ls-files); do
 			if ! git log --since="60 days ago" --name-only -- $file | grep $file &> /dev/null; then
