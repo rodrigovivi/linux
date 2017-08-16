@@ -979,7 +979,6 @@ function dim_cherry_pick
 function git_list_fixes
 {
 	git log --reverse --format=format:%H --regexp-ignore-case \
-	    --grep="^Cc:.*drm-intel-fixes@lists\.freedesktop\.org" \
 	    --grep="^Cc:.*stable@vger\.kernel\.org" \
 	    --grep="^Fixes: " \
 	    "$@"
@@ -1935,22 +1934,8 @@ function dim_fixes
 
 	tag=$(git tag --contains $sha1 | grep ^v | sort -V | head -n 1)
 	if [[ -n "$tag" ]]; then
-		if echo "$tag" | grep -q -e "-rc" ; then
-			echo "Cc: <drm-intel-fixes@lists.freedesktop.org> # ${tag}+"
-		else
+		if ! echo "$tag" | grep -q -e "-rc"; then
 			echo "Cc: <stable@vger.kernel.org> # ${tag}+"
-		fi
-	else
-		git_fetch_helper $DIM_DRM_INTEL_REMOTE
-		# Check whether it's already in a feature pile tag
-		if git merge-base --is-ancestor $sha1 $DIM_DRM_INTEL_REMOTE/drm-intel-next ; then
-			# Make sure we're in the critical window where we might
-			# need to cherry-pick to dinf. critical window is -rc5
-			# up to end of merge window, hence exclude if in -rc1
-			# through rc-4.
-			if ! git tag | grep ^v | sort -V | tail -n1 | grep -q -e "-rc[1-4]$" ; then
-				echo "Cc: <drm-intel-fixes@lists.freedesktop.org>"
-			fi
 		fi
 	fi
 }
