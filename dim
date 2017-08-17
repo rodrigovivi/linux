@@ -756,33 +756,21 @@ function dim_push
 	dim_push_branch $(git_current_branch) "$@"
 }
 
-# ensure we're on branch $1, and apply patches. the rest of the arguments are
-# passed to git am.
-dim_alias_ab=apply-branch
-dim_alias_sob=apply-branch
-function dim_apply_branch
+function apply_patch #patch_file
 {
-	local branch file message_id committer_email patch_from sob rv
+	local patch message_id committer_email patch_from sob rv
 
-	branch=${1:?$usage}
+	patch="$1"
 	shift
-	file=$(mktemp)
-
-	assert_branch $branch
-	assert_repo_clean
-
-	cat > $file
-
-	message_id=$(message_get_id $file)
-
+	message_id=$(message_get_id $patch)
 	committer_email=$(git_committer_email)
 
-	patch_from=$(grep "From:" "$file" | head -1)
+	patch_from=$(grep "From:" "$patch" | head -1)
 	if [[ "$patch_from" != *"$committer_email"* ]] ; then
 		sob=-s
 	fi
 
-	git am --scissors -3 $sob "$@" $file
+	git am --scissors -3 $sob "$@" $patch
 
 	if [ -n "$message_id" ]; then
 		dim_commit_add_tag "Link: https://patchwork.freedesktop.org/patch/msgid/$message_id"
@@ -799,6 +787,34 @@ function dim_apply_branch
 	fi
 
 	eval $DRY $DIM_POST_APPLY_ACTION
+	return $rv
+}
+
+# ensure we're on branch $1, and apply patches. the rest of the arguments are
+# passed to git am.
+dim_alias_ab=apply-branch
+dim_alias_sob=apply-branch
+function dim_apply_branch
+{
+	local branch file rv
+
+	branch=${1:?$usage}
+	shift
+	file=$(mktemp)
+	dir=$(mktemp -d)
+
+	assert_branch $branch
+	assert_repo_clean
+
+	cat > $file
+	git mailsplit -b -o$dir $file > /dev/null
+
+	for patch in $dir/*; do
+		if ! apply_patch $patch "$@"; then
+			rv=1
+		fi
+	done
+	rm -rf $file $dir
 
 	return $rv
 }
