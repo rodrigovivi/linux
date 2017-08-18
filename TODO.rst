@@ -1,4 +1,9 @@
-dim:
+TODO
+====
+
+dim
+---
+
 - extract the integration tree logic and make it generally useful, maybe for a
   drm-integration tree ...
 - add option to check-patch to check stdin
@@ -14,7 +19,9 @@ dim:
   fixed any more.
 - apply-resolved fails to add the Link: tag.
 
-qf:
+qf
+--
+
 - get better at preventing and cleaning up a mess when switching branches
   while there's still applied quilt patches around ...
 - combine quilt annotate and git blame into one tool

@@ -9,6 +9,7 @@ Contents:
    drm-misc
    drm-intel
    dim
+   TODO
 
 Indices and tables
 ==================
