@@ -52,6 +52,7 @@ mancheck:
 		fi \
 	done
 	rst2man --strict --no-raw dim.rst >/dev/null
+	rst2man --strict --no-raw qf.rst >/dev/null
 
 check: shellcheck mancheck all
 
