@@ -34,19 +34,19 @@ set -e
 
 function cd_toplevel
 {
-	cd `git rev-parse --show-toplevel`
+	cd $(git rev-parse --show-toplevel)
 
 	if [ -f series ] ; then
 		cd ..
 
-		if [[ $PWD != `git rev-parse --show-toplevel` ]] ; then
+		if [[ $PWD != $(git rev-parse --show-toplevel) ]] ; then
 			echo No git repo in parent directory of series file
 			exit 1
 		fi
 	fi
 
 	if [[ -f patches/series ]] ; then
-		if [[ $PWD/patches != `cd patches ; git rev-parse --show-toplevel` ]] ; then
+		if [[ $PWD/patches != $(cd patches ; git rev-parse --show-toplevel) ]] ; then
 			echo No git repo found in quilt series directory
 			exit 2
 		fi
@@ -65,7 +65,7 @@ function quiet_pop_all
 function repo_check # allow-detached
 {
 	cd patches
-	quilt_branch=`git rev-parse --abbrev-ref HEAD`
+	quilt_branch=$(git rev-parse --abbrev-ref HEAD)
 	branch=${quilt_branch#$QUILT_PREFIX}
 
 	if [[ ! $1 ]] ; then
@@ -84,9 +84,9 @@ function repo_check # allow-detached
 		cd ..
 	fi
 
-	baseline=`source patches/config ; echo $BASELINE`
+	baseline=$(source patches/config ; echo $BASELINE)
 
-	if [[ `git rev-parse HEAD` != $baseline ]] ; then
+	if [[ $(git rev-parse HEAD) != $baseline ]] ; then
 		echo Baseline commit doesn\'t match with quilt config
 		exit 7
 	fi
@@ -154,14 +154,14 @@ function branch_init
 
 function quilt_clean_check
 {
-	local current_top=`quilt top`
+	local current_top=$(quilt top)
 
-	if [[ -n `quilt unapplied $current_top` ]] ; then
+	if [[ -n $(quilt unapplied $current_top) ]] ; then
 		echo Unapplied quilt patches, aborting.
 		exit 9
 	fi
 
-	local quilt_changes=`cd patches ; git status --porcelain`
+	local quilt_changes=$(cd patches ; git status --porcelain)
 
 	if [[ -n $quilt_changes ]] ; then
 		echo Uncommitted changes in the quilt patch repo, aborting.
@@ -181,7 +181,7 @@ fi
 
 function qf_setup
 {
-	cd `git rev-parse --show-toplevel`
+	cd $(git rev-parse --show-toplevel)
 
 	if [[ -d patches ]] ; then
 		if [[ ! -d patches/.git ]] ; then
@@ -203,8 +203,8 @@ function qf_setup
 
 		branch=$1
 		quilt_branch=$QUILT_PREFIX$branch
-		baseline=`git rev-parse $1`
-		remote=`git config branch.$branch.remote`
+		baseline=$(git rev-parse $1)
+		remote=$(git config branch.$branch.remote)
 
 		branch_init $2
 	fi
@@ -229,10 +229,10 @@ function qf_checkout
 	cd ..
 	# error code 2 means no patches removed, which is ok
 	quiet_pop_all -f
-	baseline=`source patches/config ; echo $BASELINE`
+	baseline=$(source patches/config ; echo $BASELINE)
 	checkout_baseline
 	quilt push -a -q > /dev/null
-	echo Now at `quilt top`
+	echo Now at $(quilt top)
 }
 
 function qf_rebase
@@ -245,9 +245,9 @@ function qf_rebase
 		exit 4
 	fi
 
-	new_baseline=`git rev-parse $1`
+	new_baseline=$(git rev-parse $1)
 
-	current_top=`quilt top`
+	current_top=$(quilt top)
 	quiet_pop_all
 	echo Resetting baseline to $new_baseline
 	git reset --hard $new_baseline
@@ -262,7 +262,7 @@ function qf_refresh
 	cd_toplevel
 	repo_check 0
 
-	changed_files=`qf git status --porcelain | wc -l`
+	changed_files=$(qf git status --porcelain | wc -l)
 
 	if [[ $changed_files -gt 0 ]] ; then
 		echo Quilt patch dir not clean, aborting
@@ -300,10 +300,10 @@ function qf_export
 	quilt_clean_check
 
 	username=$GIT_COMMMITTER_NAME
-	username=${username:-`git config user.name || true`}
-	username=${username:-`getent passwd $USER | cut -d: -f 5 | cut -d, -f 1 || true`}
+	username=${username:-$(git config user.name || true)}
+	username=${username:-$(getent passwd $USER | cut -d: -f 5 | cut -d, -f 1 || true)}
 	useremail=$GIT_COMMMITTER_EMAIL
-	useremail=${useremail:-`git config user.email || true`}
+	useremail=${useremail:-$(git config user.email || true)}
 	useremail=${useremail:-$EMAIL}
 
 	if [[ -z $useremail || -z $username ]] ; then
@@ -324,11 +324,11 @@ function qf_export
 
 	git quiltimport --author "$username <$useremail>"
 
-	quilt_ref=`cd patches ; git rev-parse --abbrev-ref HEAD`
-	quilt_sha_abbrev=`cd patches ; git rev-parse --short HEAD`
-	quilt_sha=`cd patches ; git rev-parse HEAD`
+	quilt_ref=$(cd patches ; git rev-parse --abbrev-ref HEAD)
+	quilt_sha_abbrev=$(cd patches ; git rev-parse --short HEAD)
+	quilt_sha=$(cd patches ; git rev-parse HEAD)
 
-	git update-ref -m "export $quilt_ref:$quilt_sha_abbrev to $branch" refs/QUILT_EXPORT `git rev-parse HEAD`
+	git update-ref -m "export $quilt_ref:$quilt_sha_abbrev to $branch" refs/QUILT_EXPORT $(git rev-parse HEAD)
 	git notes --ref quilt add -m "Quilt-Commit: $quilt_sha" $branch
 
 	checkout_baseline
@@ -351,10 +351,10 @@ function qf_push
 	repo_check 0
 	quilt_clean_check
 
-	remote=`git config branch.$branch.remote`
+	remote=$(git config branch.$branch.remote)
 
-	export_quilt_sha=`git notes --ref=quilt show $branch | grep Quilt-Commit | cut -d ' ' -f 2`
-	quilt_sha=`cd patches ; git rev-parse $quilt_branch`
+	export_quilt_sha=$(git notes --ref=quilt show $branch | grep Quilt-Commit | cut -d ' ' -f 2)
+	quilt_sha=$(cd patches ; git rev-parse $quilt_branch)
 
 	if [[ $export_quilt_sha != $quilt_sha ]] ; then
 		echo Quilt export is out of date, aborting
@@ -379,7 +379,7 @@ function qf_fetch
 	cd_toplevel
 	repo_check 0
 
-	remote=`git config branch.$branch.remote`
+	remote=$(git config branch.$branch.remote)
 
 	cd patches
 	git fetch $remote
@@ -423,7 +423,7 @@ function qf_wiggle_push
 	cd_toplevel
 	repo_check 1
 
-	conflict_files=`quilt push -f | grep "saving rejects" | sed -e "s/.*saving rejects to file \(.*\)/\1/"`
+	conflict_files=$(quilt push -f | grep "saving rejects" | sed -e "s/.*saving rejects to file \(.*\)/\1/")
 
 	if [[ $conflict_files != "" ]] ; then
 		echo conflicts found!
@@ -462,7 +462,7 @@ function qf_patch_amend
 	cd_toplevel
 	repo_check 1
 
-	gvim `quilt top`
+	gvim $(quilt top)
 }
 
 function qf_list_unused_patches
