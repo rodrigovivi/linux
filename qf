@@ -59,7 +59,7 @@ function cd_toplevel
 function quiet_pop_all
 {
 	echo Popping patches ...
-	quilt pop -a -q $@ > /dev/null || test $? = 2
+	quilt pop -a -q "$@" > /dev/null || test $? = 2
 }
 
 function repo_check # allow-detached
