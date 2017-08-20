@@ -135,7 +135,7 @@ function branch_init
 		echo Creating new quilt branch $quilt_branch
 		# big trickery to get an empty commit
 		git checkout -q --orphan $quilt_branch > /dev/null
-		git rm -rf * > /dev/null
+		git rm -rf ./* > /dev/null
 		git ls-files | xargs git rm -rf > /dev/null
 		touch series
 		echo BASELINE=$baseline > config
