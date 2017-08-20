@@ -86,7 +86,7 @@ function repo_check # allow-detached
 
 	baseline=$(source patches/config ; echo $BASELINE)
 
-	if [[ $(git rev-parse HEAD) != $baseline ]] ; then
+	if [[ $(git rev-parse HEAD) != "$baseline" ]] ; then
 		echo Baseline commit doesn\'t match with quilt config
 		exit 7
 	fi
@@ -356,7 +356,7 @@ function qf_push
 	export_quilt_sha=$(git notes --ref=quilt show $branch | grep Quilt-Commit | cut -d ' ' -f 2)
 	quilt_sha=$(cd patches ; git rev-parse $quilt_branch)
 
-	if [[ $export_quilt_sha != $quilt_sha ]] ; then
+	if [[ $export_quilt_sha != "$quilt_sha" ]] ; then
 		echo Quilt export is out of date, aborting
 		echo $export_quilt_sha
 		echo $quilt_sha
