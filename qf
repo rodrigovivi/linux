@@ -154,14 +154,16 @@ function branch_init
 
 function quilt_clean_check
 {
-	local current_top=$(quilt top)
+	local current_top quilt_changes
+
+	current_top=$(quilt top)
 
 	if [[ -n $(quilt unapplied $current_top) ]] ; then
 		echo Unapplied quilt patches, aborting.
 		exit 9
 	fi
 
-	local quilt_changes=$(cd patches ; git status --porcelain)
+	quilt_changes=$(cd patches ; git status --porcelain)
 
 	if [[ -n $quilt_changes ]] ; then
 		echo Uncommitted changes in the quilt patch repo, aborting.
