@@ -170,60 +170,6 @@ function quilt_clean_check
 }
 
 case "$1" in
-	clean-patches)
-		cd_toplevel
-		repo_check 0
-
-		for patch in patches/*.patch ; do
-			if grep "^${patch##patches/}$" patches/series &> /dev/null ; then
-				continue
-			fi
-			echo No reference to $patch, deleting it.
-			rm $patch
-		done
-		;;
-	export)
-		cd_toplevel
-		repo_check 0
-		quilt_clean_check
-
-		username=$GIT_COMMMITTER_NAME
-		username=${username:-`git config user.name || true`}
-		username=${username:-`getent passwd $USER | cut -d: -f 5 | cut -d, -f 1 || true`}
-		useremail=$GIT_COMMMITTER_EMAIL
-		useremail=${useremail:-`git config user.email || true`}
-		useremail=${useremail:-$EMAIL}
-
-		if [[ -z $useremail || -z $username ]] ; then
-			echo User name/email not found, please fix your config
-			exit 17
-		fi
-
-		echo Exporting quilt pile $branch
-
-		quiet_pop_all
-
-		git reset --hard
-		if [[ $quilt_branch = HEAD ]] ; then
-			git checkout --detach
-		else
-			git checkout -B $branch
-		fi
-
-		git quiltimport --author "$username <$useremail>"
-
-		quilt_ref=`cd patches ; git rev-parse --abbrev-ref HEAD`
-		quilt_sha_abbrev=`cd patches ; git rev-parse --short HEAD`
-		quilt_sha=`cd patches ; git rev-parse HEAD`
-
-		git update-ref -m "export $quilt_ref:$quilt_sha_abbrev to $branch" refs/QUILT_EXPORT `git rev-parse HEAD`
-		git notes --ref quilt add -m "Quilt-Commit: $quilt_sha" $branch
-
-		checkout_baseline
-
-		quilt push -a -q
-
-		;;
 	export-visualize|ev)
 		cd_toplevel
 		repo_check 1
@@ -475,6 +421,63 @@ function qf_refresh
 
 	# ignore "nothing to commit"
 	qf git commit -a -m "Refreshing all patches." || true
+}
+
+function qf_clean_patches
+{
+	cd_toplevel
+	repo_check 0
+
+	for patch in patches/*.patch ; do
+		if grep "^${patch##patches/}$" patches/series &> /dev/null ; then
+			continue
+		fi
+		echo No reference to $patch, deleting it.
+		rm $patch
+	done
+}
+
+function qf_export
+{
+	cd_toplevel
+	repo_check 0
+	quilt_clean_check
+
+	username=$GIT_COMMMITTER_NAME
+	username=${username:-`git config user.name || true`}
+	username=${username:-`getent passwd $USER | cut -d: -f 5 | cut -d, -f 1 || true`}
+	useremail=$GIT_COMMMITTER_EMAIL
+	useremail=${useremail:-`git config user.email || true`}
+	useremail=${useremail:-$EMAIL}
+
+	if [[ -z $useremail || -z $username ]] ; then
+		echo User name/email not found, please fix your config
+		exit 17
+	fi
+
+	echo Exporting quilt pile $branch
+
+	quiet_pop_all
+
+	git reset --hard
+	if [[ $quilt_branch = HEAD ]] ; then
+		git checkout --detach
+	else
+		git checkout -B $branch
+	fi
+
+	git quiltimport --author "$username <$useremail>"
+
+	quilt_ref=`cd patches ; git rev-parse --abbrev-ref HEAD`
+	quilt_sha_abbrev=`cd patches ; git rev-parse --short HEAD`
+	quilt_sha=`cd patches ; git rev-parse HEAD`
+
+	git update-ref -m "export $quilt_ref:$quilt_sha_abbrev to $branch" refs/QUILT_EXPORT `git rev-parse HEAD`
+	git notes --ref quilt add -m "Quilt-Commit: $quilt_sha" $branch
+
+	checkout_baseline
+
+	quilt push -a -q
 }
 
 function qf_help
