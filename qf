@@ -170,12 +170,6 @@ function quilt_clean_check
 }
 
 case "$1" in
-	git|g)
-		cd_toplevel
-		cd patches
-		shift
-		git "$@"
-		;;
 	gitk|k)
 		cd_toplevel
 		cd patches
@@ -503,6 +497,14 @@ function qf_baseline
 	repo_check 1
 
 	echo $baseline
+}
+
+qf_alias_g=git
+function qf_git
+{
+	cd_toplevel
+	cd patches
+	git "$@"
 }
 
 function qf_help
