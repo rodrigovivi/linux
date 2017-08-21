@@ -43,7 +43,7 @@ SC_EXCLUDE := \
 	-e SC2143
 
 shellcheck:
-	shellcheck $(SC_EXCLUDE) dim bash_completion
+	shellcheck $(SC_EXCLUDE) dim bash_completion qf
 
 mancheck:
 	@for cmd in $$(./dim list-commands); do \
