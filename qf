@@ -170,33 +170,6 @@ function quilt_clean_check
 }
 
 case "$1" in
-	push)
-		cd_toplevel
-		repo_check 0
-		quilt_clean_check
-
-		remote=`git config branch.$branch.remote`
-
-		export_quilt_sha=`git notes --ref=quilt show $branch | grep Quilt-Commit | cut -d ' ' -f 2`
-		quilt_sha=`cd patches ; git rev-parse $quilt_branch`
-
-		if [[ $export_quilt_sha != $quilt_sha ]] ; then
-			echo Quilt export is out of date, aborting
-			echo $export_quilt_sha
-			echo $quilt_sha
-			exit 18
-		fi
-
-		cd patches
-		git push $remote $quilt_branch:refs/quilts/$branch
-		cd ..
-
-		# The exported branch is a rebasing one, so force the push.
-		# Everything else shouldn't ever need a force-push.
-		git push $remote $branch -f
-
-		git push $remote refs/baselines/$branch/*:refs/baselines/$branch/*
-		;;
 	fetch)
 		cd_toplevel
 		repo_check 0
@@ -481,6 +454,35 @@ function qf_export_visualize
 	repo_check 1
 
 	gitk QUILT_EXPORT ^$baseline
+}
+
+function qf_push
+{
+	cd_toplevel
+	repo_check 0
+	quilt_clean_check
+
+	remote=`git config branch.$branch.remote`
+
+	export_quilt_sha=`git notes --ref=quilt show $branch | grep Quilt-Commit | cut -d ' ' -f 2`
+	quilt_sha=`cd patches ; git rev-parse $quilt_branch`
+
+	if [[ $export_quilt_sha != $quilt_sha ]] ; then
+		echo Quilt export is out of date, aborting
+		echo $export_quilt_sha
+		echo $quilt_sha
+		exit 18
+	fi
+
+	cd patches
+	git push $remote $quilt_branch:refs/quilts/$branch
+	cd ..
+
+	# The exported branch is a rebasing one, so force the push.
+	# Everything else shouldn't ever need a force-push.
+	git push $remote $branch -f
+
+	git push $remote refs/baselines/$branch/*:refs/baselines/$branch/*
 }
 
 function qf_help
