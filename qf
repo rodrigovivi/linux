@@ -170,10 +170,6 @@ function quilt_clean_check
 }
 
 case "$1" in
-	resolved)
-		quilt refresh
-		quilt header -e
-		;;
 	apply)
 		if [[ "$2" == "" ]] ; then
 			echo No patch name given, aborting.
@@ -492,6 +488,12 @@ function qf_wiggle_push
 		rm -f ${file%.rej}.porig
 		wiggle -r ${file%.rej} $file || true
 	done
+}
+
+function qf_resolved
+{
+	quilt refresh
+	quilt header -e
 }
 
 function qf_help
