@@ -403,9 +403,9 @@ function qf_pull
 	cd patches
 
 	if [[ $1 == "--rebase" ]] ; then
-		git rebase @{upstream}
+		git rebase "@{upstream}"
 	else
-		git merge @{upstream}
+		git merge "@{upstream}"
 	fi
 
 	qf co
