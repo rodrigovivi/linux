@@ -170,26 +170,6 @@ function quilt_clean_check
 }
 
 case "$1" in
-	refresh)
-		cd_toplevel
-		repo_check 0
-
-		changed_files=`qf git status --porcelain | wc -l`
-
-		if [[ $changed_files -gt 0 ]] ; then
-			echo Quilt patch dir not clean, aborting
-			exit
-		fi
-
-		quiet_pop_all
-
-		while quilt push ; do
-			quilt refresh
-		done
-
-		# ignore "nothing to commit"
-		qf git commit -a -m "Refreshing all patches." || true
-		;;
 	clean-patches)
 		cd_toplevel
 		repo_check 0
@@ -473,6 +453,28 @@ function qf_rebase
 	git update-ref refs/baselines/$branch/$new_baseline $new_baseline
 
 	quilt push $current_top -q
+}
+
+function qf_refresh
+{
+	cd_toplevel
+	repo_check 0
+
+	changed_files=`qf git status --porcelain | wc -l`
+
+	if [[ $changed_files -gt 0 ]] ; then
+		echo Quilt patch dir not clean, aborting
+		exit
+	fi
+
+	quiet_pop_all
+
+	while quilt push ; do
+		quilt refresh
+	done
+
+	# ignore "nothing to commit"
+	qf git commit -a -m "Refreshing all patches." || true
 }
 
 function qf_help
