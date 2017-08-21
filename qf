@@ -170,17 +170,6 @@ function quilt_clean_check
 }
 
 case "$1" in
-	apply)
-		if [[ "$2" == "" ]] ; then
-			echo No patch name given, aborting.
-			exit
-		fi
-		patch_name=$2.patch
-		quilt import -P $patch_name /proc/self/fd/0
-		quilt push
-		qf git add $patch_name
-		qf patch-amend
-		;;
 	patch-amend|pa)
 		cd_toplevel
 		repo_check 1
@@ -494,6 +483,19 @@ function qf_resolved
 {
 	quilt refresh
 	quilt header -e
+}
+
+function qf_apply
+{
+	if [[ "$1" == "" ]] ; then
+		echo No patch name given, aborting.
+		exit
+	fi
+	patch_name=$1.patch
+	quilt import -P $patch_name /proc/self/fd/0
+	quilt push
+	qf git add $patch_name
+	qf patch-amend
 }
 
 function qf_help
