@@ -170,12 +170,6 @@ function quilt_clean_check
 }
 
 case "$1" in
-	baseline)
-		cd_toplevel
-		repo_check 1
-
-		echo $baseline
-		;;
 	git|g)
 		cd_toplevel
 		cd patches
@@ -501,6 +495,14 @@ function qf_list_unused_patches
 			fi
 		fi
 	done
+}
+
+function qf_baseline
+{
+	cd_toplevel
+	repo_check 1
+
+	echo $baseline
 }
 
 function qf_help
