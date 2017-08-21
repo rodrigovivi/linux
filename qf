@@ -85,7 +85,7 @@ function repo_check # allow-detached
 	fi
 
 	# shellcheck source=/dev/null
-	baseline=$(source patches/config ; echo $BASELINE)
+	baseline=$(source patches/config ; echo ${BASELINE:-})
 
 	if [[ $(git rev-parse HEAD) != "$baseline" ]] ; then
 		echo Baseline commit doesn\'t match with quilt config
@@ -233,7 +233,7 @@ function qf_checkout
 	# error code 2 means no patches removed, which is ok
 	quiet_pop_all -f
 	# shellcheck source=/dev/null
-	baseline=$(source patches/config ; echo $BASELINE)
+	baseline=$(source patches/config ; echo ${BASELINE:-})
 	checkout_baseline
 	quilt push -a -q > /dev/null
 	echo Now at $(quilt top)
