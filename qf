@@ -170,20 +170,6 @@ function quilt_clean_check
 }
 
 case "$1" in
-	fetch)
-		cd_toplevel
-		repo_check 0
-
-		remote=`git config branch.$branch.remote`
-
-		cd patches
-		git fetch $remote
-		cd ..
-
-		git fetch $remote
-
-		git fetch $remote
-		;;
 	pull)
 		cd_toplevel
 		repo_check 0
@@ -483,6 +469,22 @@ function qf_push
 	git push $remote $branch -f
 
 	git push $remote refs/baselines/$branch/*:refs/baselines/$branch/*
+}
+
+function qf_fetch
+{
+	cd_toplevel
+	repo_check 0
+
+	remote=`git config branch.$branch.remote`
+
+	cd patches
+	git fetch $remote
+	cd ..
+
+	git fetch $remote
+
+	git fetch $remote
 }
 
 function qf_help
