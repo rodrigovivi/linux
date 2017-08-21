@@ -170,36 +170,6 @@ function quilt_clean_check
 }
 
 case "$1" in
-	setup)
-		cd `git rev-parse --show-toplevel`
-
-		if [[ -d patches ]] ; then
-			if [[ ! -d patches/.git ]] ; then
-				echo patches/ directory exists, but not initialized.
-				echo Please fix manually.
-				exit 11
-			fi
-
-			echo Quilt repo already set up.
-		else
-			repo_init
-		fi
-
-
-		if [[ -n $2 ]] ; then
-			if ! git branch | grep $2 &> /dev/null ; then
-				echo $2 is not a branch in the main repo, aborting.
-				exit 13
-			fi
-
-			branch=$2
-			quilt_branch=$QUILT_PREFIX$branch
-			baseline=`git rev-parse $2`
-			remote=`git config branch.$branch.remote`
-
-			branch_init $3
-		fi
-		;;
 	checkout|co)
 		cd_toplevel
 
@@ -469,6 +439,37 @@ else
     subcommand="$1"
     shift
 fi
+
+function qf_setup
+{
+	cd `git rev-parse --show-toplevel`
+
+	if [[ -d patches ]] ; then
+		if [[ ! -d patches/.git ]] ; then
+			echo patches/ directory exists, but not initialized.
+			echo Please fix manually.
+			exit 11
+		fi
+
+		echo Quilt repo already set up.
+	else
+		repo_init
+	fi
+
+	if [[ -n $1 ]] ; then
+		if ! git branch | grep $1 &> /dev/null ; then
+			echo $1 is not a branch in the main repo, aborting.
+			exit 13
+		fi
+
+		branch=$1
+		quilt_branch=$QUILT_PREFIX$branch
+		baseline=`git rev-parse $1`
+		remote=`git config branch.$branch.remote`
+
+		branch_init $2
+	fi
+}
 
 function qf_help
 {
