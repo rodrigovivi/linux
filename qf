@@ -170,21 +170,6 @@ function quilt_clean_check
 }
 
 case "$1" in
-	pull)
-		cd_toplevel
-		repo_check 0
-
-		qf fetch
-		cd patches
-
-		if [[ $2 == "--rebase" ]] ; then
-			git rebase @{upstream}
-		else
-			git merge @{upstream}
-		fi
-
-		qf co
-		;;
 	stage)
 		cd_toplevel
 		repo_check 1
@@ -485,6 +470,23 @@ function qf_fetch
 	git fetch $remote
 
 	git fetch $remote
+}
+
+function qf_pull
+{
+	cd_toplevel
+	repo_check 0
+
+	qf fetch
+	cd patches
+
+	if [[ $1 == "--rebase" ]] ; then
+		git rebase @{upstream}
+	else
+		git merge @{upstream}
+	fi
+
+	qf co
 }
 
 function qf_help
