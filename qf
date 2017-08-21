@@ -169,15 +169,6 @@ function quilt_clean_check
 	fi
 }
 
-case "$1" in
-	gitk|k)
-		cd_toplevel
-		cd patches
-		shift
-		gitk "$@"
-		;;
-esac
-
 qf=$(basename $0)
 
 # first positional argument is the subcommand
@@ -505,6 +496,14 @@ function qf_git
 	cd_toplevel
 	cd patches
 	git "$@"
+}
+
+qf_alias_k=gitk
+function qf_gitk
+{
+	cd_toplevel
+	cd patches
+	gitk "$@"
 }
 
 function qf_help
