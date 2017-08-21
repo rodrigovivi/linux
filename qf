@@ -170,28 +170,6 @@ function quilt_clean_check
 }
 
 case "$1" in
-	checkout|co)
-		cd_toplevel
-
-		cd patches
-		# -q to avoid status checks - the strange remote situation
-		# confuses git and takes forever to analyze
-		if git rev-parse $2 &> /dev/null ; then
-			# raw mode
-			quilt_branch=$2
-		else
-			# quilt branch mode
-			quilt_branch=$QUILT_PREFIX$2
-		fi
-		git checkout $quilt_branch -q
-		cd ..
-		# error code 2 means no patches removed, which is ok
-		quiet_pop_all -f
-		baseline=`source patches/config ; echo $BASELINE`
-		checkout_baseline
-		quilt push -a -q > /dev/null
-		echo Now at `quilt top`
-		;;
 	rebase)
 		cd_toplevel
 		repo_check 0
@@ -469,6 +447,31 @@ function qf_setup
 
 		branch_init $2
 	fi
+}
+
+qf_alias_co=checkout
+function qf_checkout
+{
+	cd_toplevel
+
+	cd patches
+	# -q to avoid status checks - the strange remote situation
+	# confuses git and takes forever to analyze
+	if git rev-parse $1 &> /dev/null ; then
+		# raw mode
+		quilt_branch=$1
+	else
+		# quilt branch mode
+		quilt_branch=$QUILT_PREFIX$1
+	fi
+	git checkout $quilt_branch -q
+	cd ..
+	# error code 2 means no patches removed, which is ok
+	quiet_pop_all -f
+	baseline=`source patches/config ; echo $BASELINE`
+	checkout_baseline
+	quilt push -a -q > /dev/null
+	echo Now at `quilt top`
 }
 
 function qf_help
