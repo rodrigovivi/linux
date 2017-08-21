@@ -170,12 +170,6 @@ function quilt_clean_check
 }
 
 case "$1" in
-	patch-amend|pa)
-		cd_toplevel
-		repo_check 1
-
-		gvim `quilt top`
-		;;
 	list-unused-patches)
 		cd_toplevel
 		repo_check 1
@@ -496,6 +490,15 @@ function qf_apply
 	quilt push
 	qf git add $patch_name
 	qf patch-amend
+}
+
+qf_alias_pa=patch_amend
+function qf_patch_amend
+{
+	cd_toplevel
+	repo_check 1
+
+	gvim `quilt top`
 }
 
 function qf_help
