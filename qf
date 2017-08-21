@@ -26,11 +26,23 @@
 
 # quilt git flow script
 
-# config
-QUILT_PREFIX=quilt/
-
 # fail on any goof-up
 set -e
+
+#
+# User configuration. Set in environment or configuration file. See
+# qfrc.sample for an example.
+#
+
+# qf configuration file
+QF_CONFIG=${QF_CONFIG:-$HOME/.qfrc}
+if [ -r $QF_CONFIG ]; then
+	# shellcheck source=/dev/null
+	. $QF_CONFIG
+fi
+
+# prefix for quilt branch
+QUILT_PREFIX=${QUILT_PREFIX:-quilt/}
 
 function cd_toplevel
 {

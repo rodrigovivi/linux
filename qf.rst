@@ -254,6 +254,31 @@ directory as git commands. When using quilt flow in scripts it is
 import to use the explicit forwarding to avoid clashes with
 furture extensions.
 
+
+ALIASES
+=======
+
+Extending **qf** functionalities
+---------------------------------
+
+It is possible to create your own qf helper and aliases by adding them to \$HOME/.qfrc::
+
+	qf_my_fancy_list_aliases()
+	{
+		echo "Hello world!"
+		qf_list_aliases
+	}
+
+	qf_alias_list_aliases=my-fancy-list-aliases
+
+ENVIRONMENT
+===========
+
+QUILT_PREFIX
+------------
+Quilt branch prefix. This is a prefix for the git branch that contains the
+patch files and quilt series file.
+
 CONTRIBUTING
 ============
 

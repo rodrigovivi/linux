@@ -1,0 +1,7 @@
+# Sample configuration file for qf. Place this at $HOME/.qfrc or point
+# QF_CONFIG environment variable to it.
+#
+# Defaults are in the comments below.
+
+# Quilt branch prefix
+#QUILT_PREFIX=quilt/
