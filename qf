@@ -170,23 +170,6 @@ function quilt_clean_check
 }
 
 case "$1" in
-	wiggle-push|wp)
-		cd_toplevel
-		repo_check 1
-
-		conflict_files=`quilt push -f | grep "saving rejects" | sed -e "s/.*saving rejects to file \(.*\)/\1/"`
-
-		if [[ $conflict_files != "" ]] ; then
-			echo conflicts found!
-		fi
-
-		for file in $conflict_files ; do
-			echo wiggling in ${file%.rej}:
-			#cat $file
-			rm -f ${file%.rej}.porig
-			wiggle -r ${file%.rej} $file || true
-		done
-		;;
 	resolved)
 		quilt refresh
 		quilt header -e
@@ -489,6 +472,26 @@ function qf_stage
 	git reset --mixed &> /dev/null
 	quilt applied 2> /dev/null | xargs git apply --cached
 	echo All applied patches successfully staged
+}
+
+qf_alias_wp=wiggle_push
+function qf_wiggle_push
+{
+	cd_toplevel
+	repo_check 1
+
+	conflict_files=`quilt push -f | grep "saving rejects" | sed -e "s/.*saving rejects to file \(.*\)/\1/"`
+
+	if [[ $conflict_files != "" ]] ; then
+		echo conflicts found!
+	fi
+
+	for file in $conflict_files ; do
+		echo wiggling in ${file%.rej}:
+		#cat $file
+		rm -f ${file%.rej}.porig
+		wiggle -r ${file%.rej} $file || true
+	done
 }
 
 function qf_help
