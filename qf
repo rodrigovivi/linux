@@ -170,14 +170,6 @@ function quilt_clean_check
 }
 
 case "$1" in
-	stage)
-		cd_toplevel
-		repo_check 1
-
-		git reset --mixed &> /dev/null
-		quilt applied 2> /dev/null | xargs git apply --cached
-		echo All applied patches successfully staged
-		;;
 	wiggle-push|wp)
 		cd_toplevel
 		repo_check 1
@@ -487,6 +479,16 @@ function qf_pull
 	fi
 
 	qf co
+}
+
+function qf_stage
+{
+	cd_toplevel
+	repo_check 1
+
+	git reset --mixed &> /dev/null
+	quilt applied 2> /dev/null | xargs git apply --cached
+	echo All applied patches successfully staged
 }
 
 function qf_help
