@@ -170,21 +170,6 @@ function quilt_clean_check
 }
 
 case "$1" in
-	list-unused-patches)
-		cd_toplevel
-		repo_check 1
-
-		for patch in patches/*.patch ; do
-			if ! grep "^${patch#patches/}$" patches/series > /dev/null ; then
-				if [[ "$2" != --purge ]] ; then
-					echo $patch
-				else
-					echo deleting $patch
-					rm $patch
-				fi
-			fi
-		done
-		;;
 	baseline)
 		cd_toplevel
 		repo_check 1
@@ -499,6 +484,23 @@ function qf_patch_amend
 	repo_check 1
 
 	gvim `quilt top`
+}
+
+function qf_list_unused_patches
+{
+	cd_toplevel
+	repo_check 1
+
+	for patch in patches/*.patch ; do
+		if ! grep "^${patch#patches/}$" patches/series > /dev/null ; then
+			if [[ "$1" != --purge ]] ; then
+				echo $patch
+			else
+				echo deleting $patch
+				rm $patch
+			fi
+		fi
+	done
 }
 
 function qf_help
