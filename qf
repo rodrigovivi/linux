@@ -170,27 +170,6 @@ function quilt_clean_check
 }
 
 case "$1" in
-	rebase)
-		cd_toplevel
-		repo_check 0
-
-		if [[ -z $2 ]] ; then
-			echo No commit given
-			exit 4
-		fi
-
-		new_baseline=`git rev-parse $2`
-
-		current_top=`quilt top`
-		quiet_pop_all
-		echo Resetting baseline to $new_baseline
-		git reset --hard $new_baseline
-		sed -e "s/BASELINE=.*$/BASELINE=$new_baseline/" -i patches/config
-		git update-ref refs/baselines/$branch/$new_baseline $new_baseline
-
-		quilt push $current_top -q
-
-		;;
 	refresh)
 		cd_toplevel
 		repo_check 0
@@ -472,6 +451,28 @@ function qf_checkout
 	checkout_baseline
 	quilt push -a -q > /dev/null
 	echo Now at `quilt top`
+}
+
+function qf_rebase
+{
+	cd_toplevel
+	repo_check 0
+
+	if [[ -z $1 ]] ; then
+		echo No commit given
+		exit 4
+	fi
+
+	new_baseline=`git rev-parse $1`
+
+	current_top=`quilt top`
+	quiet_pop_all
+	echo Resetting baseline to $new_baseline
+	git reset --hard $new_baseline
+	sed -e "s/BASELINE=.*$/BASELINE=$new_baseline/" -i patches/config
+	git update-ref refs/baselines/$branch/$new_baseline $new_baseline
+
+	quilt push $current_top -q
 }
 
 function qf_help
