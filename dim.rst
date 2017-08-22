@@ -441,6 +441,22 @@ usage
 Short form usage help listing all subcommands. Run by default or if an unknown
 subcommand was passed on the cmdline.
 
+ALIASES
+=======
+
+Extending **dim** functionalities
+---------------------------------
+
+It is possible to create your own dim helper and aliases by adding them to \$HOME/.dimrc::
+
+	dim_my_fancy_list_aliases()
+	{
+		echo "Hello world!":
+		dim_list_aliases:
+	}
+
+	dim_alias_list_aliases=my-fancy-list-aliases
+
 ENVIRONMENT
 ===========
 
