@@ -171,13 +171,10 @@ function quilt_clean_check
 
 function qf_help
 {
-	manpage=$DIM_PREFIX/maintainer-tools/qf.rst
+	manpage=$(dirname $(readlink -f $0))/qf.rst
 	if [ ! -e "$manpage" ]; then
-		manpage=$(dirname $(readlink -f $0))/qf.rst
-		if [ ! -e "$manpage" ]; then
-			echo "Can't find the man page."
-			exit 1
-		fi
+		echo "Can't find the man page."
+		exit 1
 	fi
 
 	if hash rst2man 2>/dev/null; then
