@@ -451,8 +451,8 @@ It is possible to create your own dim helper and aliases by adding them to \$HOM
 
 	dim_my_fancy_list_aliases()
 	{
-		echo "Hello world!":
-		dim_list_aliases:
+		echo "Hello world!"
+		dim_list_aliases
 	}
 
 	dim_alias_list_aliases=my-fancy-list-aliases
