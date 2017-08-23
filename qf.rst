@@ -95,6 +95,16 @@ $ qf git bisect new|old
 COMMANDS
 ========
 
+list-aliases
+------------
+List all aliases for the subcommand names.
+
+See \$qf_alias_<alias> under ENVIRONMENT below on how to define aliases.
+
+list-commands
+-------------
+List all subcommand names, including aliases.
+
 setup [*branch-name*]
 ---------------------
 Sets up a git repository for this quilt worflow script by
@@ -233,10 +243,14 @@ help
 ----
 This help text here
 
+usage
+-----
+Short form usage help listing all subcommands.
+
 all other subcommands - IMPORTANT
 ---------------------------------
 Any other subcommands are executed directly in the quilt patches
-directory as git commans. When using quilt flow in scripts it is
+directory as git commands. When using quilt flow in scripts it is
 import to use the explicit forwarding to avoid clashes with
 furture extensions.
 

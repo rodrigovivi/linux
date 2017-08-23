@@ -169,25 +169,6 @@ function quilt_clean_check
 	fi
 }
 
-function qf_help
-{
-	manpage=$(dirname $(readlink -f $0))/qf.rst
-	if [ ! -e "$manpage" ]; then
-		echo "Can't find the man page."
-		exit 1
-	fi
-
-	if hash rst2man 2>/dev/null; then
-		renderer=rst2man
-		pager="man -l -"
-	else
-		renderer=cat
-		pager=${PAGER:-cat}
-	fi
-
-	$renderer < $manpage | $pager
-}
-
 case "$1" in
 	setup)
 		cd `git rev-parse --show-toplevel`
@@ -477,12 +458,80 @@ case "$1" in
 		shift
 		gitk "$@"
 		;;
-	help)
-		qf_help
-		;;
-	*)
-		cd_toplevel
-		cd patches
-		git "$@"
-		;;
 esac
+
+qf=$(basename $0)
+
+# first positional argument is the subcommand
+if [ -n "$HELP" ] || [ "$#" = "0" ]; then
+    subcommand="usage"
+else
+    subcommand="$1"
+    shift
+fi
+
+function qf_help
+{
+	manpage=$(dirname $(readlink -f $0))/qf.rst
+	if [ ! -e "$manpage" ]; then
+		echo "Can't find the man page."
+		exit 1
+	fi
+
+	if hash rst2man 2>/dev/null; then
+		renderer=rst2man
+		pager="man -l -"
+	else
+		renderer=cat
+		pager=${PAGER:-cat}
+	fi
+
+	$renderer < $manpage | $pager
+}
+
+function qf_list_commands
+{
+	declare -F | grep -o " qf_[a-zA-Z_]*" | sed 's/^ qf_//;s/_/-/g'
+}
+
+function qf_list_aliases
+{
+	# use posix mode to omit functions in set output
+	( set -o posix; set ) | grep "^qf_alias_[a-zA-Z0-9_]*=" |\
+		sed 's/^qf_alias_//;s/=/\t/;s/_/-/g'
+}
+
+function qf_usage
+{
+	echo "usage: $qf SUBCOMMAND [ARGUMENTS]"
+	echo
+	echo "The available subcommands are:"
+	if hash column 2>/dev/null; then
+		qf_list_commands | column -c 72 | sed 's/^/\t/'
+	else
+		qf_list_commands | sed 's/^/\t/'
+	fi
+	echo
+	echo "See '$qf help' for more information."
+}
+
+# qf subcommand aliases (with bash 4.3+)
+if ! declare -n subcmd=qf_alias_${subcommand//-/_} &> /dev/null || \
+		test -z "${subcmd:-}"; then
+	subcmd="$subcommand"
+fi
+
+# look up the function by the subcommand name
+subcmd_func=qf_${subcmd//-/_}
+if ! declare -f $subcmd_func >/dev/null; then
+	echo "Using qf as git command on quilt patches directory."
+	cd_toplevel
+	cd patches
+	git "$@"
+	exit $?
+fi
+
+# throw away to not confuse list-aliases
+unset subcmd
+
+$subcmd_func "$@"

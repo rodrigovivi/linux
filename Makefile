@@ -51,6 +51,11 @@ mancheck:
 			echo "$@: $$cmd not documented"; \
 		fi \
 	done
+	@for cmd in $$(./qf list-commands); do \
+		if ! grep -q "^$$cmd" qf.rst; then \
+			echo "$@: $$cmd not documented"; \
+		fi \
+	done
 	rst2man --strict --no-raw dim.rst >/dev/null
 	rst2man --strict --no-raw qf.rst >/dev/null
 
