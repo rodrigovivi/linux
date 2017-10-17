@@ -858,7 +858,8 @@ static void skl_set_preferred_cdclk_vco(struct drm_i915_private *dev_priv,
 		intel_update_max_cdclk(dev_priv);
 }
 
-static void skl_dpll0_enable(struct drm_i915_private *dev_priv, int vco)
+static void skl_dpll0_enable(struct drm_i915_private *dev_priv, int vco,
+			     u32 freq_select)
 {
 	int min_cdclk = skl_calc_cdclk(0, vco);
 	u32 val;
@@ -894,12 +895,29 @@ static void skl_dpll0_enable(struct drm_i915_private *dev_priv, int vco)
 	I915_WRITE(DPLL_CTRL1, val);
 	POSTING_READ(DPLL_CTRL1);
 
+	/* Wa Display #1183: skl,kbl,cfl */
+	val = I915_READ(CDCLK_CTL);
+	val |= DIVMUX_CD_OVERRIDE;
+	I915_WRITE(CDCLK_CTL, val);
+
 	I915_WRITE(LCPLL1_CTL, I915_READ(LCPLL1_CTL) | LCPLL_PLL_ENABLE);
 
 	if (intel_wait_for_register(dev_priv,
 				    LCPLL1_CTL, LCPLL_PLL_LOCK, LCPLL_PLL_LOCK,
 				    5))
 		DRM_ERROR("DPLL0 not locked\n");
+
+	/* Wa Display #1183: skl,kbl,cfl */
+	val = I915_READ(CDCLK_CTL);
+	val &= ~CDCLK_FREQ_SEL_MASK;;
+	I915_WRITE(CDCLK_CTL, val);
+
+	I915_WRITE(CDCLK_CTL, freq_select);
+	POSTING_READ(CDCLK_CTL);
+
+	val = I915_READ(CDCLK_CTL);
+	val &= ~DIVMUX_CD_OVERRIDE;
+	I915_WRITE(CDCLK_CTL, val);
 
 	dev_priv->cdclk.hw.vco = vco;
 
@@ -964,15 +982,18 @@ static void skl_set_cdclk(struct drm_i915_private *dev_priv,
 		break;
 	}
 
+	freq_select |= skl_cdclk_decimal(cdclk);
+
 	if (dev_priv->cdclk.hw.vco != 0 &&
 	    dev_priv->cdclk.hw.vco != vco)
 		skl_dpll0_disable(dev_priv);
 
-	if (dev_priv->cdclk.hw.vco != vco)
-		skl_dpll0_enable(dev_priv, vco);
-
-	I915_WRITE(CDCLK_CTL, freq_select | skl_cdclk_decimal(cdclk));
-	POSTING_READ(CDCLK_CTL);
+	if (dev_priv->cdclk.hw.vco != vco) {
+		skl_dpll0_enable(dev_priv, vco, freq_select);
+	} else {
+		I915_WRITE(CDCLK_CTL, freq_select);
+		POSTING_READ(CDCLK_CTL);
+	}
 
 	/* inform PCU of the change */
 	mutex_lock(&dev_priv->pcu_lock);
