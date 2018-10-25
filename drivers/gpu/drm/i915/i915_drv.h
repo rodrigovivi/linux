@@ -2350,8 +2350,9 @@ intel_info(const struct drm_i915_private *dev_priv)
 #define INTEL_INFO(dev_priv)	intel_info((dev_priv))
 #define DRIVER_CAPS(dev_priv)	(&(dev_priv)->caps)
 
-#define INTEL_GEN(dev_priv)	((dev_priv)->info.gen)
-#define INTEL_DEVID(dev_priv)	((dev_priv)->info.device_id)
+#define INTEL_GEN(dev_priv)		((dev_priv)->info.gen)
+#define INTEL_DISPLAY_GEN(dev_priv)	((dev_priv)->info.display_gen)
+#define INTEL_DEVID(dev_priv)		((dev_priv)->info.device_id)
 
 #define REVID_FOREVER		0xff
 #define INTEL_REVID(dev_priv)	((dev_priv)->drm.pdev->revision)
@@ -2372,6 +2373,8 @@ intel_info(const struct drm_i915_private *dev_priv)
  */
 #define IS_GEN(dev_priv, s, e) \
 	(!!((dev_priv)->info.gen_mask & INTEL_GEN_MASK((s), (e))))
+#define DISPLAY_GEN_RANGE(dev_priv, s, e) \
+	(!!((dev_priv)->info.display_gen_mask & INTEL_GEN_MASK((s), (e))))
 
 /*
  * Return true if revision is in range [since,until] inclusive.
@@ -2540,6 +2543,27 @@ intel_info(const struct drm_i915_private *dev_priv)
 #define IS_GEN9(dev_priv)	(!!((dev_priv)->info.gen_mask & BIT(8)))
 #define IS_GEN10(dev_priv)	(!!((dev_priv)->info.gen_mask & BIT(9)))
 #define IS_GEN11(dev_priv)	(!!((dev_priv)->info.gen_mask & BIT(10)))
+
+#define IS_DISPLAY_GEN2(dev_priv)	(!!((dev_priv)->info.display_gen_mask & \
+					    BIT(2)))
+#define IS_DISPLAY_GEN3(dev_priv)	(!!((dev_priv)->info.display_gen_mask & \
+					    BIT(3)))
+#define IS_DISPLAY_GEN4(dev_priv)	(!!((dev_priv)->info.display_gen_mask & \
+					    BIT(4)))
+#define IS_DISPLAY_GEN5(dev_priv)	(!!((dev_priv)->info.display_gen_mask & \
+					    BIT(5)))
+#define IS_DISPLAY_GEN6(dev_priv)	(!!((dev_priv)->info.display_gen_mask & \
+					    BIT(6)))
+#define IS_DISPLAY_GEN7(dev_priv)	(!!((dev_priv)->info.display_gen_mask & \
+					    BIT(7)))
+#define IS_DISPLAY_GEN8(dev_priv)	(!!((dev_priv)->info.display_gen_mask & \
+					    BIT(8)))
+#define IS_DISPLAY_GEN9(dev_priv)	(!!((dev_priv)->info.display_gen_mask & \
+					    BIT(9)))
+#define IS_DISPLAY_GEN10(dev_priv)	(!!((dev_priv)->info.display_gen_mask & \
+					    BIT(10)))
+#define IS_DISPLAY_GEN11(dev_priv)	(!!((dev_priv)->info.display_gen_mask & \
+					    BIT(11)))
 
 #define IS_LP(dev_priv)	(INTEL_INFO(dev_priv)->is_lp)
 #define IS_GEN9_LP(dev_priv)	(IS_GEN9(dev_priv) && IS_LP(dev_priv))

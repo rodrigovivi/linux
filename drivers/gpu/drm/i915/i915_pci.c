@@ -30,7 +30,10 @@
 #include "i915_selftest.h"
 
 #define PLATFORM(x) .platform = (x), .platform_mask = BIT(x)
-#define GEN(x) .gen = (x), .gen_mask = BIT((x) - 1)
+#define GEN(x) .gen = (x), .gen_mask = BIT((x) - 1), \
+		.display_gen = (x), .display_gen_mask= BIT((x))
+/* Unless explicitly stated otherwise Display gen inherits platform gen */
+#define DISPLAY_GEN(x) .display_gen = (x), .display_gen_mask= BIT((x))
 
 #define GEN_DEFAULT_PIPEOFFSETS \
 	.pipe_offsets = { PIPE_A_OFFSET, PIPE_B_OFFSET, \

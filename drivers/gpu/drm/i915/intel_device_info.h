@@ -151,8 +151,10 @@ typedef u8 intel_ring_mask_t;
 struct intel_device_info {
 	u16 device_id;
 	u16 gen_mask;
+	u16 display_gen_mask;
 
 	u8 gen;
+	u8 display_gen;
 	u8 gt; /* GT number, 0 if undefined */
 	u8 num_rings;
 	intel_ring_mask_t ring_mask; /* Rings supported by the HW */
