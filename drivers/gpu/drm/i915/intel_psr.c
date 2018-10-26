@@ -429,7 +429,7 @@ static void hsw_activate_psr2(struct intel_dp *intel_dp)
 	 * mesh at all with our frontbuffer tracking. And the hw alone isn't
 	 * good enough. */
 	val |= EDP_PSR2_ENABLE | EDP_SU_TRACK_ENABLE;
-	if (INTEL_GEN(dev_priv) >= 10 || IS_GEMINILAKE(dev_priv))
+	if (INTEL_DISPLAY_GEN(dev_priv) >= 10)
 		val |= EDP_Y_COORDINATE_ENABLE;
 
 	val |= EDP_PSR2_FRAME_BEFORE_SU(dev_priv->psr.sink_sync_latency + 1);
@@ -463,7 +463,7 @@ static bool intel_psr2_config_valid(struct intel_dp *intel_dp,
 	if (!dev_priv->psr.sink_psr2_support)
 		return false;
 
-	if (INTEL_GEN(dev_priv) >= 10 || IS_GEMINILAKE(dev_priv)) {
+	if (INTEL_DISPLAY_GEN(dev_priv) >= 10) {
 		psr_max_h = 4096;
 		psr_max_v = 2304;
 	} else if (IS_GEN9(dev_priv)) {
@@ -574,7 +574,7 @@ static void intel_psr_enable_source(struct intel_dp *intel_dp,
 	if (dev_priv->psr.psr2_enabled) {
 		u32 chicken = I915_READ(CHICKEN_TRANS(cpu_transcoder));
 
-		if (INTEL_GEN(dev_priv) == 9 && !IS_GEMINILAKE(dev_priv))
+		if (IS_DISPLAY_GEN9(dev_priv))
 			chicken |= (PSR2_VSC_ENABLE_PROG_HEADER
 				   | PSR2_ADD_VERTICAL_LINE_COUNT);
 

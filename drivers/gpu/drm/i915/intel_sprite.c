@@ -388,7 +388,7 @@ skl_update_plane(struct intel_plane *plane,
 
 	spin_lock_irqsave(&dev_priv->uncore.lock, irqflags);
 
-	if (INTEL_GEN(dev_priv) >= 10 || IS_GEMINILAKE(dev_priv))
+	if (INTEL_DISPLAY_GEN(dev_priv) >= 10)
 		I915_WRITE_FW(PLANE_COLOR_CTL(pipe, plane_id),
 			      plane_state->color_ctl);
 
@@ -1330,7 +1330,7 @@ static int skl_plane_check_dst_coordinates(const struct intel_crtc_state *crtc_s
 	 * than the cursor ending less than 4 pixels from the left edge of the
 	 * screen may cause FIFO underflow and display corruption.
 	 */
-	if ((IS_GEMINILAKE(dev_priv) || IS_CANNONLAKE(dev_priv)) &&
+	if (IS_DISPLAY_GEN10(dev_priv) &&
 	    (crtc_x + crtc_w < 4 || crtc_x > pipe_src_w - 4)) {
 		DRM_DEBUG_KMS("requested plane X %s position %d invalid (valid range %d-%d)\n",
 			      crtc_x + crtc_w < 4 ? "end" : "start",
@@ -1411,7 +1411,7 @@ static int skl_plane_check(struct intel_crtc_state *crtc_state,
 
 	plane_state->ctl = skl_plane_ctl(crtc_state, plane_state);
 
-	if (INTEL_GEN(dev_priv) >= 10 || IS_GEMINILAKE(dev_priv))
+	if (INTEL_DISPLAY_GEN(dev_priv) >= 10)
 		plane_state->color_ctl = glk_plane_color_ctl(crtc_state,
 							     plane_state);
 
@@ -1823,7 +1823,7 @@ static bool skl_plane_has_planar(struct drm_i915_private *dev_priv,
 	if (IS_SKYLAKE(dev_priv) || IS_BROXTON(dev_priv))
 		return false;
 
-	if (INTEL_GEN(dev_priv) == 9 && !IS_GEMINILAKE(dev_priv) && pipe == PIPE_C)
+	if (IS_DISPLAY_GEN9(dev_priv) && pipe == PIPE_C)
 		return false;
 
 	if (plane_id != PLANE_PRIMARY && plane_id != PLANE_SPRITE0)
@@ -1838,11 +1838,11 @@ static bool skl_plane_has_ccs(struct drm_i915_private *dev_priv,
 	if (plane_id == PLANE_CURSOR)
 		return false;
 
-	if (INTEL_GEN(dev_priv) >= 10)
-		return true;
-
 	if (IS_GEMINILAKE(dev_priv))
 		return pipe != PIPE_C;
+
+	if (INTEL_DISPLAY_GEN(dev_priv) >= 10)
+		return true;
 
 	return pipe != PIPE_C &&
 		(plane_id == PLANE_PRIMARY ||

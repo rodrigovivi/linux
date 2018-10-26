@@ -538,6 +538,7 @@ static const struct intel_device_info intel_broxton_info = {
 
 static const struct intel_device_info intel_geminilake_info = {
 	GEN9_LP_FEATURES,
+	DISPLAY_GEN(10),
 	PLATFORM(INTEL_GEMINILAKE),
 	.ddb_size = 1024,
 	GLK_COLORS,

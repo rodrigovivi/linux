@@ -211,7 +211,7 @@ static const struct bxt_ddi_phy_info glk_ddi_phy_info[] = {
 static const struct bxt_ddi_phy_info *
 bxt_get_phy_list(struct drm_i915_private *dev_priv, int *count)
 {
-	if (IS_GEMINILAKE(dev_priv)) {
+	if (IS_DISPLAY_GEN10(dev_priv)) {
 		*count =  ARRAY_SIZE(glk_ddi_phy_info);
 		return glk_ddi_phy_info;
 	} else {

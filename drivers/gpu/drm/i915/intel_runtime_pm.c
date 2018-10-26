@@ -778,7 +778,7 @@ static void bxt_verify_ddi_phy_power_wells(struct drm_i915_private *dev_priv)
 	if (power_well->count > 0)
 		bxt_ddi_phy_verify_state(dev_priv, power_well->desc->bxt.phy);
 
-	if (IS_GEMINILAKE(dev_priv)) {
+	if (IS_DISPLAY_GEN10(dev_priv)) {
 		power_well = lookup_power_well(dev_priv,
 					       GLK_DISP_PW_DPIO_CMN_C);
 		if (power_well->count > 0)

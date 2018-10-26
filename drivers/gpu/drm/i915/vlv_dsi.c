@@ -541,7 +541,7 @@ static void intel_dsi_device_ready(struct intel_encoder *encoder)
 {
 	struct drm_i915_private *dev_priv = to_i915(encoder->base.dev);
 
-	if (IS_GEMINILAKE(dev_priv))
+	if (IS_DISPLAY_GEN10(dev_priv))
 		glk_dsi_device_ready(encoder);
 	else if (IS_GEN9_LP(dev_priv))
 		bxt_dsi_device_ready(encoder);
@@ -826,7 +826,7 @@ static void intel_dsi_pre_enable(struct intel_encoder *encoder,
 		I915_WRITE(DSPCLK_GATE_D, val);
 	}
 
-	if (!IS_GEMINILAKE(dev_priv))
+	if (!IS_DISPLAY_GEN10(dev_priv))
 		intel_dsi_prepare(encoder, pipe_config);
 
 	/* Power on, try both CRC pmic gpio and VBT */
@@ -838,7 +838,7 @@ static void intel_dsi_pre_enable(struct intel_encoder *encoder,
 	/* Deassert reset */
 	intel_dsi_vbt_exec_sequence(intel_dsi, MIPI_SEQ_DEASSERT_RESET);
 
-	if (IS_GEMINILAKE(dev_priv)) {
+	if (IS_DISPLAY_GEN10(dev_priv)) {
 		glk_cold_boot = glk_dsi_enable_io(encoder);
 
 		/* Prepare port in cold boot(s3/s4) scenario */
@@ -850,7 +850,7 @@ static void intel_dsi_pre_enable(struct intel_encoder *encoder,
 	intel_dsi_device_ready(encoder);
 
 	/* Prepare port in normal boot scenario */
-	if (IS_GEMINILAKE(dev_priv) && !glk_cold_boot)
+	if (IS_DISPLAY_GEN10(dev_priv) && !glk_cold_boot)
 		intel_dsi_prepare(encoder, pipe_config);
 
 	/* Send initialization commands in LP mode */
@@ -911,7 +911,7 @@ static void intel_dsi_clear_device_ready(struct intel_encoder *encoder)
 {
 	struct drm_i915_private *dev_priv = to_i915(encoder->base.dev);
 
-	if (IS_GEMINILAKE(dev_priv))
+	if (IS_DISPLAY_GEN10(dev_priv))
 		glk_dsi_clear_device_ready(encoder);
 	else
 		vlv_dsi_clear_device_ready(encoder);
@@ -1533,7 +1533,7 @@ static void intel_dsi_prepare(struct intel_encoder *intel_encoder,
 		 */
 		I915_WRITE(MIPI_LP_BYTECLK(port), intel_dsi->lp_byte_clk);
 
-		if (IS_GEMINILAKE(dev_priv)) {
+		if (IS_DISPLAY_GEN10(dev_priv)) {
 			I915_WRITE(MIPI_TLPX_TIME_COUNT(port),
 					intel_dsi->lp_byte_clk);
 			/* Shadow of DPHY reg */
@@ -1571,7 +1571,7 @@ static void intel_dsi_unprepare(struct intel_encoder *encoder)
 	enum port port;
 	u32 val;
 
-	if (IS_GEMINILAKE(dev_priv))
+	if (IS_DISPLAY_GEN10(dev_priv))
 		return;
 
 	for_each_dsi_port(port, intel_dsi->ports) {

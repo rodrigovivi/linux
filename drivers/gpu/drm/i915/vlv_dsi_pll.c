@@ -214,7 +214,7 @@ bool bxt_dsi_pll_is_enabled(struct drm_i915_private *dev_priv)
 	 * causes a system hang.
 	 */
 	val = I915_READ(BXT_DSI_PLL_CTL);
-	if (IS_GEMINILAKE(dev_priv)) {
+	if (IS_DISPLAY_GEN10(dev_priv)) {
 		if (!(val & BXT_DSIA_16X_MASK)) {
 			DRM_DEBUG_DRIVER("Invalid PLL divider (%08x)\n", val);
 			enabled = false;

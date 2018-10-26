@@ -3630,7 +3630,7 @@ u32 skl_plane_ctl(const struct intel_crtc_state *crtc_state,
 
 	plane_ctl = PLANE_CTL_ENABLE;
 
-	if (INTEL_GEN(dev_priv) < 10 && !IS_GEMINILAKE(dev_priv)) {
+	if (INTEL_DISPLAY_GEN(dev_priv) < 10) {
 		plane_ctl |= skl_plane_ctl_alpha(plane_state);
 		plane_ctl |=
 			PLANE_CTL_PIPE_GAMMA_ENABLE |
@@ -5701,7 +5701,7 @@ static void haswell_crtc_enable(struct intel_crtc_state *pipe_config,
 	intel_crtc->active = true;
 
 	/* Display WA #1180: WaDisableScalarClockGating: glk, cnl */
-	psl_clkgate_wa = (IS_GEMINILAKE(dev_priv) || IS_CANNONLAKE(dev_priv)) &&
+	psl_clkgate_wa = IS_DISPLAY_GEN10(dev_priv) &&
 			 pipe_config->pch_pfit.enabled;
 	if (psl_clkgate_wa)
 		glk_pipe_scaler_clock_gating_wa(dev_priv, pipe, true);
@@ -7828,8 +7828,7 @@ static void intel_get_crtc_ycbcr_config(struct intel_crtc *crtc,
 				/* We support 4:2:0 in full blend mode only */
 				if (!blend)
 					output = INTEL_OUTPUT_FORMAT_INVALID;
-				else if (!(IS_GEMINILAKE(dev_priv) ||
-					   INTEL_GEN(dev_priv) >= 10))
+				else if (INTEL_DISPLAY_GEN(dev_priv) < 10)
 					output = INTEL_OUTPUT_FORMAT_INVALID;
 				else
 					output = INTEL_OUTPUT_FORMAT_YCBCR420;
@@ -8809,7 +8808,7 @@ skylake_get_initial_plane_config(struct intel_crtc *crtc,
 	else
 		pixel_format = val & PLANE_CTL_FORMAT_MASK;
 
-	if (INTEL_GEN(dev_priv) >= 10 || IS_GEMINILAKE(dev_priv)) {
+	if (INTEL_DISPLAY_GEN(dev_priv) >= 10) {
 		alpha = I915_READ(PLANE_COLOR_CTL(pipe, plane_id));
 		alpha &= PLANE_COLOR_ALPHA_MASK;
 	} else {
@@ -13263,7 +13262,7 @@ skl_max_scale(const struct intel_crtc_state *crtc_state,
 	crtc_clock = crtc_state->base.adjusted_mode.crtc_clock;
 	max_dotclk = to_intel_atomic_state(crtc_state->base.state)->cdclk.logical.cdclk;
 
-	if (IS_GEMINILAKE(dev_priv) || INTEL_GEN(dev_priv) >= 10)
+	if (INTEL_DISPLAY_GEN(dev_priv) >= 10)
 		max_dotclk *= 2;
 
 	if (WARN_ON_ONCE(!crtc_clock || max_dotclk < crtc_clock))
@@ -15529,7 +15528,7 @@ get_encoder_power_domains(struct drm_i915_private *dev_priv)
 static void intel_early_display_was(struct drm_i915_private *dev_priv)
 {
 	/* Display WA #1185 WaDisableDARBFClkGating:cnl,glk */
-	if (IS_CANNONLAKE(dev_priv) || IS_GEMINILAKE(dev_priv))
+	if (IS_DISPLAY_GEN10(dev_priv))
 		I915_WRITE(GEN9_CLKGATE_DIS_0, I915_READ(GEN9_CLKGATE_DIS_0) |
 			   DARBF_GATING_DIS);
 

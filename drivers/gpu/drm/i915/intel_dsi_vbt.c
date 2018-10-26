@@ -666,7 +666,7 @@ static void vlv_dphy_param_init(struct intel_dsi *intel_dsi)
 	 * For GEMINILAKE dphy_param_reg will be programmed in terms of
 	 * HS byte clock count for other platform in HS ddr clock count
 	 */
-	mul = IS_GEMINILAKE(dev_priv) ? 8 : 2;
+	mul = IS_DISPLAY_GEN10(dev_priv) ? 8 : 2;
 	ths_prepare_ns = max(mipi_config->ths_prepare,
 			     mipi_config->tclk_prepare);
 

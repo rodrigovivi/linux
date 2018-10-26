@@ -760,7 +760,7 @@ void intel_device_info_runtime_init(struct intel_device_info *info)
 	 * we don't expose the topmost plane at all to prevent ABI breakage
 	 * down the line.
 	 */
-	if (IS_GEN10(dev_priv) || IS_GEMINILAKE(dev_priv))
+	if (IS_DISPLAY_GEN10(dev_priv))
 		for_each_pipe(dev_priv, pipe)
 			info->num_sprites[pipe] = 3;
 	else if (IS_BROXTON(dev_priv)) {

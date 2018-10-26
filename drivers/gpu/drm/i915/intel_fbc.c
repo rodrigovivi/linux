@@ -282,7 +282,7 @@ static void gen7_fbc_activate(struct drm_i915_private *dev_priv)
 	int threshold = dev_priv->fbc.threshold;
 
 	/* Display WA #0529: skl, kbl, bxt. */
-	if (IS_GEN9(dev_priv) && !IS_GEMINILAKE(dev_priv)) {
+	if (IS_DISPLAY_GEN9(dev_priv)) {
 		u32 val = I915_READ(CHICKEN_MISC_4);
 
 		val &= ~(FBC_STRIDE_OVERRIDE | FBC_STRIDE_MASK);
@@ -839,7 +839,7 @@ static void intel_fbc_get_reg_params(struct intel_crtc *crtc,
 
 	params->cfb_size = intel_fbc_calculate_cfb_size(dev_priv, cache);
 
-	if (IS_GEN9(dev_priv) && !IS_GEMINILAKE(dev_priv))
+	if (IS_DISPLAY_GEN9(dev_priv))
 		params->gen9_wa_cfb_stride = DIV_ROUND_UP(cache->plane.src_w,
 						32 * fbc->threshold) * 8;
 }

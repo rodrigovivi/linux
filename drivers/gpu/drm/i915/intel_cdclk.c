@@ -1291,7 +1291,7 @@ static void bxt_get_cdclk(struct drm_i915_private *dev_priv,
 		div = 2;
 		break;
 	case BXT_CDCLK_CD2X_DIV_SEL_1_5:
-		WARN(IS_GEMINILAKE(dev_priv), "Unsupported divider\n");
+		WARN(!IS_DISPLAY_GEN9(dev_priv), "Unsupported divider\n");
 		div = 3;
 		break;
 	case BXT_CDCLK_CD2X_DIV_SEL_2:
@@ -1370,7 +1370,7 @@ static void bxt_set_cdclk(struct drm_i915_private *dev_priv,
 		divider = BXT_CDCLK_CD2X_DIV_SEL_1;
 		break;
 	case 3:
-		WARN(IS_GEMINILAKE(dev_priv), "Unsupported divider\n");
+		WARN(!IS_DISPLAY_GEN9(dev_priv), "Unsupported divider\n");
 		divider = BXT_CDCLK_CD2X_DIV_SEL_1_5;
 		break;
 	case 4:
@@ -1514,7 +1514,7 @@ void bxt_init_cdclk(struct drm_i915_private *dev_priv)
 	 * - The initial CDCLK needs to be read from VBT.
 	 *   Need to make this change after VBT has changes for BXT.
 	 */
-	if (IS_GEMINILAKE(dev_priv)) {
+	if (IS_DISPLAY_GEN10(dev_priv)) {
 		cdclk_state.cdclk = glk_calc_cdclk(0);
 		cdclk_state.vco = glk_de_pll_vco(dev_priv, cdclk_state.cdclk);
 	} else {
@@ -2181,7 +2181,7 @@ int intel_crtc_compute_min_cdclk(const struct intel_crtc_state *crtc_state)
 	    crtc_state->has_audio &&
 	    crtc_state->port_clock >= 540000 &&
 	    crtc_state->lane_count == 4) {
-		if (IS_CANNONLAKE(dev_priv) || IS_GEMINILAKE(dev_priv)) {
+		if (IS_DISPLAY_GEN10(dev_priv)) {
 			/* Display WA #1145: glk,cnl */
 			min_cdclk = max(316800, min_cdclk);
 		} else if (IS_GEN9(dev_priv) || IS_BROADWELL(dev_priv)) {
@@ -2435,7 +2435,7 @@ static int bxt_modeset_calc_cdclk(struct drm_atomic_state *state)
 	if (min_cdclk < 0)
 		return min_cdclk;
 
-	if (IS_GEMINILAKE(dev_priv)) {
+	if (IS_DISPLAY_GEN10(dev_priv)) {
 		cdclk = glk_calc_cdclk(min_cdclk);
 		vco = glk_de_pll_vco(dev_priv, cdclk);
 	} else {
@@ -2449,7 +2449,7 @@ static int bxt_modeset_calc_cdclk(struct drm_atomic_state *state)
 		bxt_calc_voltage_level(cdclk);
 
 	if (!intel_state->active_crtcs) {
-		if (IS_GEMINILAKE(dev_priv)) {
+		if (IS_DISPLAY_GEN10(dev_priv)) {
 			cdclk = glk_calc_cdclk(0);
 			vco = glk_de_pll_vco(dev_priv, cdclk);
 		} else {

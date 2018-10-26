@@ -1447,7 +1447,7 @@ static void bxt_ddi_pll_enable(struct drm_i915_private *dev_priv,
 	temp |= PORT_PLL_REF_SEL;
 	I915_WRITE(BXT_PORT_PLL_ENABLE(port), temp);
 
-	if (IS_GEMINILAKE(dev_priv)) {
+	if (IS_DISPLAY_GEN10(dev_priv)) {
 		temp = I915_READ(BXT_PORT_PLL_ENABLE(port));
 		temp |= PORT_PLL_POWER_ENABLE;
 		I915_WRITE(BXT_PORT_PLL_ENABLE(port), temp);
@@ -1535,7 +1535,7 @@ static void bxt_ddi_pll_enable(struct drm_i915_private *dev_priv,
 			200))
 		DRM_ERROR("PLL %d not locked\n", port);
 
-	if (IS_GEMINILAKE(dev_priv)) {
+	if (IS_DISPLAY_GEN10(dev_priv)) {
 		temp = I915_READ(BXT_PORT_TX_DW5_LN0(phy, ch));
 		temp |= DCC_DELAY_RANGE_2;
 		I915_WRITE(BXT_PORT_TX_DW5_GRP(phy, ch), temp);
@@ -1563,7 +1563,7 @@ static void bxt_ddi_pll_disable(struct drm_i915_private *dev_priv,
 	I915_WRITE(BXT_PORT_PLL_ENABLE(port), temp);
 	POSTING_READ(BXT_PORT_PLL_ENABLE(port));
 
-	if (IS_GEMINILAKE(dev_priv)) {
+	if (IS_DISPLAY_GEN10(dev_priv)) {
 		temp = I915_READ(BXT_PORT_PLL_ENABLE(port));
 		temp &= ~PORT_PLL_POWER_ENABLE;
 		I915_WRITE(BXT_PORT_PLL_ENABLE(port), temp);

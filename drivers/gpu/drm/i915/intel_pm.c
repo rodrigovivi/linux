@@ -4126,7 +4126,7 @@ int skl_check_pipe_max_pixel_rate(struct intel_crtc *intel_crtc,
 	crtc_clock = crtc_state->adjusted_mode.crtc_clock;
 	dotclk = to_intel_atomic_state(state)->cdclk.logical.cdclk;
 
-	if (IS_GEMINILAKE(dev_priv) || INTEL_GEN(dev_priv) >= 10)
+	if (INTEL_DISPLAY_GEN(dev_priv) >= 10)
 		dotclk *= 2;
 
 	pipe_max_pixel_rate = div_round_up_u32_fixed16(dotclk, pipe_downscale);
@@ -4676,14 +4676,12 @@ static int skl_compute_plane_wm(const struct drm_i915_private *dev_priv,
 			selected_result = method2;
 		} else if (ddb_allocation >=
 			 fixed16_to_u32_round_up(wp->plane_blocks_per_line)) {
-			if (INTEL_GEN(dev_priv) == 9 &&
-			    !IS_GEMINILAKE(dev_priv))
+			if (IS_DISPLAY_GEN9(dev_priv))
 				selected_result = min_fixed16(method1, method2);
 			else
 				selected_result = method2;
 		} else if (latency >= wp->linetime_us) {
-			if (INTEL_GEN(dev_priv) == 9 &&
-			    !IS_GEMINILAKE(dev_priv))
+			if (IS_DISPLAY_GEN9(dev_priv))
 				selected_result = min_fixed16(method1, method2);
 			else
 				selected_result = method2;
@@ -4854,8 +4852,7 @@ skl_compute_linetime_wm(struct intel_crtc_state *cstate)
 	linetime_wm = fixed16_to_u32_round_up(mul_u32_fixed16(8, linetime_us));
 
 	/* Display WA #1135: bxt:ALL GLK:ALL */
-	if ((IS_BROXTON(dev_priv) || IS_GEMINILAKE(dev_priv)) &&
-	    dev_priv->ipc_enabled)
+	if (!HAS_PCH_SPLIT(dev_priv) && dev_priv->ipc_enabled)
 		linetime_wm /= 2;
 
 	return linetime_wm;
