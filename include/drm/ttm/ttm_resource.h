@@ -27,6 +27,7 @@
 
 #include <linux/types.h>
 #include <linux/mutex.h>
+#include <linux/atomic.h>
 #include <linux/dma-buf-map.h>
 #include <linux/dma-fence.h>
 #include <drm/drm_print.h>
@@ -122,17 +123,23 @@ struct ttm_resource_manager {
 	uint64_t size;
 	const struct ttm_resource_manager_func *func;
 	spinlock_t move_lock;
+	struct ttm_device *bdev;
 
 	/*
 	 * Protected by the global->lru_lock.
 	 */
-
 	struct list_head lru[TTM_MAX_BO_PRIORITY];
 
 	/*
 	 * Protected by @move_lock.
 	 */
 	struct dma_fence *move;
+
+	/**
+	 * @usage: How much of the resources are used, protected by the
+	 * bdev->lru_lock.
+	 */
+	uint64_t usage;
 };
 
 /**
@@ -170,6 +177,7 @@ struct ttm_resource {
 	uint32_t mem_type;
 	uint32_t placement;
 	struct ttm_bus_placement bus;
+	struct ttm_buffer_object *bo;
 };
 
 /**
@@ -272,11 +280,13 @@ bool ttm_resource_compat(struct ttm_resource *res,
 			 struct ttm_placement *placement);
 
 void ttm_resource_manager_init(struct ttm_resource_manager *man,
+			       struct ttm_device *bdev,
 			       unsigned long p_size);
 
 int ttm_resource_manager_evict_all(struct ttm_device *bdev,
 				   struct ttm_resource_manager *man);
 
+uint64_t ttm_resource_manager_usage(struct ttm_resource_manager *man);
 void ttm_resource_manager_debug(struct ttm_resource_manager *man,
 				struct drm_printer *p);
 
