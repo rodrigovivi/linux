@@ -48,8 +48,7 @@ static uint64_t gen8_pde_encode(struct xe_bo *bo, uint64_t bo_offset,
 	pde = xe_bo_addr(bo, bo_offset, GEN8_PAGE_SIZE, &is_lmem);
 	pde |= _PAGE_PRESENT | _PAGE_RW;
 
-	if (is_lmem)
-		pde |= GEN12_PPGTT_PTE_LM;
+	XE_WARN_ON(IS_DGFX(xe_bo_device(bo)) && !is_lmem);
 
 	if (level != XE_CACHE_NONE)
 		pde |= PPAT_CACHED_PDE;
