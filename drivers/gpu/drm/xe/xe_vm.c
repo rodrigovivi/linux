@@ -707,7 +707,7 @@ static int __xe_vm_insert_vma(struct xe_vm *vm, struct xe_vma *vma)
 			return -ENOMEM;
 
 		xe_vma_trim_end(prev, vma->start - 1);
-		xe_vma_trim_end(next, vma->end + 1);
+		xe_vma_trim_start(next, vma->end + 1);
 		xe_vm_insert_vma(vm, vma);
 		xe_vm_insert_vma(vm, next);
 	} else if (prev->start < vma->start) {
@@ -734,16 +734,16 @@ static int __xe_vm_bind(struct xe_vm *vm, struct xe_bo *bo, uint64_t bo_offset,
 	if (err)
 		return err;
 
-	err = xe_pt_populate(vm, vm->pt_root, addr, addr + range);
+	err = xe_pt_populate(vm, vm->pt_root, addr, addr + range - 1);
 	if (err)
 		return err;
 
-	vma = xe_vma_create(vm, bo, bo_offset, addr, addr + range);
+	vma = xe_vma_create(vm, bo, bo_offset, addr, addr + range - 1);
 	err = __xe_vm_insert_vma(vm, vma);
 	if (err)
 		xe_vma_destroy(vma);
 
-	xe_pt_fill(vm->pt_root, bo, bo_offset, addr, addr + range);
+	xe_pt_fill(vm->pt_root, bo, bo_offset, addr, addr + range - 1);
 
 	return err;
 }
@@ -767,7 +767,7 @@ static int xe_vm_bind(struct xe_vm *vm, struct xe_bo *bo, uint64_t offset,
 	if (range == 0)
 		return -EINVAL;
 
-	if (range >= vm->size || addr >= vm->size - range)
+	if (range > vm->size || addr > vm->size - range)
 		return -EINVAL;
 
 	if (range > bo->size || offset > bo->size - range)
