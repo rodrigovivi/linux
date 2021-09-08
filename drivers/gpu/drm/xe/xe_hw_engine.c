@@ -227,7 +227,7 @@ static void xe_hw_engine_signal_complete_jobs(struct xe_hw_engine *hwe)
 		err = dma_fence_signal_locked(&job->fence);
 		list_del(&job->signal_link);
 
-		XE_WARN_ON(err);
+		WARN(err, "dma_fence_signal_locked returned %d", err);
 	}
 	spin_unlock_irqrestore(&hwe->fence_lock, flags);
 
