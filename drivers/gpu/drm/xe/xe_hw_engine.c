@@ -221,13 +221,17 @@ static void xe_hw_engine_signal_complete_jobs(struct xe_hw_engine *hwe)
 
 	spin_lock_irqsave(&hwe->fence_lock, flags);
 	list_for_each_entry_safe(job, next, &hwe->signal_jobs, signal_link) {
+		if (test_bit(DMA_FENCE_FLAG_SIGNALED_BIT, &job->fence.flags)) {
+			list_del_init(&job->signal_link);
+			continue;
+		}
+
 		if (!xe_sched_job_complete(job))
 			continue;
 
 		err = dma_fence_signal_locked(&job->fence);
-		list_del(&job->signal_link);
-
-		WARN(err, "dma_fence_signal_locked returned %d", err);
+		list_del_init(&job->signal_link);
+		XE_WARN_ON(err);
 	}
 	spin_unlock_irqrestore(&hwe->fence_lock, flags);
 
@@ -236,7 +240,6 @@ static void xe_hw_engine_signal_complete_jobs(struct xe_hw_engine *hwe)
 
 void xe_hw_engine_handle_irq(struct xe_hw_engine *hwe, uint16_t intr_vec)
 {
-
 	if (hwe->irq_handler)
 		hwe->irq_handler(hwe, intr_vec);
 

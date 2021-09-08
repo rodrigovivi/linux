@@ -43,9 +43,6 @@ static bool xe_sched_fence_enable_signaling(struct dma_fence *fence)
 
 static bool xe_sched_fence_signaled(struct dma_fence *fence)
 {
-	if (test_bit(DMA_FENCE_FLAG_SIGNALED_BIT, &fence->flags))
-		return true;
-
 	return xe_sched_job_complete(__dma_fence_to_xe_sched_job(fence));
 }
 
@@ -54,12 +51,11 @@ static void xe_sched_fence_cleanup(struct dma_fence *fence)
 	struct xe_sched_job *job = __dma_fence_to_xe_sched_job(fence);
 	unsigned long flags;
 
-	spin_lock_irqsave(fence->lock, flags);
-	if (test_bit(DMA_FENCE_FLAG_ENABLE_SIGNAL_BIT, &fence->flags) &&
-	    !test_bit(DMA_FENCE_FLAG_SIGNALED_BIT, &fence->flags)) {
+	if (!list_empty(&job->signal_link)) {
+		spin_lock_irqsave(fence->lock, flags);
 		list_del(&job->signal_link);
+		spin_unlock_irqrestore(fence->lock, flags);
 	}
-	spin_unlock_irqrestore(fence->lock, flags);
 }
 
 static void xe_sched_job_destroy(struct xe_sched_job *job);
@@ -105,6 +101,8 @@ struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
 
 	dma_fence_init(&job->fence, &sched_job_fence_ops, &e->hwe->fence_lock,
 		       e->fence_ctx, e->next_seqno++);
+
+	INIT_LIST_HEAD(&job->signal_link);
 
 	job->user_batch_addr = user_batch_addr;
 	
