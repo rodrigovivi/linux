@@ -660,6 +660,33 @@ uint64_t xe_vm_pdp4_descriptor(struct xe_vm *vm)
 	return gen8_pde_encode(vm->pt_root->bo, 0, XE_CACHE_WB);
 }
 
+static inline void
+xe_vm_printk(const char *prefix, struct xe_vm *vm)
+{
+	struct rb_node *node;
+
+	for (node = rb_first(&vm->vmas); node; node = rb_next(node)) {
+		struct xe_vma *vma = to_xe_vma(node);
+
+		if (vma->bo) {
+			printk("%s [0x%08x %08x, 0x%08x %08x]: BO(%p) + 0x%x\n",
+			       prefix,
+			       upper_32_bits(vma->start),
+			       lower_32_bits(vma->start),
+			       upper_32_bits(vma->end),
+			       lower_32_bits(vma->end),
+			       vma->bo, (uint32_t)vma->bo_offset);
+		} else {
+			printk("%s [0x%08x %08x, 0x%08x %08x]: (empty)\n",
+			       prefix,
+			       upper_32_bits(vma->start),
+			       lower_32_bits(vma->start),
+			       upper_32_bits(vma->end),
+			       lower_32_bits(vma->end));
+		}
+	}
+}
+
 static void
 __xe_vm_trim_later_vmas(struct xe_vm *vm, struct xe_vma *vma,
 			struct xe_vma *later)
