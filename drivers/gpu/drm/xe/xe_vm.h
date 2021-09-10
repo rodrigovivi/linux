@@ -49,7 +49,7 @@ struct xe_vm {
 	struct xe_pt *scratch_pt[3];
 };
 
-struct xe_vm *xe_vm_create(struct xe_device *xe);
+struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags);
 void xe_vm_free(struct kref *ref);
 
 struct xe_vm *xe_vm_lookup(struct xe_file *xef, u32 id);
