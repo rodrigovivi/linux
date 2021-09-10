@@ -209,8 +209,10 @@ struct drm_xe_vm_create {
 	/** @extensions: Pointer to the first extension struct, if any */
 	__u64 extensions;
 
-	/** @flags: MBZ */
+	/** @flags: Flags */
 	__u32 flags;
+
+#define DRM_XE_VM_CREATE_SCRATCH_PAGE	0x1
 
 	/** @vm_id: Returned VM ID */
 	__u32 vm_id;

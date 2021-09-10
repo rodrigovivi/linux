@@ -559,11 +559,11 @@ static void xe_vm_replace_vma(struct xe_vm *vm, struct xe_vma *old,
 	rb_replace_node(&old->vm_node, &new->vm_node, &vm->vmas);
 }
 
-struct xe_vm *xe_vm_create(struct xe_device *xe)
+struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 {
 	struct xe_vm *vm;
 	struct xe_vma *vma;
-	int err, i;
+	int err, i = 0;
 
 	vm = kzalloc(sizeof(*vm), GFP_KERNEL);
 	if (!vm)
@@ -585,14 +585,14 @@ struct xe_vm *xe_vm_create(struct xe_device *xe)
 
 	xe_vm_lock(vm, NULL);
 
-	vm->scratch_bo = xe_bo_create(vm->xe, vm, SZ_4K, ttm_bo_type_kernel,
-				      XE_BO_CREATE_VRAM_IF_DGFX(vm->xe));
-	if (IS_ERR(vm->scratch_bo)) {
-		err = PTR_ERR(vm->scratch_bo);
-		goto err_unlock;
-	}
+	if (flags & DRM_XE_VM_CREATE_SCRATCH_PAGE) {
+		vm->scratch_bo = xe_bo_create(vm->xe, vm, SZ_4K, ttm_bo_type_kernel,
+					      XE_BO_CREATE_VRAM_IF_DGFX(vm->xe));
+		if (IS_ERR(vm->scratch_bo)) {
+			err = PTR_ERR(vm->scratch_bo);
+			goto err_unlock;
+		}
 
-	if (vm->scratch_bo) {
 		for (i = 0; i < 3; i++) {
 			vm->scratch_pt[i] = xe_pt_create(vm, i);
 			if (IS_ERR(vm->scratch_pt[i])) {
@@ -811,6 +811,8 @@ static int xe_vm_bind(struct xe_vm *vm, struct xe_bo *bo, uint64_t offset,
 	return err;
 }
 
+#define ALL_DRM_XE_VM_CREATE_FLAGS DRM_XE_VM_CREATE_SCRATCH_PAGE
+
 int xe_vm_create_ioctl(struct drm_device *dev, void *data,
 		       struct drm_file *file)
 {
@@ -824,10 +826,10 @@ int xe_vm_create_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, args->extensions))
 		return -EINVAL;
 
-	if (XE_IOCTL_ERR(xe, args->flags))
+	if (XE_IOCTL_ERR(xe, args->flags & ~ALL_DRM_XE_VM_CREATE_FLAGS))
 		return -EINVAL;
 
-	vm = xe_vm_create(xe);
+	vm = xe_vm_create(xe, args->flags);
 	if (IS_ERR(vm))
 		return PTR_ERR(vm);
 
