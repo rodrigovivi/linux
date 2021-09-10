@@ -46,6 +46,9 @@ struct xe_bo {
 	(IS_DGFX(xe) ? XE_BO_CREATE_VRAM_BIT : XE_BO_CREATE_SYSTEM_BIT)
 #define XE_BO_CREATE_GGTT_BIT BIT(4)
 
+struct xe_bo *xe_bo_create_locked(struct xe_device *xe,
+				  struct xe_vm *vm, size_t size,
+				  enum ttm_bo_type type, uint32_t flags);
 struct xe_bo *xe_bo_create(struct xe_device *xe, struct xe_vm *vm, size_t size,
 			   enum ttm_bo_type type, uint32_t flags);
 
@@ -104,7 +107,22 @@ static inline void xe_bo_or_vm_unlock(struct xe_bo *bo)
 	dma_resv_unlock(bo->ttm.base.resv);
 }
 
+static inline void xe_bo_lock_no_vm(struct xe_bo *bo, struct ww_acquire_ctx *ctx)
+{
+	XE_BUG_ON(bo->vm || bo->ttm.base.resv != &bo->ttm.base._resv);
+	dma_resv_lock(bo->ttm.base.resv, ctx);
+}
+
+static inline void xe_bo_unlock_no_vm(struct xe_bo *bo)
+{
+	XE_BUG_ON(bo->vm || bo->ttm.base.resv != &bo->ttm.base._resv);
+	dma_resv_unlock(bo->ttm.base.resv);
+}
+
 int xe_bo_populate(struct xe_bo *bo);
+int xe_bo_pin(struct xe_bo *bo);
+void xe_bo_unpin(struct xe_bo *bo);
+
 bool xe_bo_is_xe_bo(struct ttm_buffer_object *bo);
 dma_addr_t xe_bo_addr(struct xe_bo *bo, uint64_t offset,
 		      size_t page_size, bool *is_lmem);
