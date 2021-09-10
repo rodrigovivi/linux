@@ -88,7 +88,9 @@ int xe_ggtt_init(struct xe_device *xe, struct xe_ggtt *ggtt)
 		return -ENOMEM;
 	}
 
-	ggtt->scratch = xe_bo_create_internal(xe, NULL, GEN8_PAGE_SIZE, false);
+	ggtt->scratch = xe_bo_create(xe, NULL, GEN8_PAGE_SIZE,
+				     ttm_bo_type_kernel,
+				     XE_BO_CREATE_VRAM_IF_DGFX(xe));
 	if (IS_ERR(ggtt->scratch)) {
 		err = PTR_ERR(ggtt->scratch);
 		goto err_iomap;
