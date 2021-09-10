@@ -344,16 +344,6 @@ struct xe_bo *xe_bo_create(struct xe_device *xe, struct xe_vm *vm,
 	return bo;
 }
 
-struct xe_bo *xe_bo_create_internal(struct xe_device *xe,
-				    struct xe_vm *vm,
-				    size_t size, bool bind_ggtt)
-{
-	unsigned flags = IS_DGFX(xe) ? XE_BO_CREATE_VRAM_BIT : XE_BO_CREATE_SYSTEM_BIT;
-	if (bind_ggtt)
-		flags |= XE_BO_CREATE_GGTT_BIT;
-	return xe_bo_create(xe, vm, size, ttm_bo_type_kernel, flags);
-}
-
 int xe_bo_populate(struct xe_bo *bo)
 {
 	struct ttm_operation_ctx ctx = {

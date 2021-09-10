@@ -175,7 +175,8 @@ struct xe_pt *xe_pt_create(struct xe_vm *vm, unsigned int level)
 	if (!pt)
 		return NULL;
 
-	bo = xe_bo_create_internal(vm->xe, vm, SZ_4K, false);
+	bo = xe_bo_create(vm->xe, vm, SZ_4K, ttm_bo_type_kernel,
+			  XE_BO_CREATE_VRAM_IF_DGFX(vm->xe));
 	if (IS_ERR(bo)) {
 		err = PTR_ERR(bo);
 		goto err_kfree;
@@ -584,7 +585,8 @@ struct xe_vm *xe_vm_create(struct xe_device *xe)
 
 	xe_vm_lock(vm, NULL);
 
-	vm->scratch_bo = xe_bo_create_internal(vm->xe, vm, SZ_4K, false);
+	vm->scratch_bo = xe_bo_create(vm->xe, vm, SZ_4K, ttm_bo_type_kernel,
+				      XE_BO_CREATE_VRAM_IF_DGFX(vm->xe));
 	if (IS_ERR(vm->scratch_bo)) {
 		err = PTR_ERR(vm->scratch_bo);
 		goto err_unlock;
