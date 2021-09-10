@@ -291,8 +291,9 @@ static const struct drm_gem_object_funcs xe_gem_object_funcs = {
 	.mmap = drm_gem_ttm_mmap,
 };
 
-struct xe_bo *xe_bo_create(struct xe_device *xe, struct xe_vm *vm,
-			   size_t size, enum ttm_bo_type type, uint32_t flags)
+struct xe_bo *xe_bo_create_locked(struct xe_device *xe, struct xe_vm *vm,
+				  size_t size, enum ttm_bo_type type,
+				  uint32_t flags)
 {
 	struct xe_bo *bo;
 	struct ttm_operation_ctx ctx = {
@@ -337,14 +338,23 @@ struct xe_bo *xe_bo_create(struct xe_device *xe, struct xe_vm *vm,
 			goto err_unlock_put_bo;
 	}
 
-	xe_bo_unlock_vm_held(bo);
-
 	return bo;
 
 err_unlock_put_bo:
 	xe_bo_unlock_vm_held(bo);
 	xe_bo_put(bo);
 	return ERR_PTR(err);
+}
+
+struct xe_bo *xe_bo_create(struct xe_device *xe, struct xe_vm *vm,
+			   size_t size, enum ttm_bo_type type, uint32_t flags)
+{
+	struct xe_bo *bo = xe_bo_create_locked(xe, vm, size, type, flags);
+
+	if (!IS_ERR(bo))
+		xe_bo_unlock_vm_held(bo);
+
+	return bo;
 }
 
 int xe_bo_populate(struct xe_bo *bo)
@@ -354,13 +364,29 @@ int xe_bo_populate(struct xe_bo *bo)
 		.no_wait_gpu = false
 	};
 
+	xe_bo_assert_held(bo);
+
 	/* only populate non-VRAM */
 	if (bo->ttm.resource->mem_type == TTM_PL_VRAM)
 		return 0;
 
-	xe_bo_assert_held(bo);
-
 	return ttm_tt_populate(bo->ttm.bdev, bo->ttm.ttm, &ctx);
+}
+
+int xe_bo_pin(struct xe_bo *bo)
+{
+	int err = xe_bo_populate(bo);
+	if (err)
+		return err;
+
+	ttm_bo_pin(&bo->ttm);
+
+	return 0;
+}
+
+void xe_bo_unpin(struct xe_bo *bo)
+{
+	ttm_bo_unpin(&bo->ttm);
 }
 
 bool xe_bo_is_xe_bo(struct ttm_buffer_object *bo)
@@ -376,7 +402,8 @@ dma_addr_t xe_bo_addr(struct xe_bo *bo, uint64_t offset,
 {
 	uint64_t page;
 
-	xe_bo_assert_held(bo);
+	if (!READ_ONCE(bo->ttm.pin_count))
+		xe_bo_assert_held(bo);
 
 	XE_BUG_ON(page_size > PAGE_SIZE);
 	page = offset >> PAGE_SHIFT;
