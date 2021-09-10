@@ -42,15 +42,12 @@ struct xe_bo {
 #define XE_BO_CREATE_USER_BIT BIT(1)
 #define XE_BO_CREATE_SYSTEM_BIT BIT(2)
 #define XE_BO_CREATE_VRAM_BIT BIT(3)
+#define XE_BO_CREATE_VRAM_IF_DGFX(xe) \
+	(IS_DGFX(xe) ? XE_BO_CREATE_VRAM_BIT : XE_BO_CREATE_SYSTEM_BIT)
 #define XE_BO_CREATE_GGTT_BIT BIT(4)
 
 struct xe_bo *xe_bo_create(struct xe_device *xe, struct xe_vm *vm, size_t size,
 			   enum ttm_bo_type type, uint32_t flags);
-
-/* create a BO that is LOCAL on DG, SYSTEM on IG */
-struct xe_bo *xe_bo_create_internal(struct xe_device *xe,
-				    struct xe_vm *vm,
-				    size_t size, bool bind_ggtt);
 
 static inline struct xe_bo *ttm_to_xe_bo(const struct ttm_buffer_object *bo)
 {
