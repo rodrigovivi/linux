@@ -748,6 +748,8 @@ int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 	uint32_t arb_enable;
 	int err;
 
+	lrc->flags = 0;
+
 	lrc->bo = xe_bo_create_locked(xe, vm,
 				      ring_size + lrc_size(xe, hwe->class),
 				      ttm_bo_type_kernel,
@@ -756,9 +758,16 @@ int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 	if (IS_ERR(lrc->bo))
 		return PTR_ERR(lrc->bo);
 
+	if (!vm) {
+		err = xe_bo_pin(lrc->bo);
+		if (err)
+			goto err_unlock_put_bo;
+		lrc->flags |= XE_LRC_PINNED;
+	}
+
 	err = xe_bo_vmap(lrc->bo);
 	if (err)
-		goto err_unlock_put_bo;
+		goto err_unpin_bo;
 
 	xe_bo_unlock_vm_held(lrc->bo);
 
@@ -807,6 +816,9 @@ int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 
 	return 0;
 
+err_unpin_bo:
+	if (lrc->flags & XE_LRC_PINNED)
+		xe_bo_unpin(lrc->bo);
 err_unlock_put_bo:
 	xe_bo_unlock_vm_held(lrc->bo);
 	xe_bo_put(lrc->bo);
@@ -815,6 +827,11 @@ err_unlock_put_bo:
 
 void xe_lrc_finish(struct xe_lrc *lrc)
 {
+	if (lrc->flags & XE_LRC_PINNED) {
+		xe_bo_lock_no_vm(lrc->bo, NULL);
+		xe_bo_unpin(lrc->bo);
+		xe_bo_unlock_no_vm(lrc->bo);
+	}
 	xe_bo_put(lrc->bo);
 }
 
