@@ -748,25 +748,26 @@ int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 	uint32_t arb_enable;
 	int err;
 
-	lrc->bo = xe_bo_create(xe, vm, ring_size + lrc_size(xe, hwe->class),
-			       ttm_bo_type_kernel,
-			       XE_BO_CREATE_VRAM_IF_DGFX(xe) |
-			       XE_BO_CREATE_GGTT_BIT);
+	lrc->bo = xe_bo_create_locked(xe, vm,
+				      ring_size + lrc_size(xe, hwe->class),
+				      ttm_bo_type_kernel,
+				      XE_BO_CREATE_VRAM_IF_DGFX(xe) |
+				      XE_BO_CREATE_GGTT_BIT);
 	if (IS_ERR(lrc->bo))
 		return PTR_ERR(lrc->bo);
 
 	err = xe_bo_vmap(lrc->bo);
-	if (err) {
-		xe_bo_put(lrc->bo);
-		return err;
-	}
+	if (err)
+		goto err_unlock_put_bo;
+
+	xe_bo_unlock_vm_held(lrc->bo);
 
 	lrc->ring_size = ring_size;
 	lrc->ring_tail = 0;
 
 	init_data = empty_lrc_data(hwe);
 	if (!init_data) {
-		xe_bo_put(lrc->bo);
+		xe_lrc_finish(lrc);
 		return -ENOMEM;
 	}
 
@@ -805,6 +806,11 @@ int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 	xe_lrc_write_ring(lrc, &arb_enable, sizeof(arb_enable));
 
 	return 0;
+
+err_unlock_put_bo:
+	xe_bo_unlock_vm_held(lrc->bo);
+	xe_bo_put(lrc->bo);
+	return err;
 }
 
 void xe_lrc_finish(struct xe_lrc *lrc)
