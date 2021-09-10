@@ -222,11 +222,13 @@ static unsigned long xe_ttm_io_mem_pfn(struct ttm_buffer_object *bo,
 	return (xe->vram.io_start + cursor.start) >> PAGE_SHIFT;
 }
 
+static void __xe_bo_vunmap(struct xe_bo *bo);
+
 static void xe_ttm_bo_release_notify(struct ttm_buffer_object *ttm_bo)
 {
 	struct xe_bo *bo = ttm_to_xe_bo(ttm_bo);
 
-	xe_bo_vunmap(bo);
+	__xe_bo_vunmap(bo);
 }
 
 struct ttm_device_funcs xe_ttm_funcs = {
@@ -425,19 +427,27 @@ dma_addr_t xe_bo_addr(struct xe_bo *bo, uint64_t offset,
 
 int xe_bo_vmap(struct xe_bo *bo)
 {
+	xe_bo_assert_held(bo);
+
 	if (!dma_buf_map_is_null(&bo->vmap))
 		return 0;
 
 	return ttm_bo_vmap(&bo->ttm, &bo->vmap);
 }
 
-void xe_bo_vunmap(struct xe_bo *bo)
+static void __xe_bo_vunmap(struct xe_bo *bo)
 {
 	if (dma_buf_map_is_null(&bo->vmap))
 		return;
 
 	ttm_bo_vunmap(&bo->ttm, &bo->vmap);
 	dma_buf_map_clear(&bo->vmap);
+}
+
+void xe_bo_vunmap(struct xe_bo *bo)
+{
+	xe_bo_assert_held(bo);
+	__xe_bo_vunmap(bo);
 }
 
 #define ALL_DRM_XE_GEM_CREATE_FLAGS (\
