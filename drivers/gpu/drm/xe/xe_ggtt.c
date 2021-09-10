@@ -88,15 +88,16 @@ int xe_ggtt_init(struct xe_device *xe, struct xe_ggtt *ggtt)
 		return -ENOMEM;
 	}
 
-	ggtt->scratch = xe_bo_create(xe, NULL, GEN8_PAGE_SIZE,
-				     ttm_bo_type_kernel,
-				     XE_BO_CREATE_VRAM_IF_DGFX(xe));
+	ggtt->scratch = xe_bo_create_locked(xe, NULL, GEN8_PAGE_SIZE,
+					    ttm_bo_type_kernel,
+					    XE_BO_CREATE_VRAM_IF_DGFX(xe));
 	if (IS_ERR(ggtt->scratch)) {
 		err = PTR_ERR(ggtt->scratch);
 		goto err_iomap;
 	}
 
-	err = xe_bo_populate(ggtt->scratch);
+	err = xe_bo_pin(ggtt->scratch);
+	xe_bo_unlock_no_vm(ggtt->scratch);
 	if (err)
 		goto err_scratch;
 
@@ -120,7 +121,12 @@ void xe_ggtt_finish(struct xe_ggtt *ggtt)
 {
 	mutex_destroy(&ggtt->lock);
 	drm_mm_takedown(&ggtt->mm);
+
+	xe_bo_lock_no_vm(ggtt->scratch, NULL);
+	xe_bo_unpin(ggtt->scratch);
+	xe_bo_unlock_no_vm(ggtt->scratch);
 	xe_bo_put(ggtt->scratch);
+
 	iounmap(ggtt->gsm);
 }
 
