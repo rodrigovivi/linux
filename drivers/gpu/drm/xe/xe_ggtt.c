@@ -151,7 +151,6 @@ void xe_ggtt_printk(struct xe_ggtt *ggtt, const char *prefix)
 
 int xe_ggtt_insert_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 {
-	bool is_lmem = bo->ttm.resource->mem_type == TTM_PL_VRAM;
 	uint64_t offset, pte;
 	int err;
 
@@ -175,9 +174,6 @@ int xe_ggtt_insert_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 			pte = gen8_pte_encode(bo, offset);
 			xe_ggtt_set_pte(ggtt, start + offset, pte);
 		}
-		printk(KERN_INFO "xe_ggtt_insert_bo(bo = 0x%p, size = 0x%lx, "
-				 "lmem = %s) -> 0x%08x", bo, bo->size,
-				 is_lmem ? "true" : "false", (u32)start);
 	}
 
 	mutex_unlock(&ggtt->lock);
@@ -189,8 +185,6 @@ void xe_ggtt_remove_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 {
 	if (XE_WARN_ON(!bo->ggtt_node.size))
 		return;
-
-	printk(KERN_INFO "xe_ggtt_remove_bo(bo = 0x%p)", bo);
 
 	/* This BO is not currently in the GGTT */
 	XE_BUG_ON(bo->ggtt_node.size != bo->size);
