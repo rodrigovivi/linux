@@ -15,6 +15,10 @@ struct xe_vm;
 struct xe_lrc {
 	struct xe_bo *bo;
 
+	uint32_t flags;
+
+#define XE_LRC_PINNED BIT(1)
+
 	uint32_t ring_size;
 	uint32_t ring_tail;
 	uint32_t ring_old_tail; /* Shadow of RING_TAIL */
