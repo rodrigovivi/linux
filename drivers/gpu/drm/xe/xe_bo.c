@@ -333,15 +333,18 @@ struct xe_bo *xe_bo_create(struct xe_device *xe, struct xe_vm *vm,
 
 	if (flags & XE_BO_CREATE_GGTT_BIT) {
 		err = xe_ggtt_insert_bo(&xe->ggtt, bo);
-		if (err) {
-			xe_bo_put(bo);
-			return ERR_PTR(err);
-		}
+		if (err)
+			goto err_unlock_put_bo;
 	}
 
 	xe_bo_unlock_vm_held(bo);
 
 	return bo;
+
+err_unlock_put_bo:
+	xe_bo_unlock_vm_held(bo);
+	xe_bo_put(bo);
+	return ERR_PTR(err);
 }
 
 int xe_bo_populate(struct xe_bo *bo)
