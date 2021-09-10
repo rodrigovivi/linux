@@ -67,7 +67,7 @@ static int xe_bo_placement_for_flags(struct xe_device *xe, struct xe_bo *bo,
 	struct ttm_place *places = bo->placements;
 	u32 c = 0;
 
-	if (bo_flags & XE_BO_CREATE_LOCAL_BIT) {
+	if (bo_flags & XE_BO_CREATE_VRAM_BIT) {
 		XE_BUG_ON(!xe->vram.size);
 		places[c++] = (struct ttm_place) {
 			.mem_type = TTM_PL_VRAM,
@@ -348,7 +348,7 @@ struct xe_bo *xe_bo_create_internal(struct xe_device *xe,
 				    struct xe_vm *vm,
 				    size_t size, bool bind_ggtt)
 {
-	unsigned flags = IS_DGFX(xe) ? XE_BO_CREATE_LOCAL_BIT : XE_BO_CREATE_SYSTEM_BIT;
+	unsigned flags = IS_DGFX(xe) ? XE_BO_CREATE_VRAM_BIT : XE_BO_CREATE_SYSTEM_BIT;
 	if (bind_ggtt)
 		flags |= XE_BO_CREATE_GGTT_BIT;
 	return xe_bo_create(xe, vm, size, ttm_bo_type_kernel, flags);
@@ -469,7 +469,7 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 	if (args->flags & DRM_XE_GEM_CREATE_SYSTEM)
 		bo_flags |= XE_BO_CREATE_SYSTEM_BIT;
 	if (args->flags & DRM_XE_GEM_CREATE_VRAM)
-		bo_flags |= XE_BO_CREATE_LOCAL_BIT;
+		bo_flags |= XE_BO_CREATE_VRAM_BIT;
 
 	bo = xe_bo_create(xe, vm, args->size, ttm_bo_type_device, bo_flags);
 	if (vm) {
