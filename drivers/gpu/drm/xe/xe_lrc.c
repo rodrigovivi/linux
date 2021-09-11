@@ -670,15 +670,27 @@ uint32_t xe_lrc_ggtt_addr(struct xe_lrc *lrc)
 	return __xe_lrc_pphwsp_ggtt_addr(lrc);
 }
 
-uint32_t xe_lrc_last_seqno(struct xe_lrc *lrc)
+static uint32_t dbm_read32(struct dma_buf_map map)
 {
-	struct dma_buf_map map;
-
-	map = __xe_lrc_seqno_map(lrc);
 	if (map.is_iomem)
 		return readl(map.vaddr_iomem);
 	else
-		return *(uint32_t *)map.vaddr;
+		return READ_ONCE(*(uint32_t *)map.vaddr);
+}
+
+static void dbm_write32(struct dma_buf_map map, uint32_t val)
+{
+	if (map.is_iomem)
+		writel(val, map.vaddr_iomem);
+	else
+		*(uint32_t *)map.vaddr = val;
+}
+
+uint32_t xe_lrc_last_seqno(struct xe_lrc *lrc, int reg_nr)
+{
+	struct dma_buf_map map;
+
+	return dbm_read32(__xe_lrc_seqno_map(lrc));
 }
 
 uint32_t xe_lrc_seqno_ggtt_addr(struct xe_lrc *lrc)
@@ -692,10 +704,7 @@ uint32_t xe_lrc_read_ctx_reg(struct xe_lrc *lrc, int reg_nr)
 
 	map = __xe_lrc_regs_map(lrc);
 	dma_buf_map_incr(&map, reg_nr * sizeof(uint32_t));
-	if (map.is_iomem)
-		return readl(map.vaddr_iomem);
-	else
-		return *(uint32_t *)map.vaddr;
+	return dbm_read32(map);
 }
 
 void xe_lrc_write_ctx_reg(struct xe_lrc *lrc, int reg_nr, uint32_t val)
@@ -704,10 +713,7 @@ void xe_lrc_write_ctx_reg(struct xe_lrc *lrc, int reg_nr, uint32_t val)
 
 	map = __xe_lrc_regs_map(lrc);
 	dma_buf_map_incr(&map, reg_nr * sizeof(uint32_t));
-	if (map.is_iomem)
-		writel(val, map.vaddr_iomem);
-	else
-		*(uint32_t *)map.vaddr = val;
+	dbm_write32(map, val);
 }
 
 static void *empty_lrc_data(struct xe_hw_engine *hwe)
