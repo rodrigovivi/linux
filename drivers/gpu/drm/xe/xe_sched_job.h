@@ -23,11 +23,7 @@ struct xe_sched_job {
 
 	struct xe_engine *engine;
 
-	/* Link in xe_hw_engine.signal_jobs */
-	struct list_head signal_link;
-
-	spinlock_t lock;
-	struct dma_fence fence;
+	struct dma_fence *fence;
 
 	uint64_t user_batch_addr;
 };
@@ -38,24 +34,9 @@ to_xe_sched_job(struct drm_sched_job *drm)
 	return container_of(drm, struct xe_sched_job, drm);
 }
 
-struct xe_sched_job *dma_fence_to_xe_sched_job(struct dma_fence *fence);
-
 struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
 					 uint64_t user_batch_addr);
-
-static inline struct xe_sched_job *xe_sched_job_get(struct xe_sched_job *job)
-{
-	dma_fence_get(&job->fence);
-	return job;
-}
-
-static inline void xe_sched_job_put(struct xe_sched_job *job)
-{
-	dma_fence_put(&job->fence);
-}
-
-bool xe_sched_job_complete(struct xe_sched_job *job);
-
+void xe_sched_job_destroy(struct xe_sched_job *job);
 void xe_drm_sched_job_free(struct drm_sched_job *drm_job);
 
 #endif /* _XE_SCHED_JOB_H_ */
