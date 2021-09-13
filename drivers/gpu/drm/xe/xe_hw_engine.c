@@ -190,8 +190,7 @@ int xe_hw_engine_init(struct xe_device *xe, struct xe_hw_engine *hwe,
 		goto err_kernel_lrc;
 	}
 
-	spin_lock_init(&hwe->fence_lock);
-	INIT_LIST_HEAD(&hwe->signal_jobs);
+	xe_hw_fence_irq_init(&hwe->fence_irq);
 
 	hwe->name = info->name;
 
@@ -206,38 +205,11 @@ err_hwsp:
 
 void xe_hw_engine_finish(struct xe_hw_engine *hwe)
 {
+	xe_hw_fence_irq_finish(&hwe->fence_irq);
 	xe_execlist_port_destroy(hwe->exl_port);
 	xe_lrc_finish(&hwe->kernel_lrc);
 	xe_bo_put(hwe->hwsp);
 	hwe->xe = NULL;
-}
-
-static void xe_hw_engine_signal_complete_jobs(struct xe_hw_engine *hwe)
-{
-	unsigned long flags;
-	struct xe_sched_job *job, *next;
-	int err;
-	bool tmp;
-
-	tmp = dma_fence_begin_signalling();
-
-	spin_lock_irqsave(&hwe->fence_lock, flags);
-	list_for_each_entry_safe(job, next, &hwe->signal_jobs, signal_link) {
-		if (test_bit(DMA_FENCE_FLAG_SIGNALED_BIT, &job->fence.flags)) {
-			list_del_init(&job->signal_link);
-			continue;
-		}
-
-		if (!xe_sched_job_complete(job))
-			continue;
-
-		err = dma_fence_signal_locked(&job->fence);
-		list_del_init(&job->signal_link);
-		XE_WARN_ON(err);
-	}
-	spin_unlock_irqrestore(&hwe->fence_lock, flags);
-
-	dma_fence_end_signalling(tmp);
 }
 
 void xe_hw_engine_handle_irq(struct xe_hw_engine *hwe, uint16_t intr_vec)
@@ -246,5 +218,5 @@ void xe_hw_engine_handle_irq(struct xe_hw_engine *hwe, uint16_t intr_vec)
 		hwe->irq_handler(hwe, intr_vec);
 
 	if (intr_vec & GT_RENDER_USER_INTERRUPT)
-		xe_hw_engine_signal_complete_jobs(hwe);
+		xe_hw_fence_irq_run(&hwe->fence_irq);
 }

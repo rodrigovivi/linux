@@ -686,18 +686,6 @@ static void dbm_write32(struct dma_buf_map map, uint32_t val)
 		*(uint32_t *)map.vaddr = val;
 }
 
-uint32_t xe_lrc_last_seqno(struct xe_lrc *lrc, int reg_nr)
-{
-	struct dma_buf_map map;
-
-	return dbm_read32(__xe_lrc_seqno_map(lrc));
-}
-
-uint32_t xe_lrc_seqno_ggtt_addr(struct xe_lrc *lrc)
-{
-	return __xe_lrc_seqno_ggtt_addr(lrc);
-}
-
 uint32_t xe_lrc_read_ctx_reg(struct xe_lrc *lrc, int reg_nr)
 {
 	struct dma_buf_map map;
@@ -780,6 +768,8 @@ int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 	lrc->ring_size = ring_size;
 	lrc->ring_tail = 0;
 
+	xe_hw_fence_ctx_init(&lrc->fence_ctx, hwe);
+
 	init_data = empty_lrc_data(hwe);
 	if (!init_data) {
 		xe_lrc_finish(lrc);
@@ -833,6 +823,7 @@ err_unlock_put_bo:
 
 void xe_lrc_finish(struct xe_lrc *lrc)
 {
+	xe_hw_fence_ctx_finish(&lrc->fence_ctx);
 	if (lrc->flags & XE_LRC_PINNED) {
 		xe_bo_lock_no_vm(lrc->bo, NULL);
 		xe_bo_unpin(lrc->bo);
@@ -905,4 +896,15 @@ void xe_lrc_write_ring(struct xe_lrc *lrc, const void *data, size_t size)
 uint64_t xe_lrc_descriptor(struct xe_lrc *lrc)
 {
 	return lrc->desc | xe_lrc_ggtt_addr(lrc);
+}
+
+uint32_t xe_lrc_seqno_ggtt_addr(struct xe_lrc *lrc)
+{
+	return __xe_lrc_seqno_ggtt_addr(lrc);
+}
+
+struct dma_fence *xe_lrc_create_seqno_fence(struct xe_lrc *lrc)
+{
+	return &xe_hw_fence_create(&lrc->fence_ctx.hwe->fence_irq,
+				   &lrc->fence_ctx, __xe_lrc_seqno_map(lrc))->dma;
 }

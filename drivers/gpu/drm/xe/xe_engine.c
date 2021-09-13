@@ -43,9 +43,6 @@ static struct xe_engine *__xe_engine_create(struct xe_device *xe,
 		e->entity = &e->execlist->entity;
 	}
 
-	e->fence_ctx = dma_fence_context_alloc(1);
-	e->next_seqno = 1;
-
 	return e;
 
 err_lrc:
@@ -372,7 +369,7 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 
 err_put_job:
 	if (err)
-		xe_sched_job_put(job);
+		xe_sched_job_destroy(job);
 err_engine_end:
 	xe_engine_end(engine);
 err_syncs:
