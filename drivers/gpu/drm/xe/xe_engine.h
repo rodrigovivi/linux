@@ -32,9 +32,6 @@ struct xe_engine {
 	struct drm_sched_entity *entity;
 
 	struct xe_lrc lrc;
-
-	uint64_t fence_ctx;
-	uint32_t next_seqno;
 };
 
 struct xe_engine *xe_engine_create(struct xe_device *xe, struct xe_vm *vm,

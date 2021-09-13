@@ -11,6 +11,7 @@
 #include <linux/spinlock.h>
 
 #include "xe_lrc.h"
+#include "xe_hw_fence.h"
 
 /* See "Engine ID Definition" struct in the Icelake PRM */
 enum xe_engine_class {
@@ -57,8 +58,7 @@ struct xe_hw_engine {
 
 	struct xe_execlist_port *exl_port;
 
-	spinlock_t fence_lock;
-	struct list_head signal_jobs;
+	struct xe_hw_fence_irq fence_irq;
 
 	void (*irq_handler)(struct xe_hw_engine *, uint16_t);
 };

@@ -261,18 +261,18 @@ xe_execlist_run_job(struct drm_sched_job *drm_job)
 	dw[i++] = MI_STORE_DATA_IMM | BIT(22) /* GGTT */ | 2;
 	dw[i++] = xe_lrc_seqno_ggtt_addr(lrc);
 	dw[i++] = 0;
-	dw[i++] = job->fence.seqno;
+	dw[i++] = job->fence->seqno;
 
 	dw[i++] = MI_USER_INTERRUPT;
 	dw[i++] = MI_ARB_ON_OFF | MI_ARB_ENABLE;
 
-	XE_BUG_ON(i > ARRAY_SIZE(dw));
+	XE_BUG_ON(i > MAX_JOB_SIZE_DW);
 
 	xe_lrc_write_ring(lrc, dw, i * sizeof(*dw));
 
 	xe_execlist_make_active(exl);
 
-	return dma_fence_get(&job->fence);
+	return dma_fence_get(job->fence);
 }
 
 static const struct drm_sched_backend_ops drm_sched_ops = {
