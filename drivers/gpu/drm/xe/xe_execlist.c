@@ -146,14 +146,13 @@ static uint64_t read_execlist_status(struct xe_hw_engine *hwe)
 	return lo | (uint64_t)hi << 32;
 }
 
-static void xe_execlist_port_irq_handler_locked(struct xe_hw_engine *hwe)
+static void xe_execlist_port_irq_handler_locked(struct xe_execlist_port *port)
 {
-	struct xe_execlist_port *port = hwe->exl_port;
 	uint64_t status;
 
 	xe_execlist_port_assert_held(port);
 
-	status = read_execlist_status(hwe);
+	status = read_execlist_status(port->hwe);
 	if (status & BIT(7))
 		return;
 
@@ -166,7 +165,7 @@ static void xe_execlist_port_irq_handler(struct xe_hw_engine *hwe,
 	struct xe_execlist_port *port = hwe->exl_port;
 
 	spin_lock(&port->lock);
-	xe_execlist_port_irq_handler_locked(hwe);
+	xe_execlist_port_irq_handler_locked(port);
 	spin_unlock(&port->lock);
 }
 
@@ -209,6 +208,19 @@ static void xe_execlist_make_active(struct xe_execlist *exl)
 	spin_unlock_irq(&port->lock);
 }
 
+static void xe_execlist_port_irq_fail_timer(struct timer_list *timer)
+{
+	struct xe_execlist_port *port =
+		container_of(timer, struct xe_execlist_port, irq_fail);
+
+	spin_lock(&port->lock);
+	xe_execlist_port_irq_handler_locked(port);
+	spin_unlock(&port->lock);
+
+	port->irq_fail.expires = jiffies + msecs_to_jiffies(1000);
+	add_timer(&port->irq_fail);
+}
+
 struct xe_execlist_port *xe_execlist_port_create(struct xe_device *xe,
 						 struct xe_hw_engine *hwe)
 {
@@ -230,11 +242,18 @@ struct xe_execlist_port *xe_execlist_port_create(struct xe_device *xe,
 
 	hwe->irq_handler = xe_execlist_port_irq_handler;
 
+	/* TODO: Fix the interrupt code so it doesn't race like mad */
+	timer_setup(&port->irq_fail, xe_execlist_port_irq_fail_timer, 0);
+	port->irq_fail.expires = jiffies + msecs_to_jiffies(1000);
+	add_timer(&port->irq_fail);
+
 	return port;
 }
 
 void xe_execlist_port_destroy(struct xe_execlist_port *port)
 {
+	del_timer(&port->irq_fail);
+
 	/* Prevent an interrupt while we're destroying */
 	spin_lock_irq(&port->hwe->xe->gt_irq_lock);
 	port->hwe->irq_handler = NULL;
