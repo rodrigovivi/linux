@@ -176,7 +176,7 @@ static void gen11_gt_irq_handler(struct xe_device *xe, uint32_t master_ctl)
 {
 	unsigned int bank, bit;
 	long unsigned int intr_dw;
-	uint32_t identity;
+	uint32_t identity[32];
 	uint16_t instance, intr_vec;
 	enum xe_engine_class class;
 	struct xe_hw_engine *hwe;
@@ -188,12 +188,14 @@ static void gen11_gt_irq_handler(struct xe_device *xe, uint32_t master_ctl)
 			continue;
 
 		intr_dw = xe_mmio_read32(xe, GEN11_GT_INTR_DW(bank).reg);
-		for_each_set_bit(bit, &intr_dw, 32) {
-			identity = gen11_gt_engine_identity(xe, bank, bit);
+		for_each_set_bit(bit, &intr_dw, 32)
+			identity[bit] = gen11_gt_engine_identity(xe, bank, bit);
+		xe_mmio_write32(xe, GEN11_GT_INTR_DW(bank).reg, intr_dw);
 
-			class = GEN11_INTR_ENGINE_CLASS(identity);
-			instance = GEN11_INTR_ENGINE_INSTANCE(identity);
-			intr_vec = GEN11_INTR_ENGINE_INTR(identity);
+		for_each_set_bit(bit, &intr_dw, 32) {
+			class = GEN11_INTR_ENGINE_CLASS(identity[bit]);
+			instance = GEN11_INTR_ENGINE_INSTANCE(identity[bit]);
+			intr_vec = GEN11_INTR_ENGINE_INTR(identity[bit]);
 
 			/* TODO: Handle other interrupts */
 			if (class == XE_ENGINE_CLASS_OTHER)
@@ -205,8 +207,6 @@ static void gen11_gt_irq_handler(struct xe_device *xe, uint32_t master_ctl)
 
 			xe_hw_engine_handle_irq(hwe, intr_vec);
 		}
-
-		xe_mmio_write32(xe, GEN11_GT_INTR_DW(bank).reg, intr_dw);
 	}
 
 	spin_unlock(&xe->gt_irq_lock);
