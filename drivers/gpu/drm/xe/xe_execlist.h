@@ -29,6 +29,8 @@ struct xe_execlist_port {
 	uint32_t last_ctx_id;
 
 	struct xe_execlist *running_exl;
+
+	struct timer_list irq_fail;
 };
 
 struct xe_execlist_port *xe_execlist_port_create(struct xe_device *xe,
