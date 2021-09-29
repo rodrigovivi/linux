@@ -13,6 +13,8 @@ struct xe_bo;
 struct xe_device;
 
 struct xe_ggtt {
+	struct xe_device *xe;
+
 	uint64_t size;
 
 	struct xe_bo *scratch;
