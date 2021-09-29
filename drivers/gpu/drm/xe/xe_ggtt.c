@@ -11,6 +11,9 @@
 
 #include "xe_bo.h"
 #include "xe_device.h"
+#include "xe_mmio.h"
+
+#include "../i915/i915_reg.h"
 
 #define PTE_READ_ONLY	BIT(0)
 #define PTE_LM		BIT(1)
@@ -74,6 +77,8 @@ int xe_ggtt_init(struct xe_device *xe, struct xe_ggtt *ggtt)
 	phys_addr_t phys_addr;
 	int err;
 
+	ggtt->xe = xe;
+
 	gsm_size = probe_gsm_size(pdev);
 	if (gsm_size == 0) {
 		drm_err(&xe->drm, "Hardware reported no preallocated GSM\n");
@@ -130,6 +135,16 @@ void xe_ggtt_finish(struct xe_ggtt *ggtt)
 	iounmap(ggtt->gsm);
 }
 
+void xe_ggtt_invalidate(struct xe_device *xe)
+{
+	/* TODO: For GuC, we need to do something different here */
+
+	/* TODO: i915 makes comments about this being uncached and
+	 * therefore flushing WC buffers.  Is that really true here?
+	 */
+	xe_mmio_write32(xe, GFX_FLSH_CNTL_GEN6.reg, GFX_FLSH_CNTL_EN);
+}
+
 void xe_ggtt_printk(struct xe_ggtt *ggtt, const char *prefix)
 {
 	uint64_t addr, scratch_pte;
@@ -176,6 +191,8 @@ int xe_ggtt_insert_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 		}
 	}
 
+	xe_ggtt_invalidate(ggtt->xe);
+
 	mutex_unlock(&ggtt->lock);
 
 	return 0;
@@ -194,6 +211,8 @@ void xe_ggtt_remove_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 	xe_ggtt_clear(ggtt, bo->ggtt_node.start, bo->ggtt_node.size);
 	drm_mm_remove_node(&bo->ggtt_node);
 	bo->ggtt_node.size = 0;
+
+	xe_ggtt_invalidate(ggtt->xe);
 
 	mutex_unlock(&ggtt->lock);
 }
