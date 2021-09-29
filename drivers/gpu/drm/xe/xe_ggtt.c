@@ -50,7 +50,7 @@ static unsigned int probe_gsm_size(struct pci_dev *pdev)
 static void xe_ggtt_set_pte(struct xe_ggtt *ggtt, uint64_t addr, uint64_t pte)
 {
 	XE_BUG_ON(addr & GEN8_PTE_MASK);
-	XE_BUG_ON(addr > ggtt->size);
+	XE_BUG_ON(addr >= ggtt->size);
 
 	writeq(pte, &ggtt->gsm[addr >> GEN8_PTE_SHIFT]);
 }
