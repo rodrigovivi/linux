@@ -214,9 +214,9 @@ static void xe_execlist_port_irq_fail_timer(struct timer_list *timer)
 	struct xe_execlist_port *port =
 		container_of(timer, struct xe_execlist_port, irq_fail);
 
-	spin_lock(&port->lock);
+	spin_lock_irq(&port->lock);
 	xe_execlist_port_irq_handler_locked(port);
-	spin_unlock(&port->lock);
+	spin_unlock_irq(&port->lock);
 
 	port->irq_fail.expires = jiffies + msecs_to_jiffies(1000);
 	add_timer(&port->irq_fail);
