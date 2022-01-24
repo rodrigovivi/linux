@@ -138,7 +138,7 @@ static struct ttm_tt *xe_ttm_tt_create(struct ttm_buffer_object *ttm_bo,
 		return NULL;
 
 	/* TODO: We only need to do this for user allocated BOs */
-	page_flags |= TTM_PAGE_FLAG_ZERO_ALLOC;
+	page_flags |= TTM_TT_FLAG_ZERO_ALLOC;
 
 	/* TODO: Select caching mode */
 	err = ttm_sg_tt_init(&tt->ttm, &bo->ttm, page_flags, ttm_cached);
