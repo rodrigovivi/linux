@@ -12,6 +12,7 @@
 #include "../i915/i915_reg.h"
 #include "../i915/gt/intel_gpu_commands.h"
 #include "../i915/gt/intel_lrc_reg.h"
+#include "../i915/gt/intel_engine_regs.h"
 
 uint32_t lrc_size(struct xe_device *xe, enum xe_engine_class class)
 {

@@ -15,6 +15,7 @@
 #include "../i915/i915_reg.h"
 #include "../i915/gt/intel_gpu_commands.h"
 #include "../i915/gt/intel_lrc_reg.h"
+#include "../i915/gt/intel_engine_regs.h"
 
 #define XE_EXECLIST_HANG_LIMIT 1
 
