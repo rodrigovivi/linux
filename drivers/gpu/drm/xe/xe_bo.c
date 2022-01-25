@@ -359,6 +359,51 @@ struct xe_bo *xe_bo_create(struct xe_device *xe, struct xe_vm *vm,
 	return bo;
 }
 
+struct xe_bo *xe_bo_create_pin_map(struct xe_device *xe, struct xe_vm *vm,
+				   size_t size, enum ttm_bo_type type,
+				   uint32_t flags)
+{
+	struct xe_bo *bo = xe_bo_create_locked(xe, vm, size, type, flags);
+	int err;
+
+	if (IS_ERR(bo))
+		return bo;
+
+	err = xe_bo_pin(bo);
+	if (err)
+		goto err_put;
+
+	err = xe_bo_vmap(bo);
+	if (err)
+		goto err_unpin;
+
+	xe_bo_unlock_vm_held(bo);
+
+	return bo;
+
+err_unpin:
+	xe_bo_unpin(bo);
+err_put:
+	xe_bo_unlock_vm_held(bo);
+	xe_bo_put(bo);
+	return ERR_PTR(err);
+}
+
+struct xe_bo *xe_bo_create_from_data(struct xe_device *xe, const void *data,
+				     size_t size, enum ttm_bo_type type,
+				     uint32_t flags)
+{
+	struct xe_bo *bo = xe_bo_create_pin_map(xe, NULL,
+						ALIGN(size, PAGE_SIZE),
+						type, flags);
+	if (IS_ERR(bo))
+		return bo;
+
+	dma_buf_map_memcpy_to(&bo->vmap, data, size);
+
+	return bo;
+}
+
 int xe_bo_populate(struct xe_bo *bo)
 {
 	struct ttm_operation_ctx ctx = {
