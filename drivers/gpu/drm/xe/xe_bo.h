@@ -51,6 +51,12 @@ struct xe_bo *xe_bo_create_locked(struct xe_device *xe,
 				  enum ttm_bo_type type, uint32_t flags);
 struct xe_bo *xe_bo_create(struct xe_device *xe, struct xe_vm *vm, size_t size,
 			   enum ttm_bo_type type, uint32_t flags);
+struct xe_bo *xe_bo_create_pin_map(struct xe_device *xe, struct xe_vm *vm,
+				   size_t size, enum ttm_bo_type type,
+				   uint32_t flags);
+struct xe_bo *xe_bo_create_from_data(struct xe_device *xe, const void *data,
+				     size_t size, enum ttm_bo_type type,
+				     uint32_t flags);
 
 static inline struct xe_bo *ttm_to_xe_bo(const struct ttm_buffer_object *bo)
 {
