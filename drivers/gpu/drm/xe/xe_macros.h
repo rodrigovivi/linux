@@ -7,6 +7,8 @@
 #ifndef _XE_MACROS_H_
 #define _XE_MACROS_H_
 
+#include <linux/bug.h>
+
 #define XE_EXTRA_DEBUG 1
 #define XE_WARN_ON WARN_ON
 #define XE_BUG_ON BUG_ON
