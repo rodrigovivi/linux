@@ -20,61 +20,6 @@
 
 #include "../i915/i915_reg.h"
 
-/* Keep in gen based order, and chronological order within a gen */
-enum intel_platform {
-	INTEL_PLATFORM_UNINITIALIZED = 0,
-	/* gen2 */
-	INTEL_I830,
-	INTEL_I845G,
-	INTEL_I85X,
-	INTEL_I865G,
-	/* gen3 */
-	INTEL_I915G,
-	INTEL_I915GM,
-	INTEL_I945G,
-	INTEL_I945GM,
-	INTEL_G33,
-	INTEL_PINEVIEW,
-	/* gen4 */
-	INTEL_I965G,
-	INTEL_I965GM,
-	INTEL_G45,
-	INTEL_GM45,
-	/* gen5 */
-	INTEL_IRONLAKE,
-	/* gen6 */
-	INTEL_SANDYBRIDGE,
-	/* gen7 */
-	INTEL_IVYBRIDGE,
-	INTEL_VALLEYVIEW,
-	INTEL_HASWELL,
-	/* gen8 */
-	INTEL_BROADWELL,
-	INTEL_CHERRYVIEW,
-	/* gen9 */
-	INTEL_SKYLAKE,
-	INTEL_BROXTON,
-	INTEL_KABYLAKE,
-	INTEL_GEMINILAKE,
-	INTEL_COFFEELAKE,
-	INTEL_COMETLAKE,
-	/* gen10 */
-	INTEL_CANNONLAKE,
-	/* gen11 */
-	INTEL_ICELAKE,
-	INTEL_ELKHARTLAKE,
-	INTEL_JASPERLAKE,
-	/* gen12 */
-	INTEL_TIGERLAKE,
-	INTEL_ROCKETLAKE,
-	INTEL_DG1,
-	INTEL_ALDERLAKE_S,
-	INTEL_ALDERLAKE_P,
-	INTEL_XEHPSDV,
-	INTEL_DG2,
-	INTEL_MAX_PLATFORMS
-};
-
 enum intel_ppgtt_type {
 	INTEL_PPGTT_NONE = 0,
 	INTEL_PPGTT_ALIASING = 1,
@@ -235,7 +180,7 @@ struct intel_device_info {
 
 	intel_engine_mask_t platform_engine_mask; /* Engines supported by the HW */
 
-	enum intel_platform platform;
+	enum xe_platform platform;
 
 	unsigned int dma_mask_size; /* available DMA address bits */
 
@@ -453,23 +398,23 @@ struct intel_device_info {
 
 static const struct intel_device_info i830_info = {
 	I830_FEATURES,
-	PLATFORM(INTEL_I830),
+	PLATFORM(XE_I830),
 };
 
 static const struct intel_device_info i845g_info = {
 	I845_FEATURES,
-	PLATFORM(INTEL_I845G),
+	PLATFORM(XE_I845G),
 };
 
 static const struct intel_device_info i85x_info = {
 	I830_FEATURES,
-	PLATFORM(INTEL_I85X),
+	PLATFORM(XE_I85X),
 	.display.has_fbc = 1,
 };
 
 static const struct intel_device_info i865g_info = {
 	I845_FEATURES,
-	PLATFORM(INTEL_I865G),
+	PLATFORM(XE_I865G),
 	.display.has_fbc = 1,
 };
 
@@ -491,7 +436,7 @@ static const struct intel_device_info i865g_info = {
 
 static const struct intel_device_info i915g_info = {
 	GEN3_FEATURES,
-	PLATFORM(INTEL_I915G),
+	PLATFORM(XE_I915G),
 	.has_coherent_ggtt = false,
 	.display.cursor_needs_physical = 1,
 	.display.has_overlay = 1,
@@ -502,7 +447,7 @@ static const struct intel_device_info i915g_info = {
 
 static const struct intel_device_info i915gm_info = {
 	GEN3_FEATURES,
-	PLATFORM(INTEL_I915GM),
+	PLATFORM(XE_I915GM),
 	.is_mobile = 1,
 	.display.cursor_needs_physical = 1,
 	.display.has_overlay = 1,
@@ -515,7 +460,7 @@ static const struct intel_device_info i915gm_info = {
 
 static const struct intel_device_info i945g_info = {
 	GEN3_FEATURES,
-	PLATFORM(INTEL_I945G),
+	PLATFORM(XE_I945G),
 	.display.has_hotplug = 1,
 	.display.cursor_needs_physical = 1,
 	.display.has_overlay = 1,
@@ -526,7 +471,7 @@ static const struct intel_device_info i945g_info = {
 
 static const struct intel_device_info i945gm_info = {
 	GEN3_FEATURES,
-	PLATFORM(INTEL_I945GM),
+	PLATFORM(XE_I945GM),
 	.is_mobile = 1,
 	.display.has_hotplug = 1,
 	.display.cursor_needs_physical = 1,
@@ -540,7 +485,7 @@ static const struct intel_device_info i945gm_info = {
 
 static const struct intel_device_info g33_info = {
 	GEN3_FEATURES,
-	PLATFORM(INTEL_G33),
+	PLATFORM(XE_G33),
 	.display.has_hotplug = 1,
 	.display.has_overlay = 1,
 	.dma_mask_size = 36,
@@ -548,7 +493,7 @@ static const struct intel_device_info g33_info = {
 
 static const struct intel_device_info pnv_g_info = {
 	GEN3_FEATURES,
-	PLATFORM(INTEL_PINEVIEW),
+	PLATFORM(XE_PINEVIEW),
 	.display.has_hotplug = 1,
 	.display.has_overlay = 1,
 	.dma_mask_size = 36,
@@ -556,7 +501,7 @@ static const struct intel_device_info pnv_g_info = {
 
 static const struct intel_device_info pnv_m_info = {
 	GEN3_FEATURES,
-	PLATFORM(INTEL_PINEVIEW),
+	PLATFORM(XE_PINEVIEW),
 	.is_mobile = 1,
 	.display.has_hotplug = 1,
 	.display.has_overlay = 1,
@@ -582,7 +527,7 @@ static const struct intel_device_info pnv_m_info = {
 
 static const struct intel_device_info i965g_info = {
 	GEN4_FEATURES,
-	PLATFORM(INTEL_I965G),
+	PLATFORM(XE_I965G),
 	.display.has_overlay = 1,
 	.hws_needs_physical = 1,
 	.has_snoop = false,
@@ -590,7 +535,7 @@ static const struct intel_device_info i965g_info = {
 
 static const struct intel_device_info i965gm_info = {
 	GEN4_FEATURES,
-	PLATFORM(INTEL_I965GM),
+	PLATFORM(XE_I965GM),
 	.is_mobile = 1,
 	.display.has_fbc = 1,
 	.display.has_overlay = 1,
@@ -601,14 +546,14 @@ static const struct intel_device_info i965gm_info = {
 
 static const struct intel_device_info g45_info = {
 	GEN4_FEATURES,
-	PLATFORM(INTEL_G45),
+	PLATFORM(XE_G45),
 	.platform_engine_mask = BIT(RCS0) | BIT(VCS0),
 	.gpu_reset_clobbers_display = false,
 };
 
 static const struct intel_device_info gm45_info = {
 	GEN4_FEATURES,
-	PLATFORM(INTEL_GM45),
+	PLATFORM(XE_GM45),
 	.is_mobile = 1,
 	.display.has_fbc = 1,
 	.display.supports_tv = 1,
@@ -635,12 +580,12 @@ static const struct intel_device_info gm45_info = {
 
 static const struct intel_device_info ilk_d_info = {
 	GEN5_FEATURES,
-	PLATFORM(INTEL_IRONLAKE),
+	PLATFORM(XE_IRONLAKE),
 };
 
 static const struct intel_device_info ilk_m_info = {
 	GEN5_FEATURES,
-	PLATFORM(INTEL_IRONLAKE),
+	PLATFORM(XE_IRONLAKE),
 	.is_mobile = 1,
 	.has_rps = true,
 	.display.has_fbc = 1,
@@ -669,7 +614,7 @@ static const struct intel_device_info ilk_m_info = {
 
 #define SNB_D_PLATFORM \
 	GEN6_FEATURES, \
-	PLATFORM(INTEL_SANDYBRIDGE)
+	PLATFORM(XE_SANDYBRIDGE)
 
 static const struct intel_device_info snb_d_gt1_info = {
 	SNB_D_PLATFORM,
@@ -683,7 +628,7 @@ static const struct intel_device_info snb_d_gt2_info = {
 
 #define SNB_M_PLATFORM \
 	GEN6_FEATURES, \
-	PLATFORM(INTEL_SANDYBRIDGE), \
+	PLATFORM(XE_SANDYBRIDGE), \
 	.is_mobile = 1
 
 
@@ -721,7 +666,7 @@ static const struct intel_device_info snb_m_gt2_info = {
 
 #define IVB_D_PLATFORM \
 	GEN7_FEATURES, \
-	PLATFORM(INTEL_IVYBRIDGE), \
+	PLATFORM(XE_IVYBRIDGE), \
 	.has_l3_dpf = 1
 
 static const struct intel_device_info ivb_d_gt1_info = {
@@ -736,7 +681,7 @@ static const struct intel_device_info ivb_d_gt2_info = {
 
 #define IVB_M_PLATFORM \
 	GEN7_FEATURES, \
-	PLATFORM(INTEL_IVYBRIDGE), \
+	PLATFORM(XE_IVYBRIDGE), \
 	.is_mobile = 1, \
 	.has_l3_dpf = 1
 
@@ -752,7 +697,7 @@ static const struct intel_device_info ivb_m_gt2_info = {
 
 static const struct intel_device_info ivb_q_info = {
 	GEN7_FEATURES,
-	PLATFORM(INTEL_IVYBRIDGE),
+	PLATFORM(XE_IVYBRIDGE),
 	.gt = 2,
 	.pipe_mask = 0, /* legal, last one wins */
 	.cpu_transcoder_mask = 0,
@@ -760,7 +705,7 @@ static const struct intel_device_info ivb_q_info = {
 };
 
 static const struct intel_device_info vlv_info = {
-	PLATFORM(INTEL_VALLEYVIEW),
+	PLATFORM(XE_VALLEYVIEW),
 	GEN(7),
 	.is_lp = 1,
 	.pipe_mask = BIT(PIPE_A) | BIT(PIPE_B),
@@ -801,7 +746,7 @@ static const struct intel_device_info vlv_info = {
 
 #define HSW_PLATFORM \
 	G75_FEATURES, \
-	PLATFORM(INTEL_HASWELL), \
+	PLATFORM(XE_HASWELL), \
 	.has_l3_dpf = 1
 
 static const struct intel_device_info hsw_gt1_info = {
@@ -830,7 +775,7 @@ static const struct intel_device_info hsw_gt3_info = {
 
 #define BDW_PLATFORM \
 	GEN8_FEATURES, \
-	PLATFORM(INTEL_BROADWELL)
+	PLATFORM(XE_BROADWELL)
 
 static const struct intel_device_info bdw_gt1_info = {
 	BDW_PLATFORM,
@@ -858,7 +803,7 @@ static const struct intel_device_info bdw_gt3_info = {
 };
 
 static const struct intel_device_info chv_info = {
-	PLATFORM(INTEL_CHERRYVIEW),
+	PLATFORM(XE_CHERRYVIEW),
 	GEN(8),
 	.pipe_mask = BIT(PIPE_A) | BIT(PIPE_B) | BIT(PIPE_C),
 	.cpu_transcoder_mask = BIT(TRANSCODER_A) | BIT(TRANSCODER_B) | BIT(TRANSCODER_C),
@@ -902,7 +847,7 @@ static const struct intel_device_info chv_info = {
 
 #define SKL_PLATFORM \
 	GEN9_FEATURES, \
-	PLATFORM(INTEL_SKYLAKE)
+	PLATFORM(XE_SKYLAKE)
 
 static const struct intel_device_info skl_gt1_info = {
 	SKL_PLATFORM,
@@ -969,13 +914,13 @@ static const struct intel_device_info skl_gt4_info = {
 
 static const struct intel_device_info bxt_info = {
 	GEN9_LP_FEATURES,
-	PLATFORM(INTEL_BROXTON),
+	PLATFORM(XE_BROXTON),
 	.dbuf.size = 512 - 4, /* 4 blocks for bypass path allocation */
 };
 
 static const struct intel_device_info glk_info = {
 	GEN9_LP_FEATURES,
-	PLATFORM(INTEL_GEMINILAKE),
+	PLATFORM(XE_GEMINILAKE),
 	.display.ver = 10,
 	.dbuf.size = 1024 - 4, /* 4 blocks for bypass path allocation */
 	GLK_COLORS,
@@ -983,7 +928,7 @@ static const struct intel_device_info glk_info = {
 
 #define KBL_PLATFORM \
 	GEN9_FEATURES, \
-	PLATFORM(INTEL_KABYLAKE)
+	PLATFORM(XE_KABYLAKE)
 
 static const struct intel_device_info kbl_gt1_info = {
 	KBL_PLATFORM,
@@ -1004,7 +949,7 @@ static const struct intel_device_info kbl_gt3_info = {
 
 #define CFL_PLATFORM \
 	GEN9_FEATURES, \
-	PLATFORM(INTEL_COFFEELAKE)
+	PLATFORM(XE_COFFEELAKE)
 
 static const struct intel_device_info cfl_gt1_info = {
 	CFL_PLATFORM,
@@ -1025,7 +970,7 @@ static const struct intel_device_info cfl_gt3_info = {
 
 #define CML_PLATFORM \
 	GEN9_FEATURES, \
-	PLATFORM(INTEL_COMETLAKE)
+	PLATFORM(XE_COMETLAKE)
 
 static const struct intel_device_info cml_gt1_info = {
 	CML_PLATFORM,
@@ -1047,7 +992,7 @@ static const struct intel_device_info cml_gt2_info = {
 
 static const struct intel_device_info cnl_info = {
 	GEN10_FEATURES,
-	PLATFORM(INTEL_CANNONLAKE),
+	PLATFORM(XE_CANNONLAKE),
 	.gt = 2,
 };
 
@@ -1087,21 +1032,21 @@ static const struct intel_device_info cnl_info = {
 
 static const struct intel_device_info icl_info = {
 	GEN11_FEATURES,
-	PLATFORM(INTEL_ICELAKE),
+	PLATFORM(XE_ICELAKE),
 	.platform_engine_mask =
 		BIT(RCS0) | BIT(BCS0) | BIT(VECS0) | BIT(VCS0) | BIT(VCS2),
 };
 
 static const struct intel_device_info ehl_info = {
 	GEN11_FEATURES,
-	PLATFORM(INTEL_ELKHARTLAKE),
+	PLATFORM(XE_ELKHARTLAKE),
 	.platform_engine_mask = BIT(RCS0) | BIT(BCS0) | BIT(VCS0) | BIT(VECS0),
 	.ppgtt_size = 36,
 };
 
 static const struct intel_device_info jsl_info = {
 	GEN11_FEATURES,
-	PLATFORM(INTEL_JASPERLAKE),
+	PLATFORM(XE_JASPERLAKE),
 	.platform_engine_mask = BIT(RCS0) | BIT(BCS0) | BIT(VCS0) | BIT(VECS0),
 	.ppgtt_size = 36,
 };
@@ -1136,7 +1081,7 @@ static const struct intel_device_info jsl_info = {
 
 static const struct intel_device_info tgl_info = {
 	GEN12_FEATURES,
-	PLATFORM(INTEL_TIGERLAKE),
+	PLATFORM(XE_TIGERLAKE),
 	.display.has_modular_fia = 1,
 	.platform_engine_mask =
 		BIT(RCS0) | BIT(BCS0) | BIT(VECS0) | BIT(VCS0) | BIT(VCS2),
@@ -1144,7 +1089,7 @@ static const struct intel_device_info tgl_info = {
 
 static const struct intel_device_info rkl_info = {
 	GEN12_FEATURES,
-	PLATFORM(INTEL_ROCKETLAKE),
+	PLATFORM(XE_ROCKETLAKE),
 	.abox_mask = BIT(0),
 	.pipe_mask = BIT(PIPE_A) | BIT(PIPE_B) | BIT(PIPE_C),
 	.cpu_transcoder_mask = BIT(TRANSCODER_A) | BIT(TRANSCODER_B) |
@@ -1165,7 +1110,7 @@ static const struct intel_device_info dg1_info __maybe_unused = {
 	GEN12_FEATURES,
 	DGFX_FEATURES,
 	.graphics_rel = 10,
-	PLATFORM(INTEL_DG1),
+	PLATFORM(XE_DG1),
 	.pipe_mask = BIT(PIPE_A) | BIT(PIPE_B) | BIT(PIPE_C) | BIT(PIPE_D),
 	.require_force_probe = 1,
 	.platform_engine_mask =
@@ -1177,7 +1122,7 @@ static const struct intel_device_info dg1_info __maybe_unused = {
 
 static const struct intel_device_info adl_s_info = {
 	GEN12_FEATURES,
-	PLATFORM(INTEL_ALDERLAKE_S),
+	PLATFORM(XE_ALDERLAKE_S),
 	.pipe_mask = BIT(PIPE_A) | BIT(PIPE_B) | BIT(PIPE_C) | BIT(PIPE_D),
 	.require_force_probe = 1,
 	.display.has_hti = 1,
@@ -1233,7 +1178,7 @@ static const struct intel_device_info adl_s_info = {
 static const struct intel_device_info adl_p_info = {
 	GEN12_FEATURES,
 	XE_LPD_FEATURES,
-	PLATFORM(INTEL_ALDERLAKE_P),
+	PLATFORM(XE_ALDERLAKE_P),
 	.require_force_probe = 1,
 	.display.has_cdclk_crawl = 1,
 	.display.has_modular_fia = 1,
@@ -1278,7 +1223,7 @@ static const struct intel_device_info xehpsdv_info = {
 	XE_HP_FEATURES,
 	XE_HPM_FEATURES,
 	DGFX_FEATURES,
-	PLATFORM(INTEL_XEHPSDV),
+	PLATFORM(XE_XEHPSDV),
 	.display = { },
 	.pipe_mask = 0,
 	.platform_engine_mask =
@@ -1297,7 +1242,7 @@ static const struct intel_device_info dg2_info = {
 	DGFX_FEATURES,
 	.graphics_rel = 55,
 	.media_rel = 55,
-	PLATFORM(INTEL_DG2),
+	PLATFORM(XE_DG2),
 	.platform_engine_mask =
 		BIT(RCS0) | BIT(BCS0) |
 		BIT(VECS0) | BIT(VECS1) |
@@ -1364,6 +1309,7 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	xe->info.graphics_verx10 = devinfo->graphics_ver * 10 +
 				   devinfo->graphics_rel / 10;
 	xe->info.is_dgfx = devinfo->is_dgfx;
+	xe->info.platform = devinfo->platform;
 
 	pci_set_drvdata(pdev, xe);
 	err = pci_enable_device(pdev);
@@ -1382,6 +1328,8 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		pci_disable_device(pdev);
 		return err;
 	}
+
+	xe->info.revid = pdev->revision;
 
 	return 0;
 }
