@@ -24,6 +24,61 @@
 #define GRAPHICS_VERx10(xe) ((xe)->info.graphics_verx10)
 #define IS_DGFX(xe) ((xe)->info.is_dgfx)
 
+/* Keep in gen based order, and chronological order within a gen */
+enum xe_platform {
+	XE_PLATFORM_UNINITIALIZED = 0,
+	/* gen2 */
+	XE_I830,
+	XE_I845G,
+	XE_I85X,
+	XE_I865G,
+	/* gen3 */
+	XE_I915G,
+	XE_I915GM,
+	XE_I945G,
+	XE_I945GM,
+	XE_G33,
+	XE_PINEVIEW,
+	/* gen4 */
+	XE_I965G,
+	XE_I965GM,
+	XE_G45,
+	XE_GM45,
+	/* gen5 */
+	XE_IRONLAKE,
+	/* gen6 */
+	XE_SANDYBRIDGE,
+	/* gen7 */
+	XE_IVYBRIDGE,
+	XE_VALLEYVIEW,
+	XE_HASWELL,
+	/* gen8 */
+	XE_BROADWELL,
+	XE_CHERRYVIEW,
+	/* gen9 */
+	XE_SKYLAKE,
+	XE_BROXTON,
+	XE_KABYLAKE,
+	XE_GEMINILAKE,
+	XE_COFFEELAKE,
+	XE_COMETLAKE,
+	/* gen10 */
+	XE_CANNONLAKE,
+	/* gen11 */
+	XE_ICELAKE,
+	XE_ELKHARTLAKE,
+	XE_JASPERLAKE,
+	/* gen12 */
+	XE_TIGERLAKE,
+	XE_ROCKETLAKE,
+	XE_DG1,
+	XE_ALDERLAKE_S,
+	XE_ALDERLAKE_P,
+	XE_XEHPSDV,
+	XE_DG2,
+	XE_MAX_PLATFORMS
+};
+
 struct xe_ttm_vram_mgr {
 	struct ttm_resource_manager manager;
 	struct drm_mm mm;
@@ -42,6 +97,8 @@ struct xe_device {
 	struct {
 		uint8_t graphics_verx10;
 		bool is_dgfx;
+		enum xe_platform platform;
+		u8 revid;
 	} info;
 
 	struct ttm_device ttm;
