@@ -255,14 +255,6 @@ void xe_uc_fw_fini(struct xe_uc_fw *uc_fw)
 	if (!xe_uc_fw_is_available(uc_fw))
 		return;
 
-	if (uc_fw->bo) {
-		xe_bo_lock_no_vm(uc_fw->bo, NULL);
-		xe_bo_unpin(uc_fw->bo);
-		xe_bo_unlock_no_vm(uc_fw->bo);
-
-		xe_bo_put(uc_fw->bo);
-		uc_fw->bo = NULL;
-	}
-
+	xe_bo_unpin_map_no_vm(uc_fw->bo);
 	xe_uc_fw_change_status(uc_fw, XE_UC_FIRMWARE_SELECTED);
 }

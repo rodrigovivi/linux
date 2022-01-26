@@ -127,10 +127,7 @@ void xe_ggtt_finish(struct xe_ggtt *ggtt)
 	mutex_destroy(&ggtt->lock);
 	drm_mm_takedown(&ggtt->mm);
 
-	xe_bo_lock_no_vm(ggtt->scratch, NULL);
-	xe_bo_unpin(ggtt->scratch);
-	xe_bo_unlock_no_vm(ggtt->scratch);
-	xe_bo_put(ggtt->scratch);
+	xe_bo_unpin_map_no_vm(ggtt->scratch);
 
 	iounmap(ggtt->gsm);
 }
