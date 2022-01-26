@@ -16,6 +16,7 @@
 
 #include "xe_ggtt.h"
 #include "xe_hw_engine.h"
+#include "xe_force_wake_types.h"
 
 #define XE_BO_INVALID_OFFSET	LONG_MAX
 
@@ -60,6 +61,8 @@ struct xe_device {
 		resource_size_t size;
 		void *__iomem mapping;
 	} vram;
+
+	struct xe_force_wake fw;
 
 	struct xe_ggtt ggtt;
 
