@@ -20,10 +20,14 @@ int xe_uc_init(struct xe_uc *uc)
 	if (ret)
 		goto err_guc;
 
-	xe_wopcm_init(&uc->wopcm);
+	ret = xe_wopcm_init(&uc->wopcm);
+	if (ret)
+		goto err_huc;
 
 	return 0;
 
+err_huc:
+	xe_huc_fini(&uc->huc);
 err_guc:
 	xe_guc_fini(&uc->guc);
 	return ret;
