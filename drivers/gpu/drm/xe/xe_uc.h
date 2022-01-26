@@ -9,7 +9,7 @@
 
 #include "xe_uc_types.h"
 
-void xe_uc_fetch_firmwares(struct xe_uc *uc);
-void xe_uc_cleanup_firmwares(struct xe_uc *uc);
+int xe_uc_init(struct xe_uc *uc);
+void xe_uc_fini(struct xe_uc *uc);
 
 #endif	/* _XE_UC_H_ */
