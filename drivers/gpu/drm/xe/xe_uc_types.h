@@ -9,6 +9,7 @@
 
 #include "xe_guc_types.h"
 #include "xe_huc_types.h"
+#include "xe_wopcm_types.h"
 
 /**
  * struct xe_uc - XE micro controllers
@@ -18,6 +19,8 @@ struct xe_uc {
 	struct xe_guc guc;
 	/** @huc: HuC */
 	struct xe_huc huc;
+	/** @wopcm: WOPCM */
+	struct xe_wopcm wopcm;
 };
 
 #endif	/* _XE_UC_TYPES_H_ */
