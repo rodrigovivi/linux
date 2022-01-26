@@ -36,6 +36,7 @@ xe-y += xe_bo.o \
 	xe_device.o \
 	xe_engine.o \
 	xe_execlist.o \
+	xe_force_wake.o \
 	xe_ggtt.o \
 	xe_hw_engine.o \
 	xe_hw_fence.o \
