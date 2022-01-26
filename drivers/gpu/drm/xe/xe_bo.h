@@ -129,6 +129,17 @@ int xe_bo_populate(struct xe_bo *bo);
 int xe_bo_pin(struct xe_bo *bo);
 void xe_bo_unpin(struct xe_bo *bo);
 
+static inline void xe_bo_unpin_map_no_vm(struct xe_bo *bo)
+{
+	if (likely(bo)) {
+		xe_bo_lock_no_vm(bo, NULL);
+		xe_bo_unpin(bo);
+		xe_bo_unlock_no_vm(bo);
+
+		xe_bo_put(bo);
+	}
+}
+
 bool xe_bo_is_xe_bo(struct ttm_buffer_object *bo);
 dma_addr_t xe_bo_addr(struct xe_bo *bo, uint64_t offset,
 		      size_t page_size, bool *is_lmem);

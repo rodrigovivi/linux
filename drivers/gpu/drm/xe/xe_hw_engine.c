@@ -224,10 +224,7 @@ void xe_hw_engine_finish(struct xe_hw_engine *hwe)
 	xe_execlist_port_destroy(hwe->exl_port);
 	xe_lrc_finish(&hwe->kernel_lrc);
 
-	xe_bo_lock_no_vm(hwe->hwsp, NULL);
-	xe_bo_unpin(hwe->hwsp);
-	xe_bo_unlock_no_vm(hwe->hwsp);
-	xe_bo_put(hwe->hwsp);
+	xe_bo_unpin_map_no_vm(hwe->hwsp);
 
 	hwe->xe = NULL;
 }
