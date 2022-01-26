@@ -28,6 +28,18 @@ static inline uint64_t xe_mmio_read64(struct xe_device *xe, uint32_t reg)
 	return readq(xe->mmio.regs + reg);
 }
 
+static inline int xe_mmio_write32_and_verify(struct xe_device *xe,
+					     uint32_t reg, uint32_t val,
+					     uint32_t mask, uint32_t eval)
+{
+	uint32_t reg_val;
+
+	xe_mmio_write32(xe, reg, val);
+	reg_val = xe_mmio_read32(xe, reg);
+
+	return (reg_val & mask) != eval ? -EINVAL : 0;
+}
+
 int xe_mmio_ioctl(struct drm_device *dev, void *data,
 		  struct drm_file *file);
 
