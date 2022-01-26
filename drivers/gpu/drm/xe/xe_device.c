@@ -17,6 +17,7 @@
 #include "xe_mmio.h"
 #include "xe_vm.h"
 #include "xe_force_wake.h"
+#include "xe_uc.h"
 
 #include "../i915/i915_reg.h"
 
@@ -268,6 +269,8 @@ int xe_device_probe(struct xe_device *xe)
 	if (err)
 		goto err_ttm_mgr;
 
+	xe_uc_fetch_firmwares(&xe->uc);
+
 	for (i = 0; i < ARRAY_SIZE(xe->hw_engines); i++) {
 		err = xe_hw_engine_init(xe, &xe->hw_engines[i], i);
 		if (err)
@@ -294,6 +297,7 @@ err_hw_engines:
 		if (xe_hw_engine_is_valid(&xe->hw_engines[i]))
 			xe_hw_engine_finish(&xe->hw_engines[i]);
 	}
+	xe_uc_cleanup_firmwares(&xe->uc);
 	xe_ggtt_finish(&xe->ggtt);
 err_ttm_mgr:
 	xe_device_ttm_mgr_fini(xe);
@@ -317,6 +321,7 @@ void xe_device_remove(struct xe_device *xe)
 		if (xe_hw_engine_is_valid(&xe->hw_engines[i]))
 			xe_hw_engine_finish(&xe->hw_engines[i]);
 	}
+	xe_uc_cleanup_firmwares(&xe->uc);
 	xe_ggtt_finish(&xe->ggtt);
 	xe_device_ttm_mgr_fini(xe);
 	xe_mmio_finish(xe);
