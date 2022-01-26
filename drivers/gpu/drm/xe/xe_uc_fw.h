@@ -17,7 +17,7 @@ int xe_uc_fw_init(struct xe_uc_fw *fw);
 void xe_uc_fw_fini(struct xe_uc_fw *fw);
 
 static inline void xe_uc_fw_change_status(struct xe_uc_fw *uc_fw,
-					     enum xe_uc_fw_status status)
+					  enum xe_uc_fw_status status)
 {
 	uc_fw->__status = status;
 }
