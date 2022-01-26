@@ -1,0 +1,26 @@
+/*
+ * SPDX-License-Identifier: MIT
+ *
+ * Copyright © 2022 Intel Corporation
+ */
+
+#ifndef _XE_FORCE_WAKE_H_
+#define _XE_FORCE_WAKE_H_
+
+#include "xe_force_wake_types.h"
+#include "xe_macros.h"
+
+void xe_force_wake_init(struct xe_force_wake *fw);
+int xe_force_wake_get(struct xe_force_wake *fw,
+		      enum xe_force_wake_domains domains);
+int xe_force_wake_put(struct xe_force_wake *fw,
+		      enum xe_force_wake_domains domains);
+
+static inline void
+xe_force_wake_assert_held(struct xe_force_wake *fw,
+			  enum xe_force_wake_domains domains)
+{
+	XE_BUG_ON(!(fw->awake_domains & domains));
+}
+
+#endif	/* _XE_FORCE_WAKE_H_ */
