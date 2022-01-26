@@ -41,6 +41,7 @@ xe-y += xe_bo.o \
 	xe_guc.o \
 	xe_hw_engine.o \
 	xe_hw_fence.o \
+	xe_huc.o \
 	xe_irq.o \
 	xe_lrc.o \
 	xe_mmio.o \
