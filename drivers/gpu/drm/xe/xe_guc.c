@@ -5,6 +5,7 @@
 
 #include "xe_device.h"
 #include "xe_guc.h"
+#include "xe_guc_ads.h"
 #include "xe_guc_log.h"
 #include "xe_uc_fw.h"
 
@@ -28,10 +29,16 @@ int xe_guc_init(struct xe_guc *guc)
 	if (ret)
 		goto err_fw;
 
+	ret = xe_guc_ads_init(&guc->ads);
+	if (ret)
+		goto err_log;
+
 	xe_uc_fw_change_status(&guc->fw, XE_UC_FIRMWARE_LOADABLE);
 
 	return 0;
 
+err_log:
+	xe_guc_log_fini(&guc->log);
 err_fw:
 	xe_uc_fw_fini(&guc->fw);
 out:
@@ -44,6 +51,7 @@ void xe_guc_fini(struct xe_guc *guc)
 	if (!xe_uc_fw_is_loadable(&guc->fw))
 		return;
 
+	xe_guc_ads_fini(&guc->ads);
 	xe_guc_log_fini(&guc->log);
 	xe_uc_fw_fini(&guc->fw);
 }
