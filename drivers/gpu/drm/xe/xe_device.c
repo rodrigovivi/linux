@@ -16,6 +16,7 @@
 #include "xe_engine.h"
 #include "xe_mmio.h"
 #include "xe_vm.h"
+#include "xe_force_wake.h"
 
 #include "../i915/i915_reg.h"
 
@@ -243,6 +244,8 @@ int xe_device_probe(struct xe_device *xe)
 {
 	int err, i;
 
+	xe_force_wake_init(&xe->fw);
+
 	err = xe_mmio_init(xe);
 	if (err)
 		return err;
@@ -251,11 +254,15 @@ int xe_device_probe(struct xe_device *xe)
 	if (err)
 		return err;
 
+	err = xe_force_wake_get(&xe->fw, XE_FORCEWAKE_ALL);
+	if (err)
+		goto err_mmio;
+
 	tgl_setup_private_ppat(xe);
 
 	err = xe_device_ttm_mgr_init(xe);
 	if (err)
-		goto err_mmio;
+		goto err_force_wake;
 
 	err = xe_ggtt_init(xe, &xe->ggtt);
 	if (err)
@@ -275,6 +282,9 @@ int xe_device_probe(struct xe_device *xe)
 	if (err)
 		goto err_irq;
 
+	err = xe_force_wake_put(&xe->fw, XE_FORCEWAKE_ALL);
+	XE_WARN_ON(err);
+
 	return 0;
 
 err_irq:
@@ -287,6 +297,8 @@ err_hw_engines:
 	xe_ggtt_finish(&xe->ggtt);
 err_ttm_mgr:
 	xe_device_ttm_mgr_fini(xe);
+err_force_wake:
+	xe_force_wake_put(&xe->fw, XE_FORCEWAKE_ALL);
 err_mmio:
 	xe_mmio_finish(xe);
 
