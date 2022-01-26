@@ -5,8 +5,9 @@
 
 #include "xe_uc.h"
 #include "xe_uc_fw.h"
+#include "xe_wopcm.h"
 
-void xe_uc_fetch_firmwares(struct xe_uc *uc)
+static void uc_fetch_firmwares(struct xe_uc *uc)
 {
 	uc->guc.fw.type = XE_UC_FW_TYPE_GUC;
 	xe_uc_fw_init(&uc->guc.fw);
@@ -15,8 +16,21 @@ void xe_uc_fetch_firmwares(struct xe_uc *uc)
 	xe_uc_fw_init(&uc->huc.fw);
 }
 
-void xe_uc_cleanup_firmwares(struct xe_uc *uc)
+static void uc_cleanup_firmwares(struct xe_uc *uc)
 {
 	xe_uc_fw_fini(&uc->huc.fw);
 	xe_uc_fw_fini(&uc->guc.fw);
+}
+
+int xe_uc_init(struct xe_uc *uc)
+{
+	uc_fetch_firmwares(uc);
+	xe_wopcm_init(&uc->wopcm);
+
+	return 0;
+}
+
+void xe_uc_fini(struct xe_uc *uc)
+{
+	uc_cleanup_firmwares(uc);
 }

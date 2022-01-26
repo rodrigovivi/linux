@@ -269,7 +269,9 @@ int xe_device_probe(struct xe_device *xe)
 	if (err)
 		goto err_ttm_mgr;
 
-	xe_uc_fetch_firmwares(&xe->uc);
+	err = xe_uc_init(&xe->uc);
+	if (err)
+		goto err_ggtt;
 
 	for (i = 0; i < ARRAY_SIZE(xe->hw_engines); i++) {
 		err = xe_hw_engine_init(xe, &xe->hw_engines[i], i);
@@ -293,11 +295,12 @@ int xe_device_probe(struct xe_device *xe)
 err_irq:
 	xe_irq_uninstall(xe);
 err_hw_engines:
+	xe_uc_fini(&xe->uc);
 	for (i = 0; i < ARRAY_SIZE(xe->hw_engines); i++) {
 		if (xe_hw_engine_is_valid(&xe->hw_engines[i]))
 			xe_hw_engine_finish(&xe->hw_engines[i]);
 	}
-	xe_uc_cleanup_firmwares(&xe->uc);
+err_ggtt:
 	xe_ggtt_finish(&xe->ggtt);
 err_ttm_mgr:
 	xe_device_ttm_mgr_fini(xe);
@@ -321,7 +324,7 @@ void xe_device_remove(struct xe_device *xe)
 		if (xe_hw_engine_is_valid(&xe->hw_engines[i]))
 			xe_hw_engine_finish(&xe->hw_engines[i]);
 	}
-	xe_uc_cleanup_firmwares(&xe->uc);
+	xe_uc_fini(&xe->uc);
 	xe_ggtt_finish(&xe->ggtt);
 	xe_device_ttm_mgr_fini(xe);
 	xe_mmio_finish(xe);
