@@ -48,6 +48,8 @@ xe-y += xe_bo.o \
 	xe_sched_job.o \
 	xe_ttm_gtt_mgr.o \
 	xe_ttm_vram_mgr.o \
+	xe_uc.o \
+	xe_uc_fw.o \
 	xe_vm.o
 
 obj-$(CONFIG_DRM_XE) += xe.o
