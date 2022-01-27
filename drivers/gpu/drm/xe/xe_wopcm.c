@@ -162,6 +162,11 @@ err_out:
 	return err;
 }
 
+u32 xe_wopcm_size(struct xe_device *xe)
+{
+	return GEN11_WOPCM_SIZE;
+}
+
 /**
  * xe_wopcm_init() - Initialize the WOPCM structure.
  * @wopcm: pointer to xe_wopcm.
@@ -186,7 +191,7 @@ int xe_wopcm_init(struct xe_wopcm *wopcm)
 	if (!guc_fw_size)
 		return -EINVAL;
 
-	wopcm->size = GEN11_WOPCM_SIZE;
+	wopcm->size = xe_wopcm_size(xe);
 	drm_dbg(&xe->drm, "WOPCM: %uK\n", wopcm->size / SZ_1K);
 
 	xe_force_wake_assert_held(&xe->fw, XE_FW_GT);
