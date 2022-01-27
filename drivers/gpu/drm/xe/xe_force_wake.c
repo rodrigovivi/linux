@@ -38,7 +38,7 @@ void xe_force_wake_init(struct xe_force_wake *fw)
 		    XE_FW_DOMAIN_ID_GT,
 		    FORCEWAKE_GT_GEN9.reg,
 		    FORCEWAKE_ACK_GT_GEN9.reg,
-		    0x1, 0x10000);
+		    BIT(0), BIT(16));
 
 	// FIXME - Setup all other FW domains
 }
