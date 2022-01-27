@@ -12,6 +12,7 @@
 #include "xe_bo.h"
 #include "xe_device.h"
 #include "xe_mmio.h"
+#include "xe_wopcm.h"
 
 #include "../i915/i915_reg.h"
 
@@ -109,8 +110,25 @@ int xe_ggtt_init(struct xe_device *xe, struct xe_ggtt *ggtt)
 	ggtt->size = (gsm_size / 8) * (uint64_t)GEN8_PAGE_SIZE;
 	xe_ggtt_clear(ggtt, 0, ggtt->size - 1);
 
-	/* 8B per entry, each points to a 4KB page */
-	drm_mm_init(&ggtt->mm, GEN8_PAGE_SIZE, ggtt->size - GEN8_PAGE_SIZE);
+	/*
+	 * 8B per entry, each points to a 4KB page.
+	 *
+	 * The GuC owns the WOPCM space, thus we can't allocate GGTT address in
+	 * this area. Even though we likely configure the WOPCM to less than the
+	 * maximum value, to simplify the driver load (no need to fetch HuC +
+	 * GuC firmwares and determine there sizes before initializing the GGTT)
+	 * just start the GGTT allocation above the max WOPCM size. This might
+	 * waste space in the GGTT (WOPCM is 2MB on modern platforms) but we can
+	 * live with this.
+	 *
+	 * Another benifit of this is the GuC bootrom can't access anything
+	 * below the WOPCM max size so anything the bootom needs to access (e.g.
+	 * a RSA key) needs to be placed in the GGTT above the WOPCM max size.
+	 * Starting the GGTT allocations above the WOPCM max give us the correct
+	 * placement for free.
+	 */
+	drm_mm_init(&ggtt->mm, xe_wopcm_size(xe),
+		    ggtt->size - xe_wopcm_size(xe));
 	mutex_init(&ggtt->lock);
 
 	return 0;
