@@ -23,7 +23,8 @@
 
 static struct xe_engine *__xe_engine_create(struct xe_device *xe,
 					    struct xe_vm *vm,
-					    struct xe_hw_engine *hwe)
+					    struct xe_hw_engine *hwe,
+					    u32 flags)
 {
 	struct xe_engine *e;
 	int err;
@@ -32,10 +33,12 @@ static struct xe_engine *__xe_engine_create(struct xe_device *xe,
 	if (!e)
 		return ERR_PTR(-ENOMEM);
 
+	e->flags = flags;
 	e->hwe = hwe;
 	kref_init(&e->refcount);
-	e->vm = xe_vm_get(vm);
 	e->gt = to_gt(xe);
+	if (vm)
+		e->vm = xe_vm_get(vm);
 
 	err = xe_lrc_init(&e->lrc, hwe, vm, SZ_16K);
 	if (err)
@@ -55,13 +58,15 @@ err_kfree:
 }
 
 struct xe_engine *xe_engine_create(struct xe_device *xe, struct xe_vm *vm,
-				   struct xe_hw_engine *hwe)
+				   struct xe_hw_engine *hwe, u32 flags)
 {
 	struct xe_engine *e;
 
-	xe_vm_lock(vm, NULL);
-	e = __xe_engine_create(xe, vm, hwe);
-	xe_vm_unlock(vm);
+	if (vm)
+		xe_vm_lock(vm, NULL);
+	e = __xe_engine_create(xe, vm, hwe, flags);
+	if (vm)
+		xe_vm_unlock(vm);
 
 	return e;
 }
@@ -161,7 +166,7 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, !vm))
 		return -ENOENT;
 
-	e = xe_engine_create(xe, vm, hwe);
+	e = xe_engine_create(xe, vm, hwe, 0);
 	xe_vm_put(vm);
 	if (IS_ERR(e))
 		return PTR_ERR(e);
