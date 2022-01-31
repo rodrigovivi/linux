@@ -83,15 +83,6 @@ static inline void xe_bo_put(struct xe_bo *bo)
 
 #define xe_bo_assert_held(bo) dma_resv_assert_held((bo)->ttm.base.resv)
 
-static inline void xe_bo_lock_vm_held(struct xe_bo *bo, struct ww_acquire_ctx *ctx)
-{
-	XE_BUG_ON(bo->vm && bo->ttm.base.resv != &bo->vm->resv);
-	if (bo->vm)
-		xe_vm_assert_held(bo->vm);
-	else
-		dma_resv_lock(bo->ttm.base.resv, ctx);
-}
-
 static inline void xe_bo_unlock_vm_held(struct xe_bo *bo)
 {
 	XE_BUG_ON(bo->vm && bo->ttm.base.resv != &bo->vm->resv);
@@ -99,18 +90,6 @@ static inline void xe_bo_unlock_vm_held(struct xe_bo *bo)
 		xe_vm_assert_held(bo->vm);
 	else
 		dma_resv_unlock(bo->ttm.base.resv);
-}
-
-static inline void xe_bo_or_vm_lock(struct xe_bo *bo, struct ww_acquire_ctx *ctx)
-{
-	XE_BUG_ON(bo->vm && bo->ttm.base.resv != &bo->vm->resv);
-	dma_resv_lock(bo->ttm.base.resv, ctx);
-}
-
-static inline void xe_bo_or_vm_unlock(struct xe_bo *bo)
-{
-	XE_BUG_ON(bo->vm && bo->ttm.base.resv != &bo->vm->resv);
-	dma_resv_unlock(bo->ttm.base.resv);
 }
 
 static inline void xe_bo_lock_no_vm(struct xe_bo *bo, struct ww_acquire_ctx *ctx)
