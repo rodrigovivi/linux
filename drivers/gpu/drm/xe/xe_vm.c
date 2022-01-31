@@ -6,6 +6,7 @@
 
 #include "xe_vm.h"
 
+#include <drm/ttm/ttm_execbuf_util.h>
 #include <drm/ttm/ttm_tt.h>
 #include <drm/xe_drm.h>
 #include <linux/mm.h>
@@ -758,6 +759,7 @@ static int __xe_vm_bind(struct xe_vm *vm, struct xe_bo *bo, uint64_t bo_offset,
 	int err;
 
 	xe_vm_assert_held(vm);
+	xe_bo_assert_held(bo);
 
 	err = xe_bo_populate(bo);
 	if (err)
@@ -787,11 +789,11 @@ void __xe_vma_unbind(struct xe_vma *vma)
 static int xe_vm_bind(struct xe_vm *vm, struct xe_bo *bo, uint64_t offset,
 		      uint64_t range, uint64_t addr)
 {
+	struct list_head objs, dups;
+	struct ttm_validate_buffer tv = { {}, &bo->ttm };
+	struct ttm_validate_buffer tv_vm = { {}, &vm->pt_root->bo->ttm };
+	struct ww_acquire_ctx ww;
 	int err;
-
-	/* TODO: Allow binding shared BOs */
-	if (bo->vm != vm)
-		return -EINVAL;
 
 	if (range == 0)
 		return -EINVAL;
@@ -802,11 +804,15 @@ static int xe_vm_bind(struct xe_vm *vm, struct xe_bo *bo, uint64_t offset,
 	if (range > bo->size || offset > bo->size - range)
 		return -EINVAL;
 
-	xe_vm_lock(vm, NULL);
-	xe_bo_lock_vm_held(bo, NULL);
-	err = __xe_vm_bind(vm, bo, offset, range, addr);
-	xe_bo_unlock_vm_held(bo);
-	xe_vm_unlock(vm);
+	INIT_LIST_HEAD(&objs);
+	list_add(&objs, &tv.head);
+	list_add(&objs, &tv_vm.head);
+
+	err = ttm_eu_reserve_buffers(&ww, &objs, true, &dups);
+	if (!err) {
+		err = __xe_vm_bind(vm, bo, offset, range, addr);
+		ttm_eu_backoff_reservation(&ww, &objs);
+	}
 
 	return err;
 }
