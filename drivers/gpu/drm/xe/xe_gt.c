@@ -14,6 +14,7 @@
 #include "xe_ggtt.h"
 #include "xe_gt.h"
 #include "xe_guc_submit.h"
+#include "xe_migrate.h"
 #include "xe_mmio.h"
 #include "xe_sa.h"
 #include "xe_ttm_gtt_mgr.h"
@@ -197,6 +198,10 @@ int xe_gt_init(struct xe_gt *gt)
 
 	/* Reserve the last page for prefetcher overflow */
 	gt->kernel_bb_pool.base.size -= SZ_4K;
+
+	gt->migrate = xe_migrate_init(gt);
+	if (IS_ERR(gt->migrate))
+		goto err_ttm_mgr;
 
 	err = xe_uc_init_hw(&gt->uc);
 	if (err)
