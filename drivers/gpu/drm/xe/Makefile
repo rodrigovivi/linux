@@ -55,6 +55,7 @@ xe-y += xe_bb.o \
 	xe_huc_debugfs.o \
 	xe_irq.o \
 	xe_lrc.o \
+	xe_migrate.o \
 	xe_mmio.o \
 	xe_module.o \
 	xe_pci.o \

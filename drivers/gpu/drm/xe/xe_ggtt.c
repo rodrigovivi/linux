@@ -194,6 +194,17 @@ void xe_ggtt_printk(struct xe_ggtt *ggtt, const char *prefix)
 	}
 }
 
+int xe_ggtt_insert_special_node(struct xe_ggtt *ggtt, struct drm_mm_node *node, u32 size, u32 align)
+{
+	int ret;
+
+	mutex_lock(&ggtt->lock);
+	ret = drm_mm_insert_node_generic(&ggtt->mm, node, size, align, 0, DRM_MM_INSERT_HIGH);
+	mutex_unlock(&ggtt->lock);
+
+	return ret;
+}
+
 int xe_ggtt_insert_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 {
 	uint64_t offset, pte;
@@ -228,6 +239,19 @@ int xe_ggtt_insert_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 	return 0;
 }
 
+void xe_ggtt_remove_node(struct xe_ggtt *ggtt, struct drm_mm_node *node)
+{
+	mutex_lock(&ggtt->lock);
+
+	xe_ggtt_clear(ggtt, node->start, node->size);
+	drm_mm_remove_node(node);
+	node->size = 0;
+
+	xe_ggtt_invalidate(ggtt->gt);
+
+	mutex_unlock(&ggtt->lock);
+}
+
 void xe_ggtt_remove_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 {
 	if (XE_WARN_ON(!bo->ggtt_node.size))
@@ -236,13 +260,5 @@ void xe_ggtt_remove_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 	/* This BO is not currently in the GGTT */
 	XE_BUG_ON(bo->ggtt_node.size != bo->size);
 
-	mutex_lock(&ggtt->lock);
-
-	xe_ggtt_clear(ggtt, bo->ggtt_node.start, bo->ggtt_node.size);
-	drm_mm_remove_node(&bo->ggtt_node);
-	bo->ggtt_node.size = 0;
-
-	xe_ggtt_invalidate(ggtt->gt);
-
-	mutex_unlock(&ggtt->lock);
+	xe_ggtt_remove_node(ggtt, &bo->ggtt_node);
 }

@@ -15,6 +15,8 @@
 
 #include "xe_device.h"
 #include "xe_ggtt.h"
+#include "xe_gt.h"
+#include "xe_migrate.h"
 #include "xe_res_cursor.h"
 #include "xe_vm.h"
 
@@ -31,37 +33,6 @@ static struct ttm_placement sys_placement = {
 	.num_busy_placement = 1,
 	.busy_placement = &sys_placement_flags,
 };
-
-static void xe_bo_placement(struct xe_bo *bo,
-			    bool system, bool tt, bool vram)
-{
-	struct ttm_place *places = bo->placements;
-	u32 c = 0;
-	if (vram) {
-		places[c++] = (struct ttm_place) {
-			.mem_type = TTM_PL_VRAM,
-		};
-	}
-
-	if (tt) {
-		places[c++] = (struct ttm_place) {
-			.mem_type = TTM_PL_TT,
-		};
-	}
-
-	if (!c || system) {
-		places[c++] = (struct ttm_place) {
-			.mem_type = TTM_PL_SYSTEM,
-		};
-	}
-
-	bo->placement = (struct ttm_placement) {
-		.num_placement = c,
-		.placement = places,
-		.num_busy_placement = c,
-		.busy_placement = places,
-	};
-}
 
 static int xe_bo_placement_for_flags(struct xe_device *xe, struct xe_bo *bo,
 				     uint32_t bo_flags)
@@ -118,10 +89,9 @@ static void xe_evict_flags(struct ttm_buffer_object *tbo,
 	case TTM_PL_TT:
 	default:
 		/* for now kick out to system */
-		xe_bo_placement(bo, true, false, false);
+		*placement = sys_placement;
 		break;
 	}
-	*placement = bo->placement;
 }
 
 struct xe_ttm_tt {
@@ -184,6 +154,24 @@ static int xe_ttm_io_mem_reserve(struct ttm_device *bdev,
 	return 0;
 }
 
+static int xe_move_blit(struct xe_bo *bo, bool evict, struct ttm_resource *new_mem,
+			struct ttm_resource *old_mem, struct xe_gt *gt,
+			struct ttm_operation_ctx *ctx)
+{
+	struct dma_fence *fence;
+	int ret;
+
+	/* TODO: add VM unbind worker here */
+
+	fence = xe_migrate_copy(gt->migrate, bo, old_mem, new_mem);
+	if (IS_ERR(fence))
+		return PTR_ERR(fence);
+
+	ret = ttm_bo_move_accel_cleanup(&bo->ttm, fence, evict, true, new_mem);
+	dma_fence_put(fence);
+	return ret;
+}
+
 static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 		      struct ttm_operation_ctx *ctx,
 		      struct ttm_resource *new_mem,
@@ -191,23 +179,46 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 {
 	struct xe_bo *bo = ttm_to_xe_bo(ttm_bo);
 	struct ttm_resource *old_mem = bo->ttm.resource;
+	struct xe_gt *gt;
 	int r;
 
 	xe_bo_vunmap(bo);
 
-	if (old_mem->mem_type == TTM_PL_SYSTEM && bo->ttm.ttm == NULL) {
+	if (old_mem->mem_type == TTM_PL_SYSTEM && !ttm_bo->ttm) {
 		ttm_bo_move_null(&bo->ttm, new_mem);
 		goto out;
 	}
+
 	if (old_mem->mem_type == TTM_PL_SYSTEM &&
 	    (new_mem->mem_type == TTM_PL_TT)) {
 		ttm_bo_move_null(&bo->ttm, new_mem);
 		goto out;
 	}
 
-	r = ttm_bo_move_memcpy(&bo->ttm, ctx, new_mem);
+	if (((old_mem->mem_type == TTM_PL_SYSTEM &&
+	      new_mem->mem_type == TTM_PL_VRAM) ||
+	     (old_mem->mem_type == TTM_PL_VRAM &&
+	      new_mem->mem_type == TTM_PL_SYSTEM))) {
+		hop->fpfn = 0;
+		hop->lpfn = 0;
+		hop->mem_type = TTM_PL_TT;
+		hop->flags = TTM_PL_FLAG_TEMPORARY;
+		return -EMULTIHOP;
+	}
+
+	/* TODO: Determine GT based on (new,old)_mem->mem_type's VRAM on multitile */
+	gt = to_gt(ttm_to_xe_device(ttm_bo->bdev));
+
+	if (gt->migrate)
+		r = xe_move_blit(bo, evict, new_mem, old_mem, gt, ctx);
+	else
+		r = ttm_bo_move_memcpy(&bo->ttm, ctx, new_mem);
+
 	if (r)
 		return r;
+
+	DRM_ERROR("Moving not supported yet: Missing rebind\n");
+	return -ENODEV;
 
 out:
 	return 0;

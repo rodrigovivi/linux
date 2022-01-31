@@ -28,6 +28,7 @@
 struct xe_engine_ops;
 struct xe_force_wake;
 struct xe_ggtt;
+struct xe_migrate;
 struct xe_ttm_gtt_mgr;
 struct xe_ttm_vram_mgr;
 
@@ -116,6 +117,9 @@ struct xe_gt {
 
 	/** kernel_bb_pool: Pool from which batchbuffers are allocated */
 	struct xe_sa_manager kernel_bb_pool;
+
+	/** @migrate: Migration helper for vram blits and clearing */
+	struct xe_migrate *migrate;
 };
 
 #endif	/* _XE_GT_TYPES_H_ */
