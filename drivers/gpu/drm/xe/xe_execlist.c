@@ -278,8 +278,9 @@ xe_execlist_run_job(struct drm_sched_job *drm_job)
 	struct xe_execlist_engine *exl = job->engine->execlist;
 	struct xe_lrc *lrc = &job->engine->lrc;
 	uint32_t dw[MAX_JOB_SIZE_DW], i = 0;
+	u32 ppgtt_flag = job->engine->vm ? BIT(8) : 0;
 
-	dw[i++] = MI_BATCH_BUFFER_START_GEN8 | BIT(8);
+	dw[i++] = MI_BATCH_BUFFER_START_GEN8 | ppgtt_flag;
 	dw[i++] = lower_32_bits(job->user_batch_addr);
 	dw[i++] = upper_32_bits(job->user_batch_addr);
 

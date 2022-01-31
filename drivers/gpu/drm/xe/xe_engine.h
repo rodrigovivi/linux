@@ -16,7 +16,7 @@ struct xe_device;
 struct xe_file;
 
 struct xe_engine *xe_engine_create(struct xe_device *xe, struct xe_vm *vm,
-				   struct xe_hw_engine *hw_engine);
+				   struct xe_hw_engine *hw_engine, u32 flags);
 void xe_engine_fini(struct xe_engine *e);
 void xe_engine_destroy(struct kref *ref);
 
@@ -33,7 +33,12 @@ static inline void xe_engine_put(struct xe_engine *engine)
 	kref_put(&engine->refcount, xe_engine_destroy);
 }
 
-#define xe_engine_assert_held(e) xe_vm_assert_held((e)->vm)
+#define xe_engine_assert_held(e) \
+	do { \
+		struct xe_engine *_eng = (e); \
+		if (_eng->vm) \
+			xe_vm_assert_held(_eng->vm); \
+	} while (0)
 
 int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 			   struct drm_file *file);
