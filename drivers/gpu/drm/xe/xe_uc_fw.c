@@ -9,6 +9,9 @@
 #include "xe_device.h"
 #include "xe_uc_fw.h"
 #include "xe_bo.h"
+#include "xe_mmio.h"
+#include "xe_force_wake.h"
+#include "xe_guc_reg.h"
 
 #define XE_UC_FIRMWARE_URL "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/xe"
 
@@ -247,6 +250,79 @@ fail:
 		 xe_uc_fw_type_repr(uc_fw->type), XE_UC_FIRMWARE_URL);
 
 	release_firmware(fw);		/* OK even if fw is NULL */
+	return err;
+}
+
+static u32 uc_fw_ggtt_offset(struct xe_uc_fw *uc_fw)
+{
+	return xe_bo_ggtt_addr(uc_fw->bo);
+}
+
+static int uc_fw_xfer(struct xe_uc_fw *uc_fw, u32 offset, u32 dma_flags)
+{
+	struct xe_device *xe = uc_fw_to_xe(uc_fw);
+	u32 src_offset;
+	int ret;
+
+	xe_force_wake_assert_held(&xe->fw, XE_FW_GT);
+
+	/* Set the source address for the uCode */
+	src_offset = uc_fw_ggtt_offset(uc_fw);
+	xe_mmio_write32(xe, DMA_ADDR_0_LOW.reg, lower_32_bits(src_offset));
+	xe_mmio_write32(xe, DMA_ADDR_0_HIGH.reg, upper_32_bits(src_offset));
+
+	/* Set the DMA destination */
+	xe_mmio_write32(xe, DMA_ADDR_1_LOW.reg, offset);
+	xe_mmio_write32(xe, DMA_ADDR_1_HIGH.reg, DMA_ADDRESS_SPACE_WOPCM);
+
+	/*
+	 * Set the transfer size. The header plus uCode will be copied to WOPCM
+	 * via DMA, excluding any other components
+	 */
+	xe_mmio_write32(xe, DMA_COPY_SIZE.reg,
+			sizeof(struct uc_css_header) + uc_fw->ucode_size);
+
+	/* Start the DMA */
+	xe_mmio_write32(xe, DMA_CTRL.reg,
+			_MASKED_BIT_ENABLE(dma_flags | START_DMA));
+
+	/* Wait for DMA to finish */
+	ret = xe_mmio_wait32(xe, DMA_CTRL.reg, 0, START_DMA, 100);
+	if (ret)
+		drm_err(&xe->drm, "DMA for %s fw failed, DMA_CTRL=%u\n",
+			xe_uc_fw_type_repr(uc_fw->type),
+			xe_mmio_read32(xe, DMA_CTRL.reg));
+
+	/* Disable the bits once DMA is over */
+	xe_mmio_write32(xe, DMA_CTRL.reg, _MASKED_BIT_DISABLE(dma_flags));
+
+	return ret;
+}
+
+int xe_uc_fw_upload(struct xe_uc_fw *uc_fw, u32 offset, u32 dma_flags)
+{
+	struct xe_device *xe = uc_fw_to_xe(uc_fw);
+	int err;
+
+	/* make sure the status was cleared the last time we reset the uc */
+	XE_BUG_ON(xe_uc_fw_is_loaded(uc_fw));
+
+	if (!xe_uc_fw_is_loadable(uc_fw))
+		return -ENOEXEC;
+
+	/* Call custom loader */
+	err = uc_fw_xfer(uc_fw, offset, dma_flags);
+	if (err)
+		goto fail;
+
+	xe_uc_fw_change_status(uc_fw, XE_UC_FIRMWARE_TRANSFERRED);
+	return 0;
+
+fail:
+	drm_err(&xe->drm, "Failed to load %s firmware %s (%d)\n",
+		xe_uc_fw_type_repr(uc_fw->type), uc_fw->path,
+		err);
+	xe_uc_fw_change_status(uc_fw, XE_UC_FIRMWARE_LOAD_FAIL);
 	return err;
 }
 

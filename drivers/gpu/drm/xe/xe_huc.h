@@ -10,6 +10,7 @@
 #include "xe_huc_types.h"
 
 int xe_huc_init(struct xe_huc *huc);
+int xe_huc_upload(struct xe_huc *huc);
 void xe_huc_fini(struct xe_huc *huc);
 
 static inline void
