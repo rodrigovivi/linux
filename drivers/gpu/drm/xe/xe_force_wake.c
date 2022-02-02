@@ -3,13 +3,11 @@
  * Copyright © 2022 Intel Corporation
  */
 
-#include <linux/delay.h>
 #include <drm/drm_util.h>
 
 #include "xe_force_wake_types.h"
 #include "xe_mmio.h"
 #include "../i915/i915_reg.h"
-#include "../i915/i915_utils.h"
 
 #define XE_FORCE_WAKE_ACK_TIMEOUT_MS	50
 
@@ -52,8 +50,8 @@ static void domain_wake(struct xe_device *xe,
 static int domain_wake_wait(struct xe_device *xe,
 			    struct xe_force_wake_domain *domain)
 {
-	return wait_for(xe_mmio_read32(xe, domain->reg_ack) & domain->val,
-			XE_FORCE_WAKE_ACK_TIMEOUT_MS);
+	return xe_mmio_wait32(xe, domain->reg_ack, domain->val, domain->val,
+			      XE_FORCE_WAKE_ACK_TIMEOUT_MS);
 }
 
 static void domain_sleep(struct xe_device *xe,
@@ -65,8 +63,8 @@ static void domain_sleep(struct xe_device *xe,
 static int domain_sleep_wait(struct xe_device *xe,
 			     struct xe_force_wake_domain *domain)
 {
-	return wait_for(!(xe_mmio_read32(xe, domain->reg_ack) & domain->val),
-			XE_FORCE_WAKE_ACK_TIMEOUT_MS);
+	return xe_mmio_wait32(xe, domain->reg_ack, 0, domain->val,
+			      XE_FORCE_WAKE_ACK_TIMEOUT_MS);
 }
 
 #define for_each_fw_domain_masked(domain__, mask__, fw__, tmp__) \
