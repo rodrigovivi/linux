@@ -140,6 +140,9 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 	if (WARN_ON(err))
 		goto err_put;
 
+	xe->info.devid = pdev->device;
+	xe->info.revid = pdev->revision;
+
 	spin_lock_init(&xe->gt_irq_lock);
 
 	return xe;
