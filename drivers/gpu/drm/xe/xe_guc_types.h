@@ -7,6 +7,7 @@
 #ifndef _XE_GUC_TYPES_H_
 #define _XE_GUC_TYPES_H_
 
+#include "xe_guc_fwif.h"
 #include "xe_uc_fw_types.h"
 #include "xe_guc_ads_types.h"
 #include "xe_guc_log_types.h"
@@ -21,6 +22,9 @@ struct xe_guc {
 	struct xe_guc_log log;
 	/** @ads: GuC ads */
 	struct xe_guc_ads ads;
+
+	/** @params: Control params for fw initialization */
+	u32 params[GUC_CTL_MAX_DWORDS];
 };
 
 #endif	/* _XE_GUC_TYPES_H_ */

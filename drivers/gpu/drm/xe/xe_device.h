@@ -99,6 +99,7 @@ struct xe_device {
 		uint8_t graphics_verx10;
 		bool is_dgfx;
 		enum xe_platform platform;
+		u16 devid;
 		u8 revid;
 	} info;
 
