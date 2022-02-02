@@ -112,11 +112,9 @@ static void xe_hw_fence_release(struct dma_fence *dma_fence)
 	struct xe_hw_fence *fence = to_xe_hw_fence(dma_fence);
 	unsigned long flags;
 
-	if (!list_empty(&fence->irq_link)) {
-		spin_lock_irqsave(fence->dma.lock, flags);
-		list_del(&fence->irq_link);
-		spin_unlock_irqrestore(fence->dma.lock, flags);
-	}
+	spin_lock_irqsave(fence->dma.lock, flags);
+	list_del(&fence->irq_link);
+	spin_unlock_irqrestore(fence->dma.lock, flags);
 
 	kfree_rcu(fence, dma.rcu);
 }
