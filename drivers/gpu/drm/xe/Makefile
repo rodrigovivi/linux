@@ -56,6 +56,7 @@ xe-y += xe_bo.o \
 	xe_mmio.o \
 	xe_module.o \
 	xe_pci.o \
+	xe_sa.o \
 	xe_sched_job.o \
 	xe_trace.o \
 	xe_ttm_gtt_mgr.o \

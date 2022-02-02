@@ -15,6 +15,7 @@
 #include "xe_gt.h"
 #include "xe_guc_submit.h"
 #include "xe_mmio.h"
+#include "xe_sa.h"
 #include "xe_ttm_gtt_mgr.h"
 #include "xe_ttm_vram_mgr.h"
 #include "xe_uc.h"
@@ -189,6 +190,14 @@ int xe_gt_init(struct xe_gt *gt)
 		if (err)
 			goto err_ttm_mgr;
 	}
+
+	err = xe_sa_bo_manager_init(gt, &gt->kernel_bb_pool, SZ_1M, 16);
+	if (err)
+		goto err_ttm_mgr;
+
+	/* Reserve the last page for prefetcher overflow */
+	gt->kernel_bb_pool.base.size -= SZ_4K;
+
 	err = xe_uc_init_hw(&gt->uc);
 	if (err)
 		goto err_ttm_mgr;
