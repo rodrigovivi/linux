@@ -22,6 +22,48 @@
 #define GUC_MAX_ENGINE_CLASSES		16
 #define GUC_MAX_INSTANCES_PER_CLASS	32
 
+/* GUC_CTL_* - Parameters for loading the GuC */
+#define GUC_CTL_LOG_PARAMS		0
+#define   GUC_LOG_VALID			BIT(0)
+#define   GUC_LOG_NOTIFY_ON_HALF_FULL	BIT(1)
+#define   GUC_LOG_CAPTURE_ALLOC_UNITS	BIT(2)
+#define   GUC_LOG_LOG_ALLOC_UNITS	BIT(3)
+#define   GUC_LOG_CRASH_SHIFT		4
+#define   GUC_LOG_CRASH_MASK		(0x3 << GUC_LOG_CRASH_SHIFT)
+#define   GUC_LOG_DEBUG_SHIFT		6
+#define   GUC_LOG_DEBUG_MASK	        (0xF << GUC_LOG_DEBUG_SHIFT)
+#define   GUC_LOG_CAPTURE_SHIFT		10
+#define   GUC_LOG_CAPTURE_MASK	        (0x3 << GUC_LOG_CAPTURE_SHIFT)
+#define   GUC_LOG_BUF_ADDR_SHIFT	12
+
+#define GUC_CTL_WA			1
+#define   GUC_WA_POLLCS                 BIT(18)
+
+#define GUC_CTL_FEATURE			2
+#define   GUC_CTL_ENABLE_SLPC		BIT(2)
+#define   GUC_CTL_DISABLE_SCHEDULER	BIT(14)
+
+#define GUC_CTL_DEBUG			3
+#define   GUC_LOG_VERBOSITY_SHIFT	0
+#define   GUC_LOG_VERBOSITY_LOW		(0 << GUC_LOG_VERBOSITY_SHIFT)
+#define   GUC_LOG_VERBOSITY_MED		(1 << GUC_LOG_VERBOSITY_SHIFT)
+#define   GUC_LOG_VERBOSITY_HIGH	(2 << GUC_LOG_VERBOSITY_SHIFT)
+#define   GUC_LOG_VERBOSITY_ULTRA	(3 << GUC_LOG_VERBOSITY_SHIFT)
+#define	  GUC_LOG_VERBOSITY_MIN		0
+#define	  GUC_LOG_VERBOSITY_MAX		3
+#define	  GUC_LOG_VERBOSITY_MASK	0x0000000f
+#define	  GUC_LOG_DESTINATION_MASK	(3 << 4)
+#define   GUC_LOG_DISABLED		(1 << 6)
+#define   GUC_PROFILE_ENABLED		(1 << 7)
+
+#define GUC_CTL_ADS			4
+#define   GUC_ADS_ADDR_SHIFT		1
+#define   GUC_ADS_ADDR_MASK		(0xFFFFF << GUC_ADS_ADDR_SHIFT)
+
+#define GUC_CTL_DEVID			5
+
+#define GUC_CTL_MAX_DWORDS		14
+
 struct guc_policies {
 	u32 submission_queue_depth[GUC_MAX_ENGINE_CLASSES];
 	/* In micro seconds. How much time to allow before DPC processing is
