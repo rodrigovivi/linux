@@ -7,14 +7,6 @@
 #include "xe_bo.h"
 #include "xe_guc_log.h"
 
-/*
- * FIXME: Just picking a reasonable size for now. Eventually connect to modparam
- * or Kconfig option.
- */
-#define CRASH_BUFFER_SIZE	SZ_1M
-#define DEBUG_BUFFER_SIZE	SZ_2M
-#define CAPTURE_BUFFER_SIZE	SZ_1M
-
 static size_t guc_log_size(void)
 {
 	/*
@@ -59,6 +51,7 @@ int xe_guc_log_init(struct xe_guc_log *log)
 		return PTR_ERR(bo);
 
 	log->bo = bo;
+	log->level = 5;	/* FIXME: Connect to modparam / debugfs */
 
 	return 0;
 }

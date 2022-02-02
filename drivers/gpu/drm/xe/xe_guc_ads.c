@@ -7,7 +7,6 @@
 #include "xe_bo.h"
 #include "xe_guc_ads.h"
 #include "xe_guc_types.h"
-#include "xe_guc_fwif.h"
 
 static struct xe_device *
 ads_to_xe(struct xe_guc_ads *ads)
