@@ -11,6 +11,7 @@
 
 int xe_guc_init(struct xe_guc *guc);
 int xe_guc_reset(struct xe_guc *guc);
+int xe_guc_upload(struct xe_guc *guc);
 void xe_guc_fini(struct xe_guc *guc);
 
 static inline void
