@@ -359,6 +359,7 @@ int xe_guc_upload(struct xe_guc *guc)
 {
 	int ret;
 
+	xe_guc_ads_populate(&guc->ads);
 	guc_write_params(guc);
 	guc_prepare_xfer(guc);
 
