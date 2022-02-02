@@ -272,9 +272,9 @@ int xe_device_probe(struct xe_device *xe)
 	if (err)
 		goto err_ttm_mgr;
 
+	/* Allow driver to load if uC init fails (likely missing firmware) */
 	err = xe_uc_init(&xe->uc);
-	if (err)
-		goto err_ggtt;
+	XE_WARN_ON(err);
 
 	for (i = 0; i < ARRAY_SIZE(xe->hw_engines); i++) {
 		err = xe_hw_engine_init(xe, &xe->hw_engines[i], i);
@@ -307,7 +307,6 @@ err_hw_engines:
 		if (xe_hw_engine_is_valid(&xe->hw_engines[i]))
 			xe_hw_engine_finish(&xe->hw_engines[i]);
 	}
-err_ggtt:
 	xe_ggtt_finish(&xe->ggtt);
 err_ttm_mgr:
 	xe_device_ttm_mgr_fini(xe);
