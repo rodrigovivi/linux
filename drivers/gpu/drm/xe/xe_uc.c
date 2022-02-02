@@ -75,6 +75,10 @@ int xe_uc_init_hw(struct xe_uc *uc)
 	if (ret)
 		return ret;
 
+	ret = xe_huc_upload(&uc->huc);
+	if (ret)
+		return ret;
+
 	return 0;
 }
 
