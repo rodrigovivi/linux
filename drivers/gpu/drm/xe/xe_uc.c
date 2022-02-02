@@ -3,10 +3,17 @@
  * Copyright © 2022 Intel Corporation
  */
 
+#include "xe_device.h"
 #include "xe_guc.h"
 #include "xe_huc.h"
 #include "xe_uc.h"
 #include "xe_wopcm.h"
+
+static struct xe_device *
+uc_to_xe(struct xe_uc *uc)
+{
+	return container_of(uc, struct xe_device, uc);
+}
 
 /* Should be called once at driver load only */
 int xe_uc_init(struct xe_uc *uc)
@@ -34,12 +41,40 @@ err_guc:
 	return ret;
 }
 
+static int uc_reset(struct xe_uc *uc)
+{
+	struct xe_device *xe = uc_to_xe(uc);
+	int ret;
+
+	ret = xe_guc_reset(&uc->guc);
+	if (ret) {
+		drm_err(&xe->drm, "Failed to reset GuC, ret = %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+static int uc_sanitize(struct xe_uc *uc)
+{
+	xe_huc_sanitize(&uc->huc);
+	xe_guc_sanitize(&uc->guc);
+
+	return uc_reset(uc);
+}
+
 /*
  * Should be called during driver load, after every GT reset, and after every
  * suspend to reload / auth the firmwares.
  */
 int xe_uc_init_hw(struct xe_uc *uc)
 {
+	int ret;
+
+	ret = uc_sanitize(uc);
+	if (ret)
+		return ret;
+
 	return 0;
 }
 
