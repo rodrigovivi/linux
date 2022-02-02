@@ -1329,9 +1329,6 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		return err;
 	}
 
-	xe->info.devid = pdev->device;
-	xe->info.revid = pdev->revision;
-
 	return 0;
 }
 

@@ -133,6 +133,35 @@ uc_fw_auto_select(struct xe_device *xe, struct xe_uc_fw *uc_fw)
 	}
 }
 
+/**
+ * xe_uc_fw_copy_rsa - copy fw RSA to buffer
+ *
+ * @uc_fw: uC firmware
+ * @dst: dst buffer
+ * @max_len: max number of bytes to copy
+ *
+ * Return: number of copied bytes.
+ */
+size_t xe_uc_fw_copy_rsa(struct xe_uc_fw *uc_fw, void *dst, u32 max_len)
+{
+	struct dma_buf_map map = uc_fw->bo->vmap;
+	u32 size = min_t(u32, uc_fw->rsa_size, max_len);
+	u32 offset = sizeof(struct uc_css_header) + uc_fw->ucode_size;
+	u32 *dst32 = dst;
+	int i;
+
+	XE_BUG_ON(size % 4);
+	XE_BUG_ON(!xe_uc_fw_is_available(uc_fw));
+
+	dma_buf_map_incr(&map, offset);
+	for (i = 0; i < size / sizeof(u32); ++i) {
+		dst32[i] = dbm_read32(map);
+		dma_buf_map_incr(&map, sizeof(u32));
+	}
+
+	return size;
+}
+
 int xe_uc_fw_init(struct xe_uc_fw *uc_fw)
 {
 	struct xe_device *xe = uc_fw_to_xe(uc_fw);
