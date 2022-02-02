@@ -12,6 +12,7 @@
 #include "xe_device.h"
 #include "xe_hw_engine.h"
 #include "xe_macros.h"
+#include "xe_bo.h"
 
 void xe_hw_fence_irq_init(struct xe_hw_fence_irq *irq)
 {
@@ -96,14 +97,6 @@ static bool xe_hw_fence_enable_signaling(struct dma_fence *dma_fence)
 	list_add(&fence->irq_link, &irq->pending);
 
 	return true;
-}
-
-static uint32_t dbm_read32(struct dma_buf_map map)
-{
-	if (map.is_iomem)
-		return readl(map.vaddr_iomem);
-	else
-		return READ_ONCE(*(uint32_t *)map.vaddr);
 }
 
 static bool xe_hw_fence_signaled(struct dma_fence *dma_fence)
