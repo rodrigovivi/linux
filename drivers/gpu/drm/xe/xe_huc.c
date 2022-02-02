@@ -37,6 +37,11 @@ out:
 	return ret;
 }
 
+int xe_huc_upload(struct xe_huc *huc)
+{
+	return xe_uc_fw_upload(&huc->fw, 0, HUC_UKERNEL);
+}
+
 void xe_huc_fini(struct xe_huc *huc)
 {
 	if (!xe_uc_fw_is_loadable(&huc->fw))

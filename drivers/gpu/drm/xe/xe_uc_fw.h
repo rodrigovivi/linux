@@ -13,8 +13,9 @@
 #include "xe_uc_fw_abi.h"
 #include "xe_macros.h"
 
-int xe_uc_fw_init(struct xe_uc_fw *fw);
-void xe_uc_fw_fini(struct xe_uc_fw *fw);
+int xe_uc_fw_init(struct xe_uc_fw *uc_fw);
+int xe_uc_fw_upload(struct xe_uc_fw *uc_fw, u32 offset, u32 dma_flags);
+void xe_uc_fw_fini(struct xe_uc_fw *uc_fw);
 
 static inline void xe_uc_fw_change_status(struct xe_uc_fw *uc_fw,
 					  enum xe_uc_fw_status status)
