@@ -9,6 +9,7 @@
 #define _XE_GT_TYPES_H_
 
 #include "xe_hw_engine_types.h"
+#include "xe_sa_types.h"
 #include "xe_uc_types.h"
 
 #define ENGINE_INSTANCES_MASK(gt, first, count) ({		\
@@ -112,6 +113,9 @@ struct xe_gt {
 
 	/** @hw_engines: hardware engines on the GT */
 	struct xe_hw_engine hw_engines[XE_NUM_HW_ENGINES];
+
+	/** kernel_bb_pool: Pool from which batchbuffers are allocated */
+	struct xe_sa_manager kernel_bb_pool;
 };
 
 #endif	/* _XE_GT_TYPES_H_ */
