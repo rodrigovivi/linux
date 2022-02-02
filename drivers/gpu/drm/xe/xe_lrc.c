@@ -671,22 +671,6 @@ uint32_t xe_lrc_ggtt_addr(struct xe_lrc *lrc)
 	return __xe_lrc_pphwsp_ggtt_addr(lrc);
 }
 
-static uint32_t dbm_read32(struct dma_buf_map map)
-{
-	if (map.is_iomem)
-		return readl(map.vaddr_iomem);
-	else
-		return READ_ONCE(*(uint32_t *)map.vaddr);
-}
-
-static void dbm_write32(struct dma_buf_map map, uint32_t val)
-{
-	if (map.is_iomem)
-		writel(val, map.vaddr_iomem);
-	else
-		*(uint32_t *)map.vaddr = val;
-}
-
 uint32_t xe_lrc_read_ctx_reg(struct xe_lrc *lrc, int reg_nr)
 {
 	struct dma_buf_map map;
