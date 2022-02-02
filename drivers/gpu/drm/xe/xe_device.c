@@ -283,6 +283,10 @@ int xe_device_probe(struct xe_device *xe)
 	if (err)
 		goto err_hw_engines;
 
+	err = xe_uc_init_hw(&xe->uc);
+	if (err)
+		goto err_irq;
+
 	err = drm_dev_register(&xe->drm, 0);
 	if (err)
 		goto err_irq;

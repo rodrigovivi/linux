@@ -8,6 +8,7 @@
 #include "xe_uc.h"
 #include "xe_wopcm.h"
 
+/* Should be called once at driver load only */
 int xe_uc_init(struct xe_uc *uc)
 {
 	int ret;
@@ -31,6 +32,15 @@ err_huc:
 err_guc:
 	xe_guc_fini(&uc->guc);
 	return ret;
+}
+
+/*
+ * Should be called during driver load, after every GT reset, and after every
+ * suspend to reload / auth the firmwares.
+ */
+int xe_uc_init_hw(struct xe_uc *uc)
+{
+	return 0;
 }
 
 void xe_uc_fini(struct xe_uc *uc)
