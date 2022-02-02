@@ -7,6 +7,7 @@
 #include "xe_guc.h"
 #include "xe_huc.h"
 #include "xe_uc.h"
+#include "xe_uc_fw.h"
 #include "xe_wopcm.h"
 
 static struct xe_device *
@@ -70,6 +71,11 @@ static int uc_sanitize(struct xe_uc *uc)
 int xe_uc_init_hw(struct xe_uc *uc)
 {
 	int ret;
+
+	/* If any uC firmwares not found, bail out and fall back to execlists */
+	if (!xe_uc_fw_is_loadable(&uc->guc.fw) ||
+	    !xe_uc_fw_is_loadable(&uc->huc.fw))
+		return 0;
 
 	ret = uc_sanitize(uc);
 	if (ret)
