@@ -69,33 +69,6 @@ enum intel_region_id {
 #define REGION_STOLEN_SMEM   BIT(INTEL_REGION_STOLEN_SMEM)
 #define REGION_STOLEN_LMEM   BIT(INTEL_REGION_STOLEN_LMEM)
 
-
-/*
- * Engine IDs definitions.
- * Keep instances of the same type engine together.
- */
-enum intel_engine_id {
-	RCS0 = 0,
-	BCS0,
-	VCS0,
-	VCS1,
-	VCS2,
-	VCS3,
-	VCS4,
-	VCS5,
-	VCS6,
-	VCS7,
-#define _VCS(n) (VCS0 + (n))
-	VECS0,
-	VECS1,
-	VECS2,
-	VECS3,
-#define _VECS(n) (VECS0 + (n))
-	I915_NUM_ENGINES
-#define INVALID_ENGINE ((enum intel_engine_id)-1)
-};
-
-
 enum transcoder {
 	INVALID_TRANSCODER = -1,
 	/*
@@ -1310,6 +1283,7 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 				   devinfo->graphics_rel / 10;
 	xe->info.is_dgfx = devinfo->is_dgfx;
 	xe->info.platform = devinfo->platform;
+	xe->info.engine_mask = devinfo->platform_engine_mask;
 
 	pci_set_drvdata(pdev, xe);
 	err = pci_enable_device(pdev);
