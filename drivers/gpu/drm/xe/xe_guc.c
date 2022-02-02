@@ -13,6 +13,7 @@
 #include "xe_wopcm.h"
 #include "xe_mmio.h"
 #include "xe_force_wake.h"
+#include "i915_reg_defs.h"
 
 static struct xe_device *
 guc_to_xe(struct xe_guc *guc)
@@ -153,6 +154,24 @@ static void guc_init_params(struct xe_guc *guc)
 		drm_dbg(&xe->drm, "GuC param[%2d] = 0x%08x\n", i, params[i]);
 }
 
+/*
+ * Initialise the GuC parameter block before starting the firmware
+ * transfer. These parameters are read by the firmware on startup
+ * and cannot be changed thereafter.
+ */
+void guc_write_params(struct xe_guc *guc)
+{
+	struct xe_device *xe = guc_to_xe(guc);
+	int i;
+
+	xe_force_wake_assert_held(&xe->fw, XE_FW_GT);
+
+	xe_mmio_write32(xe, SOFT_SCRATCH(0).reg, 0);
+
+	for (i = 0; i < GUC_CTL_MAX_DWORDS; i++)
+		xe_mmio_write32(xe, SOFT_SCRATCH(1 + i).reg, guc->params[i]);
+}
+
 int xe_guc_init(struct xe_guc *guc)
 {
 	struct xe_device *xe = guc_to_xe(guc);
@@ -221,6 +240,153 @@ err_out:
 	dma_fence_end_signalling(cookie);
 
 	return ret;
+}
+
+static void guc_prepare_xfer(struct xe_guc *guc)
+{
+	struct xe_device *xe = guc_to_xe(guc);
+	u32 shim_flags = GUC_DISABLE_SRAM_INIT_TO_ZEROES |
+			 GUC_ENABLE_READ_CACHE_LOGIC |
+			 GUC_ENABLE_MIA_CACHING |
+			 GUC_ENABLE_READ_CACHE_FOR_SRAM_DATA |
+			 GUC_ENABLE_READ_CACHE_FOR_WOPCM_DATA |
+			 GUC_ENABLE_MIA_CLOCK_GATING;
+
+	/* Must program this register before loading the ucode with DMA */
+	xe_mmio_write32(xe, GUC_SHIM_CONTROL.reg, shim_flags);
+
+	xe_mmio_write32(xe, GEN9_GT_PM_CONFIG.reg, GT_DOORBELL_ENABLE);
+}
+
+/*
+ * FIXME: Only supporting MMIO RSA at the moment, rsa in memory only required on
+ * DG2+
+ */
+static int guc_xfer_rsa(struct xe_guc *guc)
+{
+	struct xe_device *xe = guc_to_xe(guc);
+	u32 rsa[UOS_RSA_SCRATCH_COUNT];
+	size_t copied;
+	int i;
+
+	copied = xe_uc_fw_copy_rsa(&guc->fw, rsa, sizeof(rsa));
+	if (copied < sizeof(rsa))
+		return -ENOMEM;
+
+	for (i = 0; i < UOS_RSA_SCRATCH_COUNT; i++)
+		xe_mmio_write32(xe, UOS_RSA_SCRATCH(i).reg, rsa[i]);
+
+	return 0;
+}
+
+/*
+ * Read the GuC status register (GUC_STATUS) and store it in the
+ * specified location; then return a boolean indicating whether
+ * the value matches either of two values representing completion
+ * of the GuC boot process.
+ *
+ * This is used for polling the GuC status in a wait_for()
+ * loop below.
+ */
+static bool guc_ready(struct xe_guc *guc, u32 *status)
+{
+	u32 val = xe_mmio_read32(guc_to_xe(guc), GUC_STATUS.reg);
+	u32 uk_val = REG_FIELD_GET(GS_UKERNEL_MASK, val);
+
+	*status = val;
+	return uk_val == XE_GUC_LOAD_STATUS_READY;
+}
+
+static int guc_wait_ucode(struct xe_guc *guc)
+{
+	struct xe_device *xe = guc_to_xe(guc);
+	u32 status;
+	int ret;
+
+	/*
+	 * Wait for the GuC to start up.
+	 * NB: Docs recommend not using the interrupt for completion.
+	 * Measurements indicate this should take no more than 20ms
+	 * (assuming the GT clock is at maximum frequency). So, a
+	 * timeout here indicates that the GuC has failed and is unusable.
+	 * (Higher levels of the driver may decide to reset the GuC and
+	 * attempt the ucode load again if this happens.)
+	 *
+	 * FIXME: There is a known (but exceedingly unlikely) race condition
+	 * where the asynchronous frequency management code could reduce
+	 * the GT clock while a GuC reload is in progress (during a full
+	 * GT reset). A fix is in progress but there are complex locking
+	 * issues to be resolved. In the meantime bump the timeout to
+	 * 200ms. Even at slowest clock, this should be sufficient. And
+	 * in the working case, a larger timeout makes no difference.
+	 */
+	ret = wait_for(guc_ready(guc, &status), 200);
+	if (ret) {
+		struct drm_device *drm = &xe->drm;
+
+		drm_info(drm, "GuC load failed: status = 0x%08X\n", status);
+		drm_info(drm, "GuC load failed: status: Reset = %d, "
+			"BootROM = 0x%02X, UKernel = 0x%02X, "
+			"MIA = 0x%02X, Auth = 0x%02X\n",
+			REG_FIELD_GET(GS_MIA_IN_RESET, status),
+			REG_FIELD_GET(GS_BOOTROM_MASK, status),
+			REG_FIELD_GET(GS_UKERNEL_MASK, status),
+			REG_FIELD_GET(GS_MIA_MASK, status),
+			REG_FIELD_GET(GS_AUTH_STATUS_MASK, status));
+
+		if ((status & GS_BOOTROM_MASK) == GS_BOOTROM_RSA_FAILED) {
+			drm_info(drm, "GuC firmware signature verification failed\n");
+			ret = -ENOEXEC;
+		}
+
+		if (REG_FIELD_GET(GS_UKERNEL_MASK, status) ==
+		    XE_GUC_LOAD_STATUS_EXCEPTION) {
+			drm_info(drm, "GuC firmware exception. EIP: %#x\n",
+				 xe_mmio_read32(xe, SOFT_SCRATCH(13).reg));
+			ret = -ENXIO;
+		}
+	}
+
+	return ret;
+}
+
+int xe_guc_upload(struct xe_guc *guc)
+{
+	int ret;
+
+	guc_write_params(guc);
+	guc_prepare_xfer(guc);
+
+	/*
+	 * Note that GuC needs the CSS header plus uKernel code to be copied
+	 * by the DMA engine in one operation, whereas the RSA signature is
+	 * loaded separately, either by copying it to the UOS_RSA_SCRATCH
+	 * register (if key size <= 256) or through a ggtt-pinned vma (if key
+	 * size > 256). The RSA size and therefore the way we provide it to the
+	 * HW is fixed for each platform and hard-coded in the bootrom.
+	 */
+	ret = guc_xfer_rsa(guc);
+	if (ret)
+		goto out;
+	/*
+	 * Current uCode expects the code to be loaded at 8k; locations below
+	 * this are used for the stack.
+	 */
+	ret = xe_uc_fw_upload(&guc->fw, 0x2000, UOS_MOVE);
+	if (ret)
+		goto out;
+
+	/* Wait for authentication */
+	ret = guc_wait_ucode(guc);
+	if (ret)
+		goto out;
+
+	xe_uc_fw_change_status(&guc->fw, XE_UC_FIRMWARE_RUNNING);
+	return 0;
+
+out:
+	xe_uc_fw_change_status(&guc->fw, XE_UC_FIRMWARE_LOAD_FAIL);
+	return 0	/* FIXME: ret, don't want to stop load currently */;
 }
 
 void xe_guc_fini(struct xe_guc *guc)
