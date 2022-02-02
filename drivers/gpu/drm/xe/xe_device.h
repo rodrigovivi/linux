@@ -25,6 +25,42 @@
 #define GRAPHICS_VERx10(xe) ((xe)->info.graphics_verx10)
 #define IS_DGFX(xe) ((xe)->info.is_dgfx)
 
+#define ENGINE_INSTANCES_MASK(xe, first, count) ({		\
+	unsigned int first__ = (first);					\
+	unsigned int count__ = (count);					\
+	((xe)->info.engine_mask &					\
+	 GENMASK(first__ + count__ - 1, first__)) >> first__;		\
+})
+#define VDBOX_MASK(xe) \
+	ENGINE_INSTANCES_MASK(xe, VCS0, (VCS7 - VCS0 + 1))
+#define VEBOX_MASK(xe) \
+	ENGINE_INSTANCES_MASK(xe, VECS0, (VECS3 - VECS0 + 1))
+
+/*
+ * Engine IDs definitions.
+ * Keep instances of the same type engine together.
+ */
+enum intel_engine_id {
+	RCS0 = 0,
+	BCS0,
+	VCS0,
+	VCS1,
+	VCS2,
+	VCS3,
+	VCS4,
+	VCS5,
+	VCS6,
+	VCS7,
+#define _VCS(n) (VCS0 + (n))
+	VECS0,
+	VECS1,
+	VECS2,
+	VECS3,
+#define _VECS(n) (VECS0 + (n))
+	I915_NUM_ENGINES
+#define INVALID_ENGINE ((enum intel_engine_id)-1)
+};
+
 /* Keep in gen based order, and chronological order within a gen */
 enum xe_platform {
 	XE_PLATFORM_UNINITIALIZED = 0,
@@ -99,6 +135,7 @@ struct xe_device {
 		uint8_t graphics_verx10;
 		bool is_dgfx;
 		enum xe_platform platform;
+		u64 engine_mask;
 		u16 devid;
 		u8 revid;
 	} info;
