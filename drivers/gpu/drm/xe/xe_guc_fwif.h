@@ -6,6 +6,13 @@
 #ifndef _XE_GUC_FWIF_H
 #define _XE_GUC_FWIF_H
 
+#include "abi/guc_actions_abi.h"
+#include "abi/guc_errors_abi.h"
+#include "abi/guc_communication_mmio_abi.h"
+#include "abi/guc_communication_ctb_abi.h"
+#include "abi/guc_klvs_abi.h"
+#include "abi/guc_messages_abi.h"
+
 #define GUC_RENDER_ENGINE		0
 #define GUC_VIDEO_ENGINE		1
 #define GUC_BLITTER_ENGINE		2
