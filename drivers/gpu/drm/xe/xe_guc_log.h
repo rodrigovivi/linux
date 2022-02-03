@@ -9,6 +9,8 @@
 
 #include "xe_guc_log_types.h"
 
+struct drm_printer;
+
 /*
  * FIXME: Just picking a reasonable size for now. Eventually connect to modparam
  * or Kconfig option.
@@ -35,6 +37,7 @@
 #define GUC_LOG_LEVEL_MAX GUC_VERBOSITY_TO_LOG_LEVEL(GUC_LOG_VERBOSITY_MAX)
 
 int xe_guc_log_init(struct xe_guc_log *log);
+void xe_guc_log_dump(struct xe_guc_log *log, struct drm_printer *p);
 void xe_guc_log_fini(struct xe_guc_log *log);
 
 static inline u32
