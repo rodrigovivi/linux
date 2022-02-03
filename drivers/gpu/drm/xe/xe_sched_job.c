@@ -8,8 +8,9 @@
 
 #include <linux/slab.h>
 
-#include "xe_device.h"
+#include "xe_device_types.h"
 #include "xe_engine.h"
+#include "xe_lrc.h"
 
 struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
 					 uint64_t user_batch_addr)
@@ -36,7 +37,7 @@ struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
 	}
 
 	job->user_batch_addr = user_batch_addr;
-	
+
 	return job;
 
 err_sched_job:

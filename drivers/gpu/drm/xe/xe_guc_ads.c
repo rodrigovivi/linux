@@ -3,7 +3,7 @@
  * Copyright © 2022 Intel Corporation
  */
 
-#include "xe_device.h"
+#include "xe_device_types.h"
 #include "xe_bo.h"
 #include "xe_guc_ads.h"
 #include "xe_guc_types.h"

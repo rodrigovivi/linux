@@ -6,29 +6,9 @@
 #ifndef _XE_LRC_H_
 #define _XE_LRC_H_
 
-#include <drm/ttm/ttm_bo_api.h>
+#include "xe_lrc_types.h"
 
-#include "xe_hw_fence.h"
-
-struct xe_bo;
-struct xe_hw_engine;
 struct xe_vm;
-
-struct xe_lrc {
-	struct xe_bo *bo;
-
-	uint32_t flags;
-
-#define XE_LRC_PINNED BIT(1)
-
-	uint32_t ring_size;
-	uint32_t ring_tail;
-	uint32_t ring_old_tail; /* Shadow of RING_TAIL */
-
-	uint64_t desc;
-
-	struct xe_hw_fence_ctx fence_ctx;
-};
 
 int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 		struct xe_vm *vm, uint32_t ring_size);
