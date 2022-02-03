@@ -323,6 +323,7 @@ static int guc_wait_ucode(struct xe_guc *guc)
 	ret = wait_for(guc_ready(guc, &status), 200);
 	if (ret) {
 		struct drm_device *drm = &xe->drm;
+		struct drm_printer p = drm_info_printer(drm->dev);
 
 		drm_info(drm, "GuC load failed: status = 0x%08X\n", status);
 		drm_info(drm, "GuC load failed: status: Reset = %d, "
@@ -345,6 +346,8 @@ static int guc_wait_ucode(struct xe_guc *guc)
 				 xe_mmio_read32(xe, SOFT_SCRATCH(13).reg));
 			ret = -ENXIO;
 		}
+
+		xe_guc_log_dump(&guc->log, &p);
 	}
 
 	return ret;
