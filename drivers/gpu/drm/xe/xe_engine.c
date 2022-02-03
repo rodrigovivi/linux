@@ -6,12 +6,16 @@
 
 #include "xe_engine.h"
 
+#include <drm/drm_device.h>
+#include <drm/drm_file.h>
+#include <drm/gpu_scheduler.h>
 #include <drm/drm_syncobj.h>
 #include <drm/xe_drm.h>
 
 #include "xe_bo.h"
 #include "xe_device.h"
 #include "xe_execlist.h"
+#include "xe_lrc.h"
 #include "xe_sched_job.h"
 #include "xe_vm.h"
 

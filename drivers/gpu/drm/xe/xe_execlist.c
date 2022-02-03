@@ -7,8 +7,11 @@
 #include "xe_execlist.h"
 
 #include "xe_bo.h"
-#include "xe_device.h"
+#include "xe_device_types.h"
 #include "xe_engine.h"
+#include "xe_hw_fence.h"
+#include "xe_lrc.h"
+#include "xe_macros.h"
 #include "xe_mmio.h"
 #include "xe_sched_job.h"
 
@@ -36,8 +39,8 @@ static void __start_lrc(struct xe_hw_engine *hwe, struct xe_lrc *lrc,
 	XE_BUG_ON(!FIELD_FIT(GEN11_SW_CTX_ID, ctx_id));
 	lrc_desc |= FIELD_PREP(GEN11_SW_CTX_ID, ctx_id);
 
-	xe_lrc_write_ctx_reg(lrc, CTX_RING_TAIL, lrc->ring_tail);
-	lrc->ring_old_tail = lrc->ring_tail;
+	xe_lrc_write_ctx_reg(lrc, CTX_RING_TAIL, lrc->ring.tail);
+	lrc->ring.old_tail = lrc->ring.tail;
 
 	/*
 	 * Make sure the context image is complete before we submit it to HW.
@@ -103,7 +106,7 @@ static bool xe_execlist_is_idle(struct xe_execlist *exl)
 {
 	struct xe_lrc *lrc = &exl->engine->lrc;
 
-	return lrc->ring_tail == lrc->ring_old_tail;
+	return lrc->ring.tail == lrc->ring.old_tail;
 }
 
 static void __xe_execlist_port_start_next_active(struct xe_execlist_port *port)
@@ -313,7 +316,7 @@ struct xe_execlist *xe_execlist_create(struct xe_engine *e)
 	exl->engine = e;
 
 	err = drm_sched_init(&exl->sched, &drm_sched_ops,
-			     e->lrc.ring_size / MAX_JOB_SIZE_BYTES,
+			     e->lrc.ring.size / MAX_JOB_SIZE_BYTES,
 			     XE_SCHED_HANG_LIMIT, XE_SCHED_JOB_TIMEOUT,
 			     NULL, NULL, e->hwe->name);
 	if (err)

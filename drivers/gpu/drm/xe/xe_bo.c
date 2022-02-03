@@ -14,7 +14,9 @@
 #include <drm/xe_drm.h>
 
 #include "xe_device.h"
+#include "xe_ggtt.h"
 #include "xe_res_cursor.h"
+#include "xe_vm.h"
 
 static const struct ttm_place sys_placement_flags = {
 	.fpfn = 0,

@@ -1,0 +1,17 @@
+/*
+ * SPDX-License-Identifier: MIT
+ *
+ * Copyright © 2022 Intel Corporation
+ */
+
+#ifndef _XE_TTM_GTT_MGR_TYPES_H_
+#define _XE_TTM_GTT_MGR_TYPES_H_
+
+#include <drm/ttm/ttm_device.h>
+
+struct xe_ttm_gtt_mgr {
+	struct ttm_resource_manager manager;
+	atomic64_t used;
+};
+
+#endif	/* _XE_TTM_GTT_MGR_TYPES_H_ */

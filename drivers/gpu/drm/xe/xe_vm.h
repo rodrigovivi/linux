@@ -7,47 +7,14 @@
 #ifndef _XE_VM_H_
 #define _XE_VM_H_
 
-#include <linux/kref.h>
-#include <linux/dma-resv.h>
+#include <xe_vm_types.h>
 
-#include <drm/drm_device.h>
-#include <drm/drm_file.h>
+struct drm_device;
+struct drm_file;
 
-struct xe_bo;
-struct xe_device;
 struct xe_file;
-struct xe_pt;
-struct xe_vm;
-
-struct xe_vma {
-	struct rb_node vm_node;
-	struct xe_vm *vm;
-
-	uint64_t start;
-	uint64_t end;
-
-	struct xe_bo *bo;
-	uint64_t bo_offset;
-	struct list_head bo_link;
-};
 
 void __xe_vma_unbind(struct xe_vma *vma);
-
-struct xe_vm {
-	struct xe_device *xe;
-
-	struct kref refcount;
-
-	struct dma_resv resv;
-
-	uint64_t size;
-	struct rb_root vmas;
-
-	struct xe_pt *pt_root;
-
-	struct xe_bo *scratch_bo;
-	struct xe_pt *scratch_pt[3];
-};
 
 struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags);
 void xe_vm_free(struct kref *ref);
