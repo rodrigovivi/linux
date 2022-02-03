@@ -1,7 +1,13 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Copyright © 2021-2022 Intel Corporation
+ * Copyright (C) 2021-2002 Red Hat
+ */
+
 #include <drm/ttm/ttm_range_manager.h>
 #include <drm/ttm/ttm_placement.h>
 #include <drm/ttm/ttm_bo_driver.h>
-#include "xe_device.h"
+#include "xe_device_types.h"
 
 struct xe_ttm_gtt_node {
 	struct ttm_buffer_object *tbo;

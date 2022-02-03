@@ -6,7 +6,7 @@
 #include <linux/bitfield.h>
 #include <linux/firmware.h>
 
-#include "xe_device.h"
+#include "xe_device_types.h"
 #include "xe_uc_fw.h"
 #include "xe_bo.h"
 #include "xe_mmio.h"

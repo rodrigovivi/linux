@@ -14,10 +14,15 @@
 #include "xe_bo.h"
 #include "xe_drv.h"
 #include "xe_engine.h"
-#include "xe_mmio.h"
-#include "xe_vm.h"
 #include "xe_force_wake.h"
+#include "xe_ggtt.h"
+#include "xe_hw_engine.h"
+#include "xe_irq.h"
+#include "xe_mmio.h"
+#include "xe_ttm_gtt_mgr.h"
+#include "xe_ttm_vram_mgr.h"
 #include "xe_uc.h"
+#include "xe_vm.h"
 
 #include "../i915/i915_reg.h"
 

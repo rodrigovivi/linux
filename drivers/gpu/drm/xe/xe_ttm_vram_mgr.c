@@ -1,7 +1,13 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Copyright © 2021-2022 Intel Corporation
+ * Copyright (C) 2021-2002 Red Hat
+ */
+
 #include <drm/ttm/ttm_range_manager.h>
 #include <drm/ttm/ttm_placement.h>
 #include "xe_bo.h"
-#include "xe_device.h"
+#include "xe_device_types.h"
 
 static inline struct xe_ttm_vram_mgr *
 to_vram_mgr(struct ttm_resource_manager *man)

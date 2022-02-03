@@ -7,37 +7,11 @@
 #ifndef _XE_BO_H_
 #define _XE_BO_H_
 
-#include <linux/dma-buf-map.h>
-
-#include <drm/drm_mm.h>
-#include <drm/ttm/ttm_bo_api.h>
-#include <drm/ttm/ttm_device.h>
-#include <drm/ttm/ttm_placement.h>
-
+#include "xe_bo_types.h"
 #include "xe_macros.h"
-#include "xe_vm.h"
+#include "xe_vm_types.h"
 
 #define XE_DEFAULT_GTT_SIZE_MB          3072ULL /* 3GB by default */
-#define XE_BO_MAX_PLACEMENTS	3
-
-struct xe_bo {
-	struct ttm_buffer_object ttm;
-
-	size_t size;
-
-	uint32_t flags;
-
-	struct xe_vm *vm;
-
-	struct list_head vmas;
-
-	struct ttm_place placements[XE_BO_MAX_PLACEMENTS];
-	struct ttm_placement placement;
-
-	struct drm_mm_node ggtt_node;
-
-	struct dma_buf_map vmap;
-};
 
 #define XE_BO_CREATE_USER_BIT BIT(1)
 #define XE_BO_CREATE_SYSTEM_BIT BIT(2)
