@@ -50,6 +50,7 @@ int xe_guc_log_init(struct xe_guc_log *log)
 	if (IS_ERR(bo))
 		return PTR_ERR(bo);
 
+	dma_buf_map_memset(&bo->vmap, 0, guc_log_size());
 	log->bo = bo;
 	log->level = 5;	/* FIXME: Connect to modparam / debugfs */
 
