@@ -6,8 +6,12 @@
 
 #include "xe_hw_engine.h"
 
-#include "xe_device.h"
+#include "xe_bo.h"
+#include "xe_device_types.h"
 #include "xe_execlist.h"
+#include "xe_hw_fence.h"
+#include "xe_lrc.h"
+#include "xe_macros.h"
 #include "xe_sched_job.h"
 
 #include "../i915/i915_reg.h"

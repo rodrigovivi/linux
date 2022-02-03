@@ -7,7 +7,9 @@
 #include "xe_lrc.h"
 
 #include "xe_bo.h"
-#include "xe_device.h"
+#include "xe_device_types.h"
+#include "xe_hw_fence.h"
+#include "xe_vm.h"
 
 #include "../i915/i915_reg.h"
 #include "../i915/gt/intel_gpu_commands.h"
@@ -628,7 +630,7 @@ static inline uint32_t __xe_lrc_ring_offset(struct xe_lrc *lrc)
 
 static inline uint32_t __xe_lrc_pphwsp_offset(struct xe_lrc *lrc)
 {
-	return lrc->ring_size;
+	return lrc->ring.size;
 }
 
 #define LRC_SEQNO_PPHWSP_OFFSET 512
@@ -750,8 +752,8 @@ int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 
 	xe_bo_unlock_vm_held(lrc->bo);
 
-	lrc->ring_size = ring_size;
-	lrc->ring_tail = 0;
+	lrc->ring.size = ring_size;
+	lrc->ring.tail = 0;
 
 	xe_hw_fence_ctx_init(&lrc->fence_ctx, hwe);
 
@@ -771,9 +773,9 @@ int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 
 	xe_lrc_write_ctx_reg(lrc, CTX_RING_START, __xe_lrc_ring_ggtt_addr(lrc));
 	xe_lrc_write_ctx_reg(lrc, CTX_RING_HEAD, 0);
-	xe_lrc_write_ctx_reg(lrc, CTX_RING_TAIL, lrc->ring_tail);
+	xe_lrc_write_ctx_reg(lrc, CTX_RING_TAIL, lrc->ring.tail);
 	xe_lrc_write_ctx_reg(lrc, CTX_RING_CTL,
-			     RING_CTL_SIZE(lrc->ring_size) | RING_VALID);
+			     RING_CTL_SIZE(lrc->ring.size) | RING_VALID);
 
 	lrc->desc = GEN8_CTX_VALID;
 	lrc->desc |= INTEL_LEGACY_64B_CONTEXT << GEN8_CTX_ADDRESSING_MODE_SHIFT;
@@ -825,8 +827,8 @@ uint32_t xe_lrc_ring_head(struct xe_lrc *lrc)
 uint32_t xe_lrc_ring_space(struct xe_lrc *lrc)
 {
 	const uint32_t head = xe_lrc_ring_head(lrc);
-	const uint32_t tail = lrc->ring_tail;
-	const uint32_t size = lrc->ring_size;
+	const uint32_t tail = lrc->ring.tail;
+	const uint32_t size = lrc->ring.size;
 
 	return ((head - tail - 1) & (size - 1)) + 1;
 }
@@ -836,7 +838,7 @@ static void xe_lrc_assert_ring_space(struct xe_lrc *lrc, size_t size)
 #if XE_EXTRA_DEBUG
 	uint32_t space = xe_lrc_ring_space(lrc);
 
-	BUG_ON(size > lrc->ring_size);
+	BUG_ON(size > lrc->ring.size);
 	WARN(size > space, "Insufficient ring space: %lu > %u", size, space);
 #endif
 }
@@ -844,9 +846,9 @@ static void xe_lrc_assert_ring_space(struct xe_lrc *lrc, size_t size)
 static void __xe_lrc_write_ring(struct xe_lrc *lrc, struct dma_buf_map ring,
 				const void *data, size_t size)
 {
-	dma_buf_map_incr(&ring, lrc->ring_tail);
+	dma_buf_map_incr(&ring, lrc->ring.tail);
 	dma_buf_map_memcpy_to(&ring, data, size);
-	lrc->ring_tail = (lrc->ring_tail + size) & (lrc->ring_size - 1);
+	lrc->ring.tail = (lrc->ring.tail + size) & (lrc->ring.size - 1);
 }
 
 void xe_lrc_write_ring(struct xe_lrc *lrc, const void *data, size_t size)
@@ -862,8 +864,8 @@ void xe_lrc_write_ring(struct xe_lrc *lrc, const void *data, size_t size)
 
 	ring = __xe_lrc_ring_map(lrc);
 
-	XE_BUG_ON(lrc->ring_tail >= lrc->ring_size);
-	rhs = lrc->ring_size - lrc->ring_tail;
+	XE_BUG_ON(lrc->ring.tail >= lrc->ring.size);
+	rhs = lrc->ring.size - lrc->ring.tail;
 	if (size > rhs) {
 		__xe_lrc_write_ring(lrc, ring, data, rhs);
 		__xe_lrc_write_ring(lrc, ring, data + rhs, size - rhs);

@@ -7,32 +7,13 @@
 #ifndef _XE_ENGINE_H_
 #define _XE_ENGINE_H_
 
-#include <linux/kref.h>
+#include "xe_engine_types.h"
+#include "xe_vm_types.h"
 
-#include <drm/drm_device.h>
-#include <drm/drm_file.h>
-#include <drm/gpu_scheduler.h>
-
-#include "xe_lrc.h"
-#include "xe_vm.h"
-
+struct drm_device;
+struct drm_file;
 struct xe_device;
-struct xe_execlist;
 struct xe_file;
-
-struct xe_engine {
-	struct xe_hw_engine *hwe;
-
-	struct kref refcount;
-
-	struct xe_vm *vm;
-
-	struct xe_execlist *execlist;
-
-	struct drm_sched_entity *entity;
-
-	struct xe_lrc lrc;
-};
 
 struct xe_engine *xe_engine_create(struct xe_device *xe, struct xe_vm *vm,
 				   struct xe_hw_engine *hw_engine);
