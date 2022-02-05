@@ -70,7 +70,18 @@ static int uc_sanitize(struct xe_uc *uc)
  */
 int xe_uc_init_hw(struct xe_uc *uc)
 {
+	struct xe_device *xe = uc_to_xe(uc);
 	int ret;
+
+	/*
+	 * XXX: For some reason if the GuC is loaded on DG1, execlist submission
+	 * breaks (seen by xe_exec_basic hanging). Apply quick hack to disable
+	 * the GuC on DG1 for now. A follow up will plumb a modparam in.
+	 */
+	if (IS_DGFX(xe)) {
+		drm_dbg(&xe->drm, "Skipping GuC load");
+		return 0;
+	}
 
 	/* If any uC firmwares not found, bail out and fall back to execlists */
 	if (!xe_uc_fw_is_loadable(&uc->guc.fw) ||
