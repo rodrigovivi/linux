@@ -348,6 +348,8 @@ static int guc_wait_ucode(struct xe_guc *guc)
 		}
 
 		xe_guc_log_dump(&guc->log, &p);
+	} else {
+		drm_dbg(&xe->drm, "GuC successfully loaded");
 	}
 
 	return ret;
