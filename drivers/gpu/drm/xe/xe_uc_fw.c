@@ -379,3 +379,17 @@ fail:
 	xe_uc_fw_change_status(uc_fw, XE_UC_FIRMWARE_LOAD_FAIL);
 	return err;
 }
+
+
+void xe_uc_fw_print(struct xe_uc_fw *uc_fw, struct drm_printer *p)
+{
+	drm_printf(p, "%s firmware: %s\n",
+		   xe_uc_fw_type_repr(uc_fw->type), uc_fw->path);
+	drm_printf(p, "\tstatus: %s\n",
+		   xe_uc_fw_status_repr(uc_fw->status));
+	drm_printf(p, "\tversion: wanted %u.%u, found %u.%u\n",
+		   uc_fw->major_ver_wanted, uc_fw->minor_ver_wanted,
+		   uc_fw->major_ver_found, uc_fw->minor_ver_found);
+	drm_printf(p, "\tuCode: %u bytes\n", uc_fw->ucode_size);
+	drm_printf(p, "\tRSA: %u bytes\n", uc_fw->rsa_size);
+}

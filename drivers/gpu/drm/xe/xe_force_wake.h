@@ -19,11 +19,19 @@ int xe_force_wake_get(struct xe_force_wake *fw,
 int xe_force_wake_put(struct xe_force_wake *fw,
 		      enum xe_force_wake_domains domains);
 
+static inline int
+xe_force_wake_ref(struct xe_force_wake *fw,
+		  enum xe_force_wake_domains domain)
+{
+	XE_BUG_ON(!domain);
+	return fw->domains[ffs(domain) - 1].ref;
+}
+
 static inline void
 xe_force_wake_assert_held(struct xe_force_wake *fw,
-			  enum xe_force_wake_domains domains)
+			  enum xe_force_wake_domains domain)
 {
-	XE_BUG_ON(!(fw->awake_domains & domains));
+	XE_BUG_ON(!(fw->awake_domains & domain));
 }
 
 #endif	/* _XE_FORCE_WAKE_H_ */
