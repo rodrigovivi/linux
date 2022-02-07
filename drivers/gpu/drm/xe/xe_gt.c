@@ -105,6 +105,8 @@ err_vram_mgr:
 
 int xe_gt_init(struct xe_gt *gt)
 {
+	struct xe_hw_engine *hwe;
+	enum xe_hw_engine_id id;
 	int err;
 	int i;
 
@@ -142,10 +144,8 @@ int xe_gt_init(struct xe_gt *gt)
 	return 0;
 
 err_hw_engines:
-	for (i = 0; i < ARRAY_SIZE(gt->hw_engines); i++) {
-		if (xe_hw_engine_is_valid(&gt->hw_engines[i]))
-			xe_hw_engine_finish(&gt->hw_engines[i]);
-	}
+	for_each_hw_engine(hwe, gt, id)
+		xe_hw_engine_finish(hwe);
 	xe_uc_fini(&gt->uc);
 	xe_ggtt_finish(gt->mem.ggtt);
 err_ttm_mgr:
@@ -162,12 +162,11 @@ err_force_wake:
 
 void xe_gt_fini(struct xe_gt *gt)
 {
-	int i;
+	struct xe_hw_engine *hwe;
+	enum xe_hw_engine_id id;
 
-	for (i = 0; i < ARRAY_SIZE(gt->hw_engines); i++) {
-		if (xe_hw_engine_is_valid(&gt->hw_engines[i]))
-			xe_hw_engine_finish(&gt->hw_engines[i]);
-	}
+	for_each_hw_engine(hwe, gt, id)
+		xe_hw_engine_finish(hwe);
 	xe_uc_fini(&gt->uc);
 	xe_ggtt_finish(gt->mem.ggtt);
 	if (gt->mem.vram.mapping)
@@ -181,14 +180,12 @@ struct xe_hw_engine *xe_gt_hw_engine(struct xe_gt *gt,
 				     enum xe_engine_class class,
 				     uint16_t instance)
 {
-	int i;
+	struct xe_hw_engine *hwe;
+	enum xe_hw_engine_id id;
 
-	for (i = 0; i < ARRAY_SIZE(gt->hw_engines); i++) {
-		if (xe_hw_engine_is_valid(&gt->hw_engines[i]) &&
-		    gt->hw_engines[i].class == class &&
-		    gt->hw_engines[i].instance == instance)
-			return &gt->hw_engines[i];
-	}
+	for_each_hw_engine(hwe, gt, id)
+		if (hwe->class == class && hwe->instance == instance)
+			return hwe;
 
 	return NULL;
 }
