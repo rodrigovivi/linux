@@ -239,6 +239,8 @@ static u8 engine_class_to_guc_class(enum xe_engine_class class)
 static void guc_mapping_table_init(struct xe_gt *gt,
 				   struct dma_buf_map *info_map)
 {
+	struct xe_hw_engine *hwe;
+	enum xe_hw_engine_id id;
 	unsigned int i, j;
 
 	/* Table must be set to invalid values for entries not used */
@@ -248,12 +250,8 @@ static void guc_mapping_table_init(struct xe_gt *gt,
 				       GUC_MAX_INSTANCES_PER_CLASS);
 
 	/* FIXME: Setting table up with 1 to 1 to get GuC to load */
-	for (i = 0; i < ARRAY_SIZE(gt->hw_engines); i++) {
-		struct xe_hw_engine *hwe = &gt->hw_engines[i];
+	for_each_hw_engine(hwe, gt, id) {
 		u8 guc_class;
-
-		if (!xe_hw_engine_is_valid(hwe))
-			continue;
 
 		guc_class = engine_class_to_guc_class(hwe->class);
 		info_map_write(info_map,
