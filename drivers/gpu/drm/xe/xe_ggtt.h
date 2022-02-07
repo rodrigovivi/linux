@@ -9,7 +9,7 @@
 
 #include "xe_ggtt_types.h"
 
-int xe_ggtt_init(struct xe_device *xe, struct xe_ggtt *ggtt);
+int xe_ggtt_init(struct xe_gt *gt, struct xe_ggtt *ggtt);
 void xe_ggtt_finish(struct xe_ggtt *ggtt);
 void xe_ggtt_printk(struct xe_ggtt *ggtt, const char *prefix);
 

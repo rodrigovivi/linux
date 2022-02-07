@@ -38,6 +38,7 @@ xe-y += xe_bo.o \
 	xe_execlist.o \
 	xe_force_wake.o \
 	xe_ggtt.o \
+	xe_gt.o \
 	xe_guc.o \
 	xe_guc_ads.o \
 	xe_guc_log.o \

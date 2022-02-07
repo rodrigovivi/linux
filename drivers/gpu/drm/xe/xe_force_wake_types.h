@@ -54,6 +54,8 @@ struct xe_force_wake_domain {
  * struct xe_force_wake - XE force wake
  */
 struct xe_force_wake {
+	/** @gt: back pointers to GT */
+	struct xe_gt *gt;
 	/** @lock: protects everything force wake struct */
 	struct mutex lock;
 	/** @awake_domains: mask of all domains awake */

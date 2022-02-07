@@ -9,16 +9,23 @@
 #include "xe_guc_ads.h"
 #include "xe_guc_log.h"
 #include "xe_guc_reg.h"
+#include "xe_gt.h"
 #include "xe_uc_fw.h"
 #include "xe_wopcm.h"
 #include "xe_mmio.h"
 #include "xe_force_wake.h"
 #include "i915_reg_defs.h"
 
+static struct xe_gt *
+guc_to_gt(struct xe_guc *guc)
+{
+	return container_of(guc, struct xe_gt, uc.guc);
+}
+
 static struct xe_device *
 guc_to_xe(struct xe_guc *guc)
 {
-	return container_of(guc, struct xe_device, uc.guc);
+	return gt_to_xe(guc_to_gt(guc));
 }
 
 /* GuC addresses above GUC_GGTT_TOP also don't map through the GTT */
@@ -161,15 +168,15 @@ static void guc_init_params(struct xe_guc *guc)
  */
 void guc_write_params(struct xe_guc *guc)
 {
-	struct xe_device *xe = guc_to_xe(guc);
+	struct xe_gt *gt = guc_to_gt(guc);
 	int i;
 
-	xe_force_wake_assert_held(&xe->fw, XE_FW_GT);
+	xe_force_wake_assert_held(gt->mmio.fw, XE_FW_GT);
 
-	xe_mmio_write32(xe, SOFT_SCRATCH(0).reg, 0);
+	xe_mmio_write32(gt, SOFT_SCRATCH(0).reg, 0);
 
 	for (i = 0; i < GUC_CTL_MAX_DWORDS; i++)
-		xe_mmio_write32(xe, SOFT_SCRATCH(1 + i).reg, guc->params[i]);
+		xe_mmio_write32(gt, SOFT_SCRATCH(1 + i).reg, guc->params[i]);
 }
 
 int xe_guc_init(struct xe_guc *guc)
@@ -208,23 +215,24 @@ out:
 int xe_guc_reset(struct xe_guc *guc)
 {
 	struct xe_device *xe = guc_to_xe(guc);
+	struct xe_gt *gt = guc_to_gt(guc);
 	u32 guc_status;
 	int ret;
 	bool cookie;
 
 	cookie = dma_fence_begin_signalling();
-	xe_force_wake_assert_held(&xe->fw, XE_FW_GT);
+	xe_force_wake_assert_held(gt->mmio.fw, XE_FW_GT);
 
-	xe_mmio_write32(xe, GEN6_GDRST.reg, GEN11_GRDOM_GUC);
+	xe_mmio_write32(gt, GEN6_GDRST.reg, GEN11_GRDOM_GUC);
 
-	ret = xe_mmio_wait32(xe, GEN6_GDRST.reg, 0, GEN11_GRDOM_GUC, 5);
+	ret = xe_mmio_wait32(gt, GEN6_GDRST.reg, 0, GEN11_GRDOM_GUC, 5);
 	if (ret) {
 		drm_err(&xe->drm, "GuC reset timed out, GEN6_GDRST=0x%8x\n",
-			xe_mmio_read32(xe, GEN6_GDRST.reg));
+			xe_mmio_read32(gt, GEN6_GDRST.reg));
 		goto err_out;
 	}
 
-	guc_status = xe_mmio_read32(xe, GUC_STATUS.reg);
+	guc_status = xe_mmio_read32(gt, GUC_STATUS.reg);
 	if (!(guc_status & GS_MIA_IN_RESET)) {
 		drm_err(&xe->drm,
 			"GuC status: 0x%x, MIA core expected to be in reset\n",
@@ -244,7 +252,7 @@ err_out:
 
 static void guc_prepare_xfer(struct xe_guc *guc)
 {
-	struct xe_device *xe = guc_to_xe(guc);
+	struct xe_gt *gt = guc_to_gt(guc);
 	u32 shim_flags = GUC_DISABLE_SRAM_INIT_TO_ZEROES |
 			 GUC_ENABLE_READ_CACHE_LOGIC |
 			 GUC_ENABLE_MIA_CACHING |
@@ -253,9 +261,9 @@ static void guc_prepare_xfer(struct xe_guc *guc)
 			 GUC_ENABLE_MIA_CLOCK_GATING;
 
 	/* Must program this register before loading the ucode with DMA */
-	xe_mmio_write32(xe, GUC_SHIM_CONTROL.reg, shim_flags);
+	xe_mmio_write32(gt, GUC_SHIM_CONTROL.reg, shim_flags);
 
-	xe_mmio_write32(xe, GEN9_GT_PM_CONFIG.reg, GT_DOORBELL_ENABLE);
+	xe_mmio_write32(gt, GEN9_GT_PM_CONFIG.reg, GT_DOORBELL_ENABLE);
 }
 
 /*
@@ -264,7 +272,7 @@ static void guc_prepare_xfer(struct xe_guc *guc)
  */
 static int guc_xfer_rsa(struct xe_guc *guc)
 {
-	struct xe_device *xe = guc_to_xe(guc);
+	struct xe_gt *gt = guc_to_gt(guc);
 	u32 rsa[UOS_RSA_SCRATCH_COUNT];
 	size_t copied;
 	int i;
@@ -274,7 +282,7 @@ static int guc_xfer_rsa(struct xe_guc *guc)
 		return -ENOMEM;
 
 	for (i = 0; i < UOS_RSA_SCRATCH_COUNT; i++)
-		xe_mmio_write32(xe, UOS_RSA_SCRATCH(i).reg, rsa[i]);
+		xe_mmio_write32(gt, UOS_RSA_SCRATCH(i).reg, rsa[i]);
 
 	return 0;
 }
@@ -290,7 +298,7 @@ static int guc_xfer_rsa(struct xe_guc *guc)
  */
 static bool guc_ready(struct xe_guc *guc, u32 *status)
 {
-	u32 val = xe_mmio_read32(guc_to_xe(guc), GUC_STATUS.reg);
+	u32 val = xe_mmio_read32(guc_to_gt(guc), GUC_STATUS.reg);
 	u32 uk_val = REG_FIELD_GET(GS_UKERNEL_MASK, val);
 
 	*status = val;
@@ -343,7 +351,8 @@ static int guc_wait_ucode(struct xe_guc *guc)
 		if (REG_FIELD_GET(GS_UKERNEL_MASK, status) ==
 		    XE_GUC_LOAD_STATUS_EXCEPTION) {
 			drm_info(drm, "GuC firmware exception. EIP: %#x\n",
-				 xe_mmio_read32(xe, SOFT_SCRATCH(13).reg));
+				 xe_mmio_read32(guc_to_gt(guc),
+						SOFT_SCRATCH(13).reg));
 			ret = -ENXIO;
 		}
 

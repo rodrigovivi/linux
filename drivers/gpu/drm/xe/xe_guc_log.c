@@ -3,9 +3,21 @@
  * Copyright © 2022 Intel Corporation
  */
 
-#include "xe_device_types.h"
 #include "xe_bo.h"
+#include "xe_gt.h"
 #include "xe_guc_log.h"
+
+static struct xe_gt *
+log_to_gt(struct xe_guc_log *log)
+{
+	return container_of(log, struct xe_gt, uc.guc.log);
+}
+
+static struct xe_device *
+log_to_xe(struct xe_guc_log *log)
+{
+	return gt_to_xe(log_to_gt(log));
+}
 
 static size_t guc_log_size(void)
 {
@@ -30,12 +42,6 @@ static size_t guc_log_size(void)
 	 */
 	return PAGE_SIZE + CRASH_BUFFER_SIZE + DEBUG_BUFFER_SIZE +
 		CAPTURE_BUFFER_SIZE;
-}
-
-static struct xe_device *
-log_to_xe(struct xe_guc_log *log)
-{
-	return container_of(log, struct xe_device, uc.guc.log);
 }
 
 void xe_guc_log_dump(struct xe_guc_log *log, struct drm_printer *p)

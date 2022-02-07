@@ -4,14 +4,21 @@
  */
 
 #include "xe_device_types.h"
+#include "xe_gt.h"
+#include "xe_guc_reg.h"
 #include "xe_huc.h"
 #include "xe_uc_fw.h"
-#include "xe_guc_reg.h"
+
+static struct xe_gt *
+huc_to_gt(struct xe_huc *huc)
+{
+	return container_of(huc, struct xe_gt, uc.huc);
+}
 
 static struct xe_device *
 huc_to_xe(struct xe_huc *huc)
 {
-	return container_of(huc, struct xe_device, uc.huc);
+	return gt_to_xe(huc_to_gt(huc));
 }
 
 int xe_huc_init(struct xe_huc *huc)

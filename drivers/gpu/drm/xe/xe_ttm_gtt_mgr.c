@@ -7,7 +7,9 @@
 #include <drm/ttm/ttm_range_manager.h>
 #include <drm/ttm/ttm_placement.h>
 #include <drm/ttm/ttm_bo_driver.h>
-#include "xe_device_types.h"
+
+#include "xe_gt.h"
+#include "xe_ttm_gtt_mgr.h"
 
 struct xe_ttm_gtt_node {
 	struct ttm_buffer_object *tbo;
@@ -69,7 +71,7 @@ static void xe_ttm_gtt_mgr_del(struct ttm_resource_manager *man,
 {
 	struct xe_ttm_gtt_node *node = to_xe_ttm_gtt_node(res);
 	struct xe_ttm_gtt_mgr *mgr = to_gtt_mgr(man);
-	
+
 	if (!(res->placement & TTM_PL_FLAG_TEMPORARY))
 		atomic64_sub(res->num_pages, &mgr->used);
 
@@ -88,11 +90,13 @@ static const struct ttm_resource_manager_func xe_ttm_gtt_mgr_func = {
 	.debug = xe_ttm_gtt_mgr_debug
 };
 
-int xe_ttm_gtt_mgr_init(struct xe_device *xe, uint64_t gtt_size)
+int xe_ttm_gtt_mgr_init(struct xe_gt *gt, struct xe_ttm_gtt_mgr *mgr,
+			uint64_t gtt_size)
 {
-	struct xe_ttm_gtt_mgr *mgr = &xe->gtt_mgr;
+	struct xe_device *xe = gt_to_xe(gt);
 	struct ttm_resource_manager *man = &mgr->manager;
 
+	mgr->gt = gt;
 	man->use_tt = true;
 	man->func = &xe_ttm_gtt_mgr_func;
 
@@ -104,9 +108,9 @@ int xe_ttm_gtt_mgr_init(struct xe_device *xe, uint64_t gtt_size)
 	return 0;
 }
 
-void xe_ttm_gtt_mgr_fini(struct xe_device *xe)
+void xe_ttm_gtt_mgr_fini(struct xe_ttm_gtt_mgr *mgr)
 {
-	struct xe_ttm_gtt_mgr *mgr = &xe->gtt_mgr;
+	struct xe_device *xe = gt_to_xe(mgr->gt);
 	struct ttm_resource_manager *man = &mgr->manager;
 	int err;
 
@@ -119,4 +123,3 @@ void xe_ttm_gtt_mgr_fini(struct xe_device *xe)
 	ttm_resource_manager_cleanup(man);
 	ttm_set_driver_manager(&xe->ttm, TTM_PL_TT, NULL);
 }
-	

@@ -3,13 +3,15 @@
  * Copyright © 2022 Intel Corporation
  */
 
-#include "xe_wopcm.h"
 #include "xe_device_types.h"
-#include "xe_mmio.h"
-#include "i915_utils.h"
-#include "xe_guc_reg.h"
-#include "xe_uc_fw.h"
 #include "xe_force_wake.h"
+#include "xe_gt.h"
+#include "xe_guc_reg.h"
+#include "xe_mmio.h"
+#include "xe_uc_fw.h"
+#include "xe_wopcm.h"
+
+#include "i915_utils.h"
 
 /**
  * DOC: Write Once Protected Content Memory (WOPCM) Layout
@@ -61,9 +63,14 @@
 /* 36KB WOPCM reserved at the end of WOPCM on GEN11. */
 #define GEN11_WOPCM_HW_CTX_RESERVED	(SZ_32K + SZ_4K)
 
+static inline struct xe_gt *wopcm_to_gt(struct xe_wopcm *wopcm)
+{
+	return container_of(wopcm, struct xe_gt, uc.wopcm);
+}
+
 static inline struct xe_device *wopcm_to_xe(struct xe_wopcm *wopcm)
 {
-	return container_of(wopcm, struct xe_device, uc.wopcm);
+	return gt_to_xe(wopcm_to_gt(wopcm));
 }
 
 static u32 context_reserved_size(void)
@@ -106,11 +113,11 @@ static bool __check_layout(struct xe_device *xe, u32 wopcm_size,
 	return true;
 }
 
-static bool __wopcm_regs_locked(struct xe_device *xe,
+static bool __wopcm_regs_locked(struct xe_gt *gt,
 				u32 *guc_wopcm_base, u32 *guc_wopcm_size)
 {
-	u32 reg_base = xe_mmio_read32(xe, DMA_GUC_WOPCM_OFFSET.reg);
-	u32 reg_size = xe_mmio_read32(xe, GUC_WOPCM_SIZE.reg);
+	u32 reg_base = xe_mmio_read32(gt, DMA_GUC_WOPCM_OFFSET.reg);
+	u32 reg_size = xe_mmio_read32(gt, GUC_WOPCM_SIZE.reg);
 
 	if (!(reg_size & GUC_WOPCM_SIZE_LOCKED) ||
 	    !(reg_base & GUC_WOPCM_OFFSET_VALID))
@@ -121,7 +128,8 @@ static bool __wopcm_regs_locked(struct xe_device *xe,
 	return true;
 }
 
-static int __wopcm_init_regs(struct xe_device *xe, struct xe_wopcm *wopcm)
+static int __wopcm_init_regs(struct xe_device *xe, struct xe_gt *gt,
+			     struct xe_wopcm *wopcm)
 {
 	u32 base = wopcm->guc.base;
 	u32 size = wopcm->guc.size;
@@ -135,13 +143,13 @@ static int __wopcm_init_regs(struct xe_device *xe, struct xe_wopcm *wopcm)
 	XE_BUG_ON(size & ~GUC_WOPCM_SIZE_MASK);
 
 	mask = GUC_WOPCM_SIZE_MASK | GUC_WOPCM_SIZE_LOCKED;
-	err = xe_mmio_write32_and_verify(xe, GUC_WOPCM_SIZE.reg, size, mask,
+	err = xe_mmio_write32_and_verify(gt, GUC_WOPCM_SIZE.reg, size, mask,
 					 size | GUC_WOPCM_SIZE_LOCKED);
 	if (err)
 		goto err_out;
 
 	mask = GUC_WOPCM_OFFSET_MASK | GUC_WOPCM_OFFSET_VALID | huc_agent;
-	err = xe_mmio_write32_and_verify(xe, DMA_GUC_WOPCM_OFFSET.reg,
+	err = xe_mmio_write32_and_verify(gt, DMA_GUC_WOPCM_OFFSET.reg,
 					 base | huc_agent, mask,
 					 base | huc_agent |
 					 GUC_WOPCM_OFFSET_VALID);
@@ -154,10 +162,10 @@ err_out:
 	drm_notice(&xe->drm, "Failed to init uC WOPCM registers!\n");
 	drm_notice(&xe->drm, "%s(%#x)=%#x\n", "DMA_GUC_WOPCM_OFFSET",
 		   DMA_GUC_WOPCM_OFFSET.reg,
-		   xe_mmio_read32(xe, DMA_GUC_WOPCM_OFFSET.reg));
+		   xe_mmio_read32(gt, DMA_GUC_WOPCM_OFFSET.reg));
 	drm_notice(&xe->drm, "%s(%#x)=%#x\n", "GUC_WOPCM_SIZE",
 		   GUC_WOPCM_SIZE.reg,
-		   xe_mmio_read32(xe, GUC_WOPCM_SIZE.reg));
+		   xe_mmio_read32(gt, GUC_WOPCM_SIZE.reg));
 
 	return err;
 }
@@ -180,8 +188,9 @@ u32 xe_wopcm_size(struct xe_device *xe)
 int xe_wopcm_init(struct xe_wopcm *wopcm)
 {
 	struct xe_device *xe = wopcm_to_xe(wopcm);
-	u32 guc_fw_size = xe_uc_fw_get_upload_size(&xe->uc.guc.fw);
-	u32 huc_fw_size = xe_uc_fw_get_upload_size(&xe->uc.huc.fw);
+	struct xe_gt *gt = wopcm_to_gt(wopcm);
+	u32 guc_fw_size = xe_uc_fw_get_upload_size(&gt->uc.guc.fw);
+	u32 huc_fw_size = xe_uc_fw_get_upload_size(&gt->uc.huc.fw);
 	u32 ctx_rsvd = context_reserved_size();
 	u32 guc_wopcm_base;
 	u32 guc_wopcm_size;
@@ -194,14 +203,14 @@ int xe_wopcm_init(struct xe_wopcm *wopcm)
 	wopcm->size = xe_wopcm_size(xe);
 	drm_dbg(&xe->drm, "WOPCM: %uK\n", wopcm->size / SZ_1K);
 
-	xe_force_wake_assert_held(&xe->fw, XE_FW_GT);
+	xe_force_wake_assert_held(gt->mmio.fw, XE_FW_GT);
 	XE_BUG_ON(wopcm->guc.base);
 	XE_BUG_ON(wopcm->guc.size);
 	XE_BUG_ON(guc_fw_size >= wopcm->size);
 	XE_BUG_ON(huc_fw_size >= wopcm->size);
 	XE_BUG_ON(ctx_rsvd + WOPCM_RESERVED_SIZE >= wopcm->size);
 
-	locked = __wopcm_regs_locked(xe, &guc_wopcm_base, &guc_wopcm_size);
+	locked = __wopcm_regs_locked(gt, &guc_wopcm_base, &guc_wopcm_size);
 	if (locked) {
 		drm_dbg(&xe->drm, "GuC WOPCM is already locked [%uK, %uK)\n",
 			guc_wopcm_base / SZ_1K, guc_wopcm_size / SZ_1K);
@@ -241,7 +250,7 @@ check:
 	}
 
 	if (!locked)
-		ret = __wopcm_init_regs(xe, wopcm);
+		ret = __wopcm_init_regs(xe, gt, wopcm);
 
 	return ret;
 }
