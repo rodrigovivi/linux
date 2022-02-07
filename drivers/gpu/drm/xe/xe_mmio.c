@@ -8,6 +8,7 @@
 
 #include <drm/xe_drm.h>
 
+#include "xe_device.h"
 #include "xe_macros.h"
 
 #include "../i915/i915_reg.h"
@@ -40,19 +41,22 @@ mask_err:
 
 static void xe_mmio_probe_vram(struct xe_device *xe)
 {
+	struct xe_gt *gt = to_gt(xe);
+
 	if (!IS_DGFX(xe)) {
-		xe->vram.size = xe->vram.io_start = 0;
+		gt->mem.vram.size = gt->mem.vram.io_start = 0;
 		return;
 	}
 
-	xe->vram.size = xe_mmio_read64(xe, GEN12_GSMBASE.reg);
-	xe->vram.io_start = pci_resource_start(to_pci_dev(xe->drm.dev), 2);
+	gt->mem.vram.size = xe_mmio_read64(gt, GEN12_GSMBASE.reg);
+	gt->mem.vram.io_start = pci_resource_start(to_pci_dev(xe->drm.dev), 2);
 
-	drm_info(&xe->drm, "VRAM: %pa\n", &xe->vram.size);
+	drm_info(&xe->drm, "VRAM: %pa\n", &gt->mem.vram.size);
 }
 
 int xe_mmio_init(struct xe_device *xe)
 {
+	struct xe_gt *gt = to_gt(xe);
 	const int mmio_bar = 0;
 	int err;
 
@@ -64,13 +68,17 @@ int xe_mmio_init(struct xe_device *xe)
 		return -EIO;
 	}
 
+	/* 1 GT for now, 1 to 1 mapping, may change on multi-GT devices */
+	gt->mmio.size = xe->mmio.size;
+	gt->mmio.regs = xe->mmio.regs;
+
 	/*
 	 * The boot firmware initializes local memory and assesses its health.
 	 * If memory training fails, the punit will have been instructed to
 	 * keep the GT powered down; we won't be able to communicate with it
 	 * and we should not continue with driver initialization.
 	 */
-	if (IS_DGFX(xe) && !(xe_mmio_read32(xe, GU_CNTL.reg) & LMEM_INIT)) {
+	if (IS_DGFX(xe) && !(xe_mmio_read32(gt, GU_CNTL.reg) & LMEM_INIT)) {
 		drm_err(&xe->drm, "LMEM not initialized by firmware\n");
 		return -ENODEV;
 	}
@@ -126,7 +134,7 @@ int xe_mmio_ioctl(struct drm_device *dev, void *data,
 		case DRM_XE_MMIO_32BIT:
 			if (XE_IOCTL_ERR(xe, args->value > U32_MAX))
 				return -EINVAL;
-			xe_mmio_write32(xe, args->addr, args->value);
+			xe_mmio_write32(to_gt(xe), args->addr, args->value);
 			break;
 		case DRM_XE_MMIO_64BIT:
 			return -EINVAL; /* TODO */
@@ -143,10 +151,10 @@ int xe_mmio_ioctl(struct drm_device *dev, void *data,
 		case DRM_XE_MMIO_16BIT:
 			return -EINVAL; /* TODO */
 		case DRM_XE_MMIO_32BIT:
-			args->value = xe_mmio_read32(xe, args->addr);
+			args->value = xe_mmio_read32(to_gt(xe), args->addr);
 			break;
 		case DRM_XE_MMIO_64BIT:
-			args->value = xe_mmio_read64(xe, args->addr);
+			args->value = xe_mmio_read64(to_gt(xe), args->addr);
 			break;
 		default:
 			WARN(1, "Invalid MMIO bit size");

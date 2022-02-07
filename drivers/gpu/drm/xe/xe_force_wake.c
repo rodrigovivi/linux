@@ -6,15 +6,22 @@
 #include <drm/drm_util.h>
 
 #include "xe_force_wake_types.h"
+#include "xe_gt.h"
 #include "xe_mmio.h"
 #include "../i915/i915_reg.h"
 
 #define XE_FORCE_WAKE_ACK_TIMEOUT_MS	50
 
+static struct xe_gt *
+fw_to_gt(struct xe_force_wake *fw)
+{
+	return fw->gt;
+}
+
 static struct xe_device *
 fw_to_xe(struct xe_force_wake *fw)
 {
-	return container_of(fw, struct xe_device, fw);
+	return gt_to_xe(fw_to_gt(fw));
 }
 
 static void domain_init(struct xe_force_wake_domain *domain,
@@ -28,8 +35,9 @@ static void domain_init(struct xe_force_wake_domain *domain,
 	domain->mask = mask;
 }
 
-void xe_force_wake_init(struct xe_force_wake *fw)
+void xe_force_wake_init(struct xe_gt *gt, struct xe_force_wake *fw)
 {
+	fw->gt = gt;
 	mutex_init(&fw->lock);
 
 	domain_init(&fw->domains[XE_FW_DOMAIN_ID_GT],
@@ -41,29 +49,27 @@ void xe_force_wake_init(struct xe_force_wake *fw)
 	// FIXME - Setup all other FW domains
 }
 
-static void domain_wake(struct xe_device *xe,
-			struct xe_force_wake_domain *domain)
+static void domain_wake(struct xe_gt *gt, struct xe_force_wake_domain *domain)
 {
-	xe_mmio_write32(xe, domain->reg_ctl, domain->mask | domain->val);
+	xe_mmio_write32(gt, domain->reg_ctl, domain->mask | domain->val);
 }
 
-static int domain_wake_wait(struct xe_device *xe,
+static int domain_wake_wait(struct xe_gt *gt,
 			    struct xe_force_wake_domain *domain)
 {
-	return xe_mmio_wait32(xe, domain->reg_ack, domain->val, domain->val,
+	return xe_mmio_wait32(gt, domain->reg_ack, domain->val, domain->val,
 			      XE_FORCE_WAKE_ACK_TIMEOUT_MS);
 }
 
-static void domain_sleep(struct xe_device *xe,
-			 struct xe_force_wake_domain *domain)
+static void domain_sleep(struct xe_gt *gt, struct xe_force_wake_domain *domain)
 {
-	xe_mmio_write32(xe, domain->reg_ctl, domain->mask);
+	xe_mmio_write32(gt, domain->reg_ctl, domain->mask);
 }
 
-static int domain_sleep_wait(struct xe_device *xe,
+static int domain_sleep_wait(struct xe_gt *gt,
 			     struct xe_force_wake_domain *domain)
 {
-	return xe_mmio_wait32(xe, domain->reg_ack, 0, domain->val,
+	return xe_mmio_wait32(gt, domain->reg_ack, 0, domain->val,
 			      XE_FORCE_WAKE_ACK_TIMEOUT_MS);
 }
 
@@ -76,6 +82,7 @@ int xe_force_wake_get(struct xe_force_wake *fw,
 		      enum xe_force_wake_domains domains)
 {
 	struct xe_device *xe = fw_to_xe(fw);
+	struct xe_gt *gt = fw_to_gt(fw);
 	struct xe_force_wake_domain *domain;
 	enum xe_force_wake_domains tmp, woken = 0;
 	int ret, ret2 = 0;
@@ -84,11 +91,11 @@ int xe_force_wake_get(struct xe_force_wake *fw,
 	for_each_fw_domain_masked(domain, domains, fw, tmp) {
 		if (!domain->ref++) {
 			woken |= BIT(domain->id);
-			domain_wake(xe, domain);
+			domain_wake(gt, domain);
 		}
 	}
 	for_each_fw_domain_masked(domain, woken, fw, tmp) {
-		ret = domain_wake_wait(xe, domain);
+		ret = domain_wake_wait(gt, domain);
 		ret2 |= ret;
 		if (ret)
 			drm_notice(&xe->drm, "Force wake domain (%d) failed to ack wake, ret=%d\n",
@@ -104,6 +111,7 @@ int xe_force_wake_put(struct xe_force_wake *fw,
 		      enum xe_force_wake_domains domains)
 {
 	struct xe_device *xe = fw_to_xe(fw);
+	struct xe_gt *gt = fw_to_gt(fw);
 	struct xe_force_wake_domain *domain;
 	enum xe_force_wake_domains tmp, sleep = 0;
 	int ret, ret2 = 0;
@@ -112,11 +120,11 @@ int xe_force_wake_put(struct xe_force_wake *fw,
 	for_each_fw_domain_masked(domain, domains, fw, tmp) {
 		if (!--domain->ref) {
 			sleep |= BIT(domain->id);
-			domain_sleep(xe, domain);
+			domain_sleep(gt, domain);
 		}
 	}
 	for_each_fw_domain_masked(domain, sleep, fw, tmp) {
-		ret = domain_sleep_wait(xe, domain);
+		ret = domain_sleep_wait(gt, domain);
 		ret2 |= ret;
 		if (ret)
 			drm_notice(&xe->drm, "Force wake domain (%d) failed to ack sleep, ret=%d\n",

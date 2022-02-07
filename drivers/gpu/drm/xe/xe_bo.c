@@ -70,7 +70,7 @@ static int xe_bo_placement_for_flags(struct xe_device *xe, struct xe_bo *bo,
 	u32 c = 0;
 
 	if (bo_flags & XE_BO_CREATE_VRAM_BIT) {
-		XE_BUG_ON(!xe->vram.size);
+		XE_BUG_ON(!to_gt(xe)->mem.vram.size);
 		places[c++] = (struct ttm_place) {
 			.mem_type = TTM_PL_VRAM,
 		};
@@ -170,12 +170,12 @@ static int xe_ttm_io_mem_reserve(struct ttm_device *bdev,
 	case TTM_PL_VRAM:
 		mem->bus.offset = mem->start << PAGE_SHIFT;
 
-		if (xe->vram.mapping &&
+		if (to_gt(xe)->mem.vram.mapping &&
 		    mem->placement & TTM_PL_FLAG_CONTIGUOUS)
-			mem->bus.addr = (u8 *)xe->vram.mapping +
+			mem->bus.addr = (u8 *)to_gt(xe)->mem.vram.mapping +
 				mem->bus.offset;
 
-		mem->bus.offset += xe->vram.io_start;
+		mem->bus.offset += to_gt(xe)->mem.vram.io_start;
 		mem->bus.is_iomem = true;
 		break;
 	default:
@@ -221,7 +221,7 @@ static unsigned long xe_ttm_io_mem_pfn(struct ttm_buffer_object *bo,
 	struct xe_res_cursor cursor;
 
 	xe_res_first(bo->resource, (u64)page_offset << PAGE_SHIFT, 0, &cursor);
-	return (xe->vram.io_start + cursor.start) >> PAGE_SHIFT;
+	return (to_gt(xe)->mem.vram.io_start + cursor.start) >> PAGE_SHIFT;
 }
 
 static void __xe_bo_vunmap(struct xe_bo *bo);
@@ -268,7 +268,7 @@ static void xe_ttm_bo_destroy(struct ttm_buffer_object *ttm_bo)
 	}
 
 	if (bo->ggtt_node.size)
-		xe_ggtt_remove_bo(&xe_bo_device(bo)->ggtt, bo);
+		xe_ggtt_remove_bo(to_gt(xe_bo_device(bo))->mem.ggtt, bo);
 
 	if (bo->vm && (bo->flags & XE_BO_CREATE_USER_BIT))
 		xe_vm_put(bo->vm);
@@ -337,7 +337,7 @@ struct xe_bo *xe_bo_create_locked(struct xe_device *xe, struct xe_vm *vm,
 	INIT_LIST_HEAD(&bo->vmas);
 
 	if (flags & XE_BO_CREATE_GGTT_BIT) {
-		err = xe_ggtt_insert_bo(&xe->ggtt, bo);
+		err = xe_ggtt_insert_bo(to_gt(xe)->mem.ggtt, bo);
 		if (err)
 			goto err_unlock_put_bo;
 	}

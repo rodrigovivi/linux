@@ -9,7 +9,7 @@
 
 #include <linux/delay.h>
 
-#include "xe_device.h"
+#include "xe_gt_types.h"
 
 /*
  * FIXME: This header has been deemed evil and we need to kill it. Temporarily
@@ -18,42 +18,46 @@
  */
 #include "i915_utils.h"
 
+struct drm_device;
+struct drm_file;
+struct xe_device;
+
 int xe_mmio_init(struct xe_device *xe);
 void xe_mmio_finish(struct xe_device *xe);
 
-static inline void xe_mmio_write32(struct xe_device *xe,
+static inline void xe_mmio_write32(struct xe_gt *gt,
 				   uint32_t reg, uint32_t val)
 {
-	writel(val, xe->mmio.regs + reg);
+	writel(val, gt->mmio.regs + reg);
 }
 
-static inline uint32_t xe_mmio_read32(struct xe_device *xe, uint32_t reg)
+static inline uint32_t xe_mmio_read32(struct xe_gt *gt, uint32_t reg)
 {
-	return readl(xe->mmio.regs + reg);
+	return readl(gt->mmio.regs + reg);
 }
 
-static inline uint64_t xe_mmio_read64(struct xe_device *xe, uint32_t reg)
+static inline uint64_t xe_mmio_read64(struct xe_gt *gt, uint32_t reg)
 {
-	return readq(xe->mmio.regs + reg);
+	return readq(gt->mmio.regs + reg);
 }
 
-static inline int xe_mmio_write32_and_verify(struct xe_device *xe,
+static inline int xe_mmio_write32_and_verify(struct xe_gt *gt,
 					     uint32_t reg, uint32_t val,
 					     uint32_t mask, uint32_t eval)
 {
 	uint32_t reg_val;
 
-	xe_mmio_write32(xe, reg, val);
-	reg_val = xe_mmio_read32(xe, reg);
+	xe_mmio_write32(gt, reg, val);
+	reg_val = xe_mmio_read32(gt, reg);
 
 	return (reg_val & mask) != eval ? -EINVAL : 0;
 }
 
-static inline int xe_mmio_wait32(struct xe_device *xe,
+static inline int xe_mmio_wait32(struct xe_gt *gt,
 				 uint32_t reg, uint32_t val,
 				 uint32_t mask, uint32_t timeout_ms)
 {
-	return wait_for((xe_mmio_read32(xe, reg) & mask) == val,
+	return wait_for((xe_mmio_read32(gt, reg) & mask) == val,
 			timeout_ms);
 }
 

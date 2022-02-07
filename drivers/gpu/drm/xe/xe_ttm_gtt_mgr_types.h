@@ -9,7 +9,10 @@
 
 #include <drm/ttm/ttm_device.h>
 
+struct xe_gt;
+
 struct xe_ttm_gtt_mgr {
+	struct xe_gt *gt;
 	struct ttm_resource_manager manager;
 	atomic64_t used;
 };

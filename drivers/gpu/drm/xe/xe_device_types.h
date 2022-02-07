@@ -11,13 +11,9 @@
 
 #include <drm/drm_device.h>
 #include <drm/drm_file.h>
+#include <drm/ttm/ttm_device.h>
 
-#include "xe_ggtt_types.h"
-#include "xe_force_wake_types.h"
-#include "xe_hw_engine_types.h"
-#include "xe_ttm_vram_mgr_types.h"
-#include "xe_ttm_gtt_mgr_types.h"
-#include "xe_uc_types.h"
+#include "xe_gt_types.h"
 #include "xe_platform_types.h"
 
 #define XE_BO_INVALID_OFFSET	LONG_MAX
@@ -26,56 +22,48 @@
 #define GRAPHICS_VERx10(xe) ((xe)->info.graphics_verx10)
 #define IS_DGFX(xe) ((xe)->info.is_dgfx)
 
-#define ENGINE_INSTANCES_MASK(xe, first, count) ({		\
-	unsigned int first__ = (first);					\
-	unsigned int count__ = (count);					\
-	((xe)->info.engine_mask &					\
-	 GENMASK(first__ + count__ - 1, first__)) >> first__;		\
-})
-#define VDBOX_MASK(xe) \
-	ENGINE_INSTANCES_MASK(xe, XE_HW_ENGINE_VCS0, \
-			      (XE_HW_ENGINE_VCS7 - XE_HW_ENGINE_VCS0 + 1))
-#define VEBOX_MASK(xe) \
-	ENGINE_INSTANCES_MASK(xe, XE_HW_ENGINE_VECS0, \
-			      (XE_HW_ENGINE_VECS3 - XE_HW_ENGINE_VECS0 + 1))
-
+/**
+ * struct xe_device - Top level struct of XE device
+ */
 struct xe_device {
+	/** @drm: drm device */
 	struct drm_device drm;
 
+	/** @info: device info */
 	struct {
+		/** @graphics_verx10: graphics version */
 		uint8_t graphics_verx10;
+		/** @is_dgfx: is discrete device */
 		bool is_dgfx;
+		/** @platform: XE platform enum */
 		enum xe_platform platform;
-		u64 engine_mask;
+		/** @devid: device ID */
 		u16 devid;
+		/** @revid: device revision */
 		u8 revid;
 	} info;
 
-	struct ttm_device ttm;
-	struct xe_ttm_vram_mgr vram_mgr;
-	struct xe_ttm_gtt_mgr gtt_mgr;
-
-	bool irq_enabled;
-	spinlock_t gt_irq_lock;
-
+	/** @irq: device interrupt state */
 	struct {
+		/** @enabled: interrupts enabled on this device */
+		bool enabled;
+		/** @lock: lock for processing irq's on this device */
+		spinlock_t lock;
+	} irq;
+
+	/** @ttm: ttm device */
+	struct ttm_device ttm;
+
+	/** @mmio: mmio info for device */
+	struct {
+		/** @size: size of MMIO space for device */
 		size_t size;
+		/** @regs: pointer to MMIO space for device */
 		void *regs;
 	} mmio;
 
-	struct {
-		resource_size_t io_start;
-		resource_size_t size;
-		void *__iomem mapping;
-	} vram;
-
-	struct xe_force_wake fw;
-
-	struct xe_uc uc;
-
-	struct xe_ggtt ggtt;
-
-	struct xe_hw_engine hw_engines[XE_NUM_HW_ENGINES];
+	/** @gt: graphics tile */
+	struct xe_gt gt;
 };
 
 struct xe_file {
