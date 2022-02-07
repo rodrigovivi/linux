@@ -4,6 +4,8 @@
  * Copyright © 2021 Intel Corporation
  */
 
+#include <drm/drm_managed.h>
+
 #include "xe_execlist.h"
 
 #include "xe_bo.h"
@@ -229,10 +231,11 @@ static void xe_execlist_port_irq_fail_timer(struct timer_list *timer)
 struct xe_execlist_port *xe_execlist_port_create(struct xe_device *xe,
 						 struct xe_hw_engine *hwe)
 {
+	struct drm_device *drm = &xe->drm;
 	struct xe_execlist_port *port;
 	int i;
 
-	port = kzalloc(sizeof(*port), GFP_KERNEL);
+	port = drmm_kzalloc(drm, sizeof(*port), GFP_KERNEL);
 	if (!port)
 		return ERR_PTR(-ENOMEM);
 
@@ -263,8 +266,6 @@ void xe_execlist_port_destroy(struct xe_execlist_port *port)
 	spin_lock_irq(&gt_to_xe(port->hwe->gt)->irq.lock);
 	port->hwe->irq_handler = NULL;
 	spin_unlock_irq(&gt_to_xe(port->hwe->gt)->irq.lock);
-
-	kfree(port);
 }
 
 #define MAX_JOB_SIZE_DW 16
