@@ -33,18 +33,22 @@ subdir-ccflags-y += -I$(srctree)/$(src)
 
 # core driver code
 xe-y += xe_bo.o \
+	xe_debugfs.o \
 	xe_device.o \
 	xe_engine.o \
 	xe_execlist.o \
 	xe_force_wake.o \
 	xe_ggtt.o \
 	xe_gt.o \
+	xe_gt_debugfs.o \
 	xe_guc.o \
 	xe_guc_ads.o \
+	xe_guc_debugfs.o \
 	xe_guc_log.o \
 	xe_hw_engine.o \
 	xe_hw_fence.o \
 	xe_huc.o \
+	xe_huc_debugfs.o \
 	xe_irq.o \
 	xe_lrc.o \
 	xe_mmio.o \
@@ -54,6 +58,7 @@ xe-y += xe_bo.o \
 	xe_ttm_gtt_mgr.o \
 	xe_ttm_vram_mgr.o \
 	xe_uc.o \
+	xe_uc_debugfs.o \
 	xe_uc_fw.o \
 	xe_vm.o \
 	xe_wopcm.o

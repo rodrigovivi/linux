@@ -12,6 +12,7 @@
 #include <drm/xe_drm.h>
 
 #include "xe_bo.h"
+#include "xe_debugfs.h"
 #include "xe_drv.h"
 #include "xe_engine.h"
 #include "xe_gt.h"
@@ -203,6 +204,8 @@ int xe_device_probe(struct xe_device *xe)
 	err = drm_dev_register(&xe->drm, 0);
 	if (err)
 		return err;
+
+	xe_debugfs_register(xe);
 
 	return 0;
 }

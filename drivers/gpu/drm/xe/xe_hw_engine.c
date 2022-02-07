@@ -10,13 +10,15 @@
 
 #include "xe_bo.h"
 #include "xe_execlist.h"
-#include "xe_force_wake_types.h"
+#include "xe_force_wake.h"
 #include "xe_gt.h"
 #include "xe_hw_fence.h"
 #include "xe_lrc.h"
 #include "xe_macros.h"
+#include "xe_mmio.h"
 #include "xe_sched_job.h"
 
+#include "../i915/gt/intel_engine_regs.h"
 #include "../i915/i915_reg.h"
 
 #define MAX_MMIO_BASES 3
@@ -269,4 +271,39 @@ void xe_hw_engine_handle_irq(struct xe_hw_engine *hwe, uint16_t intr_vec)
 
 	if (intr_vec & GT_RENDER_USER_INTERRUPT)
 		xe_hw_fence_irq_run(&hwe->fence_irq);
+}
+
+static u32 hw_engine_mmio_read32(struct xe_hw_engine *hwe, u32 reg)
+{
+	XE_BUG_ON(reg & hwe->mmio_base);
+	xe_force_wake_assert_held(hwe->gt->mmio.fw, hwe->domain);
+
+	return xe_mmio_read32(hwe->gt, reg + hwe->mmio_base);
+}
+
+void xe_hw_engine_print_state(struct xe_hw_engine *hwe, struct drm_printer *p)
+{
+	if (!xe_hw_engine_is_valid(hwe))
+		return;
+
+	/* FIXME: Hack job because we don't auto-gen headers for registers */
+	drm_printf(p, "%s\n", hwe->name);
+	drm_printf(p, "\tForcewake: domain 0x%x, ref %d\n",
+		   hwe->domain,
+		   xe_force_wake_ref(hwe->gt->mmio.fw, hwe->domain));
+	drm_printf(p, "\tMMIO base: 0x%08x\n", hwe->mmio_base);
+	drm_printf(p, "\tRING_START: 0x%08x\n",
+		   hw_engine_mmio_read32(hwe, 0x38));
+	drm_printf(p, "\tRING_HEAD:  0x%08x\n",
+		   hw_engine_mmio_read32(hwe, 0x34) & HEAD_ADDR);
+	drm_printf(p, "\tRING_TAIL:  0x%08x\n",
+		   hw_engine_mmio_read32(hwe, 0x30) & TAIL_ADDR);
+	drm_printf(p, "\tRING_CTL: 0x%08x\n",
+		   hw_engine_mmio_read32(hwe, 0x3c));
+	drm_printf(p, "\tRING_MODE: 0x%08x\n",
+		   hw_engine_mmio_read32(hwe, 0x9c));
+	drm_printf(p, "\tIPEIR: 0x%08x\n",
+		   hw_engine_mmio_read32(hwe, 0x64));
+	drm_printf(p, "\tIPEHR: 0x%08x\n\n",
+		   hw_engine_mmio_read32(hwe, 0x68));
 }
