@@ -3,17 +3,23 @@
  * Copyright © 2022 Intel Corporation
  */
 
-#include "xe_device_types.h"
-#include "xe_guc.h"
 #include "xe_huc.h"
+#include "xe_gt.h"
+#include "xe_guc.h"
 #include "xe_uc.h"
 #include "xe_uc_fw.h"
 #include "xe_wopcm.h"
 
+static struct xe_gt *
+uc_to_gt(struct xe_uc *uc)
+{
+	return container_of(uc, struct xe_gt, uc);
+}
+
 static struct xe_device *
 uc_to_xe(struct xe_uc *uc)
 {
-	return container_of(uc, struct xe_device, uc);
+	return gt_to_xe(uc_to_gt(uc));
 }
 
 /* Should be called once at driver load only */

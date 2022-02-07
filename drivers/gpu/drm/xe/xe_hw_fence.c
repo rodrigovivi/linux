@@ -9,10 +9,11 @@
 #include <linux/device.h>
 #include <linux/slab.h>
 
+#include "xe_bo.h"
 #include "xe_device_types.h"
+#include "xe_gt.h"
 #include "xe_hw_engine.h"
 #include "xe_macros.h"
-#include "xe_bo.h"
 
 void xe_hw_fence_irq_init(struct xe_hw_fence_irq *irq)
 {
@@ -78,7 +79,7 @@ static const char *xe_hw_fence_get_driver_name(struct dma_fence *dma_fence)
 {
 	struct xe_hw_fence *fence = to_xe_hw_fence(dma_fence);
 
-	return dev_name(fence->ctx->hwe->xe->drm.dev);
+	return dev_name(gt_to_xe(fence->ctx->hwe->gt)->drm.dev);
 }
 
 static const char *xe_hw_fence_get_timeline_name(struct dma_fence *dma_fence)

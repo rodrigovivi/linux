@@ -10,7 +10,10 @@
 #include "xe_force_wake_types.h"
 #include "xe_macros.h"
 
-void xe_force_wake_init(struct xe_force_wake *fw);
+struct xe_gt;
+
+void xe_force_wake_init(struct xe_gt *gt,
+			struct xe_force_wake *fw);
 int xe_force_wake_get(struct xe_force_wake *fw,
 		      enum xe_force_wake_domains domains);
 int xe_force_wake_put(struct xe_force_wake *fw,

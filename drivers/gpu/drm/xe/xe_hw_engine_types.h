@@ -37,12 +37,12 @@ enum xe_hw_engine_id {
 	XE_NUM_HW_ENGINES,
 };
 
-struct xe_device;
 struct xe_bo;
 struct xe_execlist_port;
+struct xe_gt;
 
 struct xe_hw_engine {
-	struct xe_device *xe;
+	struct xe_gt *gt;
 
 	const char *name;
 	enum xe_engine_class class;

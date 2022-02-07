@@ -496,7 +496,7 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 				   devinfo->graphics_rel / 10;
 	xe->info.is_dgfx = devinfo->is_dgfx;
 	xe->info.platform = devinfo->platform;
-	xe->info.engine_mask = devinfo->platform_engine_mask;
+	to_gt(xe)->info.engine_mask = devinfo->platform_engine_mask;
 
 	pci_set_drvdata(pdev, xe);
 	err = pci_enable_device(pdev);

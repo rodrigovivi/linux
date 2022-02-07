@@ -7,8 +7,8 @@
 #include "xe_hw_engine.h"
 
 #include "xe_bo.h"
-#include "xe_device_types.h"
 #include "xe_execlist.h"
+#include "xe_gt.h"
 #include "xe_hw_fence.h"
 #include "xe_lrc.h"
 #include "xe_macros.h"
@@ -162,18 +162,19 @@ static uint32_t engine_info_mmio_base(const struct engine_info *info,
 	return info->mmio_bases[i].base;
 }
 
-int xe_hw_engine_init(struct xe_device *xe, struct xe_hw_engine *hwe,
+int xe_hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
 		      enum xe_hw_engine_id id)
 {
+	struct xe_device *xe = gt_to_xe(gt);
 	const struct engine_info *info = &engine_infos[id];
 	int err;
 
 	if (WARN_ON(id >= ARRAY_SIZE(engine_infos) || info->name == NULL))
 		return -EINVAL;
 
-	XE_BUG_ON(hwe->xe);
+	XE_BUG_ON(hwe->gt);
 
-	hwe->xe = xe;
+	hwe->gt = gt;
 	hwe->class = info->class;
 	hwe->instance = info->instance;
 	hwe->mmio_base = engine_info_mmio_base(info, GRAPHICS_VER(xe));
@@ -230,7 +231,7 @@ void xe_hw_engine_finish(struct xe_hw_engine *hwe)
 
 	xe_bo_unpin_map_no_vm(hwe->hwsp);
 
-	hwe->xe = NULL;
+	hwe->gt = NULL;
 }
 
 void xe_hw_engine_handle_irq(struct xe_hw_engine *hwe, uint16_t intr_vec)

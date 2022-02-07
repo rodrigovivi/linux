@@ -14,17 +14,10 @@
 #include "xe_bo.h"
 #include "xe_drv.h"
 #include "xe_engine.h"
-#include "xe_force_wake.h"
-#include "xe_ggtt.h"
-#include "xe_hw_engine.h"
+#include "xe_gt.h"
 #include "xe_irq.h"
 #include "xe_mmio.h"
-#include "xe_ttm_gtt_mgr.h"
-#include "xe_ttm_vram_mgr.h"
-#include "xe_uc.h"
 #include "xe_vm.h"
-
-#include "../i915/i915_reg.h"
 
 static int xe_file_open(struct drm_device *dev, struct drm_file *file)
 {
@@ -148,7 +141,7 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 	xe->info.devid = pdev->device;
 	xe->info.revid = pdev->revision;
 
-	spin_lock_init(&xe->gt_irq_lock);
+	spin_lock_init(&xe->irq.lock);
 
 	return xe;
 
@@ -183,77 +176,13 @@ mask_err:
 	return err;
 }
 
-
-#define CHV_PPAT_SNOOP			REG_BIT(6)
-#define GEN8_PPAT_AGE(x)		((x)<<4)
-#define GEN8_PPAT_LLCeLLC		(3<<2)
-#define GEN8_PPAT_LLCELLC		(2<<2)
-#define GEN8_PPAT_LLC			(1<<2)
-#define GEN8_PPAT_WB			(3<<0)
-#define GEN8_PPAT_WT			(2<<0)
-#define GEN8_PPAT_WC			(1<<0)
-#define GEN8_PPAT_UC			(0<<0)
-#define GEN8_PPAT_ELLC_OVERRIDE		(0<<2)
-#define GEN8_PPAT(i, x)			((u64)(x) << ((i) * 8))
-
-static void tgl_setup_private_ppat(struct xe_device *xe)
-{
-	/* TGL doesn't support LLC or AGE settings */
-	xe_mmio_write32(xe, GEN12_PAT_INDEX(0).reg, GEN8_PPAT_WB);
-	xe_mmio_write32(xe, GEN12_PAT_INDEX(1).reg, GEN8_PPAT_WC);
-	xe_mmio_write32(xe, GEN12_PAT_INDEX(2).reg, GEN8_PPAT_WT);
-	xe_mmio_write32(xe, GEN12_PAT_INDEX(3).reg, GEN8_PPAT_UC);
-	xe_mmio_write32(xe, GEN12_PAT_INDEX(4).reg, GEN8_PPAT_WB);
-	xe_mmio_write32(xe, GEN12_PAT_INDEX(5).reg, GEN8_PPAT_WB);
-	xe_mmio_write32(xe, GEN12_PAT_INDEX(6).reg, GEN8_PPAT_WB);
-	xe_mmio_write32(xe, GEN12_PAT_INDEX(7).reg, GEN8_PPAT_WB);
-}
-
-static int xe_device_ttm_mgr_init(struct xe_device *xe)
-{
-	int err;
-	struct sysinfo si;
-	uint64_t gtt_size;
-
-	si_meminfo(&si);
-	gtt_size = (uint64_t)si.totalram * si.mem_unit * 3/4;
-
-	if (xe->vram.size) {
-		err = xe_ttm_vram_mgr_init(xe);
-		if (err)
-			return err;
-#ifdef CONFIG_64BIT
-		xe->vram.mapping = ioremap_wc(xe->vram.io_start,
-					      xe->vram.size);
-#endif
-		gtt_size = min(max((XE_DEFAULT_GTT_SIZE_MB << 20),
-				   xe->vram.size),
-			       gtt_size);
-	}
-
-	err = xe_ttm_gtt_mgr_init(xe, gtt_size);
-	if (err)
-		goto err_vram_mgr;
-
-	return 0;
-err_vram_mgr:
-	if (xe->vram.size)
-		xe_ttm_vram_mgr_fini(xe);
-	return err;
-}
-
-static void xe_device_ttm_mgr_fini(struct xe_device *xe)
-{
-	if (xe->vram.size)
-		xe_ttm_vram_mgr_fini(xe);
-	xe_ttm_gtt_mgr_fini(xe);
-}
-
 int xe_device_probe(struct xe_device *xe)
 {
-	int err, i;
+	int err;
 
-	xe_force_wake_init(&xe->fw);
+	err = xe_gt_alloc(to_gt(xe));
+	if (err)
+		return err;
 
 	err = xe_mmio_init(xe);
 	if (err)
@@ -261,62 +190,26 @@ int xe_device_probe(struct xe_device *xe)
 
 	err = xe_set_dma_info(xe);
 	if (err)
-		return err;
+		goto err_mmio;
 
-	err = xe_force_wake_get(&xe->fw, XE_FORCEWAKE_ALL);
+	err = xe_gt_init(to_gt(xe));
 	if (err)
 		goto err_mmio;
 
-	tgl_setup_private_ppat(xe);
-
-	err = xe_device_ttm_mgr_init(xe);
-	if (err)
-		goto err_force_wake;
-
-	err = xe_ggtt_init(xe, &xe->ggtt);
-	if (err)
-		goto err_ttm_mgr;
-
-	/* Allow driver to load if uC init fails (likely missing firmware) */
-	err = xe_uc_init(&xe->uc);
-	XE_WARN_ON(err);
-
-	for (i = 0; i < ARRAY_SIZE(xe->hw_engines); i++) {
-		err = xe_hw_engine_init(xe, &xe->hw_engines[i], i);
-		if (err)
-			goto err_hw_engines;
-	}
-
 	err = xe_irq_install(xe);
 	if (err)
-		goto err_hw_engines;
-
-	err = xe_uc_init_hw(&xe->uc);
-	if (err)
-		goto err_irq;
+		goto err_gt_fini;
 
 	err = drm_dev_register(&xe->drm, 0);
 	if (err)
 		goto err_irq;
 
-	err = xe_force_wake_put(&xe->fw, XE_FORCEWAKE_ALL);
-	XE_WARN_ON(err);
-
 	return 0;
 
 err_irq:
 	xe_irq_uninstall(xe);
-err_hw_engines:
-	xe_uc_fini(&xe->uc);
-	for (i = 0; i < ARRAY_SIZE(xe->hw_engines); i++) {
-		if (xe_hw_engine_is_valid(&xe->hw_engines[i]))
-			xe_hw_engine_finish(&xe->hw_engines[i]);
-	}
-	xe_ggtt_finish(&xe->ggtt);
-err_ttm_mgr:
-	xe_device_ttm_mgr_fini(xe);
-err_force_wake:
-	xe_force_wake_put(&xe->fw, XE_FORCEWAKE_ALL);
+err_gt_fini:
+	xe_gt_fini(to_gt(xe));
 err_mmio:
 	xe_mmio_finish(xe);
 
@@ -325,39 +218,13 @@ err_mmio:
 
 void xe_device_remove(struct xe_device *xe)
 {
-	int i;
-
-	if (xe->vram.mapping)
-		iounmap(xe->vram.mapping);
 	drm_dev_unregister(&xe->drm);
 	xe_irq_uninstall(xe);
-	for (i = 0; i < ARRAY_SIZE(xe->hw_engines); i++) {
-		if (xe_hw_engine_is_valid(&xe->hw_engines[i]))
-			xe_hw_engine_finish(&xe->hw_engines[i]);
-	}
-	xe_uc_fini(&xe->uc);
-	xe_ggtt_finish(&xe->ggtt);
-	xe_device_ttm_mgr_fini(xe);
+	xe_gt_fini(to_gt(xe));
 	xe_mmio_finish(xe);
 	ttm_device_fini(&xe->ttm);
 }
 
 void xe_device_shutdown(struct xe_device *xe)
 {
-}
-
-struct xe_hw_engine *xe_device_hw_engine(struct xe_device *xe,
-					 enum xe_engine_class class,
-					 uint16_t instance)
-{
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(xe->hw_engines); i++) {
-		if (xe_hw_engine_is_valid(&xe->hw_engines[i]) &&
-		    xe->hw_engines[i].class == class &&
-		    xe->hw_engines[i].instance == instance)
-			return &xe->hw_engines[i];
-	}
-
-	return NULL;
 }

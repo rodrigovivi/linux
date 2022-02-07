@@ -10,7 +10,7 @@
 #include <drm/i915_drm.h>
 
 #include "xe_bo.h"
-#include "xe_device_types.h"
+#include "xe_gt.h"
 #include "xe_mmio.h"
 #include "xe_wopcm.h"
 
@@ -71,14 +71,15 @@ static void xe_ggtt_clear(struct xe_ggtt *ggtt, uint64_t start, uint64_t size)
 	}
 }
 
-int xe_ggtt_init(struct xe_device *xe, struct xe_ggtt *ggtt)
+int xe_ggtt_init(struct xe_gt *gt, struct xe_ggtt *ggtt)
 {
+	struct xe_device *xe = gt_to_xe(gt);
 	struct pci_dev *pdev = to_pci_dev(xe->drm.dev);
 	unsigned int gsm_size;
 	phys_addr_t phys_addr;
 	int err;
 
-	ggtt->xe = xe;
+	ggtt->gt = gt;
 
 	gsm_size = probe_gsm_size(pdev);
 	if (gsm_size == 0) {
@@ -150,14 +151,14 @@ void xe_ggtt_finish(struct xe_ggtt *ggtt)
 	iounmap(ggtt->gsm);
 }
 
-void xe_ggtt_invalidate(struct xe_device *xe)
+static void xe_ggtt_invalidate(struct xe_gt *gt)
 {
 	/* TODO: For GuC, we need to do something different here */
 
 	/* TODO: i915 makes comments about this being uncached and
 	 * therefore flushing WC buffers.  Is that really true here?
 	 */
-	xe_mmio_write32(xe, GFX_FLSH_CNTL_GEN6.reg, GFX_FLSH_CNTL_EN);
+	xe_mmio_write32(gt, GFX_FLSH_CNTL_GEN6.reg, GFX_FLSH_CNTL_EN);
 }
 
 void xe_ggtt_printk(struct xe_ggtt *ggtt, const char *prefix)
@@ -206,7 +207,7 @@ int xe_ggtt_insert_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 		}
 	}
 
-	xe_ggtt_invalidate(ggtt->xe);
+	xe_ggtt_invalidate(ggtt->gt);
 
 	mutex_unlock(&ggtt->lock);
 
@@ -227,7 +228,7 @@ void xe_ggtt_remove_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 	drm_mm_remove_node(&bo->ggtt_node);
 	bo->ggtt_node.size = 0;
 
-	xe_ggtt_invalidate(ggtt->xe);
+	xe_ggtt_invalidate(ggtt->gt);
 
 	mutex_unlock(&ggtt->lock);
 }

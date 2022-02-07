@@ -6,28 +6,34 @@
 #include <linux/bitfield.h>
 #include <linux/firmware.h>
 
-#include "xe_device_types.h"
-#include "xe_uc_fw.h"
 #include "xe_bo.h"
-#include "xe_mmio.h"
+#include "xe_device_types.h"
 #include "xe_force_wake.h"
+#include "xe_gt.h"
 #include "xe_guc_reg.h"
+#include "xe_mmio.h"
+#include "xe_uc_fw.h"
 
 #define XE_UC_FIRMWARE_URL "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/xe"
 
-static struct xe_device *
-__uc_fw_to_xe(struct xe_uc_fw *uc_fw, enum xe_uc_fw_type type)
+static struct xe_gt *
+__uc_fw_to_gt(struct xe_uc_fw *uc_fw, enum xe_uc_fw_type type)
 {
 	if (type == XE_UC_FW_TYPE_GUC)
-		return container_of(uc_fw, struct xe_device, uc.guc.fw);
+		return container_of(uc_fw, struct xe_gt, uc.guc.fw);
 
 	XE_BUG_ON(type != XE_UC_FW_TYPE_HUC);
-	return container_of(uc_fw, struct xe_device, uc.huc.fw);
+	return container_of(uc_fw, struct xe_gt, uc.huc.fw);
+}
+
+static struct xe_gt *uc_fw_to_gt(struct xe_uc_fw *uc_fw)
+{
+	return __uc_fw_to_gt(uc_fw, uc_fw->type);
 }
 
 static struct xe_device *uc_fw_to_xe(struct xe_uc_fw *uc_fw)
 {
-	return __uc_fw_to_xe(uc_fw, uc_fw->type);
+	return gt_to_xe(uc_fw_to_gt(uc_fw));
 }
 
 /*
@@ -290,40 +296,41 @@ static u32 uc_fw_ggtt_offset(struct xe_uc_fw *uc_fw)
 static int uc_fw_xfer(struct xe_uc_fw *uc_fw, u32 offset, u32 dma_flags)
 {
 	struct xe_device *xe = uc_fw_to_xe(uc_fw);
+	struct xe_gt *gt = uc_fw_to_gt(uc_fw);
 	u32 src_offset;
 	int ret;
 
-	xe_force_wake_assert_held(&xe->fw, XE_FW_GT);
+	xe_force_wake_assert_held(gt->mmio.fw, XE_FW_GT);
 
 	/* Set the source address for the uCode */
 	src_offset = uc_fw_ggtt_offset(uc_fw);
-	xe_mmio_write32(xe, DMA_ADDR_0_LOW.reg, lower_32_bits(src_offset));
-	xe_mmio_write32(xe, DMA_ADDR_0_HIGH.reg, upper_32_bits(src_offset));
+	xe_mmio_write32(gt, DMA_ADDR_0_LOW.reg, lower_32_bits(src_offset));
+	xe_mmio_write32(gt, DMA_ADDR_0_HIGH.reg, upper_32_bits(src_offset));
 
 	/* Set the DMA destination */
-	xe_mmio_write32(xe, DMA_ADDR_1_LOW.reg, offset);
-	xe_mmio_write32(xe, DMA_ADDR_1_HIGH.reg, DMA_ADDRESS_SPACE_WOPCM);
+	xe_mmio_write32(gt, DMA_ADDR_1_LOW.reg, offset);
+	xe_mmio_write32(gt, DMA_ADDR_1_HIGH.reg, DMA_ADDRESS_SPACE_WOPCM);
 
 	/*
 	 * Set the transfer size. The header plus uCode will be copied to WOPCM
 	 * via DMA, excluding any other components
 	 */
-	xe_mmio_write32(xe, DMA_COPY_SIZE.reg,
+	xe_mmio_write32(gt, DMA_COPY_SIZE.reg,
 			sizeof(struct uc_css_header) + uc_fw->ucode_size);
 
 	/* Start the DMA */
-	xe_mmio_write32(xe, DMA_CTRL.reg,
+	xe_mmio_write32(gt, DMA_CTRL.reg,
 			_MASKED_BIT_ENABLE(dma_flags | START_DMA));
 
 	/* Wait for DMA to finish */
-	ret = xe_mmio_wait32(xe, DMA_CTRL.reg, 0, START_DMA, 100);
+	ret = xe_mmio_wait32(gt, DMA_CTRL.reg, 0, START_DMA, 100);
 	if (ret)
 		drm_err(&xe->drm, "DMA for %s fw failed, DMA_CTRL=%u\n",
 			xe_uc_fw_type_repr(uc_fw->type),
-			xe_mmio_read32(xe, DMA_CTRL.reg));
+			xe_mmio_read32(gt, DMA_CTRL.reg));
 
 	/* Disable the bits once DMA is over */
-	xe_mmio_write32(xe, DMA_CTRL.reg, _MASKED_BIT_DISABLE(dma_flags));
+	xe_mmio_write32(gt, DMA_CTRL.reg, _MASKED_BIT_DISABLE(dma_flags));
 
 	return ret;
 }

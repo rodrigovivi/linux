@@ -7,7 +7,7 @@
 #include "xe_lrc.h"
 
 #include "xe_bo.h"
-#include "xe_device_types.h"
+#include "xe_gt.h"
 #include "xe_hw_fence.h"
 #include "xe_vm.h"
 
@@ -56,6 +56,7 @@ static void set_offsets(u32 *regs,
 	(((x) >> 2) & 0x7f)
 #define END 0
 {
+	struct xe_device *xe = gt_to_xe(hwe->gt);
 	const u32 base = hwe->mmio_base;
 
 	while (*data) {
@@ -74,7 +75,7 @@ static void set_offsets(u32 *regs,
 		*regs = MI_LOAD_REGISTER_IMM(count);
 		if (flags & POSTED)
 			*regs |= MI_LRI_FORCE_POSTED;
-		if (GRAPHICS_VER(hwe->xe) >= 11)
+		if (GRAPHICS_VER(xe) >= 11)
 			*regs |= MI_LRI_LRM_CS_MMIO;
 		regs++;
 
@@ -97,7 +98,7 @@ static void set_offsets(u32 *regs,
 	if (close) {
 		/* Close the batch; used mainly by live_lrc_layout() */
 		*regs = MI_BATCH_BUFFER_END;
-		if (GRAPHICS_VER(hwe->xe) >= 11)
+		if (GRAPHICS_VER(xe) >= 11)
 			*regs |= BIT(0);
 	}
 }
@@ -584,13 +585,14 @@ static const u8 *reg_offsets(struct xe_device *xe, enum xe_engine_class class)
 static void set_context_control(uint32_t * regs, struct xe_hw_engine *hwe,
 				bool inhibit)
 {
+	struct xe_device *xe = gt_to_xe(hwe->gt);
 	u32 ctl = 0;
 
 	ctl |= _MASKED_BIT_ENABLE(CTX_CTRL_INHIBIT_SYN_CTX_SWITCH);
 	ctl |= _MASKED_BIT_DISABLE(CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT);
 	if (inhibit)
 		ctl |= CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT;
-	if (GRAPHICS_VER(hwe->xe) < 11)
+	if (GRAPHICS_VER(xe) < 11)
 		ctl |= _MASKED_BIT_DISABLE(CTX_CTRL_ENGINE_CTX_SAVE_INHIBIT |
 					   CTX_CTRL_RS_CTX_ENABLE);
 	regs[CTX_CONTEXT_CONTROL] = ctl;
@@ -600,11 +602,13 @@ static void set_context_control(uint32_t * regs, struct xe_hw_engine *hwe,
 
 static int lrc_ring_mi_mode(struct xe_hw_engine *hwe)
 {
-	if (GRAPHICS_VERx10(hwe->xe) >= 125)
+	struct xe_device *xe = gt_to_xe(hwe->gt);
+
+	if (GRAPHICS_VERx10(xe) >= 125)
 		return 0x70;
-	else if (GRAPHICS_VER(hwe->xe) >= 12)
+	else if (GRAPHICS_VER(xe) >= 12)
 		return 0x60;
-	else if (GRAPHICS_VER(hwe->xe) >= 9)
+	else if (GRAPHICS_VER(xe) >= 9)
 		return 0x54;
 	else if (hwe->class == XE_ENGINE_CLASS_RENDER)
 		return 0x58;
@@ -693,10 +697,11 @@ void xe_lrc_write_ctx_reg(struct xe_lrc *lrc, int reg_nr, uint32_t val)
 
 static void *empty_lrc_data(struct xe_hw_engine *hwe)
 {
+	struct xe_device *xe = gt_to_xe(hwe->gt);
 	void *data;
 	uint32_t *regs;
 
-	data = kzalloc(lrc_size(hwe->xe, hwe->class), GFP_KERNEL);
+	data = kzalloc(lrc_size(xe, hwe->class), GFP_KERNEL);
 	if (!data)
 		return NULL;
 
@@ -705,7 +710,7 @@ static void *empty_lrc_data(struct xe_hw_engine *hwe)
 
 	regs = data + LRC_PPHWSP_SIZE;
 	memset(regs, 0, SZ_4K);
-	set_offsets(regs, reg_offsets(hwe->xe, hwe->class), hwe, true);
+	set_offsets(regs, reg_offsets(xe, hwe->class), hwe, true);
 	set_context_control(regs, hwe, true);
 	reset_stop_ring(regs, hwe);
 
@@ -723,8 +728,8 @@ static void xe_lrc_set_ppgtt(struct xe_lrc *lrc, struct xe_vm *vm)
 int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 		struct xe_vm *vm, uint32_t ring_size)
 {
+	struct xe_device *xe = gt_to_xe(hwe->gt);
 	struct dma_buf_map map;
-	struct xe_device *xe = hwe->xe;
 	void *init_data;
 	uint32_t arb_enable;
 	int err;
