@@ -10,6 +10,7 @@
 #include "xe_device_types.h"
 #include "xe_engine.h"
 #include "xe_hw_fence.h"
+#include "xe_gt.h"
 #include "xe_lrc.h"
 #include "xe_macros.h"
 #include "xe_mmio.h"
@@ -29,7 +30,7 @@
 static void __start_lrc(struct xe_hw_engine *hwe, struct xe_lrc *lrc,
 			uint32_t ctx_id)
 {
-	struct xe_device *xe = hwe->xe;
+	struct xe_gt *gt = hwe->gt;
 	uint64_t lrc_desc;
 
 	printk(KERN_INFO "__start_lrc(%s, 0x%p, %u)\n", hwe->name, lrc, ctx_id);
@@ -54,17 +55,17 @@ static void __start_lrc(struct xe_hw_engine *hwe, struct xe_lrc *lrc,
 	 */
 	wmb();
 
-	xe_mmio_write32(xe, RING_HWS_PGA(hwe->mmio_base).reg,
+	xe_mmio_write32(gt, RING_HWS_PGA(hwe->mmio_base).reg,
 			xe_bo_ggtt_addr(hwe->hwsp));
-	xe_mmio_read32(xe, RING_HWS_PGA(hwe->mmio_base).reg);
-	xe_mmio_write32(xe, RING_MODE_GEN7(hwe->mmio_base).reg,
+	xe_mmio_read32(gt, RING_HWS_PGA(hwe->mmio_base).reg);
+	xe_mmio_write32(gt, RING_MODE_GEN7(hwe->mmio_base).reg,
 			_MASKED_BIT_ENABLE(GEN11_GFX_DISABLE_LEGACY_MODE));
 
-	xe_mmio_write32(xe, RING_EXECLIST_SQ_CONTENTS(hwe->mmio_base).reg + 0,
+	xe_mmio_write32(gt, RING_EXECLIST_SQ_CONTENTS(hwe->mmio_base).reg + 0,
 			lower_32_bits(lrc_desc));
-	xe_mmio_write32(xe, RING_EXECLIST_SQ_CONTENTS(hwe->mmio_base).reg + 4,
+	xe_mmio_write32(gt, RING_EXECLIST_SQ_CONTENTS(hwe->mmio_base).reg + 4,
 			upper_32_bits(lrc_desc));
-	xe_mmio_write32(xe, RING_EXECLIST_CONTROL(hwe->mmio_base).reg,
+	xe_mmio_write32(gt, RING_EXECLIST_CONTROL(hwe->mmio_base).reg,
 			EL_CTRL_LOAD);
 }
 
@@ -139,11 +140,11 @@ static void __xe_execlist_port_start_next_active(struct xe_execlist_port *port)
 
 static uint64_t read_execlist_status(struct xe_hw_engine *hwe)
 {
-	struct xe_device *xe = hwe->xe;
+	struct xe_gt *gt = hwe->gt;
 	uint32_t hi, lo;
 
-	lo = xe_mmio_read32(xe, RING_EXECLIST_STATUS_LO(hwe->mmio_base).reg);
-	hi = xe_mmio_read32(xe, RING_EXECLIST_STATUS_HI(hwe->mmio_base).reg);
+	lo = xe_mmio_read32(gt, RING_EXECLIST_STATUS_LO(hwe->mmio_base).reg);
+	hi = xe_mmio_read32(gt, RING_EXECLIST_STATUS_HI(hwe->mmio_base).reg);
 
 	printk(KERN_INFO "EXECLIST_STATUS = 0x%08x %08x\n", hi, lo);
 
@@ -259,9 +260,9 @@ void xe_execlist_port_destroy(struct xe_execlist_port *port)
 	del_timer(&port->irq_fail);
 
 	/* Prevent an interrupt while we're destroying */
-	spin_lock_irq(&port->hwe->xe->gt_irq_lock);
+	spin_lock_irq(&gt_to_xe(port->hwe->gt)->irq.lock);
 	port->hwe->irq_handler = NULL;
-	spin_unlock_irq(&port->hwe->xe->gt_irq_lock);
+	spin_unlock_irq(&gt_to_xe(port->hwe->gt)->irq.lock);
 
 	kfree(port);
 }

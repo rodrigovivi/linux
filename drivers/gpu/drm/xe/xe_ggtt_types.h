@@ -10,10 +10,10 @@
 #include <drm/drm_mm.h>
 
 struct xe_bo;
-struct xe_device;
+struct xe_gt;
 
 struct xe_ggtt {
-	struct xe_device *xe;
+	struct xe_gt *gt;
 
 	uint64_t size;
 

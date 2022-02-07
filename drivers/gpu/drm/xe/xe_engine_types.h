@@ -11,12 +11,15 @@
 
 #include "xe_lrc_types.h"
 
+struct drm_sched_entity;
+struct xe_execlist;
+struct xe_gt;
 struct xe_hw_engine;
 struct xe_vm;
-struct xe_execlist;
-struct drm_sched_entity;
 
 struct xe_engine {
+	struct xe_gt *gt;
+
 	struct xe_hw_engine *hwe;
 
 	struct kref refcount;

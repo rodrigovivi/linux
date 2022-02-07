@@ -3,24 +3,29 @@
  * Copyright © 2022 Intel Corporation
  */
 
-#include "xe_device_types.h"
 #include "xe_bo.h"
+#include "xe_gt.h"
 #include "xe_guc_ads.h"
-#include "xe_guc_types.h"
-#include "xe_hw_engine.h"
 #include "xe_guc_reg.h"
+#include "xe_hw_engine.h"
 #include "xe_mmio.h"
-
-static struct xe_device *
-ads_to_xe(struct xe_guc_ads *ads)
-{
-	return container_of(ads, struct xe_device, uc.guc.ads);
-}
 
 static struct xe_guc *
 ads_to_guc(struct xe_guc_ads *ads)
 {
 	return container_of(ads, struct xe_guc, ads);
+}
+
+static struct xe_gt *
+ads_to_gt(struct xe_guc_ads *ads)
+{
+	return container_of(ads, struct xe_gt, uc.guc.ads);
+}
+
+static struct xe_device *
+ads_to_xe(struct xe_guc_ads *ads)
+{
+	return gt_to_xe(ads_to_gt(ads));
 }
 
 static struct dma_buf_map *
@@ -179,15 +184,15 @@ static void guc_policies_init(struct xe_guc_ads *ads)
 	ads_blob_write(ads, policies.is_valid, 1);
 }
 
-static void fill_engine_enable_masks(struct xe_device *xe,
+static void fill_engine_enable_masks(struct xe_gt *gt,
 				     struct dma_buf_map *info_map)
 {
 	info_map_write(info_map, engine_enabled_masks[GUC_RENDER_CLASS], 1);
 	info_map_write(info_map, engine_enabled_masks[GUC_BLITTER_CLASS], 1);
 	info_map_write(info_map, engine_enabled_masks[GUC_VIDEO_CLASS],
-		       VDBOX_MASK(xe));
+		       VDBOX_MASK(gt));
 	info_map_write(info_map, engine_enabled_masks[GUC_VIDEOENHANCE_CLASS],
-		       VEBOX_MASK(xe));
+		       VEBOX_MASK(gt));
 }
 
 #define LR_HW_CONTEXT_SIZE (80 * sizeof(u32))
@@ -231,7 +236,7 @@ static u8 engine_class_to_guc_class(enum xe_engine_class class)
 	}
 }
 
-static void guc_mapping_table_init(struct xe_device *xe,
+static void guc_mapping_table_init(struct xe_gt *gt,
 				   struct dma_buf_map *info_map)
 {
 	unsigned int i, j;
@@ -243,8 +248,8 @@ static void guc_mapping_table_init(struct xe_device *xe,
 				       GUC_MAX_INSTANCES_PER_CLASS);
 
 	/* FIXME: Setting table up with 1 to 1 to get GuC to load */
-	for (i = 0; i < ARRAY_SIZE(xe->hw_engines); i++) {
-		struct xe_hw_engine *hwe = &xe->hw_engines[i];
+	for (i = 0; i < ARRAY_SIZE(gt->hw_engines); i++) {
+		struct xe_hw_engine *hwe = &gt->hw_engines[i];
 		u8 guc_class;
 
 		if (!xe_hw_engine_is_valid(hwe))
@@ -305,6 +310,7 @@ static void guc_ads_private_data_reset(struct xe_guc_ads *ads)
 void xe_guc_ads_populate(struct xe_guc_ads *ads)
 {
 	struct xe_device *xe = ads_to_xe(ads);
+	struct xe_gt *gt = ads_to_gt(ads);
 	struct dma_buf_map info_map = DMA_BUF_MAP_INIT_OFFSET(ads_to_map(ads),
 			offsetof(struct __guc_ads_blob, system_info));
 	u32 base = xe_bo_ggtt_addr(ads->bo);
@@ -312,15 +318,15 @@ void xe_guc_ads_populate(struct xe_guc_ads *ads)
 	XE_BUG_ON(!ads->bo);
 
 	guc_policies_init(ads);
-	fill_engine_enable_masks(xe, &info_map);
+	fill_engine_enable_masks(gt, &info_map);
 	guc_prep_golden_context(ads);
-	guc_mapping_table_init(xe, &info_map);
+	guc_mapping_table_init(gt, &info_map);
 	guc_capture_list_init(ads);
 	guc_mmio_reg_state_init(ads);
 
 	if (GRAPHICS_VER(xe) >= 12 && !IS_DGFX(xe)) {
 		u32 distdbreg =
-			xe_mmio_read32(xe, GEN12_DIST_DBS_POPULATED.reg);
+			xe_mmio_read32(gt, GEN12_DIST_DBS_POPULATED.reg);
 
 		ads_blob_write(ads,
 			       system_info.generic_gt_sysinfo[GUC_GENERIC_GT_SYSINFO_DOORBELL_COUNT_PER_SQIDI],

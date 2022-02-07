@@ -10,7 +10,10 @@
 #include <drm/drm_mm.h>
 #include <drm/ttm/ttm_device.h>
 
+struct xe_gt;
+
 struct xe_ttm_vram_mgr {
+	struct xe_gt *gt;
 	struct ttm_resource_manager manager;
 	struct drm_mm mm;
 	spinlock_t lock;

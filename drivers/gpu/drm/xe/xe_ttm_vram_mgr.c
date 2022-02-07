@@ -6,8 +6,10 @@
 
 #include <drm/ttm/ttm_range_manager.h>
 #include <drm/ttm/ttm_placement.h>
+
 #include "xe_bo.h"
-#include "xe_device_types.h"
+#include "xe_gt.h"
+#include "xe_ttm_vram_mgr.h"
 
 static inline struct xe_ttm_vram_mgr *
 to_vram_mgr(struct ttm_resource_manager *man)
@@ -15,10 +17,10 @@ to_vram_mgr(struct ttm_resource_manager *man)
 	return container_of(man, struct xe_ttm_vram_mgr, manager);
 }
 
-static inline struct xe_device *
-mgr_to_xe_device(struct xe_ttm_vram_mgr *mgr)
+static inline struct xe_gt *
+mgr_to_gt(struct xe_ttm_vram_mgr *mgr)
 {
-	return container_of(mgr, struct xe_device, vram_mgr);
+	return mgr->gt;
 }
 
 static void xe_ttm_vram_mgr_virt_start(struct ttm_resource *mem,
@@ -41,7 +43,7 @@ static int xe_ttm_vram_mgr_new(struct ttm_resource_manager *man,
 {
 	unsigned long lpfn, num_nodes, pages_per_node, pages_left, pages;
 	struct xe_ttm_vram_mgr *mgr = to_vram_mgr(man);
-	struct xe_device *xe = mgr_to_xe_device(mgr);
+	struct xe_gt *gt = mgr_to_gt(mgr);
 	uint64_t mem_bytes, max_bytes;
 	struct ttm_range_mgr_node *node;
 	struct drm_mm *mm = &mgr->mm;
@@ -53,7 +55,7 @@ static int xe_ttm_vram_mgr_new(struct ttm_resource_manager *man,
 	if (!lpfn)
 		lpfn = man->size;
 
-	max_bytes = xe->vram.size;
+	max_bytes = gt->mem.vram.size;
 
 	/* bail out quickly if there's likely not enough VRAM for this BO */
 	mem_bytes = tbo->base.size;
@@ -182,14 +184,15 @@ static const struct ttm_resource_manager_func xe_ttm_vram_mgr_func = {
 	.debug	= xe_ttm_vram_mgr_debug
 };
 
-int xe_ttm_vram_mgr_init(struct xe_device *xe)
+int xe_ttm_vram_mgr_init(struct xe_gt *gt, struct xe_ttm_vram_mgr *mgr)
 {
-	struct xe_ttm_vram_mgr *mgr = &xe->vram_mgr;
+	struct xe_device *xe = gt_to_xe(gt);
 	struct ttm_resource_manager *man = &mgr->manager;
 
+	mgr->gt = gt;
 	man->func = &xe_ttm_vram_mgr_func;
 
-	ttm_resource_manager_init(man, xe->vram.size >> PAGE_SHIFT);
+	ttm_resource_manager_init(man, gt->mem.vram.size >> PAGE_SHIFT);
 
 	drm_mm_init(&mgr->mm, 0, man->size);
 	spin_lock_init(&mgr->lock);
@@ -198,9 +201,9 @@ int xe_ttm_vram_mgr_init(struct xe_device *xe)
 	return 0;
 }
 
-void xe_ttm_vram_mgr_fini(struct xe_device *xe)
+void xe_ttm_vram_mgr_fini(struct xe_ttm_vram_mgr *mgr)
 {
-	struct xe_ttm_vram_mgr *mgr = &xe->vram_mgr;
+	struct xe_device *xe = gt_to_xe(mgr->gt);
 	struct ttm_resource_manager *man = &mgr->manager;
 	int err;
 
