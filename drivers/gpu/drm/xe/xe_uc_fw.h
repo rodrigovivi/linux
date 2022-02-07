@@ -13,9 +13,12 @@
 #include "xe_uc_fw_abi.h"
 #include "xe_macros.h"
 
+struct drm_printer;
+
 int xe_uc_fw_init(struct xe_uc_fw *uc_fw);
 size_t xe_uc_fw_copy_rsa(struct xe_uc_fw *uc_fw, void *dst, u32 max_len);
 int xe_uc_fw_upload(struct xe_uc_fw *uc_fw, u32 offset, u32 dma_flags);
+void xe_uc_fw_print(struct xe_uc_fw *uc_fw, struct drm_printer *p);
 
 static inline void xe_uc_fw_change_status(struct xe_uc_fw *uc_fw,
 					  enum xe_uc_fw_status status)

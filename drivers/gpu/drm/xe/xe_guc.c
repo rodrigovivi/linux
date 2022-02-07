@@ -352,7 +352,7 @@ static int guc_wait_ucode(struct xe_guc *guc)
 			ret = -ENXIO;
 		}
 
-		xe_guc_log_dump(&guc->log, &p);
+		xe_guc_log_print(&guc->log, &p);
 	} else {
 		drm_dbg(&xe->drm, "GuC successfully loaded");
 	}
@@ -398,4 +398,35 @@ int xe_guc_upload(struct xe_guc *guc)
 out:
 	xe_uc_fw_change_status(&guc->fw, XE_UC_FIRMWARE_LOAD_FAIL);
 	return 0	/* FIXME: ret, don't want to stop load currently */;
+}
+
+void xe_guc_print_info(struct xe_guc *guc, struct drm_printer *p)
+{
+	struct xe_gt *gt = guc_to_gt(guc);
+	u32 status;
+	int err;
+	int i;
+
+	xe_uc_fw_print(&guc->fw, p);
+
+	err = xe_force_wake_get(gt->mmio.fw, XE_FW_GT);
+	if (err)
+		return;
+
+	status = xe_mmio_read32(gt, GUC_STATUS.reg);
+
+	drm_printf(p, "\nGuC status 0x%08x:\n", status);
+	drm_printf(p, "\tBootrom status = 0x%x\n",
+		   (status & GS_BOOTROM_MASK) >> GS_BOOTROM_SHIFT);
+	drm_printf(p, "\tuKernel status = 0x%x\n",
+		   (status & GS_UKERNEL_MASK) >> GS_UKERNEL_SHIFT);
+	drm_printf(p, "\tMIA Core status = 0x%x\n",
+		   (status & GS_MIA_MASK) >> GS_MIA_SHIFT);
+	drm_puts(p, "\nScratch registers:\n");
+	for (i = 0; i < SOFT_SCRATCH_COUNT; i++) {
+		drm_printf(p, "\t%2d: \t0x%x\n",
+			   i, xe_mmio_read32(gt, SOFT_SCRATCH(i).reg));
+	}
+
+	xe_force_wake_put(gt->mmio.fw, XE_FW_GT);
 }

@@ -46,7 +46,7 @@ static size_t guc_log_size(void)
 		CAPTURE_BUFFER_SIZE;
 }
 
-void xe_guc_log_dump(struct xe_guc_log *log, struct drm_printer *p)
+void xe_guc_log_print(struct xe_guc_log *log, struct drm_printer *p)
 {
 	struct dma_buf_map map;
 	size_t size;

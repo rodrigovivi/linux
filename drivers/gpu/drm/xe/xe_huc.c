@@ -5,8 +5,10 @@
 
 #include "xe_device_types.h"
 #include "xe_gt.h"
+#include "xe_force_wake.h"
 #include "xe_guc_reg.h"
 #include "xe_huc.h"
+#include "xe_mmio.h"
 #include "xe_uc_fw.h"
 
 static struct xe_gt *
@@ -47,4 +49,21 @@ out:
 int xe_huc_upload(struct xe_huc *huc)
 {
 	return xe_uc_fw_upload(&huc->fw, 0, HUC_UKERNEL);
+}
+
+void xe_huc_print_info(struct xe_huc *huc, struct drm_printer *p)
+{
+	struct xe_gt *gt = huc_to_gt(huc);
+	int err;
+
+	xe_uc_fw_print(&huc->fw, p);
+
+	err = xe_force_wake_get(gt->mmio.fw, XE_FW_GT);
+	if (err)
+		return;
+
+	drm_printf(p, "\nHuC status: 0x%08x\n",
+		   xe_mmio_read32(gt, huc->status.reg));
+
+	xe_force_wake_put(gt->mmio.fw, XE_FW_GT);
 }
