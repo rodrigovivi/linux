@@ -7,6 +7,7 @@
 #ifndef _XE_HW_ENGINE_TYPES_H_
 #define _XE_HW_ENGINE_TYPES_H_
 
+#include "xe_force_wake_types.h"
 #include "xe_lrc_types.h"
 
 /* See "Engine ID Definition" struct in the Icelake PRM */
@@ -48,6 +49,7 @@ struct xe_hw_engine {
 	enum xe_engine_class class;
 	uint16_t instance;
 	uint32_t mmio_base;
+	enum xe_force_wake_domains domain;
 
 	struct xe_bo *hwsp;
 
