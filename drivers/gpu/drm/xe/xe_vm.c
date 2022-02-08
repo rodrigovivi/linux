@@ -805,8 +805,9 @@ static int xe_vm_bind(struct xe_vm *vm, struct xe_bo *bo, uint64_t offset,
 		return -EINVAL;
 
 	INIT_LIST_HEAD(&objs);
-	list_add(&objs, &tv.head);
-	list_add(&objs, &tv_vm.head);
+	INIT_LIST_HEAD(&dups);
+	list_add(&tv.head, &objs);
+	list_add(&tv_vm.head, &objs);
 
 	err = ttm_eu_reserve_buffers(&ww, &objs, true, &dups);
 	if (!err) {
