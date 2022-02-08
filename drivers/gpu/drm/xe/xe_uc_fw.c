@@ -6,6 +6,8 @@
 #include <linux/bitfield.h>
 #include <linux/firmware.h>
 
+#include <drm/drm_managed.h>
+
 #include "xe_bo.h"
 #include "xe_device_types.h"
 #include "xe_force_wake.h"
@@ -168,6 +170,17 @@ size_t xe_uc_fw_copy_rsa(struct xe_uc_fw *uc_fw, void *dst, u32 max_len)
 	return size;
 }
 
+static void uc_fw_fini(struct drm_device *drm, void *arg)
+{
+	struct xe_uc_fw *uc_fw = arg;
+
+	if (!xe_uc_fw_is_available(uc_fw))
+		return;
+
+	xe_bo_unpin_map_no_vm(uc_fw->bo);
+	xe_uc_fw_change_status(uc_fw, XE_UC_FIRMWARE_SELECTED);
+}
+
 int xe_uc_fw_init(struct xe_uc_fw *uc_fw)
 {
 	struct xe_device *xe = uc_fw_to_xe(uc_fw);
@@ -272,6 +285,11 @@ int xe_uc_fw_init(struct xe_uc_fw *uc_fw)
 	xe_uc_fw_change_status(uc_fw, XE_UC_FIRMWARE_AVAILABLE);
 
 	release_firmware(fw);
+
+	err = drmm_add_action_or_reset(&xe->drm, uc_fw_fini, uc_fw);
+	if (err)
+		return err;
+
 	return 0;
 
 fail:
@@ -360,13 +378,4 @@ fail:
 		err);
 	xe_uc_fw_change_status(uc_fw, XE_UC_FIRMWARE_LOAD_FAIL);
 	return err;
-}
-
-void xe_uc_fw_fini(struct xe_uc_fw *uc_fw)
-{
-	if (!xe_uc_fw_is_available(uc_fw))
-		return;
-
-	xe_bo_unpin_map_no_vm(uc_fw->bo);
-	xe_uc_fw_change_status(uc_fw, XE_UC_FIRMWARE_SELECTED);
 }

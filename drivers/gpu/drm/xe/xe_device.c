@@ -190,38 +190,26 @@ int xe_device_probe(struct xe_device *xe)
 
 	err = xe_set_dma_info(xe);
 	if (err)
-		goto err_mmio;
+		return err;
 
 	err = xe_gt_init(to_gt(xe));
 	if (err)
-		goto err_mmio;
+		return err;
 
 	err = xe_irq_install(xe);
 	if (err)
-		goto err_gt_fini;
+		return err;
 
 	err = drm_dev_register(&xe->drm, 0);
 	if (err)
-		goto err_irq;
+		return err;
 
 	return 0;
-
-err_irq:
-	xe_irq_uninstall(xe);
-err_gt_fini:
-	xe_gt_fini(to_gt(xe));
-err_mmio:
-	xe_mmio_finish(xe);
-
-	return err;
 }
 
 void xe_device_remove(struct xe_device *xe)
 {
 	drm_dev_unregister(&xe->drm);
-	xe_irq_uninstall(xe);
-	xe_gt_fini(to_gt(xe));
-	xe_mmio_finish(xe);
 	ttm_device_fini(&xe->ttm);
 }
 

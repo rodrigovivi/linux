@@ -3,6 +3,8 @@
  * Copyright © 2022 Intel Corporation
  */
 
+#include <drm/drm_managed.h>
+
 #include "xe_bo.h"
 #include "xe_gt.h"
 #include "xe_guc_ads.h"
@@ -157,10 +159,18 @@ static size_t guc_ads_size(struct xe_guc_ads *ads)
 		guc_ads_private_data_size(ads);
 }
 
+static void guc_ads_fini(struct drm_device *drm, void *arg)
+{
+	struct xe_guc_ads *ads = arg;
+
+	xe_bo_unpin_map_no_vm(ads->bo);
+}
+
 int xe_guc_ads_init(struct xe_guc_ads *ads)
 {
 	struct xe_device *xe = ads_to_xe(ads);
 	struct xe_bo *bo;
+	int err;
 
 	bo = xe_bo_create_pin_map(xe, NULL, guc_ads_size(ads),
 				  ttm_bo_type_kernel,
@@ -170,6 +180,10 @@ int xe_guc_ads_init(struct xe_guc_ads *ads)
 		return PTR_ERR(bo);
 
 	ads->bo = bo;
+
+	err = drmm_add_action_or_reset(&xe->drm, guc_ads_fini, ads);
+	if (err)
+		return err;
 
 	return 0;
 }
