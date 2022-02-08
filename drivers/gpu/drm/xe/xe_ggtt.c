@@ -9,6 +9,8 @@
 #include <linux/sizes.h>
 #include <drm/i915_drm.h>
 
+#include <drm/drm_managed.h>
+
 #include "xe_bo.h"
 #include "xe_gt.h"
 #include "xe_mmio.h"
@@ -69,6 +71,18 @@ static void xe_ggtt_clear(struct xe_ggtt *ggtt, uint64_t start, uint64_t size)
 		xe_ggtt_set_pte(ggtt, start, scratch_pte);
 		start += GEN8_PAGE_SIZE;
 	}
+}
+
+static void ggtt_fini(struct drm_device *drm, void *arg)
+{
+	struct xe_ggtt *ggtt = arg;
+
+	mutex_destroy(&ggtt->lock);
+	drm_mm_takedown(&ggtt->mm);
+
+	xe_bo_unpin_map_no_vm(ggtt->scratch);
+
+	iounmap(ggtt->gsm);
 }
 
 int xe_ggtt_init(struct xe_gt *gt, struct xe_ggtt *ggtt)
@@ -132,6 +146,10 @@ int xe_ggtt_init(struct xe_gt *gt, struct xe_ggtt *ggtt)
 		    ggtt->size - xe_wopcm_size(xe));
 	mutex_init(&ggtt->lock);
 
+	err = drmm_add_action_or_reset(&xe->drm, ggtt_fini, ggtt);
+	if (err)
+		return err;
+
 	return 0;
 
 err_scratch:
@@ -139,16 +157,6 @@ err_scratch:
 err_iomap:
 	iounmap(ggtt->gsm);
 	return err;
-}
-
-void xe_ggtt_finish(struct xe_ggtt *ggtt)
-{
-	mutex_destroy(&ggtt->lock);
-	drm_mm_takedown(&ggtt->mm);
-
-	xe_bo_unpin_map_no_vm(ggtt->scratch);
-
-	iounmap(ggtt->gsm);
 }
 
 static void xe_ggtt_invalidate(struct xe_gt *gt)

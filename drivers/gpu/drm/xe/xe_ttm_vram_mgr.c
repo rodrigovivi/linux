@@ -4,6 +4,8 @@
  * Copyright (C) 2021-2002 Red Hat
  */
 
+#include <drm/drm_managed.h>
+
 #include <drm/ttm/ttm_range_manager.h>
 #include <drm/ttm/ttm_placement.h>
 
@@ -184,25 +186,9 @@ static const struct ttm_resource_manager_func xe_ttm_vram_mgr_func = {
 	.debug	= xe_ttm_vram_mgr_debug
 };
 
-int xe_ttm_vram_mgr_init(struct xe_gt *gt, struct xe_ttm_vram_mgr *mgr)
+static void ttm_vram_mgr_fini(struct drm_device *drm, void *arg)
 {
-	struct xe_device *xe = gt_to_xe(gt);
-	struct ttm_resource_manager *man = &mgr->manager;
-
-	mgr->gt = gt;
-	man->func = &xe_ttm_vram_mgr_func;
-
-	ttm_resource_manager_init(man, gt->mem.vram.size >> PAGE_SHIFT);
-
-	drm_mm_init(&mgr->mm, 0, man->size);
-	spin_lock_init(&mgr->lock);
-	ttm_set_driver_manager(&xe->ttm, TTM_PL_VRAM, &mgr->manager);
-	ttm_resource_manager_set_used(man, true);
-	return 0;
-}
-
-void xe_ttm_vram_mgr_fini(struct xe_ttm_vram_mgr *mgr)
-{
+	struct xe_ttm_vram_mgr *mgr = arg;
 	struct xe_device *xe = gt_to_xe(mgr->gt);
 	struct ttm_resource_manager *man = &mgr->manager;
 	int err;
@@ -219,4 +205,27 @@ void xe_ttm_vram_mgr_fini(struct xe_ttm_vram_mgr *mgr)
 
 	ttm_resource_manager_cleanup(man);
 	ttm_set_driver_manager(&xe->ttm, TTM_PL_VRAM, NULL);
+}
+
+int xe_ttm_vram_mgr_init(struct xe_gt *gt, struct xe_ttm_vram_mgr *mgr)
+{
+	struct xe_device *xe = gt_to_xe(gt);
+	struct ttm_resource_manager *man = &mgr->manager;
+	int err;
+
+	mgr->gt = gt;
+	man->func = &xe_ttm_vram_mgr_func;
+
+	ttm_resource_manager_init(man, gt->mem.vram.size >> PAGE_SHIFT);
+
+	drm_mm_init(&mgr->mm, 0, man->size);
+	spin_lock_init(&mgr->lock);
+	ttm_set_driver_manager(&xe->ttm, TTM_PL_VRAM, &mgr->manager);
+	ttm_resource_manager_set_used(man, true);
+
+	err = drmm_add_action_or_reset(&xe->drm, ttm_vram_mgr_fini, mgr);
+	if (err)
+		return err;
+
+	return 0;
 }
