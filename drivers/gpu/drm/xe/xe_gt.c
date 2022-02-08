@@ -92,21 +92,21 @@ static int gt_ttm_mgr_init(struct xe_gt *gt)
 
 	err = xe_ttm_gtt_mgr_init(gt, gt->mem.gtt_mgr, gtt_size);
 	if (err)
-		goto err_vram_mgr;
+		return err;
 
 	return 0;
+}
 
-err_vram_mgr:
-	if (gt->mem.vram.size)
-		xe_ttm_vram_mgr_fini(gt->mem.vram_mgr);
+static void gt_fini(struct drm_device *drm, void *arg)
+{
+	struct xe_gt *gt = arg;
 
-	return err;
+	if (gt->mem.vram.mapping)
+		iounmap(gt->mem.vram.mapping);
 }
 
 int xe_gt_init(struct xe_gt *gt)
 {
-	struct xe_hw_engine *hwe;
-	enum xe_hw_engine_id id;
 	int err;
 	int i;
 
@@ -132,48 +132,28 @@ int xe_gt_init(struct xe_gt *gt)
 	for (i = 0; i < ARRAY_SIZE(gt->hw_engines); i++) {
 		err = xe_hw_engine_init(gt, &gt->hw_engines[i], i);
 		if (err)
-			goto err_hw_engines;
+			goto err_ttm_mgr;
 	}
 	err = xe_uc_init_hw(&gt->uc);
 	if (err)
-		goto err_hw_engines;
+		goto err_ttm_mgr;
 
 	err = xe_force_wake_put(gt->mmio.fw, XE_FORCEWAKE_ALL);
 	XE_WARN_ON(err);
 
+	err = drmm_add_action_or_reset(&gt_to_xe(gt)->drm, gt_fini, gt);
+	if (err)
+		return err;
+
 	return 0;
 
-err_hw_engines:
-	for_each_hw_engine(hwe, gt, id)
-		xe_hw_engine_finish(hwe);
-	xe_uc_fini(&gt->uc);
-	xe_ggtt_finish(gt->mem.ggtt);
 err_ttm_mgr:
 	if (gt->mem.vram.mapping)
 		iounmap(gt->mem.vram.mapping);
-	if (gt->mem.vram.size)
-		xe_ttm_vram_mgr_fini(gt->mem.vram_mgr);
-	xe_ttm_gtt_mgr_fini(gt->mem.gtt_mgr);
 err_force_wake:
 	xe_force_wake_put(gt->mmio.fw, XE_FORCEWAKE_ALL);
 
 	return err;
-}
-
-void xe_gt_fini(struct xe_gt *gt)
-{
-	struct xe_hw_engine *hwe;
-	enum xe_hw_engine_id id;
-
-	for_each_hw_engine(hwe, gt, id)
-		xe_hw_engine_finish(hwe);
-	xe_uc_fini(&gt->uc);
-	xe_ggtt_finish(gt->mem.ggtt);
-	if (gt->mem.vram.mapping)
-		iounmap(gt->mem.vram.mapping);
-	if (gt->mem.vram.size)
-		xe_ttm_vram_mgr_fini(gt->mem.vram_mgr);
-	xe_ttm_gtt_mgr_fini(gt->mem.gtt_mgr);
 }
 
 struct xe_hw_engine *xe_gt_hw_engine(struct xe_gt *gt,

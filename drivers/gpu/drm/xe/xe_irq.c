@@ -6,6 +6,8 @@
 
 #include <linux/sched/clock.h>
 
+#include <drm/drm_managed.h>
+
 #include "xe_device.h"
 #include "xe_drv.h"
 #include "xe_gt.h"
@@ -400,6 +402,19 @@ static irq_handler_t xe_irq_handler(struct xe_device *xe)
 	}
 }
 
+static void irq_uninstall(struct drm_device *drm, void *arg)
+{
+	struct xe_device *xe = arg;
+	int irq = to_pci_dev(xe->drm.dev)->irq;
+
+	if (!xe->irq.enabled)
+		return;
+
+	xe->irq.enabled = false;
+	xe_irq_reset(xe);
+	free_irq(irq, xe);
+}
+
 int xe_irq_install(struct xe_device *xe)
 {
 	int irq = to_pci_dev(xe->drm.dev)->irq;
@@ -423,21 +438,11 @@ int xe_irq_install(struct xe_device *xe)
 		return err;
 	}
 
+	err = drmm_add_action_or_reset(&xe->drm, irq_uninstall, xe);
+	if (err)
+		return err;
+
 	xe_irq_postinstall(xe);
 
 	return err;
-}
-
-void xe_irq_uninstall(struct xe_device *xe)
-{
-	int irq = to_pci_dev(xe->drm.dev)->irq;
-
-	if (!xe->irq.enabled)
-		return;
-
-	xe->irq.enabled = false;
-
-	xe_irq_reset(xe);
-
-	free_irq(irq, xe);
 }

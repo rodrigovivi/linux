@@ -191,11 +191,11 @@ int xe_guc_init(struct xe_guc *guc)
 
 	ret = xe_guc_log_init(&guc->log);
 	if (ret)
-		goto err_fw;
+		goto out;
 
 	ret = xe_guc_ads_init(&guc->ads);
 	if (ret)
-		goto err_log;
+		goto out;
 
 	guc_init_params(guc);
 
@@ -203,10 +203,6 @@ int xe_guc_init(struct xe_guc *guc)
 
 	return 0;
 
-err_log:
-	xe_guc_log_fini(&guc->log);
-err_fw:
-	xe_uc_fw_fini(&guc->fw);
 out:
 	drm_err(&xe->drm, "GuC init failed with %d", ret);
 	return ret;
@@ -402,14 +398,4 @@ int xe_guc_upload(struct xe_guc *guc)
 out:
 	xe_uc_fw_change_status(&guc->fw, XE_UC_FIRMWARE_LOAD_FAIL);
 	return 0	/* FIXME: ret, don't want to stop load currently */;
-}
-
-void xe_guc_fini(struct xe_guc *guc)
-{
-	if (!xe_uc_fw_is_loadable(&guc->fw))
-		return;
-
-	xe_guc_ads_fini(&guc->ads);
-	xe_guc_log_fini(&guc->log);
-	xe_uc_fw_fini(&guc->fw);
 }

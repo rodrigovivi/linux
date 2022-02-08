@@ -3,6 +3,8 @@
  * Copyright © 2022 Intel Corporation
  */
 
+#include <drm/drm_managed.h>
+
 #include "xe_bo.h"
 #include "xe_gt.h"
 #include "xe_guc_log.h"
@@ -72,10 +74,18 @@ void xe_guc_log_dump(struct xe_guc_log *log, struct drm_printer *p)
 #undef DW_PER_PRINT
 }
 
+static void guc_log_fini(struct drm_device *drm, void *arg)
+{
+	struct xe_guc_log *log = arg;
+
+	xe_bo_unpin_map_no_vm(log->bo);
+}
+
 int xe_guc_log_init(struct xe_guc_log *log)
 {
 	struct xe_device *xe = log_to_xe(log);
 	struct xe_bo *bo;
+	int err;
 
 	bo = xe_bo_create_pin_map(xe, NULL, guc_log_size(),
 				  ttm_bo_type_kernel,
@@ -88,10 +98,9 @@ int xe_guc_log_init(struct xe_guc_log *log)
 	log->bo = bo;
 	log->level = 5;	/* FIXME: Connect to modparam / debugfs */
 
-	return 0;
-}
+	err = drmm_add_action_or_reset(&xe->drm, guc_log_fini, log);
+	if (err)
+		return err;
 
-void xe_guc_log_fini(struct xe_guc_log *log)
-{
-	xe_bo_unpin_map_no_vm(log->bo);
+	return 0;
 }

@@ -23,7 +23,6 @@ struct drm_file;
 struct xe_device;
 
 int xe_mmio_init(struct xe_device *xe);
-void xe_mmio_finish(struct xe_device *xe);
 
 static inline void xe_mmio_write32(struct xe_gt *gt,
 				   uint32_t reg, uint32_t val)
