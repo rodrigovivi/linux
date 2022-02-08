@@ -3,9 +3,11 @@
  * Copyright © 2022 Intel Corporation
  */
 
+#include "xe_bo.h"
 #include "xe_device_types.h"
-#include "xe_gt.h"
 #include "xe_force_wake.h"
+#include "xe_gt.h"
+#include "xe_guc.h"
 #include "xe_guc_reg.h"
 #include "xe_huc.h"
 #include "xe_mmio.h"
@@ -23,6 +25,12 @@ huc_to_xe(struct xe_huc *huc)
 	return gt_to_xe(huc_to_gt(huc));
 }
 
+static struct xe_guc *
+huc_to_guc(struct xe_huc *huc)
+{
+	return &container_of(huc, struct xe_uc, huc)->guc;
+}
+
 int xe_huc_init(struct xe_huc *huc)
 {
 	struct xe_device *xe = huc_to_xe(huc);
@@ -32,10 +40,6 @@ int xe_huc_init(struct xe_huc *huc)
 	ret = xe_uc_fw_init(&huc->fw);
 	if (ret)
 		goto out;
-
-	huc->status.reg = GEN11_HUC_KERNEL_LOAD_INFO.reg;
-	huc->status.mask = HUC_LOAD_SUCCESSFUL;
-	huc->status.value = HUC_LOAD_SUCCESSFUL;
 
 	xe_uc_fw_change_status(&huc->fw, XE_UC_FIRMWARE_LOADABLE);
 
@@ -51,6 +55,46 @@ int xe_huc_upload(struct xe_huc *huc)
 	return xe_uc_fw_upload(&huc->fw, 0, HUC_UKERNEL);
 }
 
+int xe_huc_auth(struct xe_huc *huc)
+{
+	struct xe_device *xe = huc_to_xe(huc);
+	struct xe_gt *gt = huc_to_gt(huc);
+	struct xe_guc *guc = huc_to_guc(huc);
+	int ret;
+
+	XE_BUG_ON(xe_uc_fw_is_running(&huc->fw));
+
+	if (!xe_uc_fw_is_loaded(&huc->fw))
+		return -ENOEXEC;
+
+	ret = xe_guc_auth_huc(guc, xe_bo_ggtt_addr(huc->fw.bo) +
+			      xe_uc_fw_rsa_offset(&huc->fw));
+	if (ret) {
+		drm_err(&xe->drm, "HuC: GuC did not ack Auth request %d\n",
+			ret);
+		goto fail;
+	}
+
+	ret = xe_mmio_wait32(gt, GEN11_HUC_KERNEL_LOAD_INFO.reg,
+			     HUC_LOAD_SUCCESSFUL,
+			     HUC_LOAD_SUCCESSFUL, 100);
+	if (ret) {
+		drm_err(&xe->drm, "HuC: Firmware not verified %d\n", ret);
+		goto fail;
+	}
+
+	xe_uc_fw_change_status(&huc->fw, XE_UC_FIRMWARE_RUNNING);
+	drm_dbg(&xe->drm, "HuC authenticated\n");
+
+	return 0;
+
+fail:
+	drm_err(&xe->drm, "HuC authentication failed %d\n", ret);
+	xe_uc_fw_change_status(&huc->fw, XE_UC_FIRMWARE_LOAD_FAIL);
+
+	return ret;
+}
+
 void xe_huc_print_info(struct xe_huc *huc, struct drm_printer *p)
 {
 	struct xe_gt *gt = huc_to_gt(huc);
@@ -63,7 +107,7 @@ void xe_huc_print_info(struct xe_huc *huc, struct drm_printer *p)
 		return;
 
 	drm_printf(p, "\nHuC status: 0x%08x\n",
-		   xe_mmio_read32(gt, huc->status.reg));
+		   xe_mmio_read32(gt, GEN11_HUC_KERNEL_LOAD_INFO.reg));
 
 	xe_force_wake_put(gt->mmio.fw, XE_FW_GT);
 }

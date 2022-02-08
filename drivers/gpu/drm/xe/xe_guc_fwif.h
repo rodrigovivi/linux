@@ -166,4 +166,10 @@ struct guc_engine_usage {
 	struct guc_engine_usage_record engines[GUC_MAX_ENGINE_CLASSES][GUC_MAX_INSTANCES_PER_CLASS];
 } __packed;
 
+/* This action will be programmed in C1BC - SOFT_SCRATCH_15_REG */
+enum xe_guc_recv_message {
+	XE_GUC_RECV_MSG_CRASH_DUMP_POSTED = BIT(1),
+	XE_GUC_RECV_MSG_EXCEPTION = BIT(30),
+};
+
 #endif
