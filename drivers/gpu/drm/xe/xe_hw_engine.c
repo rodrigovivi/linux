@@ -10,6 +10,7 @@
 
 #include "xe_bo.h"
 #include "xe_execlist.h"
+#include "xe_force_wake_types.h"
 #include "xe_gt.h"
 #include "xe_hw_fence.h"
 #include "xe_lrc.h"
@@ -23,6 +24,7 @@ struct engine_info {
 	const char *name;
 	unsigned int class : 8;
 	unsigned int instance : 8;
+	enum xe_force_wake_domains domain;
 	/* mmio bases table *must* be sorted in reverse graphics_ver order */
 	struct engine_mmio_base {
 		unsigned int graphics_ver : 8;
@@ -35,6 +37,7 @@ static const struct engine_info engine_infos[] = {
 		.name = "rcs0",
 		.class = XE_ENGINE_CLASS_RENDER,
 		.instance = 0,
+		.domain = XE_FW_RENDER,
 		.mmio_bases = {
 			{ .graphics_ver = 1, .base = RENDER_RING_BASE }
 		},
@@ -43,6 +46,7 @@ static const struct engine_info engine_infos[] = {
 		.name = "bcs0",
 		.class = XE_ENGINE_CLASS_COPY,
 		.instance = 0,
+		.domain = XE_FW_RENDER,
 		.mmio_bases = {
 			{ .graphics_ver = 6, .base = BLT_RING_BASE }
 		},
@@ -51,6 +55,7 @@ static const struct engine_info engine_infos[] = {
 		.name = "vcs0",
 		.class = XE_ENGINE_CLASS_VIDEO_DECODE,
 		.instance = 0,
+		.domain = XE_FW_MEDIA_VDBOX0,
 		.mmio_bases = {
 			{ .graphics_ver = 11, .base = GEN11_BSD_RING_BASE },
 			{ .graphics_ver = 6, .base = GEN6_BSD_RING_BASE },
@@ -61,6 +66,7 @@ static const struct engine_info engine_infos[] = {
 		.name = "vcs1",
 		.class = XE_ENGINE_CLASS_VIDEO_DECODE,
 		.instance = 1,
+		.domain = XE_FW_MEDIA_VDBOX1,
 		.mmio_bases = {
 			{ .graphics_ver = 11, .base = GEN11_BSD2_RING_BASE },
 			{ .graphics_ver = 8, .base = GEN8_BSD2_RING_BASE }
@@ -70,6 +76,7 @@ static const struct engine_info engine_infos[] = {
 		.name = "vcs2",
 		.class = XE_ENGINE_CLASS_VIDEO_DECODE,
 		.instance = 2,
+		.domain = XE_FW_MEDIA_VDBOX2,
 		.mmio_bases = {
 			{ .graphics_ver = 11, .base = GEN11_BSD3_RING_BASE }
 		},
@@ -78,6 +85,7 @@ static const struct engine_info engine_infos[] = {
 		.name = "vcs3",
 		.class = XE_ENGINE_CLASS_VIDEO_DECODE,
 		.instance = 3,
+		.domain = XE_FW_MEDIA_VDBOX3,
 		.mmio_bases = {
 			{ .graphics_ver = 11, .base = GEN11_BSD4_RING_BASE }
 		},
@@ -86,6 +94,7 @@ static const struct engine_info engine_infos[] = {
 		.name = "vcs4",
 		.class = XE_ENGINE_CLASS_VIDEO_DECODE,
 		.instance = 4,
+		.domain = XE_FW_MEDIA_VDBOX4,
 		.mmio_bases = {
 			{ .graphics_ver = 12, .base = XEHP_BSD5_RING_BASE }
 		},
@@ -94,6 +103,7 @@ static const struct engine_info engine_infos[] = {
 		.name = "vcs5",
 		.class = XE_ENGINE_CLASS_VIDEO_DECODE,
 		.instance = 5,
+		.domain = XE_FW_MEDIA_VDBOX5,
 		.mmio_bases = {
 			{ .graphics_ver = 12, .base = XEHP_BSD6_RING_BASE }
 		},
@@ -102,6 +112,7 @@ static const struct engine_info engine_infos[] = {
 		.name = "vcs6",
 		.class = XE_ENGINE_CLASS_VIDEO_DECODE,
 		.instance = 6,
+		.domain = XE_FW_MEDIA_VDBOX6,
 		.mmio_bases = {
 			{ .graphics_ver = 12, .base = XEHP_BSD7_RING_BASE }
 		},
@@ -110,6 +121,7 @@ static const struct engine_info engine_infos[] = {
 		.name = "vcs7",
 		.class = XE_ENGINE_CLASS_VIDEO_DECODE,
 		.instance = 7,
+		.domain = XE_FW_MEDIA_VDBOX7,
 		.mmio_bases = {
 			{ .graphics_ver = 12, .base = XEHP_BSD8_RING_BASE }
 		},
@@ -118,6 +130,7 @@ static const struct engine_info engine_infos[] = {
 		.name = "vecs0",
 		.class = XE_ENGINE_CLASS_VIDEO_ENHANCE,
 		.instance = 0,
+		.domain = XE_FW_MEDIA_VEBOX0,
 		.mmio_bases = {
 			{ .graphics_ver = 11, .base = GEN11_VEBOX_RING_BASE },
 			{ .graphics_ver = 7, .base = VEBOX_RING_BASE }
@@ -127,6 +140,7 @@ static const struct engine_info engine_infos[] = {
 		.name = "vecs1",
 		.class = XE_ENGINE_CLASS_VIDEO_ENHANCE,
 		.instance = 1,
+		.domain = XE_FW_MEDIA_VEBOX1,
 		.mmio_bases = {
 			{ .graphics_ver = 11, .base = GEN11_VEBOX2_RING_BASE }
 		},
@@ -135,6 +149,7 @@ static const struct engine_info engine_infos[] = {
 		.name = "vecs2",
 		.class = XE_ENGINE_CLASS_VIDEO_ENHANCE,
 		.instance = 2,
+		.domain = XE_FW_MEDIA_VEBOX2,
 		.mmio_bases = {
 			{ .graphics_ver = 12, .base = XEHP_VEBOX3_RING_BASE }
 		},
@@ -143,6 +158,7 @@ static const struct engine_info engine_infos[] = {
 		.name = "vecs3",
 		.class = XE_ENGINE_CLASS_VIDEO_ENHANCE,
 		.instance = 3,
+		.domain = XE_FW_MEDIA_VEBOX3,
 		.mmio_bases = {
 			{ .graphics_ver = 12, .base = XEHP_VEBOX4_RING_BASE }
 		},
@@ -196,6 +212,7 @@ int xe_hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
 	hwe->class = info->class;
 	hwe->instance = info->instance;
 	hwe->mmio_base = engine_info_mmio_base(info, GRAPHICS_VER(xe));
+	hwe->domain = info->domain;
 
 	hwe->hwsp = xe_bo_create_locked(xe, NULL, SZ_4K, ttm_bo_type_kernel,
 					XE_BO_CREATE_VRAM_IF_DGFX(xe) |

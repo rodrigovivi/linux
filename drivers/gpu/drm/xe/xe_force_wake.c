@@ -5,7 +5,7 @@
 
 #include <drm/drm_util.h>
 
-#include "xe_force_wake_types.h"
+#include "xe_force_wake.h"
 #include "xe_gt.h"
 #include "xe_mmio.h"
 #include "../i915/i915_reg.h"
@@ -37,8 +37,13 @@ static void domain_init(struct xe_force_wake_domain *domain,
 
 void xe_force_wake_init(struct xe_gt *gt, struct xe_force_wake *fw)
 {
+	int i, j;
+
 	fw->gt = gt;
 	mutex_init(&fw->lock);
+
+	/* Assuming gen11+ so assert this assumption is correct */
+	XE_BUG_ON(GRAPHICS_VER(gt_to_xe(gt)) < 11);
 
 	domain_init(&fw->domains[XE_FW_DOMAIN_ID_GT],
 		    XE_FW_DOMAIN_ID_GT,
@@ -46,7 +51,33 @@ void xe_force_wake_init(struct xe_gt *gt, struct xe_force_wake *fw)
 		    FORCEWAKE_ACK_GT_GEN9.reg,
 		    BIT(0), BIT(16));
 
-	// FIXME - Setup all other FW domains
+	domain_init(&fw->domains[XE_FW_DOMAIN_ID_RENDER],
+		    XE_FW_DOMAIN_ID_RENDER,
+		    FORCEWAKE_RENDER_GEN9.reg,
+		    FORCEWAKE_ACK_RENDER_GEN9.reg,
+		    BIT(0), BIT(16));
+
+	for (i = XE_HW_ENGINE_VCS0, j = 0; i <= XE_HW_ENGINE_VCS7; ++i, ++j) {
+		if (!(gt->info.engine_mask & BIT(i)))
+			continue;
+
+		domain_init(&fw->domains[XE_FW_DOMAIN_ID_MEDIA_VDBOX0 + j],
+			    XE_FW_DOMAIN_ID_MEDIA_VDBOX0 + j,
+			    FORCEWAKE_MEDIA_VDBOX_GEN11(j).reg,
+			    FORCEWAKE_ACK_MEDIA_VDBOX_GEN11(j).reg,
+			    BIT(0), BIT(16));
+	}
+
+	for (i = XE_HW_ENGINE_VECS0, j =0; i <= XE_HW_ENGINE_VECS3; ++i, ++j) {
+		if (!(gt->info.engine_mask & BIT(i)))
+			continue;
+
+		domain_init(&fw->domains[XE_FW_DOMAIN_ID_MEDIA_VEBOX0 + j],
+			    XE_FW_DOMAIN_ID_MEDIA_VEBOX0 + j,
+			    FORCEWAKE_MEDIA_VEBOX_GEN11(j).reg,
+			    FORCEWAKE_ACK_MEDIA_VEBOX_GEN11(j).reg,
+			    BIT(0), BIT(16));
+	}
 }
 
 static void domain_wake(struct xe_gt *gt, struct xe_force_wake_domain *domain)
