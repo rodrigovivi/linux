@@ -45,6 +45,7 @@ xe-y += xe_bo.o \
 	xe_guc_ads.o \
 	xe_guc_debugfs.o \
 	xe_guc_log.o \
+	xe_guc_ct.o \
 	xe_hw_engine.o \
 	xe_hw_fence.o \
 	xe_huc.o \

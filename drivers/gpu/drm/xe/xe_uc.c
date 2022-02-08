@@ -100,5 +100,13 @@ int xe_uc_init_hw(struct xe_uc *uc)
 	if (ret)
 		return ret;
 
+	ret = xe_guc_enable_communication(&uc->guc);
+	if (ret)
+		return ret;
+
+	/* We don't fail the driver load if HuC fails to auth, but let's warn */
+	ret = xe_huc_auth(&uc->huc);
+	XE_WARN_ON(ret);
+
 	return 0;
 }

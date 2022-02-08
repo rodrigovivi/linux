@@ -7,6 +7,7 @@
 #include "xe_bo.h"
 #include "xe_guc.h"
 #include "xe_guc_ads.h"
+#include "xe_guc_ct.h"
 #include "xe_guc_log.h"
 #include "xe_guc_reg.h"
 #include "xe_gt.h"
@@ -194,6 +195,10 @@ int xe_guc_init(struct xe_guc *guc)
 		goto out;
 
 	ret = xe_guc_ads_init(&guc->ads);
+	if (ret)
+		goto out;
+
+	ret = xe_guc_ct_init(&guc->ct);
 	if (ret)
 		goto out;
 
@@ -400,6 +405,195 @@ out:
 	return 0	/* FIXME: ret, don't want to stop load currently */;
 }
 
+static void guc_handle_mmio_msg(struct xe_guc *guc)
+{
+	struct xe_gt *gt = guc_to_gt(guc);
+	u32 msg;
+
+	xe_force_wake_assert_held(gt->mmio.fw, XE_FW_GT);
+
+	msg = xe_mmio_read32(gt, SOFT_SCRATCH(15).reg);
+	msg &= XE_GUC_RECV_MSG_EXCEPTION |
+		XE_GUC_RECV_MSG_CRASH_DUMP_POSTED;
+	xe_mmio_write32(gt, SOFT_SCRATCH(15).reg, 0);
+
+	if (msg & XE_GUC_RECV_MSG_CRASH_DUMP_POSTED)
+		drm_err(&guc_to_xe(guc)->drm,
+			"Received early GuC crash dump notification!\n");
+
+	if (msg & XE_GUC_RECV_MSG_EXCEPTION)
+		drm_err(&guc_to_xe(guc)->drm,
+			"Received early GuC exception notification!\n");
+}
+
+int xe_guc_enable_communication(struct xe_guc *guc)
+{
+	int err;
+
+	err = xe_guc_ct_enable(&guc->ct);
+	if (err)
+		return err;
+
+	guc_handle_mmio_msg(guc);
+
+	return 0;
+}
+
+void xe_guc_notify(struct xe_guc *guc)
+{
+	struct xe_gt *gt = guc_to_gt(guc);
+
+	xe_mmio_write32(gt, GEN11_GUC_HOST_INTERRUPT.reg, GUC_SEND_TRIGGER);
+}
+
+void xe_guc_wb(struct xe_guc *guc)
+{
+	struct xe_device *xe = guc_to_xe(guc);
+	struct xe_gt *gt = guc_to_gt(guc);
+
+	XE_WARN_ON(!guc->ct.enabled);
+
+	if (IS_DGFX(xe))
+		xe_mmio_write32(gt, GEN11_SOFT_SCRATCH(0).reg, 0);
+}
+
+int xe_guc_auth_huc(struct xe_guc *guc, u32 rsa_addr)
+{
+	u32 action[] = {
+		XE_GUC_ACTION_AUTHENTICATE_HUC,
+		rsa_addr
+	};
+
+	return xe_guc_ct_send_block(&guc->ct, action, ARRAY_SIZE(action));
+}
+
+int xe_guc_send_mmio(struct xe_guc *guc, const u32 *request, u32 len)
+{
+	struct xe_device *xe = guc_to_xe(guc);
+	struct xe_gt *gt = guc_to_gt(guc);
+	u32 header;
+	int ret;
+	int i;
+
+	XE_BUG_ON(guc->ct.enabled);
+	XE_BUG_ON(!len);
+	XE_BUG_ON(len > GEN11_SOFT_SCRATCH_COUNT);
+	XE_BUG_ON(FIELD_GET(GUC_HXG_MSG_0_ORIGIN, request[0]) !=
+		  GUC_HXG_ORIGIN_HOST);
+	XE_BUG_ON(FIELD_GET(GUC_HXG_MSG_0_TYPE, request[0]) !=
+		  GUC_HXG_TYPE_REQUEST);
+
+retry:
+	for (i = 0; i < len; ++i)
+		xe_mmio_write32(gt, GEN11_SOFT_SCRATCH(i).reg, request[i]);
+
+	xe_mmio_read32(gt, GEN11_SOFT_SCRATCH(GEN11_SOFT_SCRATCH_COUNT - 1).reg);
+
+	xe_guc_notify(guc);
+
+#define REPLY_REG	GEN11_SOFT_SCRATCH(0).reg
+	ret = xe_mmio_wait32(gt, REPLY_REG,
+			     FIELD_PREP(GUC_HXG_MSG_0_ORIGIN,
+					GUC_HXG_ORIGIN_GUC),
+			     GUC_HXG_MSG_0_ORIGIN,
+			     50);
+	if (ret) {
+timeout:
+		drm_err(&xe->drm, "mmio request 0x%08x: no reply 0x%08x\n",
+			request[0], xe_mmio_read32(gt, REPLY_REG));
+		return ret;
+	}
+
+	header = xe_mmio_read32(gt, REPLY_REG);
+	if (FIELD_GET(GUC_HXG_MSG_0_TYPE, header) ==
+	    GUC_HXG_TYPE_NO_RESPONSE_BUSY) {
+#define done ({ header = xe_mmio_read32(gt, REPLY_REG); \
+		FIELD_GET(GUC_HXG_MSG_0_ORIGIN, header) != GUC_HXG_ORIGIN_GUC || \
+		FIELD_GET(GUC_HXG_MSG_0_TYPE, header) != GUC_HXG_TYPE_NO_RESPONSE_BUSY; })
+
+		ret = wait_for(done, 1000);
+		if (unlikely(ret))
+			goto timeout;
+		if (unlikely(FIELD_GET(GUC_HXG_MSG_0_ORIGIN, header) !=
+				       GUC_HXG_ORIGIN_GUC))
+			goto proto;
+#undef done
+	}
+#undef REPLY_REG
+
+	if (FIELD_GET(GUC_HXG_MSG_0_TYPE, header) ==
+	    GUC_HXG_TYPE_NO_RESPONSE_RETRY) {
+		u32 reason = FIELD_GET(GUC_HXG_RETRY_MSG_0_REASON, header);
+
+		drm_dbg(&xe->drm, "mmio request %#x: retrying, reason %u\n",
+			request[0], reason);
+		goto retry;
+	}
+
+	if (FIELD_GET(GUC_HXG_MSG_0_TYPE, header) ==
+	    GUC_HXG_TYPE_RESPONSE_FAILURE) {
+		u32 hint = FIELD_GET(GUC_HXG_FAILURE_MSG_0_HINT, header);
+		u32 error = FIELD_GET(GUC_HXG_FAILURE_MSG_0_ERROR, header);
+
+		drm_err(&xe->drm, "mmio request %#x: failure %x/%u\n",
+			request[0], error, hint);
+		return -ENXIO;
+	}
+
+	if (FIELD_GET(GUC_HXG_MSG_0_TYPE, header) !=
+	    GUC_HXG_TYPE_RESPONSE_SUCCESS) {
+proto:
+		drm_err(&xe->drm, "mmio request %#x: unexpected reply %#x\n",
+			request[0], header);
+		return -EPROTO;
+	}
+
+	/* Use data from the GuC response as our return value */
+	return FIELD_GET(GUC_HXG_RESPONSE_MSG_0_DATA0, header);
+}
+
+static int guc_self_cfg(struct xe_guc *guc, u16 key, u16 len, u64 val)
+{
+	u32 request[HOST2GUC_SELF_CFG_REQUEST_MSG_LEN] = {
+		FIELD_PREP(GUC_HXG_MSG_0_ORIGIN, GUC_HXG_ORIGIN_HOST) |
+		FIELD_PREP(GUC_HXG_MSG_0_TYPE, GUC_HXG_TYPE_REQUEST) |
+		FIELD_PREP(GUC_HXG_REQUEST_MSG_0_ACTION,
+			   GUC_ACTION_HOST2GUC_SELF_CFG),
+		FIELD_PREP(HOST2GUC_SELF_CFG_REQUEST_MSG_1_KLV_KEY, key) |
+		FIELD_PREP(HOST2GUC_SELF_CFG_REQUEST_MSG_1_KLV_LEN, len),
+		FIELD_PREP(HOST2GUC_SELF_CFG_REQUEST_MSG_2_VALUE32,
+			   lower_32_bits(val)),
+		FIELD_PREP(HOST2GUC_SELF_CFG_REQUEST_MSG_3_VALUE64,
+			   upper_32_bits(val)),
+	};
+	int ret;
+
+	XE_BUG_ON(len > 2);
+	XE_BUG_ON(len == 1 && upper_32_bits(val));
+
+	/* Self config must go over MMIO */
+	ret = xe_guc_send_mmio(guc, request, ARRAY_SIZE(request));
+
+	if (unlikely(ret < 0))
+		return ret;
+	if (unlikely(ret > 1))
+		return -EPROTO;
+	if (unlikely(!ret))
+		return -ENOKEY;
+
+	return 0;
+}
+
+int xe_guc_self_cfg32(struct xe_guc *guc, u16 key, u32 val)
+{
+	return guc_self_cfg(guc, key, 1, val);
+}
+
+int xe_guc_self_cfg64(struct xe_guc *guc, u16 key, u64 val)
+{
+	return guc_self_cfg(guc, key, 2, val);
+}
+
 void xe_guc_print_info(struct xe_guc *guc, struct drm_printer *p)
 {
 	struct xe_gt *gt = guc_to_gt(guc);
@@ -429,4 +623,6 @@ void xe_guc_print_info(struct xe_guc *guc, struct drm_printer *p)
 	}
 
 	xe_force_wake_put(gt->mmio.fw, XE_FW_GT);
+
+	xe_guc_ct_print(&guc->ct, p);
 }
