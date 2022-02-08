@@ -6,6 +6,8 @@
 
 #include "xe_hw_engine.h"
 
+#include <drm/drm_managed.h>
+
 #include "xe_bo.h"
 #include "xe_execlist.h"
 #include "xe_gt.h"
@@ -162,6 +164,19 @@ static uint32_t engine_info_mmio_base(const struct engine_info *info,
 	return info->mmio_bases[i].base;
 }
 
+static void hw_engine_fini(struct drm_device *drm, void *arg)
+{
+	struct xe_hw_engine *hwe = arg;
+
+	xe_hw_fence_irq_finish(&hwe->fence_irq);
+	xe_execlist_port_destroy(hwe->exl_port);
+	xe_lrc_finish(&hwe->kernel_lrc);
+
+	xe_bo_unpin_map_no_vm(hwe->hwsp);
+
+	hwe->gt = NULL;
+}
+
 int xe_hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
 		      enum xe_hw_engine_id id)
 {
@@ -210,6 +225,10 @@ int xe_hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
 
 	xe_hw_fence_irq_init(&hwe->fence_irq);
 
+	err = drmm_add_action_or_reset(&xe->drm, hw_engine_fini, hwe);
+	if (err)
+		return err;
+
 	hwe->name = info->name;
 
 	return 0;
@@ -224,17 +243,6 @@ err_kernel_lrc:
 err_hwsp:
 	xe_bo_put(hwe->hwsp);
 	return err;
-}
-
-void xe_hw_engine_finish(struct xe_hw_engine *hwe)
-{
-	xe_hw_fence_irq_finish(&hwe->fence_irq);
-	xe_execlist_port_destroy(hwe->exl_port);
-	xe_lrc_finish(&hwe->kernel_lrc);
-
-	xe_bo_unpin_map_no_vm(hwe->hwsp);
-
-	hwe->gt = NULL;
 }
 
 void xe_hw_engine_handle_irq(struct xe_hw_engine *hwe, uint16_t intr_vec)

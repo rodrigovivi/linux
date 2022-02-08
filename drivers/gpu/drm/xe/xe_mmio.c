@@ -6,6 +6,7 @@
 
 #include "xe_mmio.h"
 
+#include <drm/drm_managed.h>
 #include <drm/xe_drm.h>
 
 #include "xe_device.h"
@@ -54,6 +55,13 @@ static void xe_mmio_probe_vram(struct xe_device *xe)
 	drm_info(&xe->drm, "VRAM: %pa\n", &gt->mem.vram.size);
 }
 
+static void mmio_fini(struct drm_device *drm, void *arg)
+{
+	struct xe_device *xe = arg;
+
+	pci_iounmap(to_pci_dev(xe->drm.dev), xe->mmio.regs);
+}
+
 int xe_mmio_init(struct xe_device *xe)
 {
 	struct xe_gt *gt = to_gt(xe);
@@ -67,6 +75,10 @@ int xe_mmio_init(struct xe_device *xe)
 		drm_err(&xe->drm, "failed to map registers\n");
 		return -EIO;
 	}
+
+	err = drmm_add_action_or_reset(&xe->drm, mmio_fini, xe);
+	if (err)
+		return err;
 
 	/* 1 GT for now, 1 to 1 mapping, may change on multi-GT devices */
 	gt->mmio.size = xe->mmio.size;
@@ -88,12 +100,8 @@ int xe_mmio_init(struct xe_device *xe)
 		return err;
 
 	xe_mmio_probe_vram(xe);
-	return 0;
-}
 
-void xe_mmio_finish(struct xe_device *xe)
-{
-	pci_iounmap(to_pci_dev(xe->drm.dev), xe->mmio.regs);
+	return 0;
 }
 
 #define VALID_MMIO_FLAGS (\

@@ -19,7 +19,6 @@
 
 int xe_gt_alloc(struct xe_gt *gt);
 int xe_gt_init(struct xe_gt *gt);
-void xe_gt_fini(struct xe_gt *gt);
 
 struct xe_hw_engine *xe_gt_hw_engine(struct xe_gt *gt,
 				     enum xe_engine_class class,
