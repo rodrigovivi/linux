@@ -174,6 +174,9 @@ int xe_hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
 
 	XE_BUG_ON(hwe->gt);
 
+	if (!(gt->info.engine_mask & BIT(id)))
+		return 0;
+
 	hwe->gt = gt;
 	hwe->class = info->class;
 	hwe->instance = info->instance;
