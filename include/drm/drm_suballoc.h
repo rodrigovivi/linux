@@ -62,7 +62,7 @@ struct drm_suballoc *drm_suballoc_new(struct drm_suballoc_manager *sa_manager,
 				      u32 size);
 void drm_suballoc_free(struct drm_suballoc *sa_bo,
 		       struct dma_fence *fence,
-		       u32 queue);
+		       s32 queue);
 
 #ifdef CONFIG_DEBUG_FS
 void drm_suballoc_dump_debug_info(struct drm_suballoc_manager *sa_manager,

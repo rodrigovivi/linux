@@ -356,6 +356,75 @@ drm_suballoc_new(struct drm_suballoc_manager *sa_manager, u32 size)
 }
 EXPORT_SYMBOL(drm_suballoc_new);
 
+static void __drm_suballoc_free_anyidx(struct drm_suballoc_manager *sa_manager, struct drm_suballoc *suballoc, struct dma_fence *fence)
+{
+	struct dma_fence *fences[DRM_SUBALLOC_MAX_QUEUES + 1];
+	struct drm_suballoc *sa, *next;
+	u32 i;
+
+	suballoc->fence = dma_fence_get(fence);
+	for (i = 0; i < DRM_SUBALLOC_MAX_QUEUES; i++) {
+		if (list_empty(&sa_manager->flist[i]))
+			break;
+
+		sa = list_last_entry(&sa_manager->flist[i],
+				     struct drm_suballoc, flist);
+
+		if (sa->fence->context != fence->context &&
+		    !dma_fence_is_signaled(sa->fence)) {
+			fences[i] = dma_fence_get(sa->fence);
+			continue;
+		}
+
+		break;
+	}
+
+	if (i < DRM_SUBALLOC_MAX_QUEUES) {
+		u32 j = i;
+
+		/* found a slot in the loop, free previous fences */
+		while (j--)
+			dma_fence_put(fences[j]);
+	} else {
+		long t;
+		u32 idx;
+
+		fences[i] = fence;
+
+		DRM_DEBUG("All slots have fences, throttling..\n");
+
+		spin_unlock(&sa_manager->wq.lock);
+		t = dma_fence_wait_any_timeout(fences, i + 1, false,
+					       MAX_SCHEDULE_TIMEOUT,
+					       &idx);
+		while (i--)
+			dma_fence_put(fences[i]);
+
+		spin_lock(&sa_manager->wq.lock);
+
+		/* Shouldn't fail, we don't sleep interruptibly */
+		if (WARN_ON(t < 0))
+			idx = DRM_SUBALLOC_MAX_QUEUES;
+
+		/* own fence signaled? can remove it safely */
+		if (idx == DRM_SUBALLOC_MAX_QUEUES)
+			drm_suballoc_remove_locked(suballoc);
+
+		i = idx;
+	}
+
+	/*
+	 * Found an empty slot, either through iterating over
+	 * sa_manager->flist, or the dma_fence_wait_any_timeout()
+	 */
+	if (i < DRM_SUBALLOC_MAX_QUEUES) {
+		list_for_each_entry_safe(sa, next, &sa_manager->flist[i], flist)
+			drm_suballoc_remove_locked(sa);
+
+		list_add_tail(&suballoc->flist, &sa_manager->flist[i]);
+	}
+}
+
 /**
  * drm_suballoc_free - Free a suballocation
  *
@@ -366,10 +435,14 @@ EXPORT_SYMBOL(drm_suballoc_new);
  * Free the suballocation. The suballocation can be re-used after @fence signals.
  * @queue is used to allow waiting on multiple fence contexts in parallel in
  * drm_suballoc_new().
+ *
+ * If @queue is set to a negative number, the slot will be assigned by the
+ * suballocator automatically, this may require waiting for the fastest fence
+ * to signal if there is no slots are available.
  */
 void drm_suballoc_free(struct drm_suballoc *suballoc,
 		       struct dma_fence *fence,
-		       u32 queue)
+		       s32 queue)
 {
 	struct drm_suballoc_manager *sa_manager;
 
@@ -381,8 +454,12 @@ void drm_suballoc_free(struct drm_suballoc *suballoc,
 
 	spin_lock(&sa_manager->wq.lock);
 	if (fence && !dma_fence_is_signaled(fence)) {
-		suballoc->fence = dma_fence_get(fence);
-		list_add_tail(&suballoc->flist, &sa_manager->flist[queue]);
+		if (queue < 0) {
+			__drm_suballoc_free_anyidx(sa_manager, suballoc, fence);
+		} else {
+			suballoc->fence = dma_fence_get(fence);
+			list_add_tail(&suballoc->flist, &sa_manager->flist[queue]);
+		}
 	} else {
 		drm_suballoc_remove_locked(suballoc);
 	}
