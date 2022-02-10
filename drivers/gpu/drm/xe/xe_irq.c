@@ -10,6 +10,7 @@
 
 #include "xe_device.h"
 #include "xe_drv.h"
+#include "xe_guc.h"
 #include "xe_gt.h"
 #include "xe_hw_engine.h"
 #include "xe_mmio.h"
@@ -186,6 +187,13 @@ gen11_gt_engine_identity(struct xe_device *xe,
 	return ident;
 }
 
+static void
+gen11_gt_other_irq_handler(struct xe_gt *gt, const u8 instance, const u16 iir)
+{
+	if (instance == OTHER_GUC_INSTANCE)
+		return xe_guc_irq_handler(&gt->uc.guc, iir);
+}
+
 static void gen11_gt_irq_handler(struct xe_device *xe, uint32_t master_ctl)
 {
 	struct xe_gt *gt = to_gt(xe);
@@ -212,9 +220,11 @@ static void gen11_gt_irq_handler(struct xe_device *xe, uint32_t master_ctl)
 			instance = GEN11_INTR_ENGINE_INSTANCE(identity[bit]);
 			intr_vec = GEN11_INTR_ENGINE_INTR(identity[bit]);
 
-			/* TODO: Handle other interrupts */
-			if (class == XE_ENGINE_CLASS_OTHER)
+			if (class == XE_ENGINE_CLASS_OTHER) {
+				gen11_gt_other_irq_handler(gt, instance,
+							   intr_vec);
 				continue;
+			}
 
 			hwe = xe_gt_hw_engine(gt, class, instance);
 			if (!hwe)
