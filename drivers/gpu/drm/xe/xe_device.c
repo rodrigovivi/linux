@@ -193,11 +193,11 @@ int xe_device_probe(struct xe_device *xe)
 	if (err)
 		return err;
 
-	err = xe_gt_init(to_gt(xe));
+	err = xe_irq_install(xe);
 	if (err)
 		return err;
 
-	err = xe_irq_install(xe);
+	err = xe_gt_init(to_gt(xe));
 	if (err)
 		return err;
 
