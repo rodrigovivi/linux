@@ -426,9 +426,20 @@ static void guc_handle_mmio_msg(struct xe_guc *guc)
 			"Received early GuC exception notification!\n");
 }
 
+void guc_enable_irq(struct xe_guc *guc)
+{
+	struct xe_gt *gt = guc_to_gt(guc);
+	u32 events = REG_FIELD_PREP(ENGINE1_MASK, GUC_INTR_GUC2HOST);
+
+	xe_mmio_write32(gt, GEN11_GUC_SG_INTR_ENABLE.reg, events);
+	xe_mmio_write32(gt, GEN11_GUC_SG_INTR_MASK.reg, ~events);
+}
+
 int xe_guc_enable_communication(struct xe_guc *guc)
 {
 	int err;
+
+	guc_enable_irq(guc);
 
 	err = xe_guc_ct_enable(&guc->ct);
 	if (err)
@@ -592,6 +603,12 @@ int xe_guc_self_cfg32(struct xe_guc *guc, u16 key, u32 val)
 int xe_guc_self_cfg64(struct xe_guc *guc, u16 key, u64 val)
 {
 	return guc_self_cfg(guc, key, 2, val);
+}
+
+void xe_guc_irq_handler(struct xe_guc *guc, const u16 iir)
+{
+	if (iir & GUC_INTR_GUC2HOST)
+		xe_guc_ct_irq_handler(&guc->ct);
 }
 
 void xe_guc_print_info(struct xe_guc *guc, struct drm_printer *p)
