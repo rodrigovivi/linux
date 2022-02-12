@@ -13,6 +13,8 @@
 #include <linux/wait.h>
 #include <linux/xarray.h>
 
+#define XE_GUC_CT_SELFTEST
+
 struct xe_bo;
 
 /**
@@ -71,6 +73,11 @@ struct xe_guc_ct {
 	struct xarray fence_lookup;
 	/** @wq: wait queue used for reliable CT sends and freeing G2H credits */
 	wait_queue_head_t wq;
+#ifdef XE_GUC_CT_SELFTEST
+	/** @suppress_irq_handler: force flow control to sender */
+	bool suppress_irq_handler;
+#endif
+
 };
 
 #endif	/* _XE_GUC_CT_TYPES_H_ */
