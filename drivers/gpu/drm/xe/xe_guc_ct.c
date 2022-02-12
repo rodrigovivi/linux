@@ -533,11 +533,19 @@ try_again:
 		if (sleep_period_ms == 1024)
 			goto broken;
 
+#ifdef XE_GUC_CT_SELFTEST
+		drm_info(drm, "H2G flow control kicking in\n");
+#endif
+
 		msleep(sleep_period_ms);
 		sleep_period_ms <<= 1;
 
 		goto try_again;
 	} else if (unlikely(ret == -EBUSY && !g2h_has_room(ct, g2h_len))) {
+#ifdef XE_GUC_CT_SELFTEST
+		drm_info(drm, "G2H flow control kicking in\n");
+#endif
+
 #define g2h_avail(ct)	\
 	(desc_read((&ct->ctbs.g2h), tail) != ct->ctbs.g2h.head)
 		if (!wait_event_timeout(ct->wq, g2h_avail(ct), HZ))
@@ -706,6 +714,7 @@ static int parse_g2h_event(struct xe_guc_ct *ct, u32 *msg, u32 len)
 	switch (action) {
 	case XE_GUC_ACTION_SCHED_CONTEXT_MODE_DONE:
 	case XE_GUC_ACTION_DEREGISTER_CONTEXT_DONE:
+	case XE_GUC_ACTION_SCHED_ENGINE_MODE_DONE:
 		g2h_release_space(ct, len);
 	}
 
@@ -964,3 +973,68 @@ void xe_guc_ct_print(struct xe_guc_ct *ct, struct drm_printer *p)
 		drm_puts(p, "\nCT disabled\n");
 	}
 }
+
+#ifdef XE_GUC_CT_SELFTEST
+/*
+ * Disable G2H processing in IRQ handler to force xe_guc_ct_send to enter flow
+ * control if enough sent, 8k sends is enough. Verify forward process, verify
+ * credits expected values on exit.
+ */
+void xe_guc_ct_selftest(struct xe_guc_ct *ct, struct drm_printer *p)
+{
+	struct guc_ctb *g2h = &ct->ctbs.g2h;
+	u32 action[] = { XE_GUC_ACTION_SCHED_ENGINE_MODE_SET, 0, 0, 1, };
+	u32 bad_action[] = { XE_GUC_ACTION_SCHED_CONTEXT_MODE_SET, 0, 0, };
+	int ret;
+	int i;
+
+	ct->suppress_irq_handler = true;
+	drm_puts(p, "Starting GuC CT selftest\n");
+
+	for (i = 0; i < 8192; ++i) {
+		ret = xe_guc_ct_send(ct, action, ARRAY_SIZE(action), 4);
+		if (ret) {
+			drm_printf(p, "Aborted pass %d, ret %d\n", i, ret);
+			xe_guc_ct_print(ct, p);
+			break;
+		}
+	}
+
+	ct->suppress_irq_handler = false;
+	if (!ret) {
+		xe_guc_ct_irq_handler(ct);
+		msleep(200);
+		if (g2h->space !=
+		    CIRC_SPACE(0, 0, g2h->size) - g2h->resv_space) {
+			drm_printf(p, "Mismatch on space %d, %d\n",
+				   g2h->space,
+				   CIRC_SPACE(0, 0, g2h->size) -
+				   g2h->resv_space);
+			ret = -EIO;
+		}
+		if (ct->g2h_outstanding) {
+			drm_printf(p, "Outstanding G2H, %d\n",
+				   ct->g2h_outstanding);
+			ret = -EIO;
+		}
+	}
+
+	/* Check failure path for blocking CTs too */
+	xe_guc_ct_send_block(ct, bad_action, ARRAY_SIZE(bad_action));
+	if (g2h->space !=
+	    CIRC_SPACE(0, 0, g2h->size) - g2h->resv_space) {
+		drm_printf(p, "Mismatch on space %d, %d\n",
+			   g2h->space,
+			   CIRC_SPACE(0, 0, g2h->size) -
+			   g2h->resv_space);
+		ret = -EIO;
+	}
+	if (ct->g2h_outstanding) {
+		drm_printf(p, "Outstanding G2H, %d\n",
+			   ct->g2h_outstanding);
+		ret = -EIO;
+	}
+
+	drm_printf(p, "GuC CT selftest done - %s\n", ret ? "FAIL" : "PASS");
+}
+#endif
