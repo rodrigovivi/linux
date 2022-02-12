@@ -58,8 +58,12 @@ static u32 guc_ctl_debug_flags(struct xe_guc *guc)
 
 static u32 guc_ctl_feature_flags(struct xe_guc *guc)
 {
+#ifdef XE_GUC_CT_SELFTEST
+	return 0;
+#else
 	/* FIXME: Just loading the GuC for now, disable submission */
 	return GUC_CTL_DISABLE_SCHEDULER;
+#endif
 }
 
 static u32 guc_ctl_log_params_flags(struct xe_guc *guc)
