@@ -257,26 +257,10 @@ struct ttm_device_funcs xe_ttm_funcs = {
 static void xe_ttm_bo_destroy(struct ttm_buffer_object *ttm_bo)
 {
 	struct xe_bo *bo = ttm_to_xe_bo(ttm_bo);
-	struct xe_vma *vma, *next;
 
 	drm_gem_object_release(&bo->ttm.base);
 
-	if (!list_empty(&bo->vmas)) {
-		if (bo->vm) {
-			xe_vm_lock(bo->vm, NULL);
-			list_for_each_entry_safe(vma, next, &bo->vmas, bo_link) {
-				XE_BUG_ON(vma->vm != bo->vm);
-				__xe_vma_unbind(vma);
-			}
-			xe_vm_unlock(bo->vm);
-		} else {
-			list_for_each_entry_safe(vma, next, &bo->vmas, bo_link) {
-				xe_vm_lock(vma->vm, NULL);
-				__xe_vma_unbind(vma);
-				xe_vm_unlock(vma->vm);
-			}
-		}
-	}
+	WARN_ON(!list_empty(&bo->vmas));
 
 	if (bo->ggtt_node.size)
 		xe_ggtt_remove_bo(to_gt(xe_bo_device(bo))->mem.ggtt, bo);
@@ -324,6 +308,7 @@ struct xe_bo *xe_bo_create_locked(struct xe_device *xe, struct xe_vm *vm,
 	bo->size = size;
 	bo->flags = flags;
 	bo->ttm.base.funcs = &xe_gem_object_funcs;
+	INIT_LIST_HEAD(&bo->vmas);
 
 	drm_gem_private_object_init(&xe->drm, &bo->ttm.base, size);
 
@@ -344,8 +329,6 @@ struct xe_bo *xe_bo_create_locked(struct xe_device *xe, struct xe_vm *vm,
 	if (vm && (flags & XE_BO_CREATE_USER_BIT))
 		xe_vm_get(vm);
 	bo->vm = vm;
-
-	INIT_LIST_HEAD(&bo->vmas);
 
 	if (flags & XE_BO_CREATE_GGTT_BIT) {
 		err = xe_ggtt_insert_bo(to_gt(xe)->mem.ggtt, bo);

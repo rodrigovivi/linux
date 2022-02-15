@@ -13,6 +13,7 @@ struct drm_device;
 struct drm_file;
 
 struct xe_file;
+struct xe_sync_entry;
 
 void __xe_vma_unbind(struct xe_vma *vma);
 
@@ -52,6 +53,11 @@ int xe_vm_destroy_ioctl(struct drm_device *dev, void *data,
 			struct drm_file *file);
 int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 		     struct drm_file *file);
+
+void xe_vm_close_and_put(struct xe_vm *vm);
+
+struct dma_fence *xe_vm_bind_vma(struct xe_vma *vma, struct xe_sync_entry *syncs, u32 num_syncs);
+struct dma_fence *xe_vm_unbind_vma(struct xe_vma *vma, struct xe_sync_entry *syncs, u32 num_syncs, bool evict);
 
 extern struct ttm_device_funcs xe_ttm_funcs;
 

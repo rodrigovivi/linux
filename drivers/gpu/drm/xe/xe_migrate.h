@@ -15,6 +15,9 @@ struct xe_bo;
 struct xe_gt;
 struct xe_engine;
 struct xe_migrate;
+struct xe_sync_entry;
+struct xe_pt;
+struct xe_vm_pgtable_update;
 
 struct xe_migrate *xe_migrate_init(struct xe_gt *gt);
 
@@ -26,5 +29,16 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 				   struct xe_bo *bo,
 				   u32 value);
+
+typedef void (*xe_migrate_populatefn_t)(void *pos, u32 ofs, u32 num_qwords,
+					struct xe_vm_pgtable_update *update,
+					void *arg);
+
+struct dma_fence *
+xe_migrate_update_pgtables(struct xe_migrate *m,
+			   struct xe_vm_pgtable_update *updates,
+			   u32 num_updates,
+			   struct xe_sync_entry *syncs, u32 num_syncs,
+			   xe_migrate_populatefn_t populatefn, void *arg);
 
 #endif
