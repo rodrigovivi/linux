@@ -13,6 +13,7 @@
 #include "xe_lrc.h"
 #include "xe_res_cursor.h"
 #include "xe_sched_job.h"
+#include "xe_sync.h"
 
 #include <linux/sizes.h>
 #include <drm/drm_managed.h>
@@ -301,3 +302,141 @@ err:
 	return fence;
 }
 
+static void write_pgtable(struct xe_bb *bb, u64 ggtt_ofs,
+			  struct xe_vm_pgtable_update *update,
+			  xe_migrate_populatefn_t populatefn, void *arg)
+{
+	u32 chunk;
+	u32 ofs = update->ofs, size = update->qwords;
+
+	/*
+	 * If we have 512 entries (max), we would populate it ourselves,
+	 * and update the PDE above it to the new pointer.
+	 * The only time this can only happen if we have to update the top
+	 * PDE. This requires a BO that is almost vm->size big.
+	 *
+	 * This shouldn't be possible in practice.. might change when 16K
+	 * pages are used. Hence the BUG_ON.
+	 */
+	XE_BUG_ON(update->qwords > 0x1ff);
+	do {
+		chunk = min(update->qwords, 0x1ffU);
+
+		/* Ensure populatefn can do memset64 by aligning bb->cs */
+		if (!(bb->len & 1))
+			bb->cs[bb->len++] = MI_NOOP;
+
+		bb->cs[bb->len++] = MI_STORE_DATA_IMM | BIT(22) | BIT(21) | (chunk * 2 + 1);
+		bb->cs[bb->len++] = lower_32_bits(ggtt_ofs + ofs * 8);
+		bb->cs[bb->len++] = upper_32_bits(ggtt_ofs + ofs * 8);
+		populatefn(bb->cs + bb->len, ofs, chunk, update, arg);
+
+		bb->len += chunk * 2;
+		ofs += chunk;
+		size -= chunk;
+	} while (size);
+}
+
+struct dma_fence *
+xe_migrate_update_pgtables(struct xe_migrate *m,
+			   struct xe_vm_pgtable_update *updates,
+			   u32 num_updates,
+			   struct xe_sync_entry *syncs, u32 num_syncs,
+			   xe_migrate_populatefn_t populatefn, void *arg)
+{
+	struct xe_gt *gt = m->gt;
+	struct xe_sched_job *job;
+	struct dma_fence *fence;
+	struct xe_bb *bb;
+	u32 i, batch_size;
+	int err = 0;
+
+	/* fixed + PTE entries */
+	batch_size = 7;
+
+	for (i = 0; i < num_updates; i++) {
+		u32 num_cmds = DIV_ROUND_UP(updates[i].qwords, 0x1ff);
+
+		batch_size += 2;
+		/* align noops + MI_STORE_DATA_IMM cmd prefix */
+		batch_size += 2 + 4 * num_cmds + updates[i].qwords * 2;
+	}
+
+	/*
+	 * XXX: Create temp bo to copy from, if batch_size becomes too big?
+	 * 1GiB bo would need upwards of ~512KiB of updates. Or just allow huge
+	 * pages..
+	 */
+	XE_BUG_ON(batch_size >= SZ_128K);
+
+	bb = xe_bb_new(gt, batch_size);
+	if (IS_ERR(bb))
+		return ERR_CAST(bb);
+
+	emit_arb_clear(bb);
+
+	/* Map our PT's to gtt */
+	bb->cs[bb->len++] = MI_UPDATE_GTT | (num_updates * 2);
+	bb->cs[bb->len++] = m->copy_node.start;
+
+	for (i = 0; i < num_updates; i++) {
+		struct xe_bo *bo = updates[i].pt_bo;
+		u64 addr;
+
+		BUG_ON(bo->size != SZ_4K);
+
+		if (bo->ttm.resource->mem_type == TTM_PL_VRAM) {
+			struct xe_res_cursor src_it;
+
+			xe_res_first(bo->ttm.resource, 0, bo->size, &src_it);
+			addr = src_it.start | 3;
+		} else {
+			addr = bo->ttm.ttm->dma_address[0] | 1;
+		}
+
+		bb->cs[bb->len++] = lower_32_bits(addr);
+		bb->cs[bb->len++] = upper_32_bits(addr);
+	}
+
+	emit_flush(bb);
+
+	for (i = 0; i < num_updates; i++) {
+		u64 ggtt_ofs;
+
+		ggtt_ofs = m->copy_node.start + SZ_4K * i;
+
+		write_pgtable(bb, ggtt_ofs, &updates[i], populatefn, arg);
+	}
+
+	mutex_lock(&m->job_mutex);
+	job = xe_bb_create_job(m->eng, bb);
+	if (IS_ERR(job)) {
+		err = PTR_ERR(job);
+		goto err;
+	}
+
+	for (i = 0; !err && i < num_syncs; i++)
+		err = xe_sync_entry_add_deps(&syncs[i], job);
+
+	if (err)
+		goto err_job;
+
+	xe_sched_job_arm(job);
+	fence = dma_fence_get(&job->drm.s_fence->finished);
+	xe_sched_job_push(job);
+	mutex_unlock(&m->job_mutex);
+
+	for (i = 0; i < num_syncs; i++)
+		xe_sync_entry_signal(&syncs[i], fence);
+
+	xe_bb_free(bb, fence);
+
+	return fence;
+
+err_job:
+
+err:
+	mutex_unlock(&m->job_mutex);
+	xe_bb_free(bb, NULL);
+	return ERR_PTR(err);
+}
