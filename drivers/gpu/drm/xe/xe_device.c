@@ -48,7 +48,7 @@ static void xe_file_close(struct drm_device *dev, struct drm_file *file)
 	unsigned long idx;
 
 	xa_for_each(&xef->vm_xa, idx, vm)
-		xe_vm_put(vm);
+		xe_vm_close_and_put(vm);
 	mutex_destroy(&xef->vm_lock);
 
 	xa_for_each(&xef->engine_xa, idx, e)

@@ -233,18 +233,31 @@ struct drm_xe_vm_bind {
 	/** @vm_id: The ID of the VM to bind to */
 	__u32 vm_id;
 
-	/** @obj: GEM object to bind */
+	/** @obj: GEM object to operate on */
 	__u32 obj;
 
-	/** Offset into the object */
-	__u64 offset;
+	/** @obj_offset: Offset into the object, MBZ for CLEAR_RANGE, ignored for unbind */
+	__u64 obj_offset;
 
-	/** Number of bytes from the object to bind to addr */
+	/** @range: Number of bytes from the object to bind to addr */
 	__u64 range;
 
-	/** Address to bind to */
+	/** @addr: Address to operate on */
 	__u64 addr;
+
+	/** @op: Operation to perform */
+	__u32 op;
+
+#define XE_VM_BIND_OP_MAP		0x0
+#define XE_VM_BIND_OP_UNMAP		0X1
+
+	/** @num_syncs: amount of syncs to wait on */
+	__u32 num_syncs;
+
+	/** @syncs: pointer to struct drm_xe_sync array */
+	__u64 syncs;
 };
+
 
 struct drm_xe_engine_create {
 	/** @extensions: Pointer to the first extension struct, if any */
