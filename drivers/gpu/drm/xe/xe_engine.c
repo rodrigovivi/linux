@@ -17,6 +17,7 @@
 #include "xe_gt.h"
 #include "xe_lrc.h"
 #include "xe_sched_job.h"
+#include "xe_sync.h"
 #include "xe_trace.h"
 #include "xe_vm.h"
 
@@ -201,123 +202,6 @@ int xe_engine_destroy_ioctl(struct drm_device *dev, void *data,
 	return 0;
 }
 
-struct sync {
-	struct drm_syncobj *syncobj;
-	struct dma_fence *fence;
-	struct dma_fence_chain *chain_fence;
-	uint64_t timeline_value;
-	uint32_t flags;
-};
-
-#define SYNC_FLAGS_TYPE_MASK 0x3
-
-static int parse_sync(struct xe_device *xe, struct xe_file *xef,
-		      struct sync *sync, struct drm_xe_sync __user *sync_user)
-{
-	struct drm_xe_sync sync_in;
-	int err;
-
-	if (__copy_from_user(&sync_in, sync_user, sizeof(*sync_user)))
-		return -EFAULT;
-
-	memset(sync, 0, sizeof(*sync));
-
-	switch (sync_in.flags & SYNC_FLAGS_TYPE_MASK) {
-	case DRM_XE_SYNC_SYNCOBJ:
-		sync->syncobj = drm_syncobj_find(xef->drm, sync_in.handle);
-		if (XE_IOCTL_ERR(xe, !sync->syncobj))
-			return -ENOENT;
-
-		if (!(sync_in.flags & DRM_XE_SYNC_SIGNAL)) {
-			sync->fence = drm_syncobj_fence_get(sync->syncobj);
-			if (XE_IOCTL_ERR(xe, !sync->fence))
-				return -EINVAL;
-		}
-		break;
-
-	case DRM_XE_SYNC_TIMELINE_SYNCOBJ:
-		if (XE_IOCTL_ERR(xe, sync_in.timeline_value == 0))
-			return -EINVAL;
-
-		sync->syncobj = drm_syncobj_find(xef->drm, sync_in.handle);
-		if (XE_IOCTL_ERR(xe, !sync->syncobj))
-			return -ENOENT;
-
-		if (sync_in.flags & DRM_XE_SYNC_SIGNAL) {
-			sync->chain_fence = dma_fence_chain_alloc();
-			if (!sync->chain_fence)
-				return -ENOMEM;
-		} else {
-			sync->fence = drm_syncobj_fence_get(sync->syncobj);
-			if (XE_IOCTL_ERR(xe, !sync->fence))
-				return -EINVAL;
-
-			err = dma_fence_chain_find_seqno(&sync->fence,
-							 sync_in.timeline_value);
-			if (err)
-				return err;
-		}
-		break;
-
-	case DRM_XE_SYNC_DMA_BUF:
-		if (XE_IOCTL_ERR(xe, "TODO"))
-			return -EINVAL;
-		break;
-
-	default:
-		return -EINVAL;
-	}
-
-	sync->flags = sync_in.flags;
-	sync->timeline_value = sync_in.timeline_value;
-
-	return 0;
-}
-
-static int add_sync_deps(struct sync *sync, struct xe_sched_job *job)
-{
-	int err;
-
-	if (sync->fence) {
-		err = drm_sched_job_add_dependency(&job->drm, sync->fence);
-		sync->fence = NULL;
-		if (err)
-			return err;
-	}
-
-	return 0;
-}
-
-static void signal_sync(struct sync *sync, struct dma_fence *fence)
-{
-	if (!(sync->flags & DRM_XE_SYNC_SIGNAL))
-		return;
-
-	if (sync->chain_fence) {
-		drm_syncobj_add_point(sync->syncobj, sync->chain_fence,
-				      fence, sync->timeline_value);
-		/*
-		 * The chain's ownership is transferred to the
-		 * timeline.
-		 */
-		sync->chain_fence = NULL;
-	} else if (sync->syncobj) {
-		drm_syncobj_replace_fence(sync->syncobj, fence);
-	}
-
-	/* TODO: BO */
-}
-
-static void put_sync(struct sync *sync)
-{
-	if (sync->syncobj)
-		drm_syncobj_put(sync->syncobj);
-	if (sync->fence)
-		dma_fence_put(sync->fence);
-	if (sync->chain_fence)
-		dma_fence_put(&sync->chain_fence->base);
-}
-
 int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 {
 	struct xe_device *xe = to_xe_device(dev);
@@ -325,7 +209,7 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	struct drm_xe_exec *args = data;
 	struct drm_xe_sync __user *syncs_user = u64_to_user_ptr(args->syncs);
 	struct xe_engine *engine;
-	struct sync *syncs;
+	struct xe_sync_entry *syncs;
 	uint32_t i, num_syncs = 0;
 	struct xe_sched_job *job;
 	int err = 0;
@@ -349,7 +233,7 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	}
 
 	for (i = 0; i < args->num_syncs; i++) {
-		err = parse_sync(xe, xef, &syncs[num_syncs++], &syncs_user[i]);
+		err = xe_sync_entry_parse(xe, xef, &syncs[num_syncs++], &syncs_user[i]);
 		if (err)
 			goto err_syncs;
 	}
@@ -365,7 +249,7 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	}
 
 	for (i = 0; i < num_syncs; i++) {
-		err = add_sync_deps(&syncs[i], job);
+		err = xe_sync_entry_add_deps(&syncs[i], job);
 		if (err)
 			goto err_put_job;
 	}
@@ -373,7 +257,7 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	xe_sched_job_arm(job);
 
 	for (i = 0; i < num_syncs; i++)
-		signal_sync(&syncs[i], &job->drm.s_fence->finished);
+		xe_sync_entry_signal(&syncs[i], &job->drm.s_fence->finished);
 
 	xe_sched_job_push(job);
 
@@ -384,7 +268,7 @@ err_engine_end:
 	xe_engine_end(engine);
 err_syncs:
 	for (i = 0; i < num_syncs; i++)
-		put_sync(&syncs[i]);
+		xe_sync_entry_cleanup(&syncs[i]);
 	kfree(syncs);
 err_engine:
 	xe_engine_put(engine);
