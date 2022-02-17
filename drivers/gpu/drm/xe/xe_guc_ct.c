@@ -122,6 +122,16 @@ static void guc_ct_fini(struct drm_device *drm, void *arg)
 	xe_bo_unpin_map_no_vm(ct->bo);
 }
 
+/* FIXME: Move to common file */
+static void primelockdep(struct mutex *lock)
+{
+#if IS_ENABLED(CONFIG_LOCKDEP)
+	bool cookie = dma_fence_begin_signalling();
+	might_lock(lock);
+	dma_fence_end_signalling(cookie);
+#endif
+}
+
 static void g2h_worker_func(struct work_struct *w);
 
 int xe_guc_ct_init(struct xe_guc_ct *ct)
@@ -133,6 +143,7 @@ int xe_guc_ct_init(struct xe_guc_ct *ct)
 	XE_BUG_ON(guc_ct_size() % PAGE_SIZE);
 
 	mutex_init(&ct->lock);
+	primelockdep(&ct->lock);
 	xa_init(&ct->fence_lookup);
 	spin_lock_init(&ct->fence_lock);
 	ct->fence_context = dma_fence_context_alloc(1);
