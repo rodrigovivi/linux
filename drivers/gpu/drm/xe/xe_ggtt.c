@@ -159,14 +159,20 @@ err_iomap:
 	return err;
 }
 
+#define GEN12_GUC_TLB_INV_CR                     _MMIO(0xcee8)
+#define   GEN12_GUC_TLB_INV_CR_INVALIDATE        (1 << 0)
+
 static void xe_ggtt_invalidate(struct xe_gt *gt)
 {
-	/* TODO: For GuC, we need to do something different here */
+	/* TODO: vfunc for GuC vs. non-GuC */
 
 	/* TODO: i915 makes comments about this being uncached and
 	 * therefore flushing WC buffers.  Is that really true here?
 	 */
 	xe_mmio_write32(gt, GFX_FLSH_CNTL_GEN6.reg, GFX_FLSH_CNTL_EN);
+	if (xe_gt_guc_submission_enabled(gt))
+		xe_mmio_write32(gt, GEN12_GUC_TLB_INV_CR.reg,
+				GEN12_GUC_TLB_INV_CR_INVALIDATE);
 }
 
 void xe_ggtt_printk(struct xe_ggtt *ggtt, const char *prefix)

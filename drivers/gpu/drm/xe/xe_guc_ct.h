@@ -20,16 +20,17 @@ static inline void xe_guc_ct_irq_handler(struct xe_guc_ct *ct)
 {
 	wake_up_all(&ct->wq);
 #ifdef XE_GUC_CT_SELFTEST
-	if (!ct->suppress_irq_handler)
+	if (!ct->suppress_irq_handler && ct->enabled)
 		queue_work(system_unbound_wq, &ct->g2h_worker);
 #else
-	queue_work(system_unbound_wq, &ct->g2h_worker);
+	if (ct->enabled)
+		queue_work(system_unbound_wq, &ct->g2h_worker);
 #endif
 }
 
 /* Basic CT send / receives */
 int xe_guc_ct_send(struct xe_guc_ct *ct, const u32 *action, u32 len,
-		   u32 g2h_len);
+		   u32 g2h_len, u32 num_g2h);
 int xe_guc_ct_send_recv(struct xe_guc_ct *ct, const u32 *action, u32 len,
 			u32 *response_buffer);
 static inline int

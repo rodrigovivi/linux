@@ -63,9 +63,7 @@ struct xe_guc_ct {
 	struct work_struct g2h_worker;
 	/** @enabled: CT enabled */
 	bool enabled;
-	/** @fence_lock: G2H fences */
-	spinlock_t fence_lock;
-	/** @fence: G2H fence seqno - 32 bits used by dma fence, 16 used by CT */
+	/** @fence: G2H fence seqno - 16 bits used by CT */
 	u32 fence_seqno;
 	/** @fence_context: context for G2H fence */
 	u64 fence_context;
@@ -77,7 +75,6 @@ struct xe_guc_ct {
 	/** @suppress_irq_handler: force flow control to sender */
 	bool suppress_irq_handler;
 #endif
-
 };
 
 #endif	/* _XE_GUC_CT_TYPES_H_ */

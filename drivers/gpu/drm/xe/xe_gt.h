@@ -19,10 +19,22 @@
 
 int xe_gt_alloc(struct xe_gt *gt);
 int xe_gt_init(struct xe_gt *gt);
+int xe_gt_reset(struct xe_gt *gt);
+void xe_gt_reset_async(struct xe_gt *gt);
 
 struct xe_hw_engine *xe_gt_hw_engine(struct xe_gt *gt,
 				     enum xe_engine_class class,
 				     uint16_t instance);
+
+static inline bool xe_gt_guc_submission_enabled(struct xe_gt *gt)
+{
+	return gt->info.enable_guc;
+}
+
+static inline void xe_gt_guc_submission_disable(struct xe_gt *gt)
+{
+	gt->info.enable_guc = false;
+}
 
 static inline struct xe_device * gt_to_xe(struct xe_gt *gt)
 {

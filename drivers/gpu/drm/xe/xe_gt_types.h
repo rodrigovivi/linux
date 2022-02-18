@@ -1,4 +1,5 @@
 /*
+   w
  * SPDX-License-Identifier: MIT
  *
  * Copyright © 2022 Intel Corporation
@@ -23,6 +24,7 @@
 	ENGINE_INSTANCES_MASK(gt, XE_HW_ENGINE_VECS0, \
 			      (XE_HW_ENGINE_VECS3 - XE_HW_ENGINE_VECS0 + 1))
 
+struct xe_engine_ops;
 struct xe_force_wake;
 struct xe_ggtt;
 struct xe_ttm_gtt_mgr;
@@ -43,6 +45,8 @@ struct xe_gt {
 		u8 id;
 		/** @engine_mask: mask of engines present on GT */
 		u64 engine_mask;
+		/** @enable_guc: GuC submission enabled */
+		bool enable_guc;
 	} info;
 
 	/**
@@ -85,6 +89,23 @@ struct xe_gt {
 		/** @ggtt: Global graphics translation table */
 		struct xe_ggtt *ggtt;
 	} mem;
+
+	/** @eops: submission backend engine operations */
+	const struct xe_engine_ops *eops;
+
+	/** @reset: state for GT resets */
+	struct {
+		/**
+		 * @lock: protets GT resets to ensure only 1 in flight at a
+		 * time
+		 */
+		struct mutex lock;
+		/**
+		 * @worker: work so GT resets can done async allowing to reset
+		 * code to safely flush all code paths
+		 */
+		struct work_struct worker;
+	} reset;
 
 	/** @uc: micro controllers on the GT */
 	struct xe_uc uc;

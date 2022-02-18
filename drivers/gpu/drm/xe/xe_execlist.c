@@ -72,7 +72,7 @@ static void __start_lrc(struct xe_hw_engine *hwe, struct xe_lrc *lrc,
 }
 
 static void __xe_execlist_port_start(struct xe_execlist_port *port,
-				     struct xe_execlist *exl)
+				     struct xe_execlist_engine *exl)
 {
 	xe_execlist_port_assert_held(port);
 
@@ -105,7 +105,7 @@ static void __xe_execlist_port_idle(struct xe_execlist_port *port)
 	port->running_exl = NULL;
 }
 
-static bool xe_execlist_is_idle(struct xe_execlist *exl)
+static bool xe_execlist_is_idle(struct xe_execlist_engine *exl)
 {
 	struct xe_lrc *lrc = &exl->engine->lrc;
 
@@ -114,7 +114,7 @@ static bool xe_execlist_is_idle(struct xe_execlist *exl)
 
 static void __xe_execlist_port_start_next_active(struct xe_execlist_port *port)
 {
-	struct xe_execlist *exl = NULL;
+	struct xe_execlist_engine *exl = NULL;
 	int i;
 
 	xe_execlist_port_assert_held(port);
@@ -122,7 +122,7 @@ static void __xe_execlist_port_start_next_active(struct xe_execlist_port *port)
 	for (i = ARRAY_SIZE(port->active) - 1; i >= 0; i--) {
 		while (!list_empty(&port->active[i])) {
 			exl = list_first_entry(&port->active[i],
-					       struct xe_execlist,
+					       struct xe_execlist_engine,
 					       active_link);
 			list_del(&exl->active_link);
 
@@ -187,7 +187,7 @@ static void xe_execlist_port_wake_locked(struct xe_execlist_port *port,
 	__xe_execlist_port_start_next_active(port);
 }
 
-static void xe_execlist_make_active(struct xe_execlist *exl)
+static void xe_execlist_make_active(struct xe_execlist_engine *exl)
 {
 	struct xe_execlist_port *port = exl->port;
 	enum drm_sched_priority priority = exl->entity.priority;
@@ -275,7 +275,7 @@ static struct dma_fence *
 xe_execlist_run_job(struct drm_sched_job *drm_job)
 {
 	struct xe_sched_job *job = to_xe_sched_job(drm_job);
-	struct xe_execlist *exl = job->engine->execlist;
+	struct xe_execlist_engine *exl = job->engine->execlist;
 	struct xe_lrc *lrc = &job->engine->lrc;
 	uint32_t dw[MAX_JOB_SIZE_DW], i = 0;
 
@@ -305,15 +305,17 @@ static const struct drm_sched_backend_ops drm_sched_ops = {
 	.free_job = xe_drm_sched_job_free,
 };
 
-struct xe_execlist *xe_execlist_create(struct xe_engine *e)
+int xe_execlist_engine_init(struct xe_engine *e)
 {
 	struct drm_gpu_scheduler *sched;
-	struct xe_execlist *exl;
+	struct xe_execlist_engine *exl;
 	int err;
+
+	XE_BUG_ON(xe_gt_guc_submission_enabled(e->gt));
 
 	exl = kzalloc(sizeof(*exl), GFP_KERNEL);
 	if (!exl)
-		return ERR_PTR(-ENOMEM);
+		return -ENOMEM;
 
 	exl->engine = e;
 
@@ -333,19 +335,24 @@ struct xe_execlist *xe_execlist_create(struct xe_engine *e)
 	exl->port = e->hwe->exl_port;
 	exl->has_run = false;
 	exl->active_priority = DRM_SCHED_PRIORITY_UNSET;
+	e->execlist = exl;
+	e->entity = &exl->entity;
 
-	return exl;
+	return 0;
 
 err_sched:
 	drm_sched_fini(&exl->sched);
 err_free:
 	kfree(exl);
-	return ERR_PTR(err);
+	return err;
 }
 
-void xe_execlist_destroy(struct xe_execlist *exl)
+void xe_execlist_engine_fini(struct xe_engine *e)
 {
+	struct xe_execlist_engine *exl = e->execlist;
 	unsigned long flags;
+
+	XE_BUG_ON(xe_gt_guc_submission_enabled(e->gt));
 
 	spin_lock_irqsave(&exl->port->lock, flags);
 	if (WARN_ON(exl->active_priority != DRM_SCHED_PRIORITY_UNSET))
@@ -355,4 +362,6 @@ void xe_execlist_destroy(struct xe_execlist *exl)
 	drm_sched_entity_fini(&exl->entity);
 	drm_sched_fini(&exl->sched);
 	kfree(exl);
+
+	xe_engine_fini(e);
 }
