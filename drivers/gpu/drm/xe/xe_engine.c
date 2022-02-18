@@ -14,10 +14,10 @@
 
 #include "xe_bo.h"
 #include "xe_device.h"
-#include "xe_execlist.h"
 #include "xe_gt.h"
 #include "xe_lrc.h"
 #include "xe_sched_job.h"
+#include "xe_trace.h"
 #include "xe_vm.h"
 
 static struct xe_engine *__xe_engine_create(struct xe_device *xe,
@@ -34,19 +34,15 @@ static struct xe_engine *__xe_engine_create(struct xe_device *xe,
 	e->hwe = hwe;
 	kref_init(&e->refcount);
 	e->vm = xe_vm_get(vm);
+	e->gt = to_gt(xe);
 
 	err = xe_lrc_init(&e->lrc, hwe, vm, SZ_16K);
 	if (err)
 		goto err_kfree;
 
-	if (hwe->exl_port) {
-		e->execlist = xe_execlist_create(e);
-		if (IS_ERR(e->execlist)) {
-			err = PTR_ERR(e->execlist);
-			goto err_lrc;
-		}
-		e->entity = &e->execlist->entity;
-	}
+	err = e->gt->eops->init(e);
+	if (err)
+		goto err_lrc;
 
 	return e;
 
@@ -69,13 +65,15 @@ struct xe_engine *xe_engine_create(struct xe_device *xe, struct xe_vm *vm,
 	return e;
 }
 
-void xe_engine_free(struct kref *ref)
+void xe_engine_destroy(struct kref *ref)
 {
 	struct xe_engine *e = container_of(ref, struct xe_engine, refcount);
 
-	if (e->execlist)
-		xe_execlist_destroy(e->execlist);
+	e->gt->eops->fini(e);
+}
 
+void xe_engine_fini(struct xe_engine *e)
+{
 	xe_lrc_finish(&e->lrc);
 	xe_vm_put(e->vm);
 
@@ -196,6 +194,7 @@ int xe_engine_destroy_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, !e))
 		return -ENOENT;
 
+	trace_xe_engine_close(e);
 	xe_engine_put(e);
 
 	return 0;
@@ -337,6 +336,11 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	if (XE_IOCTL_ERR(xe, !engine))
 		return -ENOENT;
 
+	if (XE_IOCTL_ERR(xe, engine->flags & ENGINE_FLAG_BANNED)) {
+		err = -ECANCELED;
+		goto err_engine;
+	}
+
 	syncs = kcalloc(args->num_syncs, sizeof(*syncs), GFP_KERNEL);
 	if (!syncs) {
 		err = -ENOMEM;
@@ -370,6 +374,11 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	for (i = 0; i < num_syncs; i++)
 		signal_sync(&syncs[i], &job->drm.s_fence->finished);
 
+	/* FIXME: Hacky for now */
+	if (xe_gt_guc_submission_enabled(engine->gt))
+		xe_engine_get(engine);
+
+	trace_xe_sched_job_exec(job);
 	drm_sched_entity_push_job(&job->drm);
 
 err_put_job:

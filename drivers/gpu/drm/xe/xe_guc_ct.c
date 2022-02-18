@@ -14,49 +14,36 @@
 #include "xe_gt.h"
 #include "xe_guc.h"
 #include "xe_guc_ct.h"
+#include "xe_guc_submit.h"
 
 /* Used when a CT send wants to block and / or receive data */
 struct g2h_fence {
-	struct dma_fence fence;
+	wait_queue_head_t wq;
 	u32 *response_buffer;
+	u32 seqno;
 	u16 response_len;
 	u16 error;
 	u16 hint;
 	u16 reason;
 	bool retry;
 	bool fail;
+	bool done;
 };
 
 static void g2h_fence_init(struct g2h_fence *g2h_fence, u32 *response_buffer)
 {
-	g2h_fence->fence.lock = NULL;
 	g2h_fence->response_buffer = response_buffer;
 	g2h_fence->response_len = 0;
 	g2h_fence->fail = false;
 	g2h_fence->retry = false;
+	g2h_fence->done = false;
+	g2h_fence->seqno = ~0x0;
 }
 
 static bool g2h_fence_needs_alloc(struct g2h_fence *g2h_fence)
 {
-	return g2h_fence->fence.lock == NULL;
+	return g2h_fence->seqno == ~0x0;
 }
-
-static const char *
-g2h_fence_get_driver_name(struct dma_fence *fence)
-{
-	return "xe";
-}
-
-static const char *
-g2h_fence_get_timeline_name(struct dma_fence *fence)
-{
-	return "g2h";
-}
-
-static const struct dma_fence_ops g2h_fence_ops = {
-	.get_driver_name = g2h_fence_get_driver_name,
-	.get_timeline_name = g2h_fence_get_timeline_name,
-};
 
 static struct xe_guc *
 ct_to_guc(struct xe_guc_ct *ct)
@@ -119,15 +106,17 @@ static void guc_ct_fini(struct drm_device *drm, void *arg)
 {
 	struct xe_guc_ct *ct = arg;
 
+	xa_destroy(&ct->fence_lookup);
 	xe_bo_unpin_map_no_vm(ct->bo);
 }
 
-/* FIXME: Move to common file */
-static void primelockdep(struct mutex *lock)
+static void primelockdep(struct xe_guc_ct *ct)
 {
 #if IS_ENABLED(CONFIG_LOCKDEP)
 	bool cookie = dma_fence_begin_signalling();
-	might_lock(lock);
+
+	might_lock(&ct->lock);
+
 	dma_fence_end_signalling(cookie);
 #endif
 }
@@ -143,12 +132,12 @@ int xe_guc_ct_init(struct xe_guc_ct *ct)
 	XE_BUG_ON(guc_ct_size() % PAGE_SIZE);
 
 	mutex_init(&ct->lock);
-	primelockdep(&ct->lock);
 	xa_init(&ct->fence_lookup);
-	spin_lock_init(&ct->fence_lock);
 	ct->fence_context = dma_fence_context_alloc(1);
 	INIT_WORK(&ct->g2h_worker, g2h_worker_func);
 	init_waitqueue_head(&ct->wq);
+
+	primelockdep(ct);
 
 	bo = xe_bo_create_pin_map(xe, NULL, guc_ct_size(),
 				  ttm_bo_type_kernel,
@@ -309,6 +298,7 @@ int xe_guc_ct_enable(struct xe_guc_ct *ct)
 	ct->enabled = true;
 	mutex_unlock(&ct->lock);
 
+	smp_mb();
 	wake_up_all(&ct->wq);
 	drm_dbg(&xe->drm, "GuC CT communication channel enabled\n");
 
@@ -370,14 +360,14 @@ static void h2g_reserve_space(struct xe_guc_ct *ct, u32 cmd_len)
 	ct->ctbs.h2g.space -= cmd_len;
 }
 
-static void g2h_reserve_space(struct xe_guc_ct *ct, u32 g2h_len)
+static void g2h_reserve_space(struct xe_guc_ct *ct, u32 g2h_len, u32 num_g2h)
 {
 	lockdep_assert_held(&ct->lock);
 	XE_BUG_ON(g2h_len > ct->ctbs.g2h.space);
 
 	ct->ctbs.g2h.space -= g2h_len;
 	if (g2h_len)
-		ct->g2h_outstanding++;
+		ct->g2h_outstanding += num_g2h;
 }
 
 static void g2h_release_space(struct xe_guc_ct *ct, u32 g2h_len)
@@ -452,13 +442,15 @@ static int h2g_write(struct xe_guc_ct *ct, const u32 *action, u32 len,
 }
 
 static int __guc_ct_send_locked(struct xe_guc_ct *ct, const u32 *action,
-				u32 len, u32 g2h_len,
+				u32 len, u32 g2h_len, u32 num_g2h,
 				struct g2h_fence *g2h_fence)
 {
-	u16 ct_fence_value;
 	int ret;
 
 	XE_BUG_ON(g2h_len && g2h_fence);
+	XE_BUG_ON(num_g2h && g2h_fence);
+	XE_BUG_ON(g2h_len && !num_g2h);
+	XE_BUG_ON(!g2h_len && num_g2h);
 	lockdep_assert_held(&ct->lock);
 
 	if (unlikely(ct->ctbs.h2g.broken)) {
@@ -467,23 +459,21 @@ static int __guc_ct_send_locked(struct xe_guc_ct *ct, const u32 *action,
 	}
 
 	if (unlikely(!ct->enabled)) {
-		XE_WARN_ON("CT not enabled");
 		ret = -ENODEV;
 		goto out;
 	}
 
 	if (g2h_fence) {
 		g2h_len = GUC_CTB_HXG_MSG_MAX_LEN;
+		num_g2h = 1;
 
 		if (g2h_fence_needs_alloc(g2h_fence)) {
 			void *ptr;
 
-			ct_fence_value = (ct->fence_seqno++ & 0xffff);
-			dma_fence_init(&g2h_fence->fence, &g2h_fence_ops,
-				       &ct->fence_lock, ct->fence_context,
-				       ct_fence_value);
+			g2h_fence->seqno = (ct->fence_seqno++ & 0xffff);
+			init_waitqueue_head(&g2h_fence->wq);
 			ptr = xa_store(&ct->fence_lookup,
-				       ct_fence_value,
+				       g2h_fence->seqno,
 				       g2h_fence, GFP_ATOMIC);
 			if (IS_ERR(ptr)) {
 				ret = PTR_ERR(ptr);
@@ -497,14 +487,15 @@ retry:
 	if (unlikely(ret))
 		goto out;
 
-	ret = h2g_write(ct, action, len, ct_fence_value, !!g2h_fence);
+	ret = h2g_write(ct, action, len, g2h_fence ? g2h_fence->seqno : 0,
+			!!g2h_fence);
 	if (unlikely(ret)) {
 		if (ret == -EAGAIN)
 			goto retry;
 		goto out;
 	}
 
-	g2h_reserve_space(ct, g2h_len);
+	g2h_reserve_space(ct, g2h_len, num_g2h);
 	xe_guc_notify(ct_to_guc(ct));
 out:
 
@@ -513,13 +504,14 @@ out:
 
 static void kick_reset(struct xe_guc_ct *ct)
 {
-	/* FIXME: Reset placehold */
+	xe_gt_reset_async(ct_to_gt(ct));
 }
 
 static int dequeue_one_g2h(struct xe_guc_ct *ct);
 
 static int guc_ct_send_locked(struct xe_guc_ct *ct, const u32 *action, u32 len,
-			      u32 g2h_len, struct g2h_fence *g2h_fence)
+			      u32 g2h_len, u32 num_g2h,
+			      struct g2h_fence *g2h_fence)
 {
 	struct drm_device *drm = &ct_to_xe(ct)->drm;
 	struct drm_printer p = drm_info_printer(drm->dev);
@@ -530,7 +522,8 @@ static int guc_ct_send_locked(struct xe_guc_ct *ct, const u32 *action, u32 len,
 	lockdep_assert_held(&ct->lock);
 
 try_again:
-	ret = __guc_ct_send_locked(ct, action, len, g2h_len, g2h_fence);
+	ret = __guc_ct_send_locked(ct, action, len, g2h_len, num_g2h,
+				   g2h_fence);
 
 	/*
 	 * We wait to try to restore credits for about 1 second before bailing.
@@ -582,25 +575,25 @@ broken:
 }
 
 static int guc_ct_send(struct xe_guc_ct *ct, const u32 *action, u32 len,
-		       u32 g2h_len, struct g2h_fence *g2h_fence)
+		       u32 g2h_len, u32 num_g2h, struct g2h_fence *g2h_fence)
 {
 	int ret;
 
 	XE_BUG_ON(g2h_len && g2h_fence);
 
 	mutex_lock(&ct->lock);
-	ret = guc_ct_send_locked(ct, action, len, g2h_len, g2h_fence);
+	ret = guc_ct_send_locked(ct, action, len, g2h_len, num_g2h, g2h_fence);
 	mutex_unlock(&ct->lock);
 
 	return ret;
 }
 
 int xe_guc_ct_send(struct xe_guc_ct *ct, const u32 *action, u32 len,
-		   u32 g2h_len)
+		   u32 g2h_len, u32 num_g2h)
 {
 	int ret;
 
-	ret = guc_ct_send(ct, action, len, g2h_len, NULL);
+	ret = guc_ct_send(ct, action, len, g2h_len, num_g2h, NULL);
 	if (ret == -EDEADLK)
 		kick_reset(ct);
 
@@ -613,7 +606,7 @@ int xe_guc_ct_send_g2h_handler(struct xe_guc_ct *ct, const u32 *action, u32 len)
 
 	lockdep_assert_held(&ct->lock);
 
-	ret = guc_ct_send_locked(ct, action, len, 0, NULL);
+	ret = guc_ct_send_locked(ct, action, len, 0, 0, NULL);
 	if (ret == -EDEADLK)
 		kick_reset(ct);
 
@@ -656,13 +649,13 @@ static int guc_ct_send_recv(struct xe_guc_ct *ct, const u32 *action, u32 len,
 retry:
 	g2h_fence_init(&g2h_fence, response_buffer);
 retry_same_fence:
-	ret = guc_ct_send(ct, action, len, 0, &g2h_fence);
+	ret = guc_ct_send(ct, action, len, 0, 0, &g2h_fence);
 	if (unlikely(ret == -ENOMEM)) {
 		void *ptr;
 
 		/* Retry allocation /w GFP_KERNEL */
 		ptr = xa_store(&ct->fence_lookup,
-			       g2h_fence.fence.seqno,
+			       g2h_fence.seqno,
 			       &g2h_fence, GFP_KERNEL);
 		if (IS_ERR(ptr)) {
 			return PTR_ERR(ptr);
@@ -677,16 +670,16 @@ retry_same_fence:
 			goto retry_same_fence;
 
 		if (!g2h_fence_needs_alloc(&g2h_fence))
-			xa_erase_irq(&ct->fence_lookup, g2h_fence.fence.seqno);
+			xa_erase_irq(&ct->fence_lookup, g2h_fence.seqno);
 
 		return ret;
 	}
 
-	ret = dma_fence_wait_timeout(&g2h_fence.fence, false, HZ / 5);
+	ret = wait_event_timeout(g2h_fence.wq, g2h_fence.done, HZ);
 	if (!ret) {
-		drm_err(&xe->drm, "Timed out wait for G2H, fence %llu, action %04x",
-			g2h_fence.fence.seqno, action[0]);
-		xa_erase_irq(&ct->fence_lookup, g2h_fence.fence.seqno);
+		drm_err(&xe->drm, "Timed out wait for G2H, fence %u, action %04x",
+			g2h_fence.seqno, action[0]);
+		xa_erase_irq(&ct->fence_lookup, g2h_fence.seqno);
 		return -ETIME;
 	}
 
@@ -746,10 +739,11 @@ static int parse_g2h_response(struct xe_guc_ct *ct, u32 *msg, u32 len)
 	if (unlikely(!g2h_fence)) {
 		/* Don't tear down channel, as send could've timed out */
 		drm_warn(&xe->drm, "G2H fence (%u) not found!\n", fence);
+		g2h_release_space(ct, GUC_CTB_HXG_MSG_MAX_LEN);
 		return 0;
 	}
 
-	XE_WARN_ON(fence != (g2h_fence->fence.seqno & 0xffff));
+	XE_WARN_ON(fence != g2h_fence->seqno);
 
 	if (type == GUC_HXG_TYPE_RESPONSE_FAILURE) {
 		g2h_fence->fail = true;
@@ -769,7 +763,10 @@ static int parse_g2h_response(struct xe_guc_ct *ct, u32 *msg, u32 len)
 
 	g2h_release_space(ct, GUC_CTB_HXG_MSG_MAX_LEN);
 
-	dma_fence_signal(&g2h_fence->fence);
+	g2h_fence->done = true;
+	smp_mb();
+
+	wake_up(&g2h_fence->wq);
 
 	return 0;
 }
@@ -819,7 +816,45 @@ static int parse_g2h_msg(struct xe_guc_ct *ct, u32 *msg, u32 len)
 
 static int process_g2h_msg(struct xe_guc_ct *ct, u32 *msg, u32 len)
 {
-	/* FIXME: Specific message handlers */
+	struct xe_device *xe = ct_to_xe(ct);
+	struct xe_guc *guc = ct_to_guc(ct);
+	u32 action = FIELD_GET(GUC_HXG_EVENT_MSG_0_ACTION, msg[1]);
+	u32 *payload = msg + GUC_CTB_HXG_MSG_MIN_LEN;
+	u32 adj_len = len - GUC_CTB_HXG_MSG_MIN_LEN;
+	int ret = 0;
+
+	if (FIELD_GET(GUC_HXG_MSG_0_TYPE, msg[1]) != GUC_HXG_TYPE_EVENT)
+		return 0;
+
+	switch (action) {
+	case XE_GUC_ACTION_SCHED_CONTEXT_MODE_DONE:
+		ret = xe_guc_sched_done_handler(guc, payload, adj_len);
+		break;
+	case XE_GUC_ACTION_DEREGISTER_CONTEXT_DONE:
+		ret = xe_guc_deregister_done_handler(guc, payload, adj_len);
+		break;
+	case XE_GUC_ACTION_CONTEXT_RESET_NOTIFICATION:
+		ret = xe_guc_engine_reset_handler(guc, payload, adj_len);
+		break;
+	case XE_GUC_ACTION_ENGINE_FAILURE_NOTIFICATION:
+		ret = xe_guc_engine_reset_failure_handler(guc, payload,
+							  adj_len);
+		break;
+	case XE_GUC_ACTION_SCHED_ENGINE_MODE_DONE:
+		/* Selftest only at the moment */
+		break;
+	case XE_GUC_ACTION_STATE_CAPTURE_NOTIFICATION:
+	case XE_GUC_ACTION_NOTIFY_FLUSH_LOG_BUFFER_TO_FILE:
+		/* FIXME: Handle this */
+		break;
+	default:
+		drm_err(&xe->drm, "unexpected action 0x%04x\n", action);
+	}
+
+	if (ret)
+		drm_err(&xe->drm, "action 0x%04x failed processing, ret=%d\n",
+			action, ret);
+
 	return 0;
 }
 
@@ -892,7 +927,7 @@ static int g2h_read(struct xe_guc_ct *ct, u32 *msg)
 static int dequeue_one_g2h(struct xe_guc_ct *ct)
 {
 	u32 msg[GUC_CTB_HXG_MSG_MAX_LEN];
-	u32 len;
+	int len;
 	int ret;
 
 	lockdep_assert_held(&ct->lock);
@@ -916,9 +951,6 @@ static void g2h_worker_func(struct work_struct *w)
 {
 	struct xe_guc_ct *ct = container_of(w, struct xe_guc_ct, g2h_worker);
 	int ret;
-	bool cookie;
-
-	cookie = dma_fence_begin_signalling();
 
 	do {
 		mutex_lock(&ct->lock);
@@ -933,8 +965,6 @@ static void g2h_worker_func(struct work_struct *w)
 			kick_reset(ct);
 		}
 	} while (ret == 1);
-
-	dma_fence_end_signalling(cookie);
 }
 
 static void guc_ct_ctb_print(struct guc_ctb *ctb, struct drm_printer *p)
@@ -1003,7 +1033,7 @@ void xe_guc_ct_selftest(struct xe_guc_ct *ct, struct drm_printer *p)
 	drm_puts(p, "Starting GuC CT selftest\n");
 
 	for (i = 0; i < 8192; ++i) {
-		ret = xe_guc_ct_send(ct, action, ARRAY_SIZE(action), 4);
+		ret = xe_guc_ct_send(ct, action, ARRAY_SIZE(action), 4, 1);
 		if (ret) {
 			drm_printf(p, "Aborted pass %d, ret %d\n", i, ret);
 			xe_guc_ct_print(ct, p);

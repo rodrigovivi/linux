@@ -95,6 +95,11 @@ fail:
 	return ret;
 }
 
+void xe_huc_sanitize(struct xe_huc *huc)
+{
+	xe_uc_fw_change_status(&huc->fw, XE_UC_FIRMWARE_LOADABLE);
+}
+
 void xe_huc_print_info(struct xe_huc *huc, struct drm_printer *p)
 {
 	struct xe_gt *gt = huc_to_gt(huc);

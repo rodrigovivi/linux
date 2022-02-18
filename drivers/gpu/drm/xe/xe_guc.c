@@ -10,6 +10,7 @@
 #include "xe_guc_ct.h"
 #include "xe_guc_log.h"
 #include "xe_guc_reg.h"
+#include "xe_guc_submit.h"
 #include "xe_gt.h"
 #include "xe_uc_fw.h"
 #include "xe_wopcm.h"
@@ -58,12 +59,7 @@ static u32 guc_ctl_debug_flags(struct xe_guc *guc)
 
 static u32 guc_ctl_feature_flags(struct xe_guc *guc)
 {
-#ifdef XE_GUC_CT_SELFTEST
 	return 0;
-#else
-	/* FIXME: Just loading the GuC for now, disable submission */
-	return GUC_CTL_DISABLE_SCHEDULER;
-#endif
 }
 
 static u32 guc_ctl_log_params_flags(struct xe_guc *guc)
@@ -223,9 +219,7 @@ int xe_guc_reset(struct xe_guc *guc)
 	struct xe_gt *gt = guc_to_gt(guc);
 	u32 guc_status;
 	int ret;
-	bool cookie;
 
-	cookie = dma_fence_begin_signalling();
 	xe_force_wake_assert_held(gt->mmio.fw, XE_FW_GT);
 
 	xe_mmio_write32(gt, GEN6_GDRST.reg, GEN11_GRDOM_GUC);
@@ -246,11 +240,9 @@ int xe_guc_reset(struct xe_guc *guc)
 		goto err_out;
 	}
 
-	dma_fence_end_signalling(cookie);
 	return 0;
 
 err_out:
-	dma_fence_end_signalling(cookie);
 
 	return ret;
 }
@@ -445,6 +437,9 @@ int xe_guc_enable_communication(struct xe_guc *guc)
 
 	guc_enable_irq(guc);
 
+	xe_mmio_rmw32(guc_to_gt(guc), GEN6_PMINTRMSK.reg,
+		      ARAT_EXPIRED_INTRMSK, 0);
+
 	err = xe_guc_ct_enable(&guc->ct);
 	if (err)
 		return err;
@@ -615,6 +610,36 @@ void xe_guc_irq_handler(struct xe_guc *guc, const u16 iir)
 		xe_guc_ct_irq_handler(&guc->ct);
 }
 
+void xe_guc_sanitize(struct xe_guc *guc)
+{
+	xe_uc_fw_change_status(&guc->fw, XE_UC_FIRMWARE_LOADABLE);
+	xa_destroy(&guc->ct.fence_lookup);
+}
+
+int xe_guc_stop(struct xe_guc *guc)
+{
+	int ret;
+
+	xe_guc_ct_disable(&guc->ct);
+
+	ret = xe_guc_submit_stop(guc);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
+int xe_guc_start(struct xe_guc *guc)
+{
+	int ret;
+
+	ret = xe_guc_submit_start(guc);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
 void xe_guc_print_info(struct xe_guc *guc, struct drm_printer *p)
 {
 	struct xe_gt *gt = guc_to_gt(guc);
@@ -646,4 +671,5 @@ void xe_guc_print_info(struct xe_guc *guc, struct drm_printer *p)
 	xe_force_wake_put(gt->mmio.fw, XE_FW_GT);
 
 	xe_guc_ct_print(&guc->ct, p);
+	xe_guc_submit_print(guc, p);
 }

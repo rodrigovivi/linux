@@ -22,12 +22,9 @@ int xe_guc_send_mmio(struct xe_guc *guc, const u32 *request, u32 len);
 int xe_guc_self_cfg32(struct xe_guc *guc, u16 key, u32 val);
 int xe_guc_self_cfg64(struct xe_guc *guc, u16 key, u64 val);
 void xe_guc_irq_handler(struct xe_guc *guc, const u16 iir);
+void xe_guc_sanitize(struct xe_guc *guc);
 void xe_guc_print_info(struct xe_guc *guc, struct drm_printer *p);
-
-static inline void
-xe_guc_sanitize(struct xe_guc *guc)
-{
-	// TODO - Reset GuC SW state
-}
+int xe_guc_stop(struct xe_guc *guc);
+int xe_guc_start(struct xe_guc *guc);
 
 #endif	/* _XE_GUC_H_ */

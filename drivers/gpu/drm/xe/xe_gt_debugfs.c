@@ -41,8 +41,19 @@ static int hw_engines(struct seq_file *m, void *data)
 	return 0;
 }
 
+static int force_reset(struct seq_file *m, void *data)
+{
+	struct xe_gt *gt = node_to_gt(m->private);
+	struct drm_printer p = drm_seq_file_printer(m);
+
+	drm_printf(&p, "GT reset: ret=%d\n", xe_gt_reset(gt));
+
+	return 0;
+}
+
 static const struct drm_info_list debugfs_list[] = {
 	{"hw_engines", hw_engines, 0},
+	{"force_reset", force_reset, 0},
 };
 
 void xe_gt_debugfs_register(struct xe_gt *gt)

@@ -43,9 +43,10 @@ xe-y += xe_bo.o \
 	xe_gt_debugfs.o \
 	xe_guc.o \
 	xe_guc_ads.o \
+	xe_guc_ct.o \
 	xe_guc_debugfs.o \
 	xe_guc_log.o \
-	xe_guc_ct.o \
+	xe_guc_submit.o \
 	xe_hw_engine.o \
 	xe_hw_fence.o \
 	xe_huc.o \
@@ -56,6 +57,7 @@ xe-y += xe_bo.o \
 	xe_module.o \
 	xe_pci.o \
 	xe_sched_job.o \
+	xe_trace.o \
 	xe_ttm_gtt_mgr.o \
 	xe_ttm_vram_mgr.o \
 	xe_uc.o \

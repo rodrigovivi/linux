@@ -6,6 +6,7 @@
 #include "xe_huc.h"
 #include "xe_gt.h"
 #include "xe_guc.h"
+#include "xe_guc_submit.h"
 #include "xe_uc.h"
 #include "xe_uc_fw.h"
 #include "xe_wopcm.h"
@@ -27,19 +28,33 @@ int xe_uc_init(struct xe_uc *uc)
 {
 	int ret;
 
+	/* GuC submission not enabled, nothing to do */
+	if (!xe_gt_guc_submission_enabled(uc_to_gt(uc)))
+		return 0;
+
 	ret = xe_guc_init(&uc->guc);
 	if (ret)
-		return ret;
+		goto err;
 
 	ret = xe_huc_init(&uc->huc);
 	if (ret)
-		return ret;
+		goto err;
 
 	ret = xe_wopcm_init(&uc->wopcm);
 	if (ret)
-		return ret;
+		goto err;
+
+	ret = xe_guc_submit_init(&uc->guc);
+	if (ret)
+		goto err;
 
 	return 0;
+
+err:
+	/* If any uC firmwares not found, fall back to execlists */
+	xe_gt_guc_submission_disable(uc_to_gt(uc));
+
+	return ret;
 }
 
 static int uc_reset(struct xe_uc *uc)
@@ -70,22 +85,10 @@ static int uc_sanitize(struct xe_uc *uc)
  */
 int xe_uc_init_hw(struct xe_uc *uc)
 {
-	struct xe_device *xe = uc_to_xe(uc);
 	int ret;
 
-	/*
-	 * XXX: For some reason if the GuC is loaded on DG1, execlist submission
-	 * breaks (seen by xe_exec_basic hanging). Apply quick hack to disable
-	 * the GuC on DG1 for now. A follow up will plumb a modparam in.
-	 */
-	if (IS_DGFX(xe)) {
-		drm_dbg(&xe->drm, "Skipping GuC load");
-		return 0;
-	}
-
-	/* If any uC firmwares not found, bail out and fall back to execlists */
-	if (!xe_uc_fw_is_loadable(&uc->guc.fw) ||
-	    !xe_uc_fw_is_loadable(&uc->huc.fw))
+	/* GuC submission not enabled, nothing to do */
+	if (!xe_gt_guc_submission_enabled(uc_to_gt(uc)))
 		return 0;
 
 	ret = uc_sanitize(uc);
@@ -109,4 +112,22 @@ int xe_uc_init_hw(struct xe_uc *uc)
 	XE_WARN_ON(ret);
 
 	return 0;
+}
+
+int xe_uc_stop(struct xe_uc *uc)
+{
+	/* GuC submission not enabled, nothing to do */
+	if (!xe_gt_guc_submission_enabled(uc_to_gt(uc)))
+		return 0;
+
+	return xe_guc_stop(&uc->guc);
+}
+
+int xe_uc_start(struct xe_uc *uc)
+{
+	/* GuC submission not enabled, nothing to do */
+	if (!xe_gt_guc_submission_enabled(uc_to_gt(uc)))
+		return 0;
+
+	return xe_guc_start(&uc->guc);
 }
