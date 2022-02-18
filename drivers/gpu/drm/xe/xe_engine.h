@@ -17,7 +17,8 @@ struct xe_file;
 
 struct xe_engine *xe_engine_create(struct xe_device *xe, struct xe_vm *vm,
 				   struct xe_hw_engine *hw_engine);
-void xe_engine_free(struct kref *ref);
+void xe_engine_fini(struct xe_engine *e);
+void xe_engine_destroy(struct kref *ref);
 
 struct xe_engine *xe_engine_lookup(struct xe_file *xef, u32 id);
 
@@ -29,7 +30,7 @@ static inline struct xe_engine *xe_engine_get(struct xe_engine *engine)
 
 static inline void xe_engine_put(struct xe_engine *engine)
 {
-	kref_put(&engine->refcount, xe_engine_free);
+	kref_put(&engine->refcount, xe_engine_destroy);
 }
 
 #define xe_engine_assert_held(e) xe_vm_assert_held((e)->vm)

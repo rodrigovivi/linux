@@ -638,12 +638,26 @@ static inline uint32_t __xe_lrc_pphwsp_offset(struct xe_lrc *lrc)
 }
 
 #define LRC_SEQNO_PPHWSP_OFFSET 512
+#define LRC_START_SEQNO_PPHWSP_OFFSET LRC_SEQNO_PPHWSP_OFFSET + 8
+#define LRC_FLUSH_PPHWSP_OFFSET LRC_SEQNO_PPHWSP_OFFSET + 16
 #define LRC_PPHWSP_SIZE SZ_4K
 
 static inline uint32_t __xe_lrc_seqno_offset(struct xe_lrc *lrc)
 {
 	/* The seqno is stored in the driver-defined portion of PPHWSP */
 	return __xe_lrc_pphwsp_offset(lrc) + LRC_SEQNO_PPHWSP_OFFSET;
+}
+
+static inline uint32_t __xe_lrc_start_seqno_offset(struct xe_lrc *lrc)
+{
+	/* The start seqno is stored in the driver-defined portion of PPHWSP */
+	return __xe_lrc_pphwsp_offset(lrc) + LRC_START_SEQNO_PPHWSP_OFFSET;
+}
+
+static inline uint32_t __xe_lrc_flush_offset(struct xe_lrc *lrc)
+{
+	/* The flush is stored in the driver-defined portion of PPHWSP */
+	return __xe_lrc_pphwsp_offset(lrc) + LRC_FLUSH_PPHWSP_OFFSET;
 }
 
 static inline uint32_t __xe_lrc_regs_offset(struct xe_lrc *lrc)
@@ -669,6 +683,8 @@ DECL_MAP_ADDR_HELPERS(ring)
 DECL_MAP_ADDR_HELPERS(pphwsp)
 DECL_MAP_ADDR_HELPERS(seqno)
 DECL_MAP_ADDR_HELPERS(regs)
+DECL_MAP_ADDR_HELPERS(start_seqno)
+DECL_MAP_ADDR_HELPERS(flush)
 
 #undef DECL_MAP_ADDR_HELPERS
 
@@ -760,7 +776,9 @@ int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 	lrc->ring.size = ring_size;
 	lrc->ring.tail = 0;
 
-	xe_hw_fence_ctx_init(&lrc->fence_ctx, hwe);
+	xe_hw_fence_ctx_init(&lrc->fence_ctx, hwe->gt,
+			     &hwe->fence_irq, hwe->name);
+
 
 	init_data = empty_lrc_data(hwe);
 	if (!init_data) {
@@ -822,6 +840,11 @@ void xe_lrc_finish(struct xe_lrc *lrc)
 		xe_bo_unlock_no_vm(lrc->bo);
 	}
 	xe_bo_put(lrc->bo);
+}
+
+void xe_lrc_set_ring_head(struct xe_lrc *lrc, uint32_t head)
+{
+	xe_lrc_write_ctx_reg(lrc, CTX_RING_HEAD, head);
 }
 
 uint32_t xe_lrc_ring_head(struct xe_lrc *lrc)
@@ -897,6 +920,26 @@ uint32_t xe_lrc_seqno_ggtt_addr(struct xe_lrc *lrc)
 
 struct dma_fence *xe_lrc_create_seqno_fence(struct xe_lrc *lrc)
 {
-	return &xe_hw_fence_create(&lrc->fence_ctx.hwe->fence_irq,
-				   &lrc->fence_ctx, __xe_lrc_seqno_map(lrc))->dma;
+	return &xe_hw_fence_create(&lrc->fence_ctx,
+				   __xe_lrc_seqno_map(lrc))->dma;
+}
+
+int32_t xe_lrc_seqno(struct xe_lrc *lrc)
+{
+	return dbm_read32(__xe_lrc_seqno_map(lrc));
+}
+
+int32_t xe_lrc_start_seqno(struct xe_lrc *lrc)
+{
+	return dbm_read32(__xe_lrc_start_seqno_map(lrc));
+}
+
+uint32_t xe_lrc_start_seqno_ggtt_addr(struct xe_lrc *lrc)
+{
+	return __xe_lrc_start_seqno_ggtt_addr(lrc);
+}
+
+uint32_t xe_lrc_flush_ggtt_addr(struct xe_lrc *lrc)
+{
+	return __xe_lrc_flush_ggtt_addr(lrc);
 }

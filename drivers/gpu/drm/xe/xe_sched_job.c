@@ -58,3 +58,17 @@ void xe_drm_sched_job_free(struct drm_sched_job *drm_job)
 {
 	xe_sched_job_destroy(to_xe_sched_job(drm_job));
 }
+
+bool xe_sched_job_started(struct xe_sched_job *job)
+{
+	struct xe_lrc *lrc = &job->engine->lrc;
+
+	return xe_lrc_start_seqno(lrc) >= xe_sched_job_seqno(job);
+}
+
+bool xe_sched_job_completed(struct xe_sched_job *job)
+{
+	struct xe_lrc *lrc = &job->engine->lrc;
+
+	return xe_lrc_seqno(lrc) >= xe_sched_job_seqno(job);
+}

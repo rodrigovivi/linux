@@ -1,0 +1,27 @@
+/*
+ * SPDX-License-Identifier: MIT
+ *
+ * Copyright © 2022 Intel Corporation
+ */
+
+#ifndef _XE_GUC_SUBMIT_H_
+#define _XE_GUC_SUBMIT_H_
+
+struct xe_engine;
+struct xe_guc;
+
+int xe_guc_submit_init(struct xe_guc *guc);
+void xe_guc_submit_print(struct xe_guc *guc, struct drm_printer *p);
+
+int xe_guc_engine_init(struct xe_engine *e);
+void xe_guc_engine_fini(struct xe_engine *e);
+
+int xe_guc_submit_stop(struct xe_guc *guc);
+int xe_guc_submit_start(struct xe_guc *guc);
+
+int xe_guc_sched_done_handler(struct xe_guc *guc, u32 *msg, u32 len);
+int xe_guc_deregister_done_handler(struct xe_guc *guc, u32 *msg, u32 len);
+int xe_guc_engine_reset_handler(struct xe_guc *guc, u32 *msg, u32 len);
+int xe_guc_engine_reset_failure_handler(struct xe_guc *guc, u32 *msg, u32 len);
+
+#endif /* _XE_GUC_SUBMIT_H_ */
