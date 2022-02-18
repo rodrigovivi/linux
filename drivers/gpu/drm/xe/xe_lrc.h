@@ -8,12 +8,14 @@
 
 #include "xe_lrc_types.h"
 
+struct xe_hw_engine;
 struct xe_vm;
 
 int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 		struct xe_vm *vm, uint32_t ring_size);
 void xe_lrc_finish(struct xe_lrc *lrc);
 
+void xe_lrc_set_ring_head(struct xe_lrc *lrc, uint32_t head);
 uint32_t xe_lrc_ring_head(struct xe_lrc *lrc);
 uint32_t xe_lrc_ring_space(struct xe_lrc *lrc);
 void xe_lrc_write_ring(struct xe_lrc *lrc, const void *data, size_t size);
@@ -28,5 +30,11 @@ uint64_t xe_lrc_descriptor(struct xe_lrc *lrc);
 
 uint32_t xe_lrc_seqno_ggtt_addr(struct xe_lrc *lrc);
 struct dma_fence *xe_lrc_create_seqno_fence(struct xe_lrc *lrc);
+int32_t xe_lrc_seqno(struct xe_lrc *lrc);
+
+uint32_t xe_lrc_start_seqno_ggtt_addr(struct xe_lrc *lrc);
+int32_t xe_lrc_start_seqno(struct xe_lrc *lrc);
+
+uint32_t xe_lrc_flush_ggtt_addr(struct xe_lrc *lrc);
 
 #endif /* _XE_LRC_H_ */

@@ -13,6 +13,12 @@
 #include "abi/guc_klvs_abi.h"
 #include "abi/guc_messages_abi.h"
 
+#define G2H_LEN_DW_SCHED_CONTEXT_MODE_SET	4
+#define G2H_LEN_DW_DEREGISTER_CONTEXT		3
+
+#define GUC_CONTEXT_DISABLE		0
+#define GUC_CONTEXT_ENABLE		1
+
 #define GUC_RENDER_ENGINE		0
 #define GUC_VIDEO_ENGINE		1
 #define GUC_BLITTER_ENGINE		2
@@ -28,6 +34,39 @@
 #define GUC_LAST_ENGINE_CLASS		GUC_RESERVED_CLASS
 #define GUC_MAX_ENGINE_CLASSES		16
 #define GUC_MAX_INSTANCES_PER_CLASS	32
+
+/* Helper for context registration H2G */
+struct guc_ctxt_registration_info {
+	u32 flags;
+	u32 context_idx;
+	u32 engine_class;
+	u32 engine_submit_mask;
+	u32 wq_desc_lo;
+	u32 wq_desc_hi;
+	u32 wq_base_lo;
+	u32 wq_base_hi;
+	u32 wq_size;
+	u32 hwlrca_lo;
+	u32 hwlrca_hi;
+};
+#define CONTEXT_REGISTRATION_FLAG_KMD	BIT(0)
+
+/* 32-bit KLV structure as used by policy updates and others */
+struct guc_klv_generic_dw_t {
+        u32 kl;
+        u32 value;
+} __packed;
+
+/* Format of the UPDATE_CONTEXT_POLICIES H2G data packet */
+struct guc_update_engine_policy_header {
+        u32 action;
+        u32 guc_id;
+} __packed;
+
+struct guc_update_engine_policy {
+        struct guc_update_engine_policy_header header;
+        struct guc_klv_generic_dw_t klv[GUC_CONTEXT_POLICIES_KLV_NUM_IDS];
+} __packed;
 
 /* GUC_CTL_* - Parameters for loading the GuC */
 #define GUC_CTL_LOG_PARAMS		0

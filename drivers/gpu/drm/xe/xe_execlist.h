@@ -17,7 +17,7 @@ struct xe_execlist_port *xe_execlist_port_create(struct xe_device *xe,
 						 struct xe_hw_engine *hwe);
 void xe_execlist_port_destroy(struct xe_execlist_port *port);
 
-struct xe_execlist *xe_execlist_create(struct xe_engine *e);
-void xe_execlist_destroy(struct xe_execlist *exl);
+int xe_execlist_engine_init(struct xe_engine *e);
+void xe_execlist_engine_fini(struct xe_engine *e);
 
 #endif /* _XE_EXECLIST_H_ */

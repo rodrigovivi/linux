@@ -204,8 +204,6 @@ int xe_wopcm_init(struct xe_wopcm *wopcm)
 	drm_dbg(&xe->drm, "WOPCM: %uK\n", wopcm->size / SZ_1K);
 
 	xe_force_wake_assert_held(gt->mmio.fw, XE_FW_GT);
-	XE_BUG_ON(wopcm->guc.base);
-	XE_BUG_ON(wopcm->guc.size);
 	XE_BUG_ON(guc_fw_size >= wopcm->size);
 	XE_BUG_ON(huc_fw_size >= wopcm->size);
 	XE_BUG_ON(ctx_rsvd + WOPCM_RESERVED_SIZE >= wopcm->size);

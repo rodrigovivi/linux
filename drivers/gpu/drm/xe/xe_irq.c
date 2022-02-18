@@ -101,10 +101,14 @@ static void gen11_gt_irq_postinstall(struct xe_device *xe)
 	struct xe_gt *gt = to_gt(xe);
 	uint32_t irqs, dmask, smask;
 
-	irqs = GT_RENDER_USER_INTERRUPT |
-	       GT_CS_MASTER_ERROR_INTERRUPT |
-	       GT_CONTEXT_SWITCH_INTERRUPT |
-	       GT_WAIT_SEMAPHORE_INTERRUPT;
+	if (xe_gt_guc_submission_enabled(gt)) {
+		irqs = GT_RENDER_USER_INTERRUPT;
+	} else {
+		irqs = GT_RENDER_USER_INTERRUPT |
+		       GT_CS_MASTER_ERROR_INTERRUPT |
+		       GT_CONTEXT_SWITCH_INTERRUPT |
+		       GT_WAIT_SEMAPHORE_INTERRUPT;
+	}
 
 	dmask = irqs << 16 | irqs;
 	smask = irqs << 16;

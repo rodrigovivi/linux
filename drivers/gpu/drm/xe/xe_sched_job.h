@@ -17,10 +17,18 @@ struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
 void xe_sched_job_destroy(struct xe_sched_job *job);
 void xe_drm_sched_job_free(struct drm_sched_job *drm_job);
 
+bool xe_sched_job_started(struct xe_sched_job *job);
+bool xe_sched_job_completed(struct xe_sched_job *job);
+
 static inline struct xe_sched_job *
 to_xe_sched_job(struct drm_sched_job *drm)
 {
 	return container_of(drm, struct xe_sched_job, drm);
+}
+
+static inline u32 xe_sched_job_seqno(struct xe_sched_job *job)
+{
+	return job->fence->seqno;
 }
 
 #endif /* _XE_SCHED_JOB_H_ */

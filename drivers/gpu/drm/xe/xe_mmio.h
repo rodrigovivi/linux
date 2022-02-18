@@ -35,6 +35,17 @@ static inline uint32_t xe_mmio_read32(struct xe_gt *gt, uint32_t reg)
 	return readl(gt->mmio.regs + reg);
 }
 
+static inline void xe_mmio_rmw32(struct xe_gt *gt, uint32_t reg, uint32_t mask,
+				 uint32_t val)
+{
+	uint32_t reg_val;
+
+	reg_val = xe_mmio_read32(gt, reg);
+	reg_val &= mask;
+	reg_val |= val;
+	xe_mmio_write32(gt, reg, reg_val);
+}
+
 static inline uint64_t xe_mmio_read64(struct xe_gt *gt, uint32_t reg)
 {
 	return readq(gt->mmio.regs + reg);
