@@ -132,6 +132,9 @@ static void xe_engine_end(struct xe_engine *e)
 static const enum xe_engine_class user_to_xe_engine_class[] = {
 	[DRM_XE_ENGINE_CLASS_RENDER] = XE_ENGINE_CLASS_RENDER,
 	[DRM_XE_ENGINE_CLASS_COPY] = XE_ENGINE_CLASS_COPY,
+	[DRM_XE_ENGINE_CLASS_VIDEO_DECODE] = XE_ENGINE_CLASS_VIDEO_DECODE,
+	[DRM_XE_ENGINE_CLASS_VIDEO_ENHANCE] = XE_ENGINE_CLASS_VIDEO_ENHANCE,
+	[DRM_XE_ENGINE_CLASS_COMPUTE] = XE_ENGINE_CLASS_COMPUTE,
 };
 
 static struct xe_hw_engine *
@@ -139,6 +142,9 @@ find_hw_engine(struct xe_device *xe,
 	       struct drm_xe_engine_class_instance eci)
 {
 	if (eci.engine_class > ARRAY_SIZE(user_to_xe_engine_class))
+		return NULL;
+
+	if (eci.gt_id != 0)
 		return NULL;
 
 	return xe_gt_hw_engine(to_gt(xe),
