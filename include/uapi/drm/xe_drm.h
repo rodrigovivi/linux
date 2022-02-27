@@ -131,10 +131,14 @@ struct xe_user_extension {
 struct drm_xe_engine_class_instance {
 	__u16 engine_class;
 
-#define DRM_XE_ENGINE_CLASS_RENDER 0
-#define DRM_XE_ENGINE_CLASS_COPY 1
+#define DRM_XE_ENGINE_CLASS_RENDER		0
+#define DRM_XE_ENGINE_CLASS_COPY		1
+#define DRM_XE_ENGINE_CLASS_VIDEO_DECODE	2
+#define DRM_XE_ENGINE_CLASS_VIDEO_ENHANCE	3
+#define DRM_XE_ENGINE_CLASS_COMPUTE		4
 
 	__u16 engine_instance;
+	__u16 gt_id;
 };
 
 struct drm_xe_device_query {
