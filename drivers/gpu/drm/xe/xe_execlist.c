@@ -268,8 +268,52 @@ void xe_execlist_port_destroy(struct xe_execlist_port *port)
 	spin_unlock_irq(&gt_to_xe(port->hwe->gt)->irq.lock);
 }
 
-#define MAX_JOB_SIZE_DW 16
+#define MAX_JOB_SIZE_DW 24
 #define MAX_JOB_SIZE_BYTES (MAX_JOB_SIZE_DW * 4)
+
+static void invalidate_tlb(struct xe_sched_job *job, u32 *dw, u32 *pi)
+{
+	u32 i = *pi;
+
+	if (job->engine->hwe->class != XE_ENGINE_CLASS_RENDER) {
+		dw[i] = MI_FLUSH_DW + 1;
+		if (job->engine->hwe->class == XE_ENGINE_CLASS_VIDEO_DECODE)
+			dw[i] |= MI_INVALIDATE_BSD;
+		dw[i++] |= MI_INVALIDATE_TLB | MI_FLUSH_DW_OP_STOREDW | MI_FLUSH_DW_STORE_INDEX;
+		dw[i++] = LRC_PPHWSP_SCRATCH_ADDR | MI_FLUSH_DW_USE_GTT;
+		dw[i++] = 0;
+		dw[i++] = ~0U;
+	} else {
+		u32 flags = PIPE_CONTROL_CS_STALL |
+			PIPE_CONTROL_COMMAND_CACHE_INVALIDATE |
+			PIPE_CONTROL_TLB_INVALIDATE |
+			PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE |
+			PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
+			PIPE_CONTROL_VF_CACHE_INVALIDATE |
+			PIPE_CONTROL_CONST_CACHE_INVALIDATE |
+			PIPE_CONTROL_STATE_CACHE_INVALIDATE |
+			PIPE_CONTROL_QW_WRITE |
+			PIPE_CONTROL_STORE_DATA_INDEX;
+
+		dw[i++] = MI_ARB_CHECK | BIT(8) | BIT(0);
+
+		dw[i++] = GFX_OP_PIPE_CONTROL(6);
+		dw[i++] = flags;
+		dw[i++] = LRC_PPHWSP_SCRATCH_ADDR;
+		dw[i++] = 0;
+		dw[i++] = 0;
+		dw[i++] = 0;
+
+		dw[i++] = MI_LOAD_REGISTER_IMM(1);
+		dw[i++] = GEN12_GFX_CCS_AUX_NV.reg;
+		dw[i++] = AUX_INV;
+		dw[i++] = MI_NOOP;
+
+		dw[i++] = MI_ARB_CHECK | BIT(8);
+	}
+
+	*pi = i;
+}
 
 static struct dma_fence *
 xe_execlist_run_job(struct drm_sched_job *drm_job)
@@ -279,6 +323,12 @@ xe_execlist_run_job(struct drm_sched_job *drm_job)
 	struct xe_lrc *lrc = &job->engine->lrc;
 	uint32_t dw[MAX_JOB_SIZE_DW], i = 0;
 	u32 ppgtt_flag = job->engine->vm ? BIT(8) : 0;
+
+#if 1
+	// TODO: Find a way to make flushing conditional?
+	// if (job->engine->vm && (last_vm_unbind_scheduled || !last_vm_unbind_completed))
+	invalidate_tlb(job, dw, &i);
+#endif
 
 	dw[i++] = MI_BATCH_BUFFER_START_GEN8 | ppgtt_flag;
 	dw[i++] = lower_32_bits(job->user_batch_addr);
