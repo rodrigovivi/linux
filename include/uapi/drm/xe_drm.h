@@ -291,13 +291,16 @@ struct drm_xe_exec {
 	/** @extensions: Pointer to the first extension struct, if any */
 	__u64 extensions;
 
-	/** @vm_id: Returned VM ID */
+	/** @vm_id: VM ID to run batch buffer in*/
 	__u32 engine_id;
 
+	/** @num_syncs: Amount of struct drm_xe_sync in array. */
 	__u32 num_syncs;
 
+	/** @syncs: Pointer to struct drm_xe_sync array. */
 	__u64 syncs;
 
+	/** @address: Batch buffer address to execute. */
 	__u64 address;
 };
 
