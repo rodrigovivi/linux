@@ -181,6 +181,11 @@ struct drm_sched_entity {
 	struct task_struct		*last_user;
 
 	/**
+	 * @do_cleanup: Signal scheduler kthread to call cleanup_entity.
+	 */
+	bool do_cleanup;
+
+	/**
 	 * @stopped:
 	 *
 	 * Marks the enity as removed from rq and destined for
@@ -405,6 +410,12 @@ struct drm_sched_backend_ops {
          * and it's time to clean it up.
 	 */
 	void (*free_job)(struct drm_sched_job *sched_job);
+
+	/**
+	 * @cleanup_entity: Called from the scheduler kthread to cleanup up an
+	 * entity.
+	 */
+	void (*cleanup_entity)(struct drm_sched_entity *entity);
 };
 
 /**
@@ -457,6 +468,7 @@ struct drm_gpu_scheduler {
 	atomic_t                        _score;
 	bool				ready;
 	bool				free_guilty;
+	bool				tdr_skip_signalled;
 };
 
 int drm_sched_init(struct drm_gpu_scheduler *sched,
@@ -481,6 +493,7 @@ void drm_sched_entity_modify_sched(struct drm_sched_entity *entity,
 				    struct drm_gpu_scheduler **sched_list,
                                    unsigned int num_sched_list);
 
+void drm_sched_set_timeout(struct drm_gpu_scheduler *sched, long timeout);
 void drm_sched_job_cleanup(struct drm_sched_job *job);
 void drm_sched_wakeup(struct drm_gpu_scheduler *sched);
 void drm_sched_stop(struct drm_gpu_scheduler *sched, struct drm_sched_job *bad);
@@ -514,6 +527,7 @@ void drm_sched_entity_push_job(struct drm_sched_job *sched_job);
 void drm_sched_entity_set_priority(struct drm_sched_entity *entity,
 				   enum drm_sched_priority priority);
 bool drm_sched_entity_is_ready(struct drm_sched_entity *entity);
+void drm_sched_entity_trigger_cleanup(struct drm_sched_entity *entity);
 
 struct drm_sched_fence *drm_sched_fence_alloc(
 	struct drm_sched_entity *s_entity, void *owner);

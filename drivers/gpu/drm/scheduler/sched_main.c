@@ -238,6 +238,24 @@ static void drm_sched_start_timeout(struct drm_gpu_scheduler *sched)
 }
 
 /**
+ * drm_sched_set_timeout - set timeout for reset worker
+ *
+ * @sched: scheduler instance to set and (re)-start the worker for
+ * @timeout: timeout period
+ *
+ * Set and (re)-start the timeout for the given scheduler.
+ */
+void drm_sched_set_timeout(struct drm_gpu_scheduler *sched, long timeout)
+{
+	spin_lock(&sched->job_list_lock);
+	sched->timeout = timeout;
+	cancel_delayed_work(&sched->work_tdr);
+	drm_sched_start_timeout(sched);
+	spin_unlock(&sched->job_list_lock);
+}
+EXPORT_SYMBOL(drm_sched_set_timeout);
+
+/**
  * drm_sched_fault - immediately start timeout handler
  *
  * @sched: scheduler where the timeout handling should be started.
@@ -312,6 +330,19 @@ static void drm_sched_job_begin(struct drm_sched_job *s_job)
 	spin_unlock(&sched->job_list_lock);
 }
 
+static bool
+fence_is_signaled(struct dma_fence *fence)
+{
+	if (test_bit(DMA_FENCE_FLAG_SIGNALED_BIT, &fence->flags))
+		return true;
+
+	if (fence->ops->signaled && fence->ops->signaled(fence)) {
+		return true;
+	}
+
+	return false;
+}
+
 static void drm_sched_job_timedout(struct work_struct *work)
 {
 	struct drm_gpu_scheduler *sched;
@@ -325,7 +356,8 @@ static void drm_sched_job_timedout(struct work_struct *work)
 	job = list_first_entry_or_null(&sched->pending_list,
 				       struct drm_sched_job, list);
 
-	if (job) {
+	if (job && (!sched->tdr_skip_signalled ||
+		    !fence_is_signaled(job->s_fence->parent))) {
 		/*
 		 * Remove the bad job so it cannot be freed by concurrent
 		 * drm_sched_cleanup_jobs. It will be reinserted back after sched->thread
@@ -497,13 +529,13 @@ void drm_sched_start(struct drm_gpu_scheduler *sched, bool full_recovery)
 			drm_sched_job_done(s_job);
 	}
 
+	kthread_unpark(sched->thread);
+
 	if (full_recovery) {
 		spin_lock(&sched->job_list_lock);
 		drm_sched_start_timeout(sched);
 		spin_unlock(&sched->job_list_lock);
 	}
-
-	kthread_unpark(sched->thread);
 }
 EXPORT_SYMBOL(drm_sched_start);
 
@@ -940,6 +972,9 @@ static int drm_sched_main(void *param)
 		if (!entity)
 			continue;
 
+		if (entity->do_cleanup)
+			sched->ops->cleanup_entity(entity);
+
 		sched_job = drm_sched_entity_pop_job(entity);
 
 		if (!sched_job) {
@@ -950,10 +985,10 @@ static int drm_sched_main(void *param)
 		s_fence = sched_job->s_fence;
 
 		atomic_inc(&sched->hw_rq_count);
-		drm_sched_job_begin(sched_job);
 
 		trace_drm_run_job(sched_job, entity);
 		fence = sched->ops->run_job(sched_job);
+		drm_sched_job_begin(sched_job);
 		complete(&entity->entity_idle);
 		drm_sched_fence_scheduled(s_fence);
 
@@ -1019,6 +1054,7 @@ int drm_sched_init(struct drm_gpu_scheduler *sched,
 	INIT_DELAYED_WORK(&sched->work_tdr, drm_sched_job_timedout);
 	atomic_set(&sched->_score, 0);
 	atomic64_set(&sched->job_id_count, 0);
+	sched->tdr_skip_signalled = false;
 
 	/* Each scheduler will run on a seperate kernel thread */
 	sched->thread = kthread_run(drm_sched_main, sched, sched->name);
