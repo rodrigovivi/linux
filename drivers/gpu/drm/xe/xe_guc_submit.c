@@ -735,6 +735,9 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 			   guc->submission_state.stopped);
 	}
 
+	/* Stop fence signaling */
+	xe_hw_fence_irq_stop(e->fence_irq);
+
 	/*
 	 * Fence state now stable, stop / start scheduler which cleans up any
 	 * fences that are complete
@@ -746,6 +749,10 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 	/* Mark all outstanding fences as bad, thus completing them */
 	spin_lock(&sched->job_list_lock);
 	list_for_each_entry(tmp_job, &sched->pending_list, drm.list) {
+		if (test_bit(DMA_FENCE_FLAG_SIGNALED_BIT,
+			     &tmp_job->fence->flags))
+			continue;
+
 		if (!i++)
 			dma_fence_set_error(tmp_job->fence, err);
 		else
@@ -760,6 +767,9 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 			do {
 				struct dma_fence *current_fence = *child++;
 
+				if (test_bit(DMA_FENCE_FLAG_SIGNALED_BIT,
+					     &current_fence->flags))
+					continue;
 				dma_fence_set_error(current_fence, -ECANCELED);
 			} while (--nchild);
 		}
@@ -767,8 +777,8 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 	}
 	spin_unlock(&sched->job_list_lock);
 
-	/* Kick HW fence IRQ handler to signal fences */
-	xe_hw_fence_irq_run(e->fence_irq);
+	/* Start fence signaling */
+	xe_hw_fence_irq_start(e->fence_irq);
 
 	return DRM_GPU_SCHED_STAT_NOMINAL;
 }
@@ -913,6 +923,7 @@ err_free:
 
 static void guc_engine_kill(struct xe_engine *e)
 {
+	trace_xe_engine_kill(e);
 	set_engine_killed(e);
 	drm_sched_set_timeout(&e->guc->sched, MIN_SCHED_TIMEOUT);
 }
