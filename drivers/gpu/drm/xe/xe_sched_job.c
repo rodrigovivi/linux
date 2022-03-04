@@ -10,7 +10,9 @@
 
 #include "xe_device_types.h"
 #include "xe_engine.h"
+#include "xe_gt.h"
 #include "xe_lrc.h"
+#include "xe_trace.h"
 
 struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
 					 uint64_t user_batch_addr)
@@ -71,4 +73,19 @@ bool xe_sched_job_completed(struct xe_sched_job *job)
 	struct xe_lrc *lrc = &job->engine->lrc;
 
 	return xe_lrc_seqno(lrc) >= xe_sched_job_seqno(job);
+}
+
+void xe_sched_job_arm(struct xe_sched_job *job)
+{
+	drm_sched_job_arm(&job->drm);
+}
+
+void xe_sched_job_push(struct xe_sched_job *job)
+{
+	/* FIXME: Hacky for now */
+	if (xe_gt_guc_submission_enabled(job->engine->gt))
+		xe_engine_get(job->engine);
+
+	trace_xe_sched_job_exec(job);
+	drm_sched_entity_push_job(&job->drm);
 }

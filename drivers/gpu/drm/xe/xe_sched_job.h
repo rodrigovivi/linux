@@ -20,6 +20,9 @@ void xe_drm_sched_job_free(struct drm_sched_job *drm_job);
 bool xe_sched_job_started(struct xe_sched_job *job);
 bool xe_sched_job_completed(struct xe_sched_job *job);
 
+void xe_sched_job_arm(struct xe_sched_job *job);
+void xe_sched_job_push(struct xe_sched_job *job);
+
 static inline struct xe_sched_job *
 to_xe_sched_job(struct drm_sched_job *drm)
 {
