@@ -25,8 +25,12 @@ static void hw_fence_irq_run_cb(struct irq_work *work)
 	spin_lock(&irq->lock);
 	if (irq->enabled) {
 		list_for_each_entry_safe(fence, next, &irq->pending, irq_link) {
-			if (dma_fence_is_signaled_locked(&fence->dma))
+			struct dma_fence *dma_fence = &fence->dma;
+
+			dma_fence_get(dma_fence);
+			if (dma_fence_is_signaled_locked(dma_fence))
 				list_del_init(&fence->irq_link);
+			dma_fence_put(dma_fence);
 		}
 	}
 	spin_unlock(&irq->lock);
@@ -139,12 +143,8 @@ static bool xe_hw_fence_signaled(struct dma_fence *dma_fence)
 static void xe_hw_fence_release(struct dma_fence *dma_fence)
 {
 	struct xe_hw_fence *fence = to_xe_hw_fence(dma_fence);
-	unsigned long flags;
 
-	spin_lock_irqsave(fence->dma.lock, flags);
-	list_del(&fence->irq_link);
-	spin_unlock_irqrestore(fence->dma.lock, flags);
-
+	XE_BUG_ON(!list_empty(&fence->irq_link));
 	kfree_rcu(fence, dma.rcu);
 }
 
