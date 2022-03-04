@@ -34,8 +34,10 @@ struct xe_guc_engine {
 	u32 wqi_tail;
 	/** @id: GuC id for this xe_engine */
 	u16 id;
-	/** @bool: Context reset */
+	/** @reset: Engine reset */
 	bool reset;
+	/** @killed: Engine killed */
+	bool killed;
 };
 
 #endif	/* _XE_GUC_ENGINE_TYPES_H_ */

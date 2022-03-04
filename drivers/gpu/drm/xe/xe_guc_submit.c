@@ -153,6 +153,16 @@ static void set_engine_reset(struct xe_engine *e)
 	e->guc->reset = true;
 }
 
+static bool engine_killed(struct xe_engine *e)
+{
+	return e->guc->killed;
+}
+
+static void set_engine_killed(struct xe_engine *e)
+{
+	e->guc->killed = true;
+}
+
 static void guc_submit_fini(struct drm_device *drm, void *arg)
 {
 	struct xe_guc *guc = arg;
@@ -638,7 +648,7 @@ guc_engine_run_job(struct drm_sched_job *drm_job)
 
 	trace_xe_sched_job_run(job);
 
-	if (!engine_banned(e)) {
+	if (!engine_banned(e) && !engine_killed(e)) {
 		if (!engine_registered(e))
 			register_engine(e);
 		e->ring_ops->emit_job(job);
@@ -903,6 +913,7 @@ err_free:
 
 static void guc_engine_kill(struct xe_engine *e)
 {
+	set_engine_killed(e);
 	drm_sched_set_timeout(&e->guc->sched, MIN_SCHED_TIMEOUT);
 }
 
@@ -986,7 +997,7 @@ static void guc_engine_start(struct xe_engine *e)
 {
 	struct drm_gpu_scheduler *sched = &e->guc->sched;
 
-	if (!engine_banned(e)) {
+	if (!engine_banned(e) && !engine_killed(e)) {
 		int i;
 
 		trace_xe_engine_resubmit(e);
@@ -1156,7 +1167,7 @@ int xe_guc_engine_reset_handler(struct xe_guc *guc, u32 *msg, u32 len)
 	 */
 	set_engine_reset(e);
 	if (!engine_banned(e))
-		guc_engine_kill(e);
+		drm_sched_set_timeout(&e->guc->sched, MIN_SCHED_TIMEOUT);
 
 	return 0;
 }
