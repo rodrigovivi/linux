@@ -84,6 +84,11 @@ DEFINE_EVENT(xe_engine, xe_engine_close,
 	     TP_ARGS(e)
 );
 
+DEFINE_EVENT(xe_engine, xe_engine_kill,
+	     TP_PROTO(struct xe_engine *e),
+	     TP_ARGS(e)
+);
+
 DEFINE_EVENT(xe_engine, xe_engine_cleanup_entity,
 	     TP_PROTO(struct xe_engine *e),
 	     TP_ARGS(e)

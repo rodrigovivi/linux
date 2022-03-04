@@ -23,9 +23,11 @@ static void hw_fence_irq_run_cb(struct irq_work *work)
 
 	tmp = dma_fence_begin_signalling();
 	spin_lock(&irq->lock);
-	list_for_each_entry_safe(fence, next, &irq->pending, irq_link) {
-		if (dma_fence_is_signaled_locked(&fence->dma))
-			list_del_init(&fence->irq_link);
+	if (irq->enabled) {
+		list_for_each_entry_safe(fence, next, &irq->pending, irq_link) {
+			if (dma_fence_is_signaled_locked(&fence->dma))
+				list_del_init(&fence->irq_link);
+		}
 	}
 	spin_unlock(&irq->lock);
 	dma_fence_end_signalling(tmp);
@@ -36,6 +38,7 @@ void xe_hw_fence_irq_init(struct xe_hw_fence_irq *irq)
 	spin_lock_init(&irq->lock);
 	init_irq_work(&irq->work, hw_fence_irq_run_cb);
 	INIT_LIST_HEAD(&irq->pending);
+	irq->enabled = true;
 }
 
 void xe_hw_fence_irq_finish(struct xe_hw_fence_irq *irq)
@@ -60,6 +63,22 @@ void xe_hw_fence_irq_finish(struct xe_hw_fence_irq *irq)
 
 void xe_hw_fence_irq_run(struct xe_hw_fence_irq *irq)
 {
+	irq_work_queue(&irq->work);
+}
+
+void xe_hw_fence_irq_stop(struct xe_hw_fence_irq *irq)
+{
+	spin_lock_irq(&irq->lock);
+	irq->enabled = false;
+	spin_unlock_irq(&irq->lock);
+}
+
+void xe_hw_fence_irq_start(struct xe_hw_fence_irq *irq)
+{
+	spin_lock_irq(&irq->lock);
+	irq->enabled = true;
+	spin_unlock_irq(&irq->lock);
+
 	irq_work_queue(&irq->work);
 }
 
