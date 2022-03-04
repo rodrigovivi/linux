@@ -370,17 +370,12 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 			goto err_put_job;
 	}
 
-	drm_sched_job_arm(&job->drm);
+	xe_sched_job_arm(job);
 
 	for (i = 0; i < num_syncs; i++)
 		signal_sync(&syncs[i], &job->drm.s_fence->finished);
 
-	/* FIXME: Hacky for now */
-	if (xe_gt_guc_submission_enabled(engine->gt))
-		xe_engine_get(engine);
-
-	trace_xe_sched_job_exec(job);
-	drm_sched_entity_push_job(&job->drm);
+	xe_sched_job_push(job);
 
 err_put_job:
 	if (err)
