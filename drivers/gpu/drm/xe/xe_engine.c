@@ -75,7 +75,8 @@ void xe_engine_destroy(struct kref *ref)
 void xe_engine_fini(struct xe_engine *e)
 {
 	xe_lrc_finish(&e->lrc);
-	xe_vm_put(e->vm);
+	if (e->vm)
+		xe_vm_put(e->vm);
 
 	kfree(e);
 }
