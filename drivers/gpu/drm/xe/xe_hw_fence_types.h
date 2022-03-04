@@ -28,6 +28,8 @@ struct xe_hw_fence_irq {
 	struct irq_work work;
 	/** @pending: list of pending xe_hw_fences */
 	struct list_head pending;
+	/** @enabled: fence signaling enabled */
+	bool enabled;
 };
 
 #define MAX_FENCE_NAME_LEN	16
