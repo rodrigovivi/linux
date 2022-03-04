@@ -412,15 +412,19 @@ guc_engine_run_job(struct drm_sched_job *drm_job)
 	trace_xe_sched_job_run(job);
 
 	if (!engine_banned(e)) {
+		u32 ppgtt_flag = 0;
+
 		if (!engine_registered(e))
 			register_engine(e);
 
 		dw[i++] = MI_ARB_CHECK | 1 << 8 | 1;
-		dw[i++] = (MI_FLUSH_DW + 1) | MI_FLUSH_DW_STORE_INDEX |
+
+		dw[i++] = (MI_FLUSH_DW + 1) |
 			MI_FLUSH_DW_OP_STOREDW | MI_INVALIDATE_TLB;
-		dw[i++] = xe_lrc_flush_ggtt_addr(lrc);
+		dw[i++] = xe_lrc_flush_ggtt_addr(lrc) | MI_FLUSH_DW_USE_GTT;
 		dw[i++] = 0;
 		dw[i++] = 0;
+
 		dw[i++] = MI_ARB_CHECK | 1 << 8;
 
 		dw[i++] = MI_STORE_DATA_IMM | BIT(22) /* GGTT */ | 2;
@@ -428,7 +432,10 @@ guc_engine_run_job(struct drm_sched_job *drm_job)
 		dw[i++] = 0;
 		dw[i++] = job->fence->seqno;
 
-		dw[i++] = MI_BATCH_BUFFER_START_GEN8 | BIT(8);
+		if (job->engine->vm)
+			ppgtt_flag = BIT(8);
+
+		dw[i++] = MI_BATCH_BUFFER_START_GEN8 | ppgtt_flag;
 		dw[i++] = lower_32_bits(job->user_batch_addr);
 		dw[i++] = upper_32_bits(job->user_batch_addr);
 
