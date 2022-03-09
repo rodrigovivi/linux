@@ -340,26 +340,6 @@ static void set_min_preemption_timeout(struct xe_guc *guc, struct xe_engine *e)
 		       __guc_engine_policy_action_size(&policy), 0, 0);
 }
 
-/* FIXME: Move to helper */
-static u8 engine_class_to_guc_class(enum xe_engine_class class)
-{
-	switch (class) {
-	case XE_ENGINE_CLASS_RENDER:
-		return GUC_RENDER_CLASS;
-	case XE_ENGINE_CLASS_VIDEO_DECODE:
-		return GUC_VIDEO_CLASS;
-	case XE_ENGINE_CLASS_VIDEO_ENHANCE:
-		return GUC_VIDEOENHANCE_CLASS;
-	case XE_ENGINE_CLASS_COPY:
-		return GUC_BLITTER_CLASS;
-	case XE_ENGINE_CLASS_OTHER:
-	case XE_ENGINE_CLASS_COMPUTE:
-	default:
-		XE_WARN_ON(class);
-		return -1;
-	}
-}
-
 #define PARALLEL_SCRATCH_SIZE	2048
 #define WQ_SIZE			(PARALLEL_SCRATCH_SIZE / 2)
 #define WQ_OFFSET		(PARALLEL_SCRATCH_SIZE - WQ_SIZE)
@@ -458,7 +438,7 @@ static void register_engine(struct xe_engine *e)
 
 	memset(&info, 0, sizeof(info));
 	info.context_idx = e->guc->id;
-	info.engine_class = engine_class_to_guc_class(e->class);
+	info.engine_class = xe_engine_class_to_guc_class(e->class);
 	info.engine_submit_mask = e->logical_mask;
 	info.hwlrca_lo = lower_32_bits(xe_lrc_descriptor(lrc));
 	info.hwlrca_hi = upper_32_bits(xe_lrc_descriptor(lrc));

@@ -7,7 +7,9 @@
 #ifndef _XE_GUC_H_
 #define _XE_GUC_H_
 
+#include "xe_hw_engine_types.h"
 #include "xe_guc_types.h"
+#include "xe_macros.h"
 
 struct drm_printer;
 
@@ -26,5 +28,24 @@ void xe_guc_sanitize(struct xe_guc *guc);
 void xe_guc_print_info(struct xe_guc *guc, struct drm_printer *p);
 int xe_guc_stop(struct xe_guc *guc);
 int xe_guc_start(struct xe_guc *guc);
+
+static inline u16 xe_engine_class_to_guc_class(enum xe_engine_class class)
+{
+	switch (class) {
+	case XE_ENGINE_CLASS_RENDER:
+		return GUC_RENDER_CLASS;
+	case XE_ENGINE_CLASS_VIDEO_DECODE:
+		return GUC_VIDEO_CLASS;
+	case XE_ENGINE_CLASS_VIDEO_ENHANCE:
+		return GUC_VIDEOENHANCE_CLASS;
+	case XE_ENGINE_CLASS_COPY:
+		return GUC_BLITTER_CLASS;
+	case XE_ENGINE_CLASS_OTHER:
+	case XE_ENGINE_CLASS_COMPUTE:
+	default:
+		XE_WARN_ON(class);
+		return -1;
+	}
+}
 
 #endif	/* _XE_GUC_H_ */
