@@ -7,6 +7,7 @@
 
 #include "xe_bo.h"
 #include "xe_gt.h"
+#include "xe_guc.h"
 #include "xe_guc_ads.h"
 #include "xe_guc_reg.h"
 #include "xe_hw_engine.h"
@@ -231,25 +232,6 @@ static void guc_prep_golden_context(struct xe_guc_ads *ads)
 	}
 }
 
-static u8 engine_class_to_guc_class(enum xe_engine_class class)
-{
-	switch (class) {
-	case XE_ENGINE_CLASS_RENDER:
-		return GUC_RENDER_CLASS;
-	case XE_ENGINE_CLASS_VIDEO_DECODE:
-		return GUC_VIDEO_CLASS;
-	case XE_ENGINE_CLASS_VIDEO_ENHANCE:
-		return GUC_VIDEOENHANCE_CLASS;
-	case XE_ENGINE_CLASS_COPY:
-		return GUC_BLITTER_CLASS;
-	case XE_ENGINE_CLASS_OTHER:
-	case XE_ENGINE_CLASS_COMPUTE:
-	default:
-		XE_WARN_ON(class);
-		return -1;
-	}
-}
-
 static void guc_mapping_table_init(struct xe_gt *gt,
 				   struct dma_buf_map *info_map)
 {
@@ -266,7 +248,7 @@ static void guc_mapping_table_init(struct xe_gt *gt,
 	for_each_hw_engine(hwe, gt, id) {
 		u8 guc_class;
 
-		guc_class = engine_class_to_guc_class(hwe->class);
+		guc_class = xe_engine_class_to_guc_class(hwe->class);
 		info_map_write(info_map,
 			       mapping_table[guc_class][hwe->logical_instance],
 			       hwe->instance);
