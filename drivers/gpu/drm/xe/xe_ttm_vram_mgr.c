@@ -45,8 +45,7 @@ static int xe_ttm_vram_mgr_new(struct ttm_resource_manager *man,
 {
 	unsigned long lpfn, num_nodes, pages_per_node, pages_left, pages;
 	struct xe_ttm_vram_mgr *mgr = to_vram_mgr(man);
-	struct xe_gt *gt = mgr_to_gt(mgr);
-	uint64_t mem_bytes, max_bytes;
+	uint64_t mem_bytes;
 	struct ttm_range_mgr_node *node;
 	struct drm_mm *mm = &mgr->mm;
 	enum drm_mm_insert_mode mode;
@@ -57,14 +56,7 @@ static int xe_ttm_vram_mgr_new(struct ttm_resource_manager *man,
 	if (!lpfn)
 		lpfn = man->size;
 
-	max_bytes = gt->mem.vram.size;
-
-	/* bail out quickly if there's likely not enough VRAM for this BO */
 	mem_bytes = tbo->base.size;
-	if (atomic64_add_return(mem_bytes, &mgr->usage) > max_bytes) {
-		r = -ENOSPC;
-		goto error_sub;
-	}
 
 	if (place->flags & TTM_PL_FLAG_CONTIGUOUS) {
 		pages_per_node = ~0ul;
@@ -77,12 +69,14 @@ static int xe_ttm_vram_mgr_new(struct ttm_resource_manager *man,
 		num_nodes = DIV_ROUND_UP_ULL(PFN_UP(mem_bytes), pages_per_node);
 	}
 
+	/* bail out quickly if there's likely not enough VRAM for this BO */
+	if (man->size << PAGE_SHIFT < ttm_resource_manager_usage(man) + mem_bytes)
+		return -ENOSPC;
+
 	node = kvmalloc(struct_size(node, mm_nodes, num_nodes),
 			GFP_KERNEL | __GFP_ZERO);
-	if (!node) {
-		r = -ENOMEM;
-		goto error_sub;
-	}
+	if (!node)
+		return -ENOMEM;
 
 	ttm_resource_init(tbo, place, &node->base);
 
@@ -136,11 +130,8 @@ error_free:
 	while (i--)
 		drm_mm_remove_node(&node->mm_nodes[i]);
 	spin_unlock(&mgr->lock);
+	ttm_resource_fini(man, &node->base);
 	kvfree(node);
-	return r;
-
-error_sub:
-	atomic64_sub(mem_bytes, &mgr->usage);
 	return r;
 }
 
@@ -163,7 +154,7 @@ static void xe_ttm_vram_mgr_del(struct ttm_resource_manager *man,
 
 	spin_unlock(&mgr->lock);
 
-	atomic64_sub(usage, &mgr->usage);
+	ttm_resource_fini(man, res);
 
 	kvfree(node);
 }
