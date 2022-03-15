@@ -35,25 +35,21 @@ static int xe_ttm_gtt_mgr_new(struct ttm_resource_manager *man,
 			      const struct ttm_place *place,
 			      struct ttm_resource **res)
 {
-	struct xe_ttm_gtt_mgr *mgr = to_gtt_mgr(man);
-	uint32_t num_pages = PFN_UP(tbo->base.size);
 	struct xe_ttm_gtt_node *node;
 	int r;
 
-	if (!(place->flags & TTM_PL_FLAG_TEMPORARY) &&
-	    atomic64_add_return(num_pages, &mgr->used) > man->size) {
-		atomic64_sub(num_pages, &mgr->used);
-		return -ENOSPC;
-	}
-
 	node = kzalloc(struct_size(node, base.mm_nodes, 1), GFP_KERNEL);
-	if (!node) {
-		r = -ENOMEM;
-		goto err_out;
-	}
+	if (!node)
+		return -ENOMEM;
 
 	node->tbo = tbo;
 	ttm_resource_init(tbo, place, &node->base.base);
+
+	if (!(place->flags & TTM_PL_FLAG_TEMPORARY) &&
+	    ttm_resource_manager_usage(man) > (man->size << PAGE_SHIFT)) {
+		r = -ENOSPC;
+		goto err_fini;
+	}
 
 	node->base.mm_nodes[0].start = 0;
 	node->base.mm_nodes[0].size = node->base.base.num_pages;
@@ -62,9 +58,10 @@ static int xe_ttm_gtt_mgr_new(struct ttm_resource_manager *man,
 	*res = &node->base.base;
 
 	return 0;
-err_out:
-	if (!(place->flags & TTM_PL_FLAG_TEMPORARY))
-		atomic64_sub(num_pages, &mgr->used);
+
+err_fini:
+	ttm_resource_fini(man, &node->base.base);
+	kfree(node);
 	return r;
 }
 
@@ -72,11 +69,8 @@ static void xe_ttm_gtt_mgr_del(struct ttm_resource_manager *man,
 			       struct ttm_resource *res)
 {
 	struct xe_ttm_gtt_node *node = to_xe_ttm_gtt_node(res);
-	struct xe_ttm_gtt_mgr *mgr = to_gtt_mgr(man);
 
-	if (!(res->placement & TTM_PL_FLAG_TEMPORARY))
-		atomic64_sub(res->num_pages, &mgr->used);
-
+	ttm_resource_fini(man, res);
 	kfree(node);
 }
 
@@ -122,7 +116,6 @@ int xe_ttm_gtt_mgr_init(struct xe_gt *gt, struct xe_ttm_gtt_mgr *mgr,
 
 	ttm_resource_manager_init(man, &xe->ttm, gtt_size >> PAGE_SHIFT);
 
-	atomic64_set(&mgr->used, 0);
 	ttm_set_driver_manager(&xe->ttm, TTM_PL_TT, &mgr->manager);
 	ttm_resource_manager_set_used(man, true);
 

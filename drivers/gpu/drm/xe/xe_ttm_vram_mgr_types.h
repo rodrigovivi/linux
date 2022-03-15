@@ -17,7 +17,6 @@ struct xe_ttm_vram_mgr {
 	struct ttm_resource_manager manager;
 	struct drm_mm mm;
 	spinlock_t lock;
-	atomic64_t usage;
 };
 
 #endif	/* _XE_TTM_VRAM_MGR_TYPES_H_ */
