@@ -216,7 +216,7 @@ int xe_ttm_vram_mgr_init(struct xe_gt *gt, struct xe_ttm_vram_mgr *mgr)
 	mgr->gt = gt;
 	man->func = &xe_ttm_vram_mgr_func;
 
-	ttm_resource_manager_init(man, gt->mem.vram.size >> PAGE_SHIFT);
+	ttm_resource_manager_init(man, &xe->ttm, gt->mem.vram.size >> PAGE_SHIFT);
 
 	drm_mm_init(&mgr->mm, 0, man->size);
 	spin_lock_init(&mgr->lock);
