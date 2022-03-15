@@ -120,7 +120,7 @@ int xe_ttm_gtt_mgr_init(struct xe_gt *gt, struct xe_ttm_gtt_mgr *mgr,
 	man->use_tt = true;
 	man->func = &xe_ttm_gtt_mgr_func;
 
-	ttm_resource_manager_init(man, gtt_size >> PAGE_SHIFT);
+	ttm_resource_manager_init(man, &xe->ttm, gtt_size >> PAGE_SHIFT);
 
 	atomic64_set(&mgr->used, 0);
 	ttm_set_driver_manager(&xe->ttm, TTM_PL_TT, &mgr->manager);
