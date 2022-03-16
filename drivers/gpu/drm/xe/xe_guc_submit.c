@@ -8,7 +8,6 @@
 #include <linux/circ_buf.h>
 #include <linux/delay.h>
 #include <linux/dma-fence-array.h>
-#include <linux/kthread.h>
 
 #include <drm/drm_managed.h>
 
@@ -694,7 +693,7 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 	}
 
 	/* Kill the run_job entry point */
-	kthread_park(sched->thread);
+	drm_sched_run_wq_stop(sched);
 
 	/* Engine state now stable, disable scheduling if needed */
 	if (engine_enabled(e)) {
@@ -722,7 +721,7 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 	 * fences that are complete
 	 */
 	list_add(&drm_job->list, &sched->pending_list);
-	kthread_unpark(sched->thread);
+	drm_sched_run_wq_start(sched);
 	drm_sched_set_timeout(&e->guc->sched, MIN_SCHED_TIMEOUT);
 
 	/* Mark all outstanding fences as bad, thus completing them */
@@ -918,11 +917,8 @@ static void guc_engine_stop(struct xe_guc *guc, struct xe_engine *e)
 	struct drm_gpu_scheduler *sched = &e->guc->sched;
 
 	/* Stop scheduling + flush any DRM scheduler operations */
-	sched->pause_tdr = true;
-	smp_mb();
+	drm_sched_run_wq_stop(sched);
 	cancel_delayed_work_sync(&sched->work_tdr);
-	kthread_park(sched->thread);
-	WRITE_ONCE(sched->pause_tdr, false);
 
 	/* Clean up lost G2H + reset engine state */
 	if (engine_destroyed(e) && engine_registered(e)) {
@@ -994,7 +990,7 @@ static void guc_engine_start(struct xe_engine *e)
 		drm_sched_resubmit_jobs(sched);
 	}
 
-	kthread_unpark(sched->thread);
+	drm_sched_run_wq_start(sched);
 	drm_sched_set_timeout(sched, sched->timeout);
 }
 
