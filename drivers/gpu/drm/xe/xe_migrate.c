@@ -68,7 +68,8 @@ struct xe_migrate *xe_migrate_init(struct xe_gt *gt)
 	if (err)
 		return ERR_PTR(err);
 
-	m->eng = xe_engine_create(xe, NULL, hwe, ENGINE_FLAG_KERNEL);
+	m->eng = xe_engine_create(xe, NULL, BIT(hwe->logical_instance),
+				  1, hwe, ENGINE_FLAG_KERNEL);
 	if (IS_ERR(m->eng)) {
 		xe_ggtt_remove_node(gt->mem.ggtt, &m->copy_node);
 		return ERR_CAST(m->eng);
