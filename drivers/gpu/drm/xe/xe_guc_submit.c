@@ -56,7 +56,6 @@ engine_to_guc(struct xe_engine *e)
 #define ENGINE_STATE_PENDING_ENABLE	BIT(2)
 #define ENGINE_STATE_PENDING_DISABLE	BIT(3)
 #define ENGINE_STATE_DESTROYED		BIT(4)
-#define ENGINE_STATE_USED		BIT(5)
 
 static bool engine_registered(struct xe_engine *e)
 {
@@ -136,16 +135,6 @@ static bool engine_banned(struct xe_engine *e)
 static void set_engine_banned(struct xe_engine *e)
 {
 	e->flags |= ENGINE_FLAG_BANNED;
-}
-
-static bool engine_used(struct xe_engine *e)
-{
-	return (e->guc->state & ENGINE_STATE_USED);
-}
-
-static void set_engine_used(struct xe_engine *e)
-{
-	e->guc->state |= ENGINE_STATE_USED;
 }
 
 static bool engine_reset(struct xe_engine *e)
@@ -622,7 +611,6 @@ static void submit_engine(struct xe_engine *e)
 
 		set_engine_pending_enable(e);
 		set_engine_enabled(e);
-		set_engine_used(e);
 		trace_xe_engine_scheduling_enable(e);
 	} else {
 		action[len++] = XE_GUC_ACTION_SCHED_CONTEXT;
@@ -935,10 +923,7 @@ static void guc_engine_kill(struct xe_engine *e)
 
 static void guc_engine_fini(struct xe_engine *e)
 {
-	if (engine_used(e))
-		drm_sched_entity_trigger_cleanup(&e->guc->entity);
-	else
-		guc_engine_fini_async(e);
+	drm_sched_entity_trigger_cleanup(&e->guc->entity);
 }
 
 static void guc_engine_stop(struct xe_guc *guc, struct xe_engine *e)
