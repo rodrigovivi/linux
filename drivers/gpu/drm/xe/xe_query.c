@@ -55,7 +55,7 @@ static int query_engines(struct xe_device *xe,
 	for_each_hw_engine(hwe, to_gt(xe), id) {
 		hw_engine_info[i].engine_class =
 			xe_to_user_engine_class[hwe->class];
-		hw_engine_info[i].engine_instance = hwe->instance;
+		hw_engine_info[i].engine_instance = hwe->logical_instance;
 		hw_engine_info[i++].gt_id = to_gt(xe)->info.id;
 	}
 

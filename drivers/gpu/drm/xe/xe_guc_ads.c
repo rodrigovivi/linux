@@ -263,13 +263,12 @@ static void guc_mapping_table_init(struct xe_gt *gt,
 			info_map_write(info_map, mapping_table[i][j],
 				       GUC_MAX_INSTANCES_PER_CLASS);
 
-	/* FIXME: Setting table up with 1 to 1 to get GuC to load */
 	for_each_hw_engine(hwe, gt, id) {
 		u8 guc_class;
 
 		guc_class = engine_class_to_guc_class(hwe->class);
 		info_map_write(info_map,
-			       mapping_table[guc_class][hwe->instance],
+			       mapping_table[guc_class][hwe->logical_instance],
 			       hwe->instance);
 	}
 }
