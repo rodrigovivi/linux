@@ -39,6 +39,9 @@ static struct xe_engine *__xe_engine_create(struct xe_device *xe,
 	e->gt = to_gt(xe);
 	if (vm)
 		e->vm = xe_vm_get(vm);
+	e->class = hwe->class;
+	e->logical_mask = BIT(hwe->logical_instance);
+	e->fence_irq = &e->gt->fence_irq[hwe->class];
 
 	err = xe_lrc_init(&e->lrc, hwe, vm, SZ_16K);
 	if (err)

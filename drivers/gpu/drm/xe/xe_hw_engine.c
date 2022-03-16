@@ -241,6 +241,7 @@ int xe_hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
 	hwe->gt = gt;
 	hwe->class = info->class;
 	hwe->instance = info->instance;
+	hwe->logical_instance = info->instance;		/* FIXME */
 	hwe->mmio_base = engine_info_mmio_base(info, GRAPHICS_VER(xe));
 	hwe->domain = info->domain;
 	hwe->name = info->name;
