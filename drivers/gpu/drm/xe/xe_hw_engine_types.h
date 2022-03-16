@@ -18,6 +18,7 @@ enum xe_engine_class {
 	XE_ENGINE_CLASS_COPY = 3,
 	XE_ENGINE_CLASS_OTHER = 4,
 	XE_ENGINE_CLASS_COMPUTE = 5,
+	XE_ENGINE_CLASS_MAX = 6,
 };
 
 enum xe_hw_engine_id {
@@ -57,7 +58,7 @@ struct xe_hw_engine {
 
 	struct xe_execlist_port *exl_port;
 
-	struct xe_hw_fence_irq fence_irq;
+	struct xe_hw_fence_irq *fence_irq;
 
 	void (*irq_handler)(struct xe_hw_engine *, uint16_t);
 };

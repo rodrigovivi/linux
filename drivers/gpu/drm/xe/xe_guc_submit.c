@@ -553,7 +553,7 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 	spin_unlock(&sched->job_list_lock);
 
 	/* Kick HW fence IRQ handler to signal fences */
-	xe_hw_fence_irq_run(&e->hwe->fence_irq);
+	xe_hw_fence_irq_run(e->hwe->fence_irq);
 
 	return DRM_GPU_SCHED_STAT_NOMINAL;
 }
