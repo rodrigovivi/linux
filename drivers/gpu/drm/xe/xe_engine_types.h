@@ -49,8 +49,10 @@ struct xe_engine {
 	char name[MAX_FENCE_NAME_LEN];
 	/** @fence_irq: fence IRQ used to signal job completion */
 	struct xe_hw_fence_irq *fence_irq;
+
 #define ENGINE_FLAG_BANNED	BIT(0)
 #define ENGINE_FLAG_KERNEL	BIT(1)
+#define ENGINE_FLAG_PERSISTENT	BIT(2)
 	/**
 	 * @flags: flags this is engine, should statically setup aside from ban
 	 * bit
@@ -63,6 +65,16 @@ struct xe_engine {
 		/** @guc: GuC backend specific state for engine */
 		struct xe_guc_engine *guc;
 	};
+
+	/**
+	 * @persitent: persitent engine state
+	 */
+	struct {
+		/** @xef: file which this engine belongs to */
+		struct xe_file *xef;
+		/** @link: link in list of persitent engines */
+		struct list_head link;
+	} persitent;
 
 	/** @ring_ops: ring operations for this engine */
 	const struct xe_ring_ops *ring_ops;
@@ -78,6 +90,8 @@ struct xe_engine {
 struct xe_engine_ops {
 	/** @init: Initialize engine for submission backend */
 	int (*init)(struct xe_engine *e);
+	/** @kill: Kill inflight submissions for backend */
+	void (*kill)(struct xe_engine *e);
 	/** @init: Fini engine for submission backend */
 	void (*fini)(struct xe_engine *e);
 };

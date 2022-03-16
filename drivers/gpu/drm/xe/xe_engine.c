@@ -44,6 +44,7 @@ static struct xe_engine *__xe_engine_create(struct xe_device *xe,
 	e->logical_mask = BIT(hwe->logical_instance);
 	e->fence_irq = &gt->fence_irq[hwe->class];
 	e->ring_ops = gt->ring_ops[hwe->class];
+	INIT_LIST_HEAD(&e->persitent.link);
 
 	err = xe_lrc_init(&e->lrc, hwe, vm, SZ_16K);
 	if (err)
@@ -96,9 +97,9 @@ struct xe_engine *xe_engine_lookup(struct xe_file *xef, u32 id)
 {
 	struct xe_engine *e;
 
-	mutex_lock(&xef->engine_lock);
-	e = xa_load(&xef->engine_xa, id);
-	mutex_unlock(&xef->engine_lock);
+	mutex_lock(&xef->engine.lock);
+	e = xa_load(&xef->engine.xa, id);
+	mutex_unlock(&xef->engine.lock);
 
 	if (e)
 		xe_engine_get(e);
@@ -176,9 +177,13 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 	if (IS_ERR(e))
 		return PTR_ERR(e);
 
-	mutex_lock(&xef->engine_lock);
-	err = xa_alloc(&xef->engine_xa, &id, e, xa_limit_32b, GFP_KERNEL);
-	mutex_unlock(&xef->engine_lock);
+	/* FIXME: Wire to engine parameter */
+	e->flags |= ENGINE_FLAG_PERSISTENT;
+	e->persitent.xef = xef;
+
+	mutex_lock(&xef->engine.lock);
+	err = xa_alloc(&xef->engine.xa, &id, e, xa_limit_32b, GFP_KERNEL);
+	mutex_unlock(&xef->engine.lock);
 	if (err) {
 		xe_engine_put(e);
 		return err;
@@ -200,11 +205,16 @@ int xe_engine_destroy_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, args->pad))
 		return -EINVAL;
 
-	mutex_lock(&xef->engine_lock);
-	e = xa_erase(&xef->engine_xa, args->engine_id);
-	mutex_unlock(&xef->engine_lock);
+	mutex_lock(&xef->engine.lock);
+	e = xa_erase(&xef->engine.xa, args->engine_id);
+	mutex_unlock(&xef->engine.lock);
 	if (XE_IOCTL_ERR(xe, !e))
 		return -ENOENT;
+
+	if (!(e->flags & ENGINE_FLAG_PERSISTENT))
+		e->gt->engine_ops->kill(e);
+	else
+		xe_device_add_persitent_engines(xe, e);
 
 	trace_xe_engine_close(e);
 	xe_engine_put(e);
