@@ -43,23 +43,35 @@ struct xe_bo;
 struct xe_execlist_port;
 struct xe_gt;
 
+/**
+ * struct xe_hw_engine - Hardware engine
+ *
+ * Contains all the hardware engine state for physical instances.
+ */
 struct xe_hw_engine {
+	/** @gt: graphics tile this hw engine belongs to */
 	struct xe_gt *gt;
-
+	/** @name: name of this hw engine */
 	const char *name;
+	/** @class: class of this hw engine */
 	enum xe_engine_class class;
-	uint16_t instance;
-	uint32_t mmio_base;
+	/** @instance: physical instance of this hw engine */
+	u16 instance;
+	/** @logical_instance: logical instance of this hw engine */
+	u16 logical_instance;
+	/** @mmio_base: MMIO base address of this hw engine*/
+	u32 mmio_base;
+	/** @domain: force wake domain of this hw engine */
 	enum xe_force_wake_domains domain;
-
+	/** @hwsp: hardware status page buffer object */
 	struct xe_bo *hwsp;
-
+	/** @kernel_lrc: Kernel LRC (should be replaced /w an xe_engine) */
 	struct xe_lrc kernel_lrc;
-
+	/** @exl_port: execlists port */
 	struct xe_execlist_port *exl_port;
-
+	/** @fence_irq: fence IRQ to run when a hw engine IRQ is received */
 	struct xe_hw_fence_irq *fence_irq;
-
+	/** @irq_handler: IRQ handler to run when hw engine IRQ is received */
 	void (*irq_handler)(struct xe_hw_engine *, uint16_t);
 };
 
