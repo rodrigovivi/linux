@@ -866,7 +866,8 @@ static void xe_lrc_assert_ring_space(struct xe_lrc *lrc, size_t size)
 	uint32_t space = xe_lrc_ring_space(lrc);
 
 	BUG_ON(size > lrc->ring.size);
-	WARN(size > space, "Insufficient ring space: %lu > %u", size, space);
+	WARN(size > space, "Insufficient ring space: %lu > %u, head=%d, tail=%d",
+	     size, space, xe_lrc_ring_head(lrc), lrc->ring.tail);
 #endif
 }
 
