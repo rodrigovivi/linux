@@ -273,7 +273,7 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 
 err_put_job:
 	if (err)
-		xe_sched_job_destroy(job);
+		xe_sched_job_free(job);
 err_engine_end:
 	xe_engine_end(engine);
 err_syncs:

@@ -49,16 +49,11 @@ err_free:
 	return ERR_PTR(err);
 }
 
-void xe_sched_job_destroy(struct xe_sched_job *job)
+void xe_sched_job_free(struct xe_sched_job *job)
 {
 	dma_fence_put(job->fence);
 	drm_sched_job_cleanup(&job->drm);
 	kfree(job);
-}
-
-void xe_drm_sched_job_free(struct drm_sched_job *drm_job)
-{
-	xe_sched_job_destroy(to_xe_sched_job(drm_job));
 }
 
 bool xe_sched_job_started(struct xe_sched_job *job)
@@ -82,10 +77,7 @@ void xe_sched_job_arm(struct xe_sched_job *job)
 
 void xe_sched_job_push(struct xe_sched_job *job)
 {
-	/* FIXME: Hacky for now */
-	if (xe_gt_guc_submission_enabled(job->engine->gt))
-		xe_engine_get(job->engine);
-
+	xe_engine_get(job->engine);
 	trace_xe_sched_job_exec(job);
 	drm_sched_entity_push_job(&job->drm);
 }
