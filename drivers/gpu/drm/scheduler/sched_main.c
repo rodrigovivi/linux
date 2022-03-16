@@ -233,7 +233,7 @@ EXPORT_SYMBOL(drm_sched_dependency_optimized);
 static void drm_sched_start_timeout(struct drm_gpu_scheduler *sched)
 {
 	if (sched->timeout != MAX_SCHEDULE_TIMEOUT &&
-	    !list_empty(&sched->pending_list))
+	    !list_empty(&sched->pending_list) && !sched->pause_tdr)
 		queue_delayed_work(sched->timeout_wq, &sched->work_tdr, sched->timeout);
 }
 
@@ -1023,6 +1023,8 @@ int drm_sched_init(struct drm_gpu_scheduler *sched,
 	INIT_DELAYED_WORK(&sched->work_tdr, drm_sched_job_timedout);
 	atomic_set(&sched->_score, 0);
 	atomic64_set(&sched->job_id_count, 0);
+	sched->tdr_skip_signalled = false;
+	sched->pause_tdr = false;
 
 	/* Each scheduler will run on a seperate kernel thread */
 	sched->thread = kthread_run(drm_sched_main, sched, sched->name);

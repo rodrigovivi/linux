@@ -458,6 +458,8 @@ struct drm_gpu_scheduler {
 	atomic_t                        _score;
 	bool				ready;
 	bool				free_guilty;
+	bool				tdr_skip_signalled;
+	bool				pause_tdr;
 	struct device			*dev;
 };
 
