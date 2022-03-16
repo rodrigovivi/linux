@@ -14,8 +14,7 @@
 
 struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
 					 uint64_t user_batch_addr);
-void xe_sched_job_destroy(struct xe_sched_job *job);
-void xe_drm_sched_job_free(struct drm_sched_job *drm_job);
+void xe_sched_job_free(struct xe_sched_job *job);
 
 bool xe_sched_job_started(struct xe_sched_job *job);
 bool xe_sched_job_completed(struct xe_sched_job *job);

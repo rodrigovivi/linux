@@ -270,7 +270,7 @@ void xe_execlist_port_destroy(struct xe_execlist_port *port)
 }
 
 static struct dma_fence *
-xe_execlist_run_job(struct drm_sched_job *drm_job)
+execlist_run_job(struct drm_sched_job *drm_job)
 {
 	struct xe_sched_job *job = to_xe_sched_job(drm_job);
 	struct xe_engine *e = job->engine;
@@ -282,9 +282,18 @@ xe_execlist_run_job(struct drm_sched_job *drm_job)
 	return dma_fence_get(job->fence);
 }
 
+static void execlist_job_free(struct drm_sched_job *drm_job)
+{
+	struct xe_sched_job *job = to_xe_sched_job(drm_job);
+	struct xe_engine *e = job->engine;
+
+	xe_sched_job_free(job);
+	xe_engine_put(e);
+}
+
 static const struct drm_sched_backend_ops drm_sched_ops = {
-	.run_job = xe_execlist_run_job,
-	.free_job = xe_drm_sched_job_free,
+	.run_job = execlist_run_job,
+	.free_job = execlist_job_free,
 };
 
 static int execlist_engine_init(struct xe_engine *e)
@@ -349,8 +358,11 @@ err_free:
 	return err;
 }
 
-static void execlist_engine_fini(struct xe_engine *e)
+static void execlist_engine_fini_async(struct work_struct *w)
 {
+	struct xe_execlist_engine *ee =
+		container_of(w, struct xe_execlist_engine, fini_async);
+	struct xe_engine *e = ee->engine;
 	struct xe_execlist_engine *exl = e->execlist;
 	unsigned long flags;
 
@@ -366,6 +378,12 @@ static void execlist_engine_fini(struct xe_engine *e)
 	kfree(exl);
 
 	xe_engine_fini(e);
+}
+
+static void execlist_engine_fini(struct xe_engine *e)
+{
+	INIT_WORK(&e->execlist->fini_async, execlist_engine_fini_async);
+	queue_work(system_unbound_wq, &e->execlist->fini_async);
 }
 
 static const struct xe_engine_ops execlist_engine_ops = {

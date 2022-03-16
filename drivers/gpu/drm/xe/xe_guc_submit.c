@@ -434,7 +434,7 @@ static void guc_engine_free_job(struct drm_sched_job *drm_job)
 
 	trace_xe_sched_job_free(job);
 
-	xe_drm_sched_job_free(drm_job);
+	xe_sched_job_free(job);
 	xe_engine_put(e);
 }
 
