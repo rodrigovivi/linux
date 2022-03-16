@@ -469,6 +469,7 @@ struct drm_gpu_scheduler {
 	bool				ready;
 	bool				free_guilty;
 	bool				tdr_skip_signalled;
+	bool				pause_tdr;
 };
 
 int drm_sched_init(struct drm_gpu_scheduler *sched,

@@ -68,6 +68,11 @@ static void set_engine_registered(struct xe_engine *e)
 	e->guc->state |= ENGINE_STATE_REGISTERED;
 }
 
+static void clear_engine_registered(struct xe_engine *e)
+{
+	e->guc->state &= ~ENGINE_STATE_REGISTERED;
+}
+
 static bool engine_enabled(struct xe_engine *e)
 {
 	return (e->guc->state & ENGINE_STATE_ENABLED);
@@ -939,24 +944,22 @@ static void guc_engine_fini(struct xe_engine *e)
 static void guc_engine_stop(struct xe_guc *guc, struct xe_engine *e)
 {
 	struct drm_gpu_scheduler *sched = &e->guc->sched;
-	long timeout = sched->timeout;
 
 	/* Stop scheduling + flush any DRM scheduler operations */
-	timeout = sched->timeout;
-	sched->timeout = MAX_SCHEDULE_TIMEOUT;
-	wake_up_all(&guc->ct.wq);
+	sched->pause_tdr = true;
+	smp_mb();
 	cancel_delayed_work_sync(&sched->work_tdr);
 	kthread_park(sched->thread);
-	sched->timeout = timeout;
+	WRITE_ONCE(sched->pause_tdr, false);
 
 	/* Clean up lost G2H + reset engine state */
-	if (engine_destroyed(e)) {
+	if (engine_destroyed(e) && engine_registered(e)) {
 		if (engine_banned(e))
 			xe_engine_put(e);
 		else
 			__guc_engine_fini(guc, e);
 	}
-	e->guc->state = 0;
+	e->guc->state &= ENGINE_STATE_DESTROYED;
 	trace_xe_engine_stop(e);
 
 	/*
@@ -991,6 +994,8 @@ int xe_guc_submit_stop(struct xe_guc *guc)
 
 	guc->submission_state.stopped = true;
 	smp_mb();
+	wake_up_all(&guc->ct.wq);
+
 	xa_for_each(&guc->submission_state.engine_lookup, index, e)
 		guc_engine_stop(guc, e);
 
@@ -1139,6 +1144,7 @@ int xe_guc_deregister_done_handler(struct xe_guc *guc, u32 *msg, u32 len)
 
 	trace_xe_engine_deregister_done(e);
 
+	clear_engine_registered(e);
 	if (engine_banned(e))
 		xe_engine_put(e);
 	else
