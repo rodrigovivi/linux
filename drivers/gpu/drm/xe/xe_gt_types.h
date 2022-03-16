@@ -111,8 +111,8 @@ struct xe_gt {
 	/** @uc: micro controllers on the GT */
 	struct xe_uc uc;
 
-	/** @eops: submission backend engine operations */
-	const struct xe_engine_ops *eops;
+	/** @engine_ops: submission backend engine operations */
+	const struct xe_engine_ops *engine_ops;
 
 	/**
 	 * @ring_ops: ring operations for this hw engine (1 per engine class)

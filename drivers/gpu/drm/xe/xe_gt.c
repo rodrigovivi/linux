@@ -13,7 +13,6 @@
 #include "xe_force_wake.h"
 #include "xe_ggtt.h"
 #include "xe_gt.h"
-#include "xe_guc_submit.h"
 #include "xe_hw_fence.h"
 #include "xe_migrate.h"
 #include "xe_mmio.h"
@@ -117,25 +116,6 @@ static int gt_ttm_mgr_init(struct xe_gt *gt)
 	return 0;
 }
 
-/* FIXME: Likely layered wrong, push to backends */
-static const struct xe_engine_ops execlist_ops = {
-	.init = xe_execlist_engine_init,
-	.fini = xe_execlist_engine_fini,
-};
-
-static const struct xe_engine_ops guc_ops = {
-	.init = xe_guc_engine_init,
-	.fini = xe_guc_engine_fini,
-};
-
-static void gt_set_engine_ops(struct xe_gt *gt)
-{
-	if (xe_gt_guc_submission_enabled(gt))
-		gt->eops = &guc_ops;
-	else
-		gt->eops = &execlist_ops;
-}
-
 static void gt_fini(struct drm_device *drm, void *arg)
 {
 	struct xe_gt *gt = arg;
@@ -195,7 +175,9 @@ int xe_gt_init(struct xe_gt *gt)
 	err = xe_uc_init(&gt->uc);
 	XE_WARN_ON(err);
 
-	gt_set_engine_ops(gt);
+	err = xe_execlist_init(gt);
+	if (err)
+		goto err_ttm_mgr;
 
 	for (i = 0; i < ARRAY_SIZE(gt->hw_engines); i++) {
 		err = xe_hw_engine_init(gt, &gt->hw_engines[i], i);
