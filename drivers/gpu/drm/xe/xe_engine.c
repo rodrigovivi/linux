@@ -49,7 +49,7 @@ static struct xe_engine *__xe_engine_create(struct xe_device *xe,
 	if (err)
 		goto err_kfree;
 
-	err = gt->eops->init(e);
+	err = gt->engine_ops->init(e);
 	if (err)
 		goto err_lrc;
 
@@ -80,7 +80,7 @@ void xe_engine_destroy(struct kref *ref)
 {
 	struct xe_engine *e = container_of(ref, struct xe_engine, refcount);
 
-	e->gt->eops->fini(e);
+	e->gt->engine_ops->fini(e);
 }
 
 void xe_engine_fini(struct xe_engine *e)

@@ -169,10 +169,21 @@ static void primelockdep(struct xe_guc *guc)
 #endif
 }
 
+static int guc_engine_init(struct xe_engine *e);
+static void guc_engine_fini(struct xe_engine *e);
+
+static const struct xe_engine_ops guc_engine_ops = {
+	.init = guc_engine_init,
+	.fini = guc_engine_fini,
+};
+
 int xe_guc_submit_init(struct xe_guc *guc)
 {
 	struct xe_device *xe = guc_to_xe(guc);
+	struct xe_gt *gt = guc_to_gt(guc);
 	int err;
+
+	gt->engine_ops = &guc_engine_ops;
 
 	mutex_init(&guc->submission_state.lock);
 	xa_init(&guc->submission_state.engine_lookup);
@@ -540,7 +551,7 @@ static void guc_engine_fini_async(struct xe_engine *e)
 	queue_work(system_unbound_wq, &e->guc->fini_async);
 }
 
-static void guc_engine_fini(struct xe_guc *guc, struct xe_engine *e)
+static void __guc_engine_fini(struct xe_guc *guc, struct xe_engine *e)
 {
 	/*
 	 * Might be done from within the GPU scheduler, need to do async as we
@@ -566,7 +577,7 @@ static void guc_engine_cleanup_entity(struct drm_sched_entity *entity)
 	if (engine_enabled(e))
 		disable_scheduling(guc, e);
 	else
-		guc_engine_fini(guc, e);
+		__guc_engine_fini(guc, e);
 	entity->do_cleanup = false;
 }
 
@@ -577,7 +588,7 @@ static const struct drm_sched_backend_ops drm_sched_ops = {
 	.cleanup_entity = guc_engine_cleanup_entity,
 };
 
-int xe_guc_engine_init(struct xe_engine *e)
+static int guc_engine_init(struct xe_engine *e)
 {
 	struct drm_gpu_scheduler *sched;
 	struct xe_guc *guc = engine_to_guc(e);
@@ -653,7 +664,7 @@ err_free:
 	return err;
 }
 
-void xe_guc_engine_fini(struct xe_engine *e)
+static void guc_engine_fini(struct xe_engine *e)
 {
 	if (engine_used(e))
 		drm_sched_entity_trigger_cleanup(&e->guc->entity);
@@ -679,7 +690,7 @@ static void guc_engine_stop(struct xe_guc *guc, struct xe_engine *e)
 		if (engine_banned(e))
 			xe_engine_put(e);
 		else
-			guc_engine_fini(guc, e);
+			__guc_engine_fini(guc, e);
 	}
 	e->guc->state = 0;
 	trace_xe_engine_stop(e);
@@ -864,7 +875,7 @@ int xe_guc_deregister_done_handler(struct xe_guc *guc, u32 *msg, u32 len)
 	if (engine_banned(e))
 		xe_engine_put(e);
 	else
-		guc_engine_fini(guc, e);
+		__guc_engine_fini(guc, e);
 
 	return 0;
 }
