@@ -18,10 +18,10 @@
 #include "xe_hw_fence.h"
 #include "xe_lrc.h"
 #include "xe_macros.h"
+#include "xe_ring_ops_types.h"
 #include "xe_sched_job.h"
 #include "xe_trace.h"
 
-#include "../i915/gt/intel_gpu_commands.h"
 #include "../i915/gt/intel_lrc_reg.h"
 
 static struct xe_gt *
@@ -394,17 +394,11 @@ static void submit_engine(struct xe_engine *e)
 	xe_guc_ct_send(&guc->ct, action, len, g2h_len, num_g2h);
 }
 
-/* FIXME: Just copying execlists to get submission going */
-#define MAX_JOB_SIZE_DW 32
-#define MAX_JOB_SIZE_BYTES (MAX_JOB_SIZE_DW * 4)
-
 static struct dma_fence *
 guc_engine_run_job(struct drm_sched_job *drm_job)
 {
 	struct xe_sched_job *job = to_xe_sched_job(drm_job);
 	struct xe_engine *e = job->engine;
-	struct xe_lrc *lrc = &job->engine->lrc;
-	uint32_t dw[MAX_JOB_SIZE_DW], i = 0;
 
 	XE_BUG_ON((engine_destroyed(e) || engine_pending_disable(e)) &&
 		  !engine_banned(e));
@@ -412,44 +406,9 @@ guc_engine_run_job(struct drm_sched_job *drm_job)
 	trace_xe_sched_job_run(job);
 
 	if (!engine_banned(e)) {
-		u32 ppgtt_flag = 0;
-
 		if (!engine_registered(e))
 			register_engine(e);
-
-		dw[i++] = MI_ARB_CHECK | 1 << 8 | 1;
-
-		dw[i++] = (MI_FLUSH_DW + 1) |
-			MI_FLUSH_DW_OP_STOREDW | MI_INVALIDATE_TLB;
-		dw[i++] = xe_lrc_flush_ggtt_addr(lrc) | MI_FLUSH_DW_USE_GTT;
-		dw[i++] = 0;
-		dw[i++] = 0;
-
-		dw[i++] = MI_ARB_CHECK | 1 << 8;
-
-		dw[i++] = MI_STORE_DATA_IMM | BIT(22) /* GGTT */ | 2;
-		dw[i++] = xe_lrc_start_seqno_ggtt_addr(lrc);
-		dw[i++] = 0;
-		dw[i++] = job->fence->seqno;
-
-		if (job->engine->vm)
-			ppgtt_flag = BIT(8);
-
-		dw[i++] = MI_BATCH_BUFFER_START_GEN8 | ppgtt_flag;
-		dw[i++] = lower_32_bits(job->user_batch_addr);
-		dw[i++] = upper_32_bits(job->user_batch_addr);
-
-		dw[i++] = MI_STORE_DATA_IMM | BIT(22) /* GGTT */ | 2;
-		dw[i++] = xe_lrc_seqno_ggtt_addr(lrc);
-		dw[i++] = 0;
-		dw[i++] = job->fence->seqno;
-
-		dw[i++] = MI_USER_INTERRUPT;
-		dw[i++] = MI_ARB_ON_OFF | MI_ARB_ENABLE;
-
-		XE_BUG_ON(i > MAX_JOB_SIZE_DW);
-
-		xe_lrc_write_ring(lrc, dw, i * sizeof(*dw));
+		e->ring_ops->emit_job(job);
 
 		submit_engine(e);
 	}

@@ -27,27 +27,29 @@ static struct xe_engine *__xe_engine_create(struct xe_device *xe,
 					    u32 flags)
 {
 	struct xe_engine *e;
+	struct xe_gt *gt = to_gt(xe);
 	int err;
 
 	e = kzalloc(sizeof(*e), GFP_KERNEL);
 	if (!e)
 		return ERR_PTR(-ENOMEM);
 
+	kref_init(&e->refcount);
 	e->flags = flags;
 	e->hwe = hwe;
-	kref_init(&e->refcount);
-	e->gt = to_gt(xe);
+	e->gt = gt;
 	if (vm)
 		e->vm = xe_vm_get(vm);
 	e->class = hwe->class;
 	e->logical_mask = BIT(hwe->logical_instance);
-	e->fence_irq = &e->gt->fence_irq[hwe->class];
+	e->fence_irq = &gt->fence_irq[hwe->class];
+	e->ring_ops = gt->ring_ops[hwe->class];
 
 	err = xe_lrc_init(&e->lrc, hwe, vm, SZ_16K);
 	if (err)
 		goto err_kfree;
 
-	err = e->gt->eops->init(e);
+	err = gt->eops->init(e);
 	if (err)
 		goto err_lrc;
 

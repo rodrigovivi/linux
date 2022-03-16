@@ -17,6 +17,7 @@
 #include "xe_hw_fence.h"
 #include "xe_migrate.h"
 #include "xe_mmio.h"
+#include "xe_ring_ops.h"
 #include "xe_sa.h"
 #include "xe_ttm_gtt_mgr.h"
 #include "xe_ttm_vram_mgr.h"
@@ -170,8 +171,10 @@ int xe_gt_init(struct xe_gt *gt)
 	primelockdep(gt);
 	INIT_WORK(&gt->reset.worker, gt_reset_worker);
 
-	for (i = 0; i < XE_ENGINE_CLASS_MAX; ++i)
+	for (i = 0; i < XE_ENGINE_CLASS_MAX; ++i) {
+		gt->ring_ops[i] = xe_ring_ops_get(gt, i);
 		xe_hw_fence_irq_init(&gt->fence_irq[i]);
+	}
 
 	xe_force_wake_init(gt, gt->mmio.fw);
 	err = xe_force_wake_get(gt->mmio.fw, XE_FORCEWAKE_ALL);
