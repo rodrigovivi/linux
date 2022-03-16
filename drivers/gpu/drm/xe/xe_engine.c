@@ -23,7 +23,8 @@
 
 static struct xe_engine *__xe_engine_create(struct xe_device *xe,
 					    struct xe_vm *vm,
-					    struct xe_hw_engine *hwe,
+					    u32 logical_mask,
+					    u16 width, struct xe_hw_engine *hwe,
 					    u32 flags)
 {
 	struct xe_engine *e;
@@ -41,8 +42,8 @@ static struct xe_engine *__xe_engine_create(struct xe_device *xe,
 	if (vm)
 		e->vm = xe_vm_get(vm);
 	e->class = hwe->class;
-	e->width = 1;
-	e->logical_mask = BIT(hwe->logical_instance);
+	e->width = width;
+	e->logical_mask = logical_mask;
 	e->fence_irq = &gt->fence_irq[hwe->class];
 	e->ring_ops = gt->ring_ops[hwe->class];
 	INIT_LIST_HEAD(&e->persitent.link);
@@ -65,13 +66,14 @@ err_kfree:
 }
 
 struct xe_engine *xe_engine_create(struct xe_device *xe, struct xe_vm *vm,
+				   u32 logical_mask, u16 width,
 				   struct xe_hw_engine *hwe, u32 flags)
 {
 	struct xe_engine *e;
 
 	if (vm)
 		xe_vm_lock(vm, NULL);
-	e = __xe_engine_create(xe, vm, hwe, flags);
+	e = __xe_engine_create(xe, vm, logical_mask, width, hwe, flags);
 	if (vm)
 		xe_vm_unlock(vm);
 
@@ -153,19 +155,63 @@ find_hw_engine(struct xe_device *xe,
 			       eci.engine_instance, true);
 }
 
+static u32 calc_validate_logical_mask(struct xe_device *xe,
+				      struct drm_xe_engine_class_instance *eci,
+				      u16 width, u16 num_placements)
+{
+	int len = width * num_placements;
+	int i, j, n;
+	u16 class;
+	u32 return_mask = 0, prev_mask;
+
+	if (XE_IOCTL_ERR(xe, !xe_gt_guc_submission_enabled(to_gt(xe)) &&
+			 len > 1))
+		return 0;
+
+	for (i = 0; i < width; ++i) {
+		u32 current_mask = 0;
+
+		for (j = 0; j < num_placements; ++j) {
+			n = i * num_placements + j;
+
+			if (XE_IOCTL_ERR(xe, !find_hw_engine(xe, eci[n])))
+				return 0;
+
+			if (n && XE_IOCTL_ERR(xe, eci[n].engine_class != class))
+				return 0;
+			else
+				class = eci[n].engine_class;
+
+			if (width == 1 || !j)
+				return_mask |= BIT(eci[n].engine_instance);
+			current_mask |= BIT(eci[n].engine_instance);
+		}
+
+		/* Parallel submissions must be logically contiguous */
+		if (i && XE_IOCTL_ERR(xe, current_mask != prev_mask << 1))
+			return 0;
+
+		prev_mask = current_mask;
+	}
+
+	return return_mask;
+}
+
 int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 			   struct drm_file *file)
 {
 	struct xe_device *xe = to_xe_device(dev);
 	struct xe_file *xef = to_xe_file(file);
 	struct drm_xe_engine_create *args = data;
-	struct drm_xe_engine_class_instance eci;
+	struct drm_xe_engine_class_instance eci[XE_HW_ENGINE_MAX_INSTANCE];
 	struct drm_xe_engine_class_instance __user *user_eci =
 		u64_to_user_ptr(args->instances);
 	struct xe_hw_engine *hwe;
 	struct xe_vm *vm;
 	struct xe_engine *e;
+	u32 logical_mask;
 	u32 id;
+	int len;
 	int err;
 
 	if (XE_IOCTL_ERR(xe, args->extensions))
@@ -177,14 +223,22 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, args->width != 1))
 		return -EINVAL;
 
-	if (XE_IOCTL_ERR(xe, args->num_placements != 1))
+	len = args->width * args->num_placements;
+	if (XE_IOCTL_ERR(xe, !len || len > XE_HW_ENGINE_MAX_INSTANCE))
 		return -EINVAL;
 
-	if (XE_IOCTL_ERR(xe, __copy_from_user(&eci, user_eci,
-					      sizeof(eci))))
+	err = __copy_from_user(eci, user_eci,
+			       sizeof(struct drm_xe_engine_class_instance) *
+			       len);
+	if (XE_IOCTL_ERR(xe, err))
 		return -EFAULT;
 
-	hwe = find_hw_engine(xe, eci);
+	logical_mask = calc_validate_logical_mask(xe, eci, args->width,
+						  args->num_placements);
+	if (XE_IOCTL_ERR(xe, !logical_mask))
+		return -EINVAL;
+
+	hwe = find_hw_engine(xe, eci[0]);
 	if (XE_IOCTL_ERR(xe, !hwe))
 		return -EINVAL;
 
@@ -192,13 +246,13 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, !vm))
 		return -ENOENT;
 
-	e = xe_engine_create(xe, vm, hwe, 0);
+	/* FIXME: Wire ENGINE_FLAG_PERSISTENT to engine parameter */
+	e = xe_engine_create(xe, vm, logical_mask, args->width, hwe,
+			     ENGINE_FLAG_PERSISTENT);
 	xe_vm_put(vm);
 	if (IS_ERR(e))
 		return PTR_ERR(e);
 
-	/* FIXME: Wire to engine parameter */
-	e->flags |= ENGINE_FLAG_PERSISTENT;
 	e->persitent.xef = xef;
 
 	mutex_lock(&xef->engine.lock);

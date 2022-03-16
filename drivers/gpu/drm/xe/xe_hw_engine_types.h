@@ -39,6 +39,8 @@ enum xe_hw_engine_id {
 	XE_NUM_HW_ENGINES,
 };
 
+#define XE_HW_ENGINE_MAX_INSTANCE	8
+
 struct xe_bo;
 struct xe_execlist_port;
 struct xe_gt;
