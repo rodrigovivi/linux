@@ -62,18 +62,40 @@ struct xe_device {
 		void *regs;
 	} mmio;
 
+	/** @persitent_engines: engines that are closed but still running */
+	struct {
+		/** @lock: protects persitent engines */
+		struct mutex lock;
+		/** @list: list of persitent engines */
+		struct list_head list;
+	} persitent_engines;
+
 	/** @gt: graphics tile */
 	struct xe_gt gt;
 };
 
+/**
+ * struct xe_file - file handle for XE driver
+ */
 struct xe_file {
+	/** @drm: base DRM file */
 	struct drm_file *drm;
 
-	struct xarray vm_xa;
-	struct mutex vm_lock;
+	/** @vm: VM state for file */
+	struct {
+		/** @xe: xarray to store VMs */
+		struct xarray xa;
+		/** @lock: protects file VM state */
+		struct mutex lock;
+	} vm;
 
-	struct xarray engine_xa;
-	struct mutex engine_lock;
+	/** @engine: Submission engine state for file */
+	struct {
+		/** @xe: xarray to store engines */
+		struct xarray xa;
+		/** @lock: protects file engine state */
+		struct mutex lock;
+	} engine;
 };
 
 #endif	/* _XE_DEVICE_TYPES_H_ */

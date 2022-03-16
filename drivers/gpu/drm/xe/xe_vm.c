@@ -562,9 +562,9 @@ struct xe_vm *xe_vm_lookup(struct xe_file *xef, u32 id)
 {
 	struct xe_vm *vm;
 
-	mutex_lock(&xef->vm_lock);
-	vm = xa_load(&xef->vm_xa, id);
-	mutex_unlock(&xef->vm_lock);
+	mutex_lock(&xef->vm.lock);
+	vm = xa_load(&xef->vm.xa, id);
+	mutex_unlock(&xef->vm.lock);
 
 	if (vm)
 		xe_vm_get(vm);
@@ -1151,9 +1151,9 @@ int xe_vm_create_ioctl(struct drm_device *dev, void *data,
 	if (IS_ERR(vm))
 		return PTR_ERR(vm);
 
-	mutex_lock(&xef->vm_lock);
-	err = xa_alloc(&xef->vm_xa, &id, vm, xa_limit_32b, GFP_KERNEL);
-	mutex_unlock(&xef->vm_lock);
+	mutex_lock(&xef->vm.lock);
+	err = xa_alloc(&xef->vm.xa, &id, vm, xa_limit_32b, GFP_KERNEL);
+	mutex_unlock(&xef->vm.lock);
 	if (err) {
 		xe_vm_close_and_put(vm);
 		return err;
@@ -1175,9 +1175,9 @@ int xe_vm_destroy_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, args->pad))
 		return -EINVAL;
 
-	mutex_lock(&xef->vm_lock);
-	vm = xa_erase(&xef->vm_xa, args->vm_id);
-	mutex_unlock(&xef->vm_lock);
+	mutex_lock(&xef->vm.lock);
+	vm = xa_erase(&xef->vm.xa, args->vm_id);
+	mutex_unlock(&xef->vm.lock);
 	if (XE_IOCTL_ERR(xe, !vm))
 		return -ENOENT;
 

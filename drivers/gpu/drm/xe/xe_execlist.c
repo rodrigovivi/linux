@@ -9,7 +9,7 @@
 #include "xe_execlist.h"
 
 #include "xe_bo.h"
-#include "xe_device_types.h"
+#include "xe_device.h"
 #include "xe_engine.h"
 #include "xe_hw_fence.h"
 #include "xe_gt.h"
@@ -373,11 +373,18 @@ static void execlist_engine_fini_async(struct work_struct *w)
 		list_del(&exl->active_link);
 	spin_unlock_irqrestore(&exl->port->lock, flags);
 
+	if (e->flags & ENGINE_FLAG_PERSISTENT)
+		xe_device_remove_persitent_engines(gt_to_xe(e->gt), e);
 	drm_sched_entity_fini(&exl->entity);
 	drm_sched_fini(&exl->sched);
 	kfree(exl);
 
 	xe_engine_fini(e);
+}
+
+static void execlist_engine_kill(struct xe_engine *e)
+{
+	/* NIY */
 }
 
 static void execlist_engine_fini(struct xe_engine *e)
@@ -388,6 +395,7 @@ static void execlist_engine_fini(struct xe_engine *e)
 
 static const struct xe_engine_ops execlist_engine_ops = {
 	.init = execlist_engine_init,
+	.kill = execlist_engine_kill,
 	.fini = execlist_engine_fini,
 };
 
