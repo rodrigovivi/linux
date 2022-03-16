@@ -30,6 +30,7 @@ struct xe_engine_ops;
 struct xe_force_wake;
 struct xe_ggtt;
 struct xe_migrate;
+struct xe_ring_ops;
 struct xe_ttm_gtt_mgr;
 struct xe_ttm_vram_mgr;
 
@@ -112,6 +113,11 @@ struct xe_gt {
 
 	/** @eops: submission backend engine operations */
 	const struct xe_engine_ops *eops;
+
+	/**
+	 * @ring_ops: ring operations for this hw engine (1 per engine class)
+	 */
+	const struct xe_ring_ops *ring_ops[XE_ENGINE_CLASS_MAX];
 
 	/** @fence_irq: fence IRQs (1 per engine class) */
 	struct xe_hw_fence_irq fence_irq[XE_ENGINE_CLASS_MAX];

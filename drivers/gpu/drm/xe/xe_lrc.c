@@ -639,7 +639,6 @@ static inline uint32_t __xe_lrc_pphwsp_offset(struct xe_lrc *lrc)
 
 #define LRC_SEQNO_PPHWSP_OFFSET 512
 #define LRC_START_SEQNO_PPHWSP_OFFSET LRC_SEQNO_PPHWSP_OFFSET + 8
-#define LRC_FLUSH_PPHWSP_OFFSET LRC_SEQNO_PPHWSP_OFFSET + 16
 #define LRC_PPHWSP_SIZE SZ_4K
 
 static inline uint32_t __xe_lrc_seqno_offset(struct xe_lrc *lrc)
@@ -652,12 +651,6 @@ static inline uint32_t __xe_lrc_start_seqno_offset(struct xe_lrc *lrc)
 {
 	/* The start seqno is stored in the driver-defined portion of PPHWSP */
 	return __xe_lrc_pphwsp_offset(lrc) + LRC_START_SEQNO_PPHWSP_OFFSET;
-}
-
-static inline uint32_t __xe_lrc_flush_offset(struct xe_lrc *lrc)
-{
-	/* The flush is stored in the driver-defined portion of PPHWSP */
-	return __xe_lrc_pphwsp_offset(lrc) + LRC_FLUSH_PPHWSP_OFFSET;
 }
 
 static inline uint32_t __xe_lrc_regs_offset(struct xe_lrc *lrc)
@@ -684,7 +677,6 @@ DECL_MAP_ADDR_HELPERS(pphwsp)
 DECL_MAP_ADDR_HELPERS(seqno)
 DECL_MAP_ADDR_HELPERS(regs)
 DECL_MAP_ADDR_HELPERS(start_seqno)
-DECL_MAP_ADDR_HELPERS(flush)
 
 #undef DECL_MAP_ADDR_HELPERS
 
@@ -936,9 +928,4 @@ int32_t xe_lrc_start_seqno(struct xe_lrc *lrc)
 uint32_t xe_lrc_start_seqno_ggtt_addr(struct xe_lrc *lrc)
 {
 	return __xe_lrc_start_seqno_ggtt_addr(lrc);
-}
-
-uint32_t xe_lrc_flush_ggtt_addr(struct xe_lrc *lrc)
-{
-	return __xe_lrc_flush_ggtt_addr(lrc);
 }
