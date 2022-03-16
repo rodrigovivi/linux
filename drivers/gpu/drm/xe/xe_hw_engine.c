@@ -186,7 +186,6 @@ static void hw_engine_fini(struct drm_device *drm, void *arg)
 {
 	struct xe_hw_engine *hwe = arg;
 
-	xe_hw_fence_irq_finish(&hwe->fence_irq);
 	if (hwe->exl_port)
 		xe_execlist_port_destroy(hwe->exl_port);
 	xe_lrc_finish(&hwe->kernel_lrc);
@@ -245,6 +244,7 @@ int xe_hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
 	hwe->mmio_base = engine_info_mmio_base(info, GRAPHICS_VER(xe));
 	hwe->domain = info->domain;
 	hwe->name = info->name;
+	hwe->fence_irq = &gt->fence_irq[info->class];
 
 	hwe->hwsp = xe_bo_create_locked(xe, NULL, SZ_4K, ttm_bo_type_kernel,
 					XE_BO_CREATE_VRAM_IF_DGFX(xe) |
@@ -276,8 +276,6 @@ int xe_hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
 		}
 	}
 
-	xe_hw_fence_irq_init(&hwe->fence_irq);
-
 	if (xe_gt_guc_submission_enabled(gt))
 		xe_hw_engine_enable_ring(hwe);
 
@@ -308,7 +306,7 @@ void xe_hw_engine_handle_irq(struct xe_hw_engine *hwe, uint16_t intr_vec)
 		hwe->irq_handler(hwe, intr_vec);
 
 	if (intr_vec & GT_RENDER_USER_INTERRUPT)
-		xe_hw_fence_irq_run(&hwe->fence_irq);
+		xe_hw_fence_irq_run(hwe->fence_irq);
 }
 
 void xe_hw_engine_print_state(struct xe_hw_engine *hwe, struct drm_printer *p)

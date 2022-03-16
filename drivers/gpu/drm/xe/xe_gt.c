@@ -14,6 +14,7 @@
 #include "xe_ggtt.h"
 #include "xe_gt.h"
 #include "xe_guc_submit.h"
+#include "xe_hw_fence.h"
 #include "xe_migrate.h"
 #include "xe_mmio.h"
 #include "xe_sa.h"
@@ -137,6 +138,10 @@ static void gt_set_engine_ops(struct xe_gt *gt)
 static void gt_fini(struct drm_device *drm, void *arg)
 {
 	struct xe_gt *gt = arg;
+	int i;
+
+	for (i = 0; i < XE_ENGINE_CLASS_MAX; ++i)
+		xe_hw_fence_irq_finish(&gt->fence_irq[i]);
 
 	if (gt->mem.vram.mapping)
 		iounmap(gt->mem.vram.mapping);
@@ -165,10 +170,13 @@ int xe_gt_init(struct xe_gt *gt)
 	primelockdep(gt);
 	INIT_WORK(&gt->reset.worker, gt_reset_worker);
 
+	for (i = 0; i < XE_ENGINE_CLASS_MAX; ++i)
+		xe_hw_fence_irq_init(&gt->fence_irq[i]);
+
 	xe_force_wake_init(gt, gt->mmio.fw);
 	err = xe_force_wake_get(gt->mmio.fw, XE_FORCEWAKE_ALL);
 	if (err)
-		return err;
+		goto err_hw_fence_irq;
 
 	tgl_setup_private_ppat(gt);
 
@@ -221,6 +229,9 @@ err_ttm_mgr:
 		iounmap(gt->mem.vram.mapping);
 err_force_wake:
 	xe_force_wake_put(gt->mmio.fw, XE_FORCEWAKE_ALL);
+err_hw_fence_irq:
+	for (i = 0; i < XE_ENGINE_CLASS_MAX; ++i)
+		xe_hw_fence_irq_finish(&gt->fence_irq[i]);
 
 	return err;
 }
