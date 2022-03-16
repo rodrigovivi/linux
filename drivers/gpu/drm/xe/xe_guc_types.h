@@ -34,6 +34,8 @@ struct xe_guc {
 		struct xarray engine_lookup;
 		/** @guc_ids: used to allocate new guc_ids, single-lrc */
 		struct ida guc_ids;
+		/** @guc_ids_bitmap: used to allocate new guc_ids, multi-lrc */
+		unsigned long *guc_ids_bitmap;
 		/** @stopped: submissions are stopped */
 		bool stopped;
 		/** @lock: protects submission state */
