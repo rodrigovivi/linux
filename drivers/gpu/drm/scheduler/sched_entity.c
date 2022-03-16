@@ -333,7 +333,19 @@ EXPORT_SYMBOL(drm_sched_entity_destroy);
 void drm_sched_entity_trigger_cleanup(struct drm_sched_entity *entity)
 {
 	entity->do_cleanup = true;
-	wake_up_interruptible(&entity->rq->sched->wake_up_worker);
+
+	/* Add the entity to the run queue */
+	spin_lock(&entity->rq_lock);
+	if (entity->stopped) {
+		spin_unlock(&entity->rq_lock);
+
+		DRM_ERROR("Trying to push to a killed entity\n");
+		return;
+	}
+	drm_sched_rq_add_entity(entity->rq, entity);
+	spin_unlock(&entity->rq_lock);
+
+	drm_sched_wakeup(entity->rq->sched);
 }
 EXPORT_SYMBOL(drm_sched_entity_trigger_cleanup);
 
