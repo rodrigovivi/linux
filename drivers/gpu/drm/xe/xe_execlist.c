@@ -287,7 +287,7 @@ static const struct drm_sched_backend_ops drm_sched_ops = {
 	.free_job = xe_drm_sched_job_free,
 };
 
-int xe_execlist_engine_init(struct xe_engine *e)
+static int execlist_engine_init(struct xe_engine *e)
 {
 	struct drm_gpu_scheduler *sched;
 	struct xe_execlist_engine *exl;
@@ -349,7 +349,7 @@ err_free:
 	return err;
 }
 
-void xe_execlist_engine_fini(struct xe_engine *e)
+static void execlist_engine_fini(struct xe_engine *e)
 {
 	struct xe_execlist_engine *exl = e->execlist;
 	unsigned long flags;
@@ -366,4 +366,20 @@ void xe_execlist_engine_fini(struct xe_engine *e)
 	kfree(exl);
 
 	xe_engine_fini(e);
+}
+
+static const struct xe_engine_ops execlist_engine_ops = {
+	.init = execlist_engine_init,
+	.fini = execlist_engine_fini,
+};
+
+int xe_execlist_init(struct xe_gt *gt)
+{
+	/* GuC submission enabled, nothing to do */
+	if (xe_gt_guc_submission_enabled(gt))
+		return 0;
+
+	gt->engine_ops = &execlist_engine_ops;
+
+	return 0;
 }
