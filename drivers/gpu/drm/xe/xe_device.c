@@ -30,30 +30,37 @@ static int xe_file_open(struct drm_device *dev, struct drm_file *file)
 
 	xef->drm = file;
 
-	mutex_init(&xef->vm_lock);
-	xa_init_flags(&xef->vm_xa, XA_FLAGS_ALLOC1);
+	mutex_init(&xef->vm.lock);
+	xa_init_flags(&xef->vm.xa, XA_FLAGS_ALLOC1);
 
-	mutex_init(&xef->engine_lock);
-	xa_init_flags(&xef->engine_xa, XA_FLAGS_ALLOC1);
+	mutex_init(&xef->engine.lock);
+	xa_init_flags(&xef->engine.xa, XA_FLAGS_ALLOC1);
 
 	file->driver_priv = xef;
 	return 0;
 }
 
+static void device_kill_persitent_engines(struct xe_device *xe,
+					  struct xe_file *xef);
+
 static void xe_file_close(struct drm_device *dev, struct drm_file *file)
 {
+	struct xe_device *xe = to_xe_device(dev);
 	struct xe_file *xef = file->driver_priv;
 	struct xe_vm *vm;
 	struct xe_engine *e;
 	unsigned long idx;
 
-	xa_for_each(&xef->vm_xa, idx, vm)
-		xe_vm_close_and_put(vm);
-	mutex_destroy(&xef->vm_lock);
-
-	xa_for_each(&xef->engine_xa, idx, e)
+	xa_for_each(&xef->engine.xa, idx, e) {
+		e->gt->engine_ops->kill(e);
 		xe_engine_put(e);
-	mutex_destroy(&xef->engine_lock);
+	}
+	mutex_destroy(&xef->engine.lock);
+	device_kill_persitent_engines(xe, xef);
+
+	xa_for_each(&xef->vm.xa, idx, vm)
+		xe_vm_put(vm);
+	mutex_destroy(&xef->vm.lock);
 
 	kfree(xef);
 }
@@ -144,6 +151,9 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 
 	spin_lock_init(&xe->irq.lock);
 
+	mutex_init(&xe->persitent_engines.lock);
+	INIT_LIST_HEAD(&xe->persitent_engines.list);
+
 	return xe;
 
 err_put:
@@ -212,10 +222,42 @@ int xe_device_probe(struct xe_device *xe)
 
 void xe_device_remove(struct xe_device *xe)
 {
+	mutex_destroy(&xe->persitent_engines.lock);
 	drm_dev_unregister(&xe->drm);
 	ttm_device_fini(&xe->ttm);
 }
 
 void xe_device_shutdown(struct xe_device *xe)
 {
+}
+
+void xe_device_add_persitent_engines(struct xe_device *xe, struct xe_engine *e)
+{
+	mutex_lock(&xe->persitent_engines.lock);
+	list_add_tail(&e->persitent.link, &xe->persitent_engines.list);
+	mutex_unlock(&xe->persitent_engines.lock);
+}
+
+void xe_device_remove_persitent_engines(struct xe_device *xe,
+					struct xe_engine *e)
+{
+	mutex_lock(&xe->persitent_engines.lock);
+	if (!list_empty(&e->persitent.link))
+		list_del(&e->persitent.link);
+	mutex_unlock(&xe->persitent_engines.lock);
+}
+
+static void device_kill_persitent_engines(struct xe_device *xe,
+					  struct xe_file *xef)
+{
+	struct xe_engine *e, *next;
+
+	mutex_lock(&xe->persitent_engines.lock);
+	list_for_each_entry_safe(e, next, &xe->persitent_engines.list,
+				 persitent.link)
+		if (e->persitent.xef == xef) {
+			e->gt->engine_ops->kill(e);
+			list_del_init(&e->persitent.link);
+		}
+	mutex_unlock(&xe->persitent_engines.lock);
 }

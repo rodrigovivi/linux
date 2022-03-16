@@ -8,6 +8,7 @@
 
 #include <drm/drm_managed.h>
 
+#include "xe_device.h"
 #include "xe_engine.h"
 #include "xe_guc_ct.h"
 #include "xe_guc_engine_types.h"
@@ -170,10 +171,12 @@ static void primelockdep(struct xe_guc *guc)
 }
 
 static int guc_engine_init(struct xe_engine *e);
+static void guc_engine_kill(struct xe_engine *e);
 static void guc_engine_fini(struct xe_engine *e);
 
 static const struct xe_engine_ops guc_engine_ops = {
 	.init = guc_engine_init,
+	.kill = guc_engine_kill,
 	.fini = guc_engine_fini,
 };
 
@@ -537,6 +540,8 @@ static void __guc_engine_fini_async(struct work_struct *w)
 
 	trace_xe_engine_destroy(e);
 
+	if (e->flags & ENGINE_FLAG_PERSISTENT)
+		xe_device_remove_persitent_engines(gt_to_xe(e->gt), e);
 	release_guc_id(guc, e);
 	drm_sched_entity_fini(&ge->entity);
 	drm_sched_fini(&ge->sched);
@@ -662,6 +667,11 @@ err_free:
 	kfree(ge);
 
 	return err;
+}
+
+static void guc_engine_kill(struct xe_engine *e)
+{
+	drm_sched_set_timeout(&e->guc->sched, MIN_SCHED_TIMEOUT);
 }
 
 static void guc_engine_fini(struct xe_engine *e)
@@ -911,7 +921,7 @@ int xe_guc_engine_reset_handler(struct xe_guc *guc, u32 *msg, u32 len)
 	 */
 	set_engine_reset(e);
 	if (!engine_banned(e))
-		drm_sched_set_timeout(&e->guc->sched, 1);
+		guc_engine_kill(e);
 
 	return 0;
 }

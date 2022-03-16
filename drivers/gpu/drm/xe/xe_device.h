@@ -7,6 +7,9 @@
 #ifndef _XE_DEVICE_H_
 #define _XE_DEVICE_H_
 
+struct xe_engine;
+struct xe_file;
+
 #include "xe_device_types.h"
 
 static inline struct xe_device *to_xe_device(const struct drm_device *dev)
@@ -29,6 +32,10 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 int xe_device_probe(struct xe_device *xe);
 void xe_device_remove(struct xe_device *xe);
 void xe_device_shutdown(struct xe_device *xe);
+
+void xe_device_add_persitent_engines(struct xe_device *xe, struct xe_engine *e);
+void xe_device_remove_persitent_engines(struct xe_device *xe,
+					struct xe_engine *e);
 
 static inline struct xe_file *to_xe_file(const struct drm_file *file)
 {
