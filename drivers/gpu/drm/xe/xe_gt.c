@@ -116,6 +116,22 @@ static int gt_ttm_mgr_init(struct xe_gt *gt)
 	return 0;
 }
 
+static void gt_hw_engine_setup_logical_mapping(struct xe_gt *gt)
+{
+	int class;
+
+	/* FIXME: Doing a simple logical mapping that works for most hardware */
+	for (class = 0; class < XE_ENGINE_CLASS_MAX; ++class) {
+		struct xe_hw_engine *hwe;
+		enum xe_hw_engine_id id;
+		int logical_instance = 0;
+
+		for_each_hw_engine(hwe, gt, id)
+			if (hwe->class == class)
+				hwe->logical_instance = logical_instance++;
+	}
+}
+
 static void gt_fini(struct drm_device *drm, void *arg)
 {
 	struct xe_gt *gt = arg;
@@ -184,6 +200,7 @@ int xe_gt_init(struct xe_gt *gt)
 		if (err)
 			goto err_ttm_mgr;
 	}
+	gt_hw_engine_setup_logical_mapping(gt);
 
 	err = xe_sa_bo_manager_init(gt, &gt->kernel_bb_pool, SZ_1M, 16);
 	if (err)
@@ -311,13 +328,15 @@ void xe_gt_reset_async(struct xe_gt *gt)
 
 struct xe_hw_engine *xe_gt_hw_engine(struct xe_gt *gt,
 				     enum xe_engine_class class,
-				     uint16_t instance)
+				     uint16_t instance, bool logical)
 {
 	struct xe_hw_engine *hwe;
 	enum xe_hw_engine_id id;
 
 	for_each_hw_engine(hwe, gt, id)
-		if (hwe->class == class && hwe->instance == instance)
+		if (hwe->class == class &&
+		    ((!logical && hwe->instance == instance) ||
+		    (logical && hwe->logical_instance == instance)))
 			return hwe;
 
 	return NULL;
