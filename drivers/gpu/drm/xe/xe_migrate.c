@@ -210,7 +210,7 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 		continue;
 
 err_job:
-		xe_sched_job_destroy(job);
+		xe_sched_job_free(job);
 err:
 		mutex_unlock(&m->job_mutex);
 		xe_bb_free(bb, NULL);
@@ -292,7 +292,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		continue;
 
 err_job:
-		xe_sched_job_destroy(job);
+		xe_sched_job_free(job);
 		mutex_unlock(&m->job_mutex);
 err:
 		xe_bb_free(bb, NULL);
