@@ -30,8 +30,9 @@ static struct xe_engine *__xe_engine_create(struct xe_device *xe,
 	struct xe_engine *e;
 	struct xe_gt *gt = to_gt(xe);
 	int err;
+	int i;
 
-	e = kzalloc(sizeof(*e), GFP_KERNEL);
+	e = kzalloc(sizeof(*e) + sizeof(struct xe_lrc) * width, GFP_KERNEL);
 	if (!e)
 		return ERR_PTR(-ENOMEM);
 
@@ -48,9 +49,16 @@ static struct xe_engine *__xe_engine_create(struct xe_device *xe,
 	e->ring_ops = gt->ring_ops[hwe->class];
 	INIT_LIST_HEAD(&e->persitent.link);
 
-	err = xe_lrc_init(&e->lrc, hwe, vm, SZ_16K);
-	if (err)
-		goto err_kfree;
+	if (xe_engine_is_parallel(e)) {
+		e->parallel.composite_fence_ctx = dma_fence_context_alloc(1);
+		e->parallel.composite_fence_seqno = 1;
+	}
+
+	for (i = 0; i < width; ++i) {
+		err = xe_lrc_init(e->lrc + i, hwe, vm, SZ_16K);
+		if (err)
+			goto err_lrc;
+	}
 
 	err = gt->engine_ops->init(e);
 	if (err)
@@ -59,8 +67,8 @@ static struct xe_engine *__xe_engine_create(struct xe_device *xe,
 	return e;
 
 err_lrc:
-	xe_lrc_finish(&e->lrc);
-err_kfree:
+	for (i = i - 1; i >= 0; --i)
+		xe_lrc_finish(e->lrc + i);
 	kfree(e);
 	return ERR_PTR(err);
 }
@@ -89,7 +97,10 @@ void xe_engine_destroy(struct kref *ref)
 
 void xe_engine_fini(struct xe_engine *e)
 {
-	xe_lrc_finish(&e->lrc);
+	int i;
+
+	for (i = 0; i < e->width; ++i)
+		xe_lrc_finish(e->lrc + i);
 	if (e->vm)
 		xe_vm_put(e->vm);
 
@@ -113,12 +124,15 @@ struct xe_engine *xe_engine_lookup(struct xe_file *xef, u32 id)
 static int xe_engine_begin(struct xe_engine *e)
 {
 	int err;
+	int i;
 
 	xe_vm_lock(e->vm, NULL);
 
-	err = xe_bo_vmap(e->lrc.bo);
-	if (err)
-		goto err_unlock_vm;
+	for (i = 0; i < e->width; ++i) {
+		err = xe_bo_vmap(e->lrc[i].bo);
+		if (err)
+			goto err_unlock_vm;
+	}
 
 	return 0;
 
@@ -220,9 +234,6 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, args->flags))
 		return -EINVAL;
 
-	if (XE_IOCTL_ERR(xe, args->width != 1))
-		return -EINVAL;
-
 	len = args->width * args->num_placements;
 	if (XE_IOCTL_ERR(xe, !len || len > XE_HW_ENGINE_MAX_INSTANCE))
 		return -EINVAL;
@@ -302,8 +313,10 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	struct xe_file *xef = to_xe_file(file);
 	struct drm_xe_exec *args = data;
 	struct drm_xe_sync __user *syncs_user = u64_to_user_ptr(args->syncs);
+	uint64_t __user *addresses_user = u64_to_user_ptr(args->address);
 	struct xe_engine *engine;
 	struct xe_sync_entry *syncs;
+	uint64_t addresses[XE_HW_ENGINE_MAX_INSTANCE];
 	uint32_t i, num_syncs = 0;
 	struct xe_sched_job *job;
 	int err = 0;
@@ -335,11 +348,23 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 			goto err_syncs;
 	}
 
+	if (xe_engine_is_parallel(engine)) {
+		err = __copy_from_user(addresses, addresses_user, sizeof(uint64_t) *
+				       engine->width);
+		if (err) {
+			err = -EFAULT;
+			goto err_syncs;
+		}
+	}
+
 	err = xe_engine_begin(engine);
 	if (err)
 		goto err_syncs;
 
-	job = xe_sched_job_create(engine, args->address);
+	if (!xe_engine_is_parallel(engine))
+		job = xe_sched_job_create(engine, &args->address);
+	else
+		job = xe_sched_job_create(engine, addresses);
 	if (IS_ERR(job)) {
 		err = PTR_ERR(job);
 		goto err_engine_end;

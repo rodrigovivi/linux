@@ -85,7 +85,7 @@ static void __xe_execlist_port_start(struct xe_execlist_port *port,
 			port->last_ctx_id = 1;
 	}
 
-	__start_lrc(port->hwe, &exl->engine->lrc, port->last_ctx_id);
+	__start_lrc(port->hwe, exl->engine->lrc, port->last_ctx_id);
 	port->running_exl = exl;
 	exl->has_run = true;
 }
@@ -108,7 +108,7 @@ static void __xe_execlist_port_idle(struct xe_execlist_port *port)
 
 static bool xe_execlist_is_idle(struct xe_execlist_engine *exl)
 {
-	struct xe_lrc *lrc = &exl->engine->lrc;
+	struct xe_lrc *lrc = exl->engine->lrc;
 
 	return lrc->ring.tail == lrc->ring.old_tail;
 }
@@ -311,7 +311,7 @@ static int execlist_engine_init(struct xe_engine *e)
 	exl->engine = e;
 
 	err = drm_sched_init(&exl->sched, &drm_sched_ops,
-			     e->lrc.ring.size / MAX_JOB_SIZE_BYTES,
+			     e->lrc[0].ring.size / MAX_JOB_SIZE_BYTES,
 			     XE_SCHED_HANG_LIMIT, XE_SCHED_JOB_TIMEOUT,
 			     NULL, NULL, e->hwe->name);
 	if (err)

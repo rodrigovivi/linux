@@ -34,6 +34,11 @@ static inline void xe_engine_put(struct xe_engine *engine)
 	kref_put(&engine->refcount, xe_engine_destroy);
 }
 
+static inline bool xe_engine_is_parallel(struct xe_engine *engine)
+{
+	return engine->width > 1;
+}
+
 #define xe_engine_assert_held(e) \
 	do { \
 		struct xe_engine *_eng = (e); \

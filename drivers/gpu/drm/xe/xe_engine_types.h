@@ -78,12 +78,22 @@ struct xe_engine {
 		struct list_head link;
 	} persitent;
 
+	/**
+	 * @parallel: parallel submission state
+	 */
+	struct {
+		/** @composite_fence_ctx: context composite fence */
+		u64 composite_fence_ctx;
+		/** @composite_fence_seqno: seqno for composite fence */
+		u32 composite_fence_seqno;
+	} parallel;
+
 	/** @ring_ops: ring operations for this engine */
 	const struct xe_ring_ops *ring_ops;
 	/** @entity: DRM sched entity for this engine (1 to 1 relationship) */
 	struct drm_sched_entity *entity;
 	/** @lrc: logical ring context for this engine */
-	struct xe_lrc lrc;
+	struct xe_lrc lrc[0];
 };
 
 /**

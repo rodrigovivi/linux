@@ -25,7 +25,7 @@ struct xe_sched_job {
 	 */
 	struct dma_fence *fence;
 	/** @batch_addr: batch buffer address of job */
-	uint64_t batch_addr;
+	uint64_t batch_addr[0];
 };
 
 #endif	/* _XE_SCHED_JOB_TYPES_H_ */
