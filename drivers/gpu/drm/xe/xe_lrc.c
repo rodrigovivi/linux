@@ -777,8 +777,7 @@ int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 	lrc->ring.tail = 0;
 
 	xe_hw_fence_ctx_init(&lrc->fence_ctx, hwe->gt,
-			     &hwe->fence_irq, hwe->name);
-
+			     hwe->fence_irq, hwe->name);
 
 	init_data = empty_lrc_data(hwe);
 	if (!init_data) {
