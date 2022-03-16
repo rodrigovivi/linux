@@ -64,6 +64,8 @@ struct xe_engine {
 		struct xe_guc_engine *guc;
 	};
 
+	/** @ring_ops: ring operations for this engine */
+	const struct xe_ring_ops *ring_ops;
 	/** @entity: DRM sched entity for this engine (1 to 1 relationship) */
 	struct drm_sched_entity *entity;
 	/** @lrc: logical ring context for this engine */
