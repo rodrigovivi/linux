@@ -28,6 +28,10 @@ struct xe_guc_engine {
 	struct work_struct fini_async;
 	/** @state: GuC specific state for this xe_engine */
 	u32 state;
+	/** @wqi_head: work queue item tail */
+	u32 wqi_head;
+	/** @wqi_tail: work queue item tail */
+	u32 wqi_tail;
 	/** @id: GuC id for this xe_engine */
 	u16 id;
 	/** @bool: Context reset */
