@@ -230,7 +230,7 @@ static void gen11_gt_irq_handler(struct xe_device *xe, uint32_t master_ctl)
 				continue;
 			}
 
-			hwe = xe_gt_hw_engine(gt, class, instance);
+			hwe = xe_gt_hw_engine(gt, class, instance, false);
 			if (!hwe)
 				continue;
 
