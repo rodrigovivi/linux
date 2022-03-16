@@ -9,7 +9,7 @@
 #include "xe_lrc.h"
 #include "xe_macros.h"
 #include "xe_ring_ops.h"
-#include "xe_sched_job_types.h"
+#include "xe_sched_job.h"
 
 #include "../i915/i915_reg.h"
 #include "../i915/gt/intel_gpu_commands.h"
@@ -61,9 +61,9 @@ static void invalidate_tlb(struct xe_sched_job *job, u32 *dw, u32 *pi)
 	*pi = i;
 }
 
-static void emit_job_gen12(struct xe_sched_job *job)
+static void __emit_job_gen12(struct xe_sched_job *job, struct xe_lrc *lrc,
+			     u64 batch_addr, u32 seqno)
 {
-	struct xe_lrc *lrc = &job->engine->lrc;
 	uint32_t dw[MAX_JOB_SIZE_DW], i = 0;
 	u32 ppgtt_flag = job->engine->vm ? BIT(8) : 0;
 
@@ -76,16 +76,16 @@ static void emit_job_gen12(struct xe_sched_job *job)
 	dw[i++] = MI_STORE_DATA_IMM | BIT(22) /* GGTT */ | 2;
 	dw[i++] = xe_lrc_start_seqno_ggtt_addr(lrc);
 	dw[i++] = 0;
-	dw[i++] = job->fence->seqno;
+	dw[i++] = seqno;
 
 	dw[i++] = MI_BATCH_BUFFER_START_GEN8 | ppgtt_flag;
-	dw[i++] = lower_32_bits(job->batch_addr);
-	dw[i++] = upper_32_bits(job->batch_addr);
+	dw[i++] = lower_32_bits(batch_addr);
+	dw[i++] = upper_32_bits(batch_addr);
 
 	dw[i++] = MI_STORE_DATA_IMM | BIT(22) /* GGTT */ | 2;
 	dw[i++] = xe_lrc_seqno_ggtt_addr(lrc);
 	dw[i++] = 0;
-	dw[i++] = job->fence->seqno;
+	dw[i++] = seqno;
 
 	dw[i++] = MI_USER_INTERRUPT;
 	dw[i++] = MI_ARB_ON_OFF | MI_ARB_ENABLE;
@@ -93,6 +93,16 @@ static void emit_job_gen12(struct xe_sched_job *job)
 	XE_BUG_ON(i > MAX_JOB_SIZE_DW);
 
 	xe_lrc_write_ring(lrc, dw, i * sizeof(*dw));
+}
+
+static void emit_job_gen12(struct xe_sched_job *job)
+{
+	int i;
+
+	/* FIXME: Not doing parallel handshake for now */
+	for (i = 0; i < job->engine->width; ++i)
+		__emit_job_gen12(job, job->engine->lrc + i, job->batch_addr[i],
+				 xe_sched_job_seqno(job));
 }
 
 static const struct xe_ring_ops ring_ops_gen12 = {

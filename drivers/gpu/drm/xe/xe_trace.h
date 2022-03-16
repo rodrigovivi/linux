@@ -23,6 +23,7 @@ DECLARE_EVENT_CLASS(xe_engine,
 		    TP_STRUCT__entry(
 			     __field(enum xe_engine_class, class)
 			     __field(u32, logical_mask)
+			     __field(u16, width)
 			     __field(u16, guc_id)
 			     __field(u32, guc_state)
 			     __field(u32, flags)
@@ -31,15 +32,16 @@ DECLARE_EVENT_CLASS(xe_engine,
 		    TP_fast_assign(
 			   __entry->class = e->class;
 			   __entry->logical_mask = e->logical_mask;
+			   __entry->width = e->width;
 			   __entry->guc_id = e->guc->id;
 			   __entry->guc_state = e->guc->state;
 			   __entry->flags = e->flags;
 			   ),
 
-		    TP_printk("%d:0x%x, guc_id=%d, guc_state=0x%x, flags=0x%x",
+		    TP_printk("%d:0x%x, width=%d, guc_id=%d, guc_state=0x%x, flags=0x%x",
 			      __entry->class, __entry->logical_mask,
-			      __entry->guc_id, __entry->guc_state,
-			      __entry->flags)
+			      __entry->width, __entry->guc_id,
+			      __entry->guc_state, __entry->flags)
 );
 
 DEFINE_EVENT(xe_engine, xe_engine_create,

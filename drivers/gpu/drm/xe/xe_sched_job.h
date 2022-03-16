@@ -13,7 +13,7 @@
 #define XE_SCHED_JOB_TIMEOUT LONG_MAX
 
 struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
-					 uint64_t batch_addr);
+					 uint64_t *batch_addr);
 void xe_sched_job_free(struct xe_sched_job *job);
 
 bool xe_sched_job_started(struct xe_sched_job *job);

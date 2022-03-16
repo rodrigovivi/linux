@@ -37,6 +37,7 @@ err:
 
 struct xe_sched_job *xe_bb_create_job(struct xe_engine *kernel_eng, struct xe_bb *bb)
 {
+	u64 addr = xe_sa_bo_gpu_addr(bb->bo);
 	u32 size = bb->bo->eoffset - bb->bo->soffset;
 
 	BUG_ON(bb->len >= size/4 - 1);
@@ -45,7 +46,7 @@ struct xe_sched_job *xe_bb_create_job(struct xe_engine *kernel_eng, struct xe_bb
 
 	xe_sa_bo_flush_write(bb->bo);
 
-	return xe_sched_job_create(kernel_eng, xe_sa_bo_gpu_addr(bb->bo));
+	return xe_sched_job_create(kernel_eng, &addr);
 }
 
 void xe_bb_free(struct xe_bb *bb, struct dma_fence *fence)
