@@ -41,6 +41,7 @@ static struct xe_engine *__xe_engine_create(struct xe_device *xe,
 	if (vm)
 		e->vm = xe_vm_get(vm);
 	e->class = hwe->class;
+	e->width = 1;
 	e->logical_mask = BIT(hwe->logical_instance);
 	e->fence_irq = &gt->fence_irq[hwe->class];
 	e->ring_ops = gt->ring_ops[hwe->class];
@@ -158,6 +159,9 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 	struct xe_device *xe = to_xe_device(dev);
 	struct xe_file *xef = to_xe_file(file);
 	struct drm_xe_engine_create *args = data;
+	struct drm_xe_engine_class_instance eci;
+	struct drm_xe_engine_class_instance __user *user_eci =
+		u64_to_user_ptr(args->instances);
 	struct xe_hw_engine *hwe;
 	struct xe_vm *vm;
 	struct xe_engine *e;
@@ -170,7 +174,17 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, args->flags))
 		return -EINVAL;
 
-	hwe = find_hw_engine(xe, args->instance);
+	if (XE_IOCTL_ERR(xe, args->width != 1))
+		return -EINVAL;
+
+	if (XE_IOCTL_ERR(xe, args->num_placements != 1))
+		return -EINVAL;
+
+	if (XE_IOCTL_ERR(xe, __copy_from_user(&eci, user_eci,
+					      sizeof(eci))))
+		return -EFAULT;
+
+	hwe = find_hw_engine(xe, eci);
 	if (XE_IOCTL_ERR(xe, !hwe))
 		return -EINVAL;
 
@@ -246,6 +260,9 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	engine = xe_engine_lookup(xef, args->engine_id);
 	if (XE_IOCTL_ERR(xe, !engine))
 		return -ENOENT;
+
+	if (XE_IOCTL_ERR(xe, engine->width != args->num_batch_buffer))
+		return -EINVAL;
 
 	if (XE_IOCTL_ERR(xe, engine->flags & ENGINE_FLAG_BANNED)) {
 		err = -ECANCELED;
