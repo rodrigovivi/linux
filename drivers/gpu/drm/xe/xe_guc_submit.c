@@ -297,7 +297,7 @@ static void set_min_preemption_timeout(struct xe_guc *guc, struct xe_engine *e)
 		       __guc_engine_policy_action_size(&policy), 0, 0);
 }
 
-/* FIXME: Move to helper / remove e->hwe references */
+/* FIXME: Move to helper */
 static u8 engine_class_to_guc_class(enum xe_engine_class class)
 {
 	switch (class) {
@@ -348,8 +348,8 @@ static void register_engine(struct xe_engine *e)
 
 	memset(&info, 0, sizeof(info));
 	info.context_idx = e->guc->id;
-	info.engine_class = engine_class_to_guc_class(e->hwe->class);
-	info.engine_submit_mask = BIT(e->hwe->instance);
+	info.engine_class = engine_class_to_guc_class(e->class);
+	info.engine_submit_mask = e->logical_mask;
 	info.hwlrca_lo = lower_32_bits(xe_lrc_descriptor(lrc));
 	info.hwlrca_hi = upper_32_bits(xe_lrc_descriptor(lrc));
 	info.flags = CONTEXT_REGISTRATION_FLAG_KMD;
@@ -553,7 +553,7 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 	spin_unlock(&sched->job_list_lock);
 
 	/* Kick HW fence IRQ handler to signal fences */
-	xe_hw_fence_irq_run(e->hwe->fence_irq);
+	xe_hw_fence_irq_run(e->fence_irq);
 
 	return DRM_GPU_SCHED_STAT_NOMINAL;
 }
@@ -636,7 +636,7 @@ int xe_guc_engine_init(struct xe_engine *e)
 
 	err = drm_sched_init(&ge->sched, &drm_sched_ops,
 			     e->lrc.ring.size / MAX_JOB_SIZE_BYTES,
-			     64, HZ * 5, NULL, NULL, e->hwe->name);
+			     64, HZ * 5, NULL, NULL, e->name);
 	if (err)
 		goto err_free;
 
@@ -659,6 +659,26 @@ int xe_guc_engine_init(struct xe_engine *e)
 		drm_sched_stop(sched, NULL);
 
 	mutex_unlock(&guc->submission_state.lock);
+
+	switch (e->class) {
+	case XE_ENGINE_CLASS_RENDER:
+		sprintf(e->name, "rcs%d", e->guc->id);
+		break;
+	case XE_ENGINE_CLASS_VIDEO_DECODE:
+		sprintf(e->name, "vcs%d", e->guc->id);
+		break;
+	case XE_ENGINE_CLASS_VIDEO_ENHANCE:
+		sprintf(e->name, "vecs%d", e->guc->id);
+		break;
+	case XE_ENGINE_CLASS_COPY:
+		sprintf(e->name, "bcs%d", e->guc->id);
+		break;
+	case XE_ENGINE_CLASS_COMPUTE:
+		sprintf(e->name, "ccs%d", e->guc->id);
+		break;
+	default:
+		XE_WARN_ON(e->class);
+	}
 
 	trace_xe_engine_create(e);
 
@@ -959,6 +979,9 @@ static void guc_engine_print(struct xe_engine *e, struct drm_printer *p)
 	struct xe_lrc *lrc = &e->lrc;
 
 	drm_printf(p, "\nGuC ID: %d\n", e->guc->id);
+	drm_printf(p, "\tName: %s\n", e->name);
+	drm_printf(p, "\tClass: %d\n", e->class);
+	drm_printf(p, "\tLogical mask: 0x%x\n", e->logical_mask);
 	drm_printf(p, "\tRef: %d\n", kref_read(&e->refcount));
 	drm_printf(p, "\tTimeout: %ld\n", sched->timeout);
 	drm_printf(p, "\tHW Context Desc: 0x%08x\n",

@@ -389,6 +389,26 @@ int xe_execlist_engine_init(struct xe_engine *e)
 	e->execlist = exl;
 	e->entity = &exl->entity;
 
+	switch (e->class) {
+	case XE_ENGINE_CLASS_RENDER:
+		sprintf(e->name, "rcs%d", ffs(e->logical_mask) - 1);
+		break;
+	case XE_ENGINE_CLASS_VIDEO_DECODE:
+		sprintf(e->name, "vcs%d", ffs(e->logical_mask) - 1);
+		break;
+	case XE_ENGINE_CLASS_VIDEO_ENHANCE:
+		sprintf(e->name, "vecs%d", ffs(e->logical_mask) - 1);
+		break;
+	case XE_ENGINE_CLASS_COPY:
+		sprintf(e->name, "bcs%d", ffs(e->logical_mask) - 1);
+		break;
+	case XE_ENGINE_CLASS_COMPUTE:
+		sprintf(e->name, "ccs%d", ffs(e->logical_mask) - 1);
+		break;
+	default:
+		XE_WARN_ON(e->class);
+	}
+
 	return 0;
 
 err_sched:
