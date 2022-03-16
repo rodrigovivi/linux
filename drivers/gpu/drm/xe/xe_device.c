@@ -18,6 +18,7 @@
 #include "xe_gt.h"
 #include "xe_irq.h"
 #include "xe_mmio.h"
+#include "xe_query.h"
 #include "xe_vm.h"
 
 static int xe_file_open(struct drm_device *dev, struct drm_file *file)
@@ -66,6 +67,7 @@ static void xe_file_close(struct drm_device *dev, struct drm_file *file)
 }
 
 static const struct drm_ioctl_desc xe_ioctls[] = {
+	DRM_IOCTL_DEF_DRV(XE_DEVICE_QUERY, xe_query_ioctl, DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(XE_GEM_CREATE, xe_gem_create_ioctl, DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(XE_GEM_MMAP_OFFSET, xe_gem_mmap_offset_ioctl, DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(XE_VM_CREATE, xe_vm_create_ioctl, DRM_RENDER_ALLOW),
