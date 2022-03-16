@@ -15,7 +15,7 @@
 #include "xe_trace.h"
 
 struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
-					 uint64_t user_batch_addr)
+					 uint64_t batch_addr)
 {
 	struct xe_sched_job *job;
 	int err;
@@ -38,7 +38,7 @@ struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
 		goto err_sched_job;
 	}
 
-	job->user_batch_addr = user_batch_addr;
+	job->batch_addr = batch_addr;
 
 	return job;
 
