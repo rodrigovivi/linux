@@ -47,6 +47,8 @@ struct xe_engine {
 	u32 logical_mask;
 	/** @name: name of this engine */
 	char name[MAX_FENCE_NAME_LEN];
+	/** @width: width (number BB submitted per exec) of this engine */
+	u16 width;
 	/** @fence_irq: fence IRQ used to signal job completion */
 	struct xe_hw_fence_irq *fence_irq;
 
