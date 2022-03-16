@@ -150,7 +150,7 @@ find_hw_engine(struct xe_device *xe,
 
 	return xe_gt_hw_engine(to_gt(xe),
 			       user_to_xe_engine_class[eci.engine_class],
-			       eci.engine_instance);
+			       eci.engine_instance, true);
 }
 
 int xe_engine_create_ioctl(struct drm_device *dev, void *data,
