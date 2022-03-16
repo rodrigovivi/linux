@@ -11,14 +11,21 @@
 
 struct xe_engine;
 
+/**
+ * struct xe_sched_job - XE schedule job (batch buffer tracking)
+ */
 struct xe_sched_job {
+	/** @drm: base DRM scheduler job */
 	struct drm_sched_job drm;
-
+	/** @engine: XE submission engine */
 	struct xe_engine *engine;
-
+	/**
+	 * @fence: dma fence to indicate completion. 1 way relationship - job
+	 * can safely reference fence, fence cannot safely reference job.
+	 */
 	struct dma_fence *fence;
-
-	uint64_t user_batch_addr;
+	/** @batch_addr: batch buffer address of job */
+	uint64_t batch_addr;
 };
 
 #endif	/* _XE_SCHED_JOB_TYPES_H_ */

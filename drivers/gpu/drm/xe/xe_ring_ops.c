@@ -79,8 +79,8 @@ static void emit_job_gen12(struct xe_sched_job *job)
 	dw[i++] = job->fence->seqno;
 
 	dw[i++] = MI_BATCH_BUFFER_START_GEN8 | ppgtt_flag;
-	dw[i++] = lower_32_bits(job->user_batch_addr);
-	dw[i++] = upper_32_bits(job->user_batch_addr);
+	dw[i++] = lower_32_bits(job->batch_addr);
+	dw[i++] = upper_32_bits(job->batch_addr);
 
 	dw[i++] = MI_STORE_DATA_IMM | BIT(22) /* GGTT */ | 2;
 	dw[i++] = xe_lrc_seqno_ggtt_addr(lrc);
