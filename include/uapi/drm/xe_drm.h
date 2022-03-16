@@ -267,8 +267,11 @@ struct drm_xe_engine_create {
 	/** @extensions: Pointer to the first extension struct, if any */
 	__u64 extensions;
 
-	/** @instance: Physical HW engine */
-	struct drm_xe_engine_class_instance instance;
+	/** @width: submission width (number BB per exec) for this engine */
+	__u16 width;
+
+	/** @num_placements: number of valid placements for this engine */
+	__u16 num_placements;
 
 	/** @vm_id: VM to use for this engine */
 	__u32 vm_id;
@@ -278,6 +281,15 @@ struct drm_xe_engine_create {
 
 	/** @engine_id: Returned engine ID */
 	__u32 engine_id;
+
+	/**
+	 * @instances: user pointer to a 2-d array of struct
+	 * drm_xe_engine_class_instance
+	 *
+	 * length = width (i) * num_placements (j)
+	 * index = j + i * width
+	 */
+	__u64 instances;
 };
 
 struct drm_xe_engine_destroy {
@@ -317,8 +329,17 @@ struct drm_xe_exec {
 	/** @syncs: Pointer to struct drm_xe_sync array. */
 	__u64 syncs;
 
-	/** @address: Batch buffer address to execute. */
+	/**
+	  * @address: address of batch buffer if num_batch_buffer == 1 or an
+	  * array of batch buffer addresses
+	  */
 	__u64 address;
+
+	/**
+	 * @num_batch_buffer: number of batch buffer in this exec, must match
+	 * the width of the engine
+	 */
+	__u16 num_batch_buffer;
 };
 
 struct drm_xe_mmio {
