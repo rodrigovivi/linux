@@ -687,6 +687,12 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 		 xe_sched_job_seqno(job), e->guc->id);
 	trace_xe_sched_job_timedout(job);
 
+	/* Kernel jobs should never fail, if they do the GT needs a reset */
+	if (e->flags & ENGINE_FLAG_KERNEL) {
+		xe_gt_reset_async(e->gt);
+		goto out;
+	}
+
 	/* Kill the run_job entry point */
 	kthread_park(sched->thread);
 
@@ -753,6 +759,7 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 	/* Start fence signaling */
 	xe_hw_fence_irq_start(e->fence_irq);
 
+out:
 	return DRM_GPU_SCHED_STAT_NOMINAL;
 }
 
