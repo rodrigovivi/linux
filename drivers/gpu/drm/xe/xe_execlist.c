@@ -393,10 +393,18 @@ static void execlist_engine_fini(struct xe_engine *e)
 	queue_work(system_unbound_wq, &e->execlist->fini_async);
 }
 
+static int execlist_engine_set_priority(struct xe_engine *e,
+					enum drm_sched_priority priority)
+{
+	/* NIY */
+	return 0;
+}
+
 static const struct xe_engine_ops execlist_engine_ops = {
 	.init = execlist_engine_init,
 	.kill = execlist_engine_kill,
 	.fini = execlist_engine_fini,
+	.set_priority = execlist_engine_set_priority,
 };
 
 int xe_execlist_init(struct xe_gt *gt)

@@ -9,11 +9,12 @@
 
 #include <linux/kref.h>
 
+#include <drm/gpu_scheduler.h>
+
 #include "xe_hw_engine_types.h"
 #include "xe_hw_fence_types.h"
 #include "xe_lrc_types.h"
 
-struct drm_sched_entity;
 struct xe_execlist_engine;
 struct xe_gt;
 struct xe_guc_engine;
@@ -106,6 +107,9 @@ struct xe_engine_ops {
 	void (*kill)(struct xe_engine *e);
 	/** @init: Fini engine for submission backend */
 	void (*fini)(struct xe_engine *e);
+	/** @set_priority: Set priority for engine */
+	int (*set_priority)(struct xe_engine *e,
+			    enum drm_sched_priority priority);
 };
 
 #endif	/* _XE_ENGINE_TYPES_H_ */
