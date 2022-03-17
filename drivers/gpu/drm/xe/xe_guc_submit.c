@@ -181,11 +181,14 @@ static void primelockdep(struct xe_guc *guc)
 static int guc_engine_init(struct xe_engine *e);
 static void guc_engine_kill(struct xe_engine *e);
 static void guc_engine_fini(struct xe_engine *e);
+static int guc_engine_set_priority(struct xe_engine *e,
+				   enum drm_sched_priority priority);
 
 static const struct xe_engine_ops guc_engine_ops = {
 	.init = guc_engine_init,
 	.kill = guc_engine_kill,
 	.fini = guc_engine_fini,
+	.set_priority = guc_engine_set_priority,
 };
 
 #define GUC_ID_MAX		65535
@@ -317,6 +320,8 @@ MAKE_ENGINE_POLICY_ADD(priority, SCHEDULING_PRIORITY)
 static void init_policies(struct xe_guc *guc, struct xe_engine *e)
 {
         struct engine_policy policy;
+
+	XE_BUG_ON(!engine_registered(e));
 
 	/* FIXME: Wire these up so they can be configured */
         __guc_engine_policy_start_klv(&policy, e->guc->id);
@@ -803,15 +808,10 @@ static void __guc_engine_fini(struct xe_guc *guc, struct xe_engine *e)
 	guc_engine_fini_async(e);
 }
 
-#define CLEANUP		1	/* Non-zero values to catch uninitialized msg */
-
-static void guc_engine_process_msg(struct drm_sched_msg *msg)
+static void __guc_engine_process_msg_cleanup(struct drm_sched_msg *msg)
 {
 	struct xe_engine *e = msg->private_data;
 	struct xe_guc *guc = engine_to_guc(e);
-
-	XE_BUG_ON(msg->opcode != CLEANUP);
-	XE_BUG_ON(!xe_gt_guc_submission_enabled(guc_to_gt(guc)));
 
 	trace_xe_engine_cleanup_entity(e);
 
@@ -819,6 +819,38 @@ static void guc_engine_process_msg(struct drm_sched_msg *msg)
 		disable_scheduling(guc, e);
 	else
 		__guc_engine_fini(guc, e);
+}
+
+static bool guc_engine_allowed_to_change_state(struct xe_engine *e)
+{
+	return !engine_banned(e) && !engine_killed(e) && engine_registered(e);
+}
+
+static void __guc_engine_process_msg_set_sched_props(struct drm_sched_msg *msg)
+{
+	struct xe_engine *e = msg->private_data;
+	struct xe_guc *guc = engine_to_guc(e);
+
+	if (guc_engine_allowed_to_change_state(e))
+		init_policies(guc, e);
+	kfree(msg);
+}
+
+#define CLEANUP		1	/* Non-zero values to catch uninitialized msg */
+#define SET_SCHED_PROPS	2
+
+static void guc_engine_process_msg(struct drm_sched_msg *msg)
+{
+	switch (msg->opcode) {
+	case CLEANUP:
+		__guc_engine_process_msg_cleanup(msg);
+		break;
+	case SET_SCHED_PROPS:
+		__guc_engine_process_msg_set_sched_props(msg);
+		break;
+	default:
+		XE_BUG_ON("Unknown message type");
+	}
 }
 
 static const struct drm_sched_backend_ops drm_sched_ops = {
@@ -918,6 +950,29 @@ static void guc_engine_fini(struct xe_engine *e)
 	e->guc->cleanup_msg.private_data = e;
 
 	drm_sched_add_msg(&e->guc->sched, &e->guc->cleanup_msg);
+}
+
+static int guc_engine_set_priority(struct xe_engine *e,
+				   enum drm_sched_priority priority)
+{
+	struct drm_sched_msg *msg;
+
+	if (e->entity->priority == priority || engine_banned(e) ||
+	    engine_killed(e))
+		return 0;
+
+	msg = kmalloc(sizeof(*msg), GFP_KERNEL);
+	if (!msg)
+		return -ENOMEM;
+
+	INIT_LIST_HEAD(&msg->link);
+	msg->opcode = SET_SCHED_PROPS;
+	msg->private_data = e;
+
+	drm_sched_entity_set_priority(e->entity, priority);
+	drm_sched_add_msg(&e->guc->sched, msg);
+
+	return 0;
 }
 
 static void guc_engine_stop(struct xe_guc *guc, struct xe_engine *e)
