@@ -181,11 +181,6 @@ struct drm_sched_entity {
 	struct task_struct		*last_user;
 
 	/**
-	 * @do_cleanup: Signal scheduler kthread to call cleanup_entity.
-	 */
-	bool do_cleanup;
-
-	/**
 	 * @stopped:
 	 *
 	 * Marks the enity as removed from rq and destined for
@@ -333,6 +328,23 @@ enum drm_gpu_sched_stat {
 };
 
 /**
+ * struct drm_sched_msg - an in-band (relative to GPU scheduler run queue)
+ * message
+ *
+ * Generic enough for backend defined messages, backend can expand if needed.
+ */
+struct drm_sched_msg {
+	/** @link: list link into the gpu scheduler list of messages */
+	struct list_head		link;
+	/**
+	 * @private_data: opaque pointer to message private data (backend defined)
+	 */
+	void				*private_data;
+	/** @opcode: opcode of message (backend defined) */
+	unsigned int			opcode;
+};
+
+/**
  * struct drm_sched_backend_ops
  *
  * Define the backend operations called by the scheduler,
@@ -412,10 +424,10 @@ struct drm_sched_backend_ops {
 	void (*free_job)(struct drm_sched_job *sched_job);
 
 	/**
-	 * @cleanup_entity: Called from the scheduler kthread to cleanup up an
-	 * entity.
+	 * @process_msg: Process a message. Allowed to block, it is this
+	 * function's responsibility to free message if dynamically allocated.
 	 */
-	void (*cleanup_entity)(struct drm_sched_entity *entity);
+	void (*process_msg)(struct drm_sched_msg *msg);
 };
 
 /**
@@ -426,6 +438,7 @@ struct drm_sched_backend_ops {
  * @timeout: the time after which a job is removed from the scheduler.
  * @name: name of the ring for which this scheduler is being used.
  * @sched_rq: priority wise array of run queues.
+ * @msgs: list of messages to be processed in @work_run
  * @job_scheduled: once @drm_sched_entity_do_release is called the scheduler
  *                 waits on this wait queue until all the scheduled jobs are
  *                 finished.
@@ -433,7 +446,7 @@ struct drm_sched_backend_ops {
  * @job_id_count: used to assign unique id to the each job.
  * @run_wq: workqueue used to queue @work_run
  * @timeout_wq: workqueue used to queue @work_tdr
- * @work_run: schedules jobs and cleans up entities
+ * @work_run: schedules jobs, cleans up jobs, and processes messages
  * @work_tdr: schedules a delayed call to @drm_sched_job_timedout after the
  *            timeout interval is over.
  * @pending_list: the list of jobs which are currently in the job queue.
@@ -455,6 +468,7 @@ struct drm_gpu_scheduler {
 	long				timeout;
 	const char			*name;
 	struct drm_sched_rq		sched_rq[DRM_SCHED_PRIORITY_COUNT];
+	struct list_head		msgs;
 	wait_queue_head_t		job_scheduled;
 	atomic_t			hw_rq_count;
 	atomic64_t			job_id_count;
@@ -498,6 +512,8 @@ void drm_sched_entity_modify_sched(struct drm_sched_entity *entity,
 void drm_sched_set_timeout(struct drm_gpu_scheduler *sched, long timeout);
 void drm_sched_job_cleanup(struct drm_sched_job *job);
 void drm_sched_wakeup(struct drm_gpu_scheduler *sched);
+void drm_sched_add_msg(struct drm_gpu_scheduler *sched,
+		       struct drm_sched_msg *msg);
 void drm_sched_run_wq_stop(struct drm_gpu_scheduler *sched);
 void drm_sched_run_wq_start(struct drm_gpu_scheduler *sched);
 void drm_sched_stop(struct drm_gpu_scheduler *sched, struct drm_sched_job *bad);
@@ -531,7 +547,6 @@ void drm_sched_entity_push_job(struct drm_sched_job *sched_job);
 void drm_sched_entity_set_priority(struct drm_sched_entity *entity,
 				   enum drm_sched_priority priority);
 bool drm_sched_entity_is_ready(struct drm_sched_entity *entity);
-void drm_sched_entity_trigger_cleanup(struct drm_sched_entity *entity);
 
 struct drm_sched_fence *drm_sched_fence_alloc(
 	struct drm_sched_entity *s_entity, void *owner);

@@ -130,13 +130,11 @@ static bool drm_sched_entity_is_idle(struct drm_sched_entity *entity)
 /* Return true if entity could provide a job. */
 bool drm_sched_entity_is_ready(struct drm_sched_entity *entity)
 {
-	if (!entity->do_cleanup) {
-		if (spsc_queue_peek(&entity->job_queue) == NULL)
-			return false;
+	if (spsc_queue_peek(&entity->job_queue) == NULL)
+		return false;
 
-		if (READ_ONCE(entity->dependency))
-			return false;
-	}
+	if (READ_ONCE(entity->dependency))
+		return false;
 
 	return true;
 }
@@ -322,32 +320,6 @@ void drm_sched_entity_destroy(struct drm_sched_entity *entity)
 	drm_sched_entity_fini(entity);
 }
 EXPORT_SYMBOL(drm_sched_entity_destroy);
-
-/**
- * drm_sched_entity_trigger_cleanup - Trigger cleanup on entity
- *
- * @entity: scheduler entity
- *
- * Wakes up GPU scheduler and call cleanup_entity
- */
-void drm_sched_entity_trigger_cleanup(struct drm_sched_entity *entity)
-{
-	entity->do_cleanup = true;
-
-	/* Add the entity to the run queue */
-	spin_lock(&entity->rq_lock);
-	if (entity->stopped) {
-		spin_unlock(&entity->rq_lock);
-
-		DRM_ERROR("Trying to push to a killed entity\n");
-		return;
-	}
-	drm_sched_rq_add_entity(entity->rq, entity);
-	spin_unlock(&entity->rq_lock);
-
-	drm_sched_wakeup(entity->rq->sched);
-}
-EXPORT_SYMBOL(drm_sched_entity_trigger_cleanup);
 
 /* drm_sched_entity_clear_dep - callback to clear the entities dependency */
 static void drm_sched_entity_clear_dep(struct dma_fence *f,
