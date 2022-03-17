@@ -799,13 +799,14 @@ static void __guc_engine_fini(struct xe_guc *guc, struct xe_engine *e)
 	guc_engine_fini_async(e);
 }
 
-static void guc_engine_cleanup_entity(struct drm_sched_entity *entity)
+#define CLEANUP		1	/* Non-zero values to catch uninitialized msg */
+
+static void guc_engine_process_msg(struct drm_sched_msg *msg)
 {
-	struct xe_guc_engine *ge =
-		container_of(entity, struct xe_guc_engine, entity);
-	struct xe_engine *e = ge->engine;
+	struct xe_engine *e = msg->private_data;
 	struct xe_guc *guc = engine_to_guc(e);
 
+	XE_BUG_ON(msg->opcode != CLEANUP);
 	XE_BUG_ON(!xe_gt_guc_submission_enabled(guc_to_gt(guc)));
 
 	trace_xe_engine_cleanup_entity(e);
@@ -814,14 +815,13 @@ static void guc_engine_cleanup_entity(struct drm_sched_entity *entity)
 		disable_scheduling(guc, e);
 	else
 		__guc_engine_fini(guc, e);
-	entity->do_cleanup = false;
 }
 
 static const struct drm_sched_backend_ops drm_sched_ops = {
 	.run_job = guc_engine_run_job,
 	.free_job = guc_engine_free_job,
 	.timedout_job = guc_engine_timedout_job,
-	.cleanup_entity = guc_engine_cleanup_entity,
+	.process_msg = guc_engine_process_msg,
 };
 
 static int guc_engine_init(struct xe_engine *e)
@@ -909,7 +909,11 @@ static void guc_engine_kill(struct xe_engine *e)
 
 static void guc_engine_fini(struct xe_engine *e)
 {
-	drm_sched_entity_trigger_cleanup(&e->guc->entity);
+	INIT_LIST_HEAD(&e->guc->cleanup_msg.link);
+	e->guc->cleanup_msg.opcode = CLEANUP;
+	e->guc->cleanup_msg.private_data = e;
+
+	drm_sched_add_msg(&e->guc->sched, &e->guc->cleanup_msg);
 }
 
 static void guc_engine_stop(struct xe_guc *guc, struct xe_engine *e)

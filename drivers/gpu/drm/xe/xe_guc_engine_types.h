@@ -24,6 +24,11 @@ struct xe_guc_engine {
 	struct drm_gpu_scheduler sched;
 	/** @entity: Scheduler entity for this xe_engine */
 	struct drm_sched_entity entity;
+	/**
+	 * @cleanup_msg: Cleanup message for this xe_engine, submitted to GPU
+	 * scheduler on final put.
+	 */
+	struct drm_sched_msg cleanup_msg;
 	/** @fini_async: do final fini async from this worker */
 	struct work_struct fini_async;
 	/** @state: GuC specific state for this xe_engine */
