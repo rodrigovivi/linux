@@ -105,16 +105,17 @@ struct xe_user_extension {
  * [0x40, 0xa0) (a0 is excluded). The numbers below are defined as offset
  * against DRM_COMMAND_BASE and should be between [0x0, 0x60).
  */
-#define DRM_XE_DEVICE_QUERY	0x00
-#define DRM_XE_GEM_CREATE	0x01
-#define DRM_XE_GEM_MMAP_OFFSET	0x02
-#define DRM_XE_VM_CREATE	0x03
-#define DRM_XE_VM_DESTROY	0x04
-#define DRM_XE_VM_BIND		0x05
-#define DRM_XE_ENGINE_CREATE	0x06
-#define DRM_XE_ENGINE_DESTROY	0x07
-#define DRM_XE_EXEC		0x08
-#define DRM_XE_MMIO		0x09
+#define DRM_XE_DEVICE_QUERY		0x00
+#define DRM_XE_GEM_CREATE		0x01
+#define DRM_XE_GEM_MMAP_OFFSET		0x02
+#define DRM_XE_VM_CREATE		0x03
+#define DRM_XE_VM_DESTROY		0x04
+#define DRM_XE_VM_BIND			0x05
+#define DRM_XE_ENGINE_CREATE		0x06
+#define DRM_XE_ENGINE_DESTROY		0x07
+#define DRM_XE_EXEC			0x08
+#define DRM_XE_MMIO			0x09
+#define DRM_XE_ENGINE_SET_PROPERTY	0x0a
 
 /* Must be kept compact -- no holes */
 #define DRM_IOCTL_XE_DEVICE_QUERY	DRM_IOWR(DRM_COMMAND_BASE + DRM_XE_DEVICE_QUERY, struct drm_xe_device_query)
@@ -127,6 +128,7 @@ struct xe_user_extension {
 #define DRM_IOCTL_XE_ENGINE_DESTROY	DRM_IOW( DRM_COMMAND_BASE + DRM_XE_ENGINE_DESTROY, struct drm_xe_engine_destroy)
 #define DRM_IOCTL_XE_EXEC		DRM_IOW( DRM_COMMAND_BASE + DRM_XE_EXEC, struct drm_xe_exec)
 #define DRM_IOCTL_XE_MMIO		DRM_IOWR(DRM_COMMAND_BASE + DRM_XE_MMIO, struct drm_xe_mmio)
+#define DRM_IOCTL_XE_ENGINE_SET_PROPERTY	DRM_IOW(DRM_COMMAND_BASE + DRM_XE_ENGINE_SET_PROPERTY, struct drm_xe_engine_set_property)
 
 struct drm_xe_engine_class_instance {
 	__u16 engine_class;
@@ -262,9 +264,45 @@ struct drm_xe_vm_bind {
 	__u64 syncs;
 };
 
+/** struct drm_xe_ext_engine_set_property - engine set property extension */
+struct drm_xe_ext_engine_set_property {
+	/** @base: base user extension */
+	struct xe_user_extension base;
+
+	/** @property: property to set */
+	__u32 property;
+
+	/** @value: property value */
+	__u64 value;
+};
+
+/**
+ * struct drm_xe_engine_set_property - engine set property
+ *
+ * Same namespace for extensions as drm_xe_engine_create
+ */
+struct drm_xe_engine_set_property {
+	/** @extensions: Pointer to the first extension struct, if any */
+	__u64 extensions;
+
+	/** @engine_id: Returned engine ID */
+	__u32 engine_id;
+
+	/** @property: property to set */
+#define XE_ENGINE_PROPERTY_PRIORITY			0
+#define XE_ENGINE_PROPERTY_TIMESLICE			1
+#define XE_ENGINE_PROPERTY_PREEMPTION_TIMEOUT		2
+#define XE_ENGINE_PROPERTY_COMPUTE			3
+#define XE_ENGINE_PROPERTY_PERSISTENCE			4
+	__u32 property;
+
+	/** @value: property value */
+	__u64 value;
+};
 
 struct drm_xe_engine_create {
 	/** @extensions: Pointer to the first extension struct, if any */
+#define XE_ENGINE_EXTENSION_SET_PROPERTY		0
 	__u64 extensions;
 
 	/** @width: submission width (number BB per exec) for this engine */
