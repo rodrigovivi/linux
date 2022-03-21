@@ -1,0 +1,17 @@
+/*
+ * SPDX-License-Identifier: MIT
+ *
+ * Copyright © 2022 Intel Corporation
+ */
+
+#ifndef _XE_PREEMPT_FENCE_H_
+#define _XE_PREEMPT_FENCE_H_
+
+#include "xe_preempt_fence_types.h"
+
+struct dma_fence *
+xe_preempt_fence_create(struct xe_engine *e,
+			const struct xe_preempt_fence_ops *ops,
+			u64 context, u32 seqno);
+
+#endif	/* _XE_PREEMPT_FENCE_H_ */
