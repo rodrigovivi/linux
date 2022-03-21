@@ -841,6 +841,8 @@ static void __guc_engine_process_msg_set_sched_props(struct drm_sched_msg *msg)
 
 static void guc_engine_process_msg(struct drm_sched_msg *msg)
 {
+	trace_drm_sched_msg(msg);
+
 	switch (msg->opcode) {
 	case CLEANUP:
 		__guc_engine_process_msg_cleanup(msg);
