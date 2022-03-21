@@ -185,7 +185,12 @@ DECLARE_EVENT_CLASS(drm_sched_msg,
 		    TP_printk("opcode=%u", __entry->opcode)
 );
 
-DEFINE_EVENT(drm_sched_msg, drm_sched_msg,
+DEFINE_EVENT(drm_sched_msg, drm_sched_msg_add,
+	     TP_PROTO(struct drm_sched_msg *msg),
+	     TP_ARGS(msg)
+);
+
+DEFINE_EVENT(drm_sched_msg, drm_sched_msg_recv,
 	     TP_PROTO(struct drm_sched_msg *msg),
 	     TP_ARGS(msg)
 );

@@ -55,6 +55,7 @@ engine_to_guc(struct xe_engine *e)
 #define ENGINE_STATE_PENDING_ENABLE	BIT(2)
 #define ENGINE_STATE_PENDING_DISABLE	BIT(3)
 #define ENGINE_STATE_DESTROYED		BIT(4)
+#define ENGINE_STATE_SUSPENDED		BIT(5)
 
 static bool engine_registered(struct xe_engine *e)
 {
@@ -136,6 +137,21 @@ static void set_engine_banned(struct xe_engine *e)
 	e->flags |= ENGINE_FLAG_BANNED;
 }
 
+static bool engine_suspended(struct xe_engine *e)
+{
+	return (e->guc->state & ENGINE_STATE_SUSPENDED);
+}
+
+static void set_engine_suspended(struct xe_engine *e)
+{
+	e->guc->state |= ENGINE_STATE_SUSPENDED;
+}
+
+static void clear_engine_suspended(struct xe_engine *e)
+{
+	e->guc->state &= ~ENGINE_STATE_SUSPENDED;
+}
+
 static bool engine_reset(struct xe_engine *e)
 {
 	return e->guc->reset;
@@ -172,6 +188,7 @@ static void primelockdep(struct xe_guc *guc)
 	bool cookie = dma_fence_begin_signalling();
 
 	mutex_lock(&guc->submission_state.lock);
+	might_lock(&guc->submission_state.suspend.lock);
 	mutex_unlock(&guc->submission_state.lock);
 
 	dma_fence_end_signalling(cookie);
@@ -201,6 +218,9 @@ int xe_guc_submit_init(struct xe_guc *guc)
 	mutex_init(&guc->submission_state.lock);
 	xa_init(&guc->submission_state.engine_lookup);
 	ida_init(&guc->submission_state.guc_ids);
+
+	spin_lock_init(&guc->submission_state.suspend.lock);
+	guc->submission_state.suspend.context = dma_fence_context_alloc(1);
 
 	primelockdep(guc);
 
@@ -376,7 +396,7 @@ static void __register_mlrc_engine(struct xe_guc *guc,
 				   struct guc_ctxt_registration_info *info)
 {
 #define MAX_MLRC_REG_SIZE      (13 + XE_HW_ENGINE_MAX_INSTANCE * 2)
-	u32 action [MAX_MLRC_REG_SIZE];
+	u32 action[MAX_MLRC_REG_SIZE];
 	int len = 0;
 	int i;
 
@@ -582,7 +602,10 @@ static void submit_engine(struct xe_engine *e)
 	else
 		xe_lrc_write_ctx_reg(lrc, CTX_RING_TAIL, lrc->ring.tail);
 
-	if (!engine_enabled(e)) {
+	if (engine_suspended(e) && !xe_engine_is_parallel(e))
+		return;
+
+	if (!engine_enabled(e) && !engine_suspended(e)) {
 		action[len++] = XE_GUC_ACTION_SCHED_CONTEXT_MODE_SET;
 		action[len++] = e->guc->id;
 		action[len++] = GUC_CONTEXT_ENABLE;
@@ -598,8 +621,6 @@ static void submit_engine(struct xe_engine *e)
 		action[len++] = XE_GUC_ACTION_SCHED_CONTEXT;
 		action[len++] = e->guc->id;
 	}
-
-	XE_BUG_ON(!engine_enabled(e));
 
 	xe_guc_ct_send(&guc->ct, action, len, g2h_len, num_g2h);
 
@@ -619,7 +640,7 @@ guc_engine_run_job(struct drm_sched_job *drm_job)
 	struct xe_engine *e = job->engine;
 
 	XE_BUG_ON((engine_destroyed(e) || engine_pending_disable(e)) &&
-		  !engine_banned(e));
+		  !engine_banned(e) && !engine_suspended(e));
 
 	trace_xe_sched_job_run(job);
 
@@ -645,13 +666,17 @@ static void guc_engine_free_job(struct drm_sched_job *drm_job)
 	xe_engine_put(e);
 }
 
-static void disable_scheduling(struct xe_guc *guc, struct xe_engine *e)
+#define MAKE_SCHED_CONTEXT_ACTION(e, enable_disable)			\
+	u32 action[] = {						\
+		XE_GUC_ACTION_SCHED_CONTEXT_MODE_SET,			\
+		e->guc->id,						\
+		GUC_CONTEXT_##enable_disable,				\
+	}
+
+static void disable_scheduling_deregister(struct xe_guc *guc,
+					  struct xe_engine *e)
 {
-	u32 action[] = {
-		XE_GUC_ACTION_SCHED_CONTEXT_MODE_SET,
-		e->guc->id,
-		GUC_CONTEXT_DISABLE,
-	};
+	MAKE_SCHED_CONTEXT_ACTION(e, DISABLE);
 
 	set_min_preemption_timeout(guc, e);
 	smp_rmb();
@@ -709,7 +734,7 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 			err = -EIO;
 		set_engine_banned(e);
 		xe_engine_get(e);
-		disable_scheduling(engine_to_guc(e), e);
+		disable_scheduling_deregister(engine_to_guc(e), e);
 
 		/*
 		 * Must wait for scheduling to be disabled before signalling
@@ -828,7 +853,7 @@ static void __guc_engine_process_msg_cleanup(struct drm_sched_msg *msg)
 	trace_xe_engine_cleanup_entity(e);
 
 	if (engine_enabled(e))
-		disable_scheduling(guc, e);
+		disable_scheduling_deregister(guc, e);
 	else
 		__guc_engine_fini(guc, e);
 }
@@ -848,12 +873,68 @@ static void __guc_engine_process_msg_set_sched_props(struct drm_sched_msg *msg)
 	kfree(msg);
 }
 
+static void suspend_fence_signal(struct xe_engine *e)
+{
+	struct dma_fence *suspend_fence = e->guc->suspend_fence;
+
+	XE_BUG_ON(!engine_suspended(e));
+	XE_BUG_ON(!suspend_fence);
+
+	e->guc->suspend_fence = NULL;
+	smp_wmb();
+
+	dma_fence_signal(suspend_fence);
+}
+
+static void __guc_engine_process_msg_suspend(struct drm_sched_msg *msg)
+{
+	struct xe_engine *e = msg->private_data;
+	struct xe_guc *guc = engine_to_guc(e);
+
+	if (guc_engine_allowed_to_change_state(e) && !engine_suspended(e)) {
+		MAKE_SCHED_CONTEXT_ACTION(e, DISABLE);
+
+		set_engine_suspended(e);
+		clear_engine_enabled(e);
+		set_engine_pending_disable(e);
+		trace_xe_engine_scheduling_disable(e);
+
+		xe_guc_ct_send(&guc->ct, action, ARRAY_SIZE(action),
+			       G2H_LEN_DW_SCHED_CONTEXT_MODE_SET, 1);
+	} else if (e->guc->suspend_fence) {
+		set_engine_suspended(e);
+		suspend_fence_signal(e);
+	}
+}
+
+static void __guc_engine_process_msg_resume(struct drm_sched_msg *msg)
+{
+	struct xe_engine *e = msg->private_data;
+	struct xe_guc *guc = engine_to_guc(e);
+
+	XE_BUG_ON(!engine_suspended(e));
+
+	clear_engine_suspended(e);
+	if (guc_engine_allowed_to_change_state(e)) {
+		MAKE_SCHED_CONTEXT_ACTION(e, ENABLE);
+
+		set_engine_pending_enable(e);
+		set_engine_enabled(e);
+		trace_xe_engine_scheduling_enable(e);
+
+		xe_guc_ct_send(&guc->ct, action, ARRAY_SIZE(action),
+			       G2H_LEN_DW_SCHED_CONTEXT_MODE_SET, 1);
+	}
+}
+
 #define CLEANUP		1	/* Non-zero values to catch uninitialized msg */
 #define SET_SCHED_PROPS	2
+#define SUSPEND		3
+#define RESUME		4
 
 static void guc_engine_process_msg(struct drm_sched_msg *msg)
 {
-	trace_drm_sched_msg(msg);
+	trace_drm_sched_msg_recv(msg);
 
 	switch (msg->opcode) {
 	case CLEANUP:
@@ -861,6 +942,12 @@ static void guc_engine_process_msg(struct drm_sched_msg *msg)
 		break;
 	case SET_SCHED_PROPS:
 		__guc_engine_process_msg_set_sched_props(msg);
+		break;
+	case SUSPEND:
+		__guc_engine_process_msg_suspend(msg);
+		break;
+	case RESUME:
+		__guc_engine_process_msg_resume(msg);
 		break;
 	default:
 		XE_BUG_ON("Unknown message type");
@@ -964,12 +1051,16 @@ static void guc_engine_add_msg(struct xe_engine *e, struct drm_sched_msg *msg,
 	msg->opcode = opcode;
 	msg->private_data = e;
 
+	trace_drm_sched_msg_add(msg);
 	drm_sched_add_msg(&e->guc->sched, msg);
 }
 
+#define STATIC_MSG_CLEANUP	0
+#define STATIC_MSG_SUSPEND	1
+#define STATIC_MSG_RESUME	2
 static void guc_engine_fini(struct xe_engine *e)
 {
-	struct drm_sched_msg *msg = &e->guc->cleanup_msg;
+	struct drm_sched_msg *msg = e->guc->static_msgs + STATIC_MSG_CLEANUP;
 
 	if (!(e->flags & ENGINE_FLAG_KERNEL))
 		guc_engine_add_msg(e, msg, CLEANUP);
@@ -1046,6 +1137,52 @@ static int guc_engine_set_job_timeout(struct xe_engine *e, u32 job_timeout_ms)
 	return 0;
 }
 
+static const char *
+suspend_fence_get_driver_name(struct dma_fence *fence)
+{
+	return "xe";
+}
+
+static const char *
+suspend_fence_get_timeline_name(struct dma_fence *fence)
+{
+	return "suspend";
+}
+
+static const struct dma_fence_ops suspend_fence_ops = {
+	.get_driver_name = suspend_fence_get_driver_name,
+	.get_timeline_name = suspend_fence_get_timeline_name,
+};
+
+static struct dma_fence *
+guc_engine_suspend(struct xe_engine *e)
+{
+	struct xe_guc *guc = engine_to_guc(e);
+	struct drm_sched_msg *msg = e->guc->static_msgs + STATIC_MSG_SUSPEND;
+	struct dma_fence *suspend_fence = &e->guc->static_fence;
+
+	if (engine_banned(e) || engine_killed(e) || e->guc->suspend_fence)
+		return ERR_PTR(-EINVAL);
+
+	dma_fence_init(suspend_fence, &suspend_fence_ops,
+		       &guc->submission_state.suspend.lock,
+		       guc->submission_state.suspend.context,
+		       ++guc->submission_state.suspend.seqno);
+	e->guc->suspend_fence = suspend_fence;
+	guc_engine_add_msg(e, msg, SUSPEND);
+
+	return suspend_fence;
+}
+
+static void guc_engine_resume(struct xe_engine *e)
+{
+	struct drm_sched_msg *msg = e->guc->static_msgs + STATIC_MSG_RESUME;
+
+	XE_BUG_ON(!engine_suspended(e) || e->guc->suspend_fence);
+
+	guc_engine_add_msg(e, msg, RESUME);
+}
+
 /*
  * All of these functions are an abstraction layer which other parts of XE can
  * use to trap into the GuC backend. All of these functions, aside from init,
@@ -1060,6 +1197,8 @@ static const struct xe_engine_ops guc_engine_ops = {
 	.set_timeslice = guc_engine_set_timeslice,
 	.set_preempt_timeout = guc_engine_set_preempt_timeout,
 	.set_job_timeout = guc_engine_set_job_timeout,
+	.suspend = guc_engine_suspend,
+	.resume = guc_engine_resume,
 };
 
 static void guc_engine_stop(struct xe_guc *guc, struct xe_engine *e)
@@ -1076,7 +1215,9 @@ static void guc_engine_stop(struct xe_guc *guc, struct xe_engine *e)
 		else
 			__guc_engine_fini(guc, e);
 	}
-	e->guc->state &= ENGINE_STATE_DESTROYED;
+	if (e->guc->suspend_fence)
+		suspend_fence_signal(e);
+	e->guc->state &= ENGINE_STATE_DESTROYED | ENGINE_STATE_SUSPENDED;
 	trace_xe_engine_stop(e);
 
 	/*
@@ -1124,6 +1265,7 @@ int xe_guc_submit_stop(struct xe_guc *guc)
 {
 	struct xe_engine *e;
 	unsigned long index;
+	bool cookie = dma_fence_begin_signalling();
 
 	XE_BUG_ON(atomic_read(&guc->submission_state.stopped) != 1);
 
@@ -1134,6 +1276,7 @@ int xe_guc_submit_stop(struct xe_guc *guc)
 
 	mutex_unlock(&guc->submission_state.lock);
 
+	dma_fence_end_signalling(cookie);
 	/*
 	 * No one can enter the backend at this point, aside from new engine
 	 * creation which is protected by guc->submission_state.lock.
@@ -1239,11 +1382,15 @@ int xe_guc_sched_done_handler(struct xe_guc *guc, u32 *msg, u32 len)
 		wake_up_all(&guc->ct.wq);
 	} else {
 		clear_engine_pending_disable(e);
-		if (engine_banned(e)) {
-			smp_wmb();
-			wake_up_all(&guc->ct.wq);
+		if (e->guc->suspend_fence) {
+			suspend_fence_signal(e);
+		} else {
+			if (engine_banned(e)) {
+				smp_wmb();
+				wake_up_all(&guc->ct.wq);
+			}
+			deregister_engine(guc, e);
 		}
-		deregister_engine(guc, e);
 	}
 
 	return 0;
