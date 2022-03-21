@@ -127,6 +127,18 @@ struct xe_engine_ops {
 	int (*set_preempt_timeout)(struct xe_engine *e, u32 preempt_timeout_us);
 	/** @set_job_timeout: Set job timeout for engine */
 	int (*set_job_timeout)(struct xe_engine *e, u32 job_timeout_ms);
+	/**
+	 * @suspend: Suspend engine from executing, allowed to be called
+	 * multiple times in a row before resume with the caveat the dma fence
+	 * returned from the previous call is signalled.
+	 */
+	struct dma_fence *(*suspend)(struct xe_engine *e);
+	/**
+	 * @resume: Resume engine execution, engine must be in a suspended
+	 * state and dma fence returned from most recent suspend call must be
+	 * signalled when this function is called.
+	 */
+	void (*resume)(struct xe_engine *e);
 };
 
 #endif	/* _XE_ENGINE_TYPES_H_ */
