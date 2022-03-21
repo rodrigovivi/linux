@@ -146,6 +146,109 @@ static void xe_engine_end(struct xe_engine *e)
 	xe_vm_unlock(e->vm);
 }
 
+static int engine_set_priority(struct xe_device *xe, struct xe_engine *e,
+			       u64 value, bool create)
+{
+	return 0;
+}
+
+static int engine_set_timeslice(struct xe_device *xe, struct xe_engine *e,
+				u64 value, bool create)
+{
+	return 0;
+}
+
+static int engine_set_preemption_timeout(struct xe_device *xe,
+					 struct xe_engine *e, u64 value,
+					 bool create)
+{
+	return 0;
+}
+
+static int engine_set_compute(struct xe_device *xe, struct xe_engine *e,
+			      u64 value, bool create)
+{
+	return 0;
+}
+
+static int engine_set_persistence(struct xe_device *xe, struct xe_engine *e,
+				  u64 value, bool create)
+{
+	return 0;
+}
+
+typedef int (*xe_engine_set_property_fn)(struct xe_device *xe,
+					 struct xe_engine *e,
+					 u64 value, bool create);
+
+static const xe_engine_set_property_fn engine_set_property_funcs[] = {
+	[XE_ENGINE_PROPERTY_PRIORITY] = engine_set_priority,
+	[XE_ENGINE_PROPERTY_TIMESLICE] = engine_set_timeslice,
+	[XE_ENGINE_PROPERTY_PREEMPTION_TIMEOUT] = engine_set_preemption_timeout,
+	[XE_ENGINE_PROPERTY_COMPUTE] = engine_set_compute,
+	[XE_ENGINE_PROPERTY_PERSISTENCE] = engine_set_persistence,
+};
+
+static int engine_user_ext_set_property(struct xe_device *xe,
+					struct xe_engine *e,
+					u64 extension,
+					bool create)
+{
+	uint64_t __user *address = u64_to_user_ptr(extension);
+	struct drm_xe_ext_engine_set_property ext;
+	int err;
+
+	err = __copy_from_user(&ext, address, sizeof(ext));
+	if (XE_IOCTL_ERR(xe, err))
+		return -EFAULT;
+
+	if (XE_IOCTL_ERR(xe, ext.property >=
+			 ARRAY_SIZE(engine_set_property_funcs)))
+		return -EINVAL;
+
+	return engine_set_property_funcs[ext.property](xe, e, ext.value,
+						       create);
+}
+
+typedef int (*xe_engine_user_extension_fn)(struct xe_device *xe,
+					   struct xe_engine *e,
+					   u64 extension,
+					   bool create);
+
+static const xe_engine_set_property_fn engine_user_extension_funcs[] = {
+	[XE_ENGINE_EXTENSION_SET_PROPERTY] = engine_user_ext_set_property,
+};
+
+#define MAX_USER_EXTENSIONS	16
+static int engine_user_extensions(struct xe_device *xe, struct xe_engine *e,
+				  u64 extensions, int ext_number, bool create)
+{
+	uint64_t __user *address = u64_to_user_ptr(extensions);
+	struct xe_user_extension ext;
+	int err;
+
+	if (XE_IOCTL_ERR(xe, ext_number >= MAX_USER_EXTENSIONS))
+		return -E2BIG;
+
+	err = __copy_from_user(&ext, address, sizeof(ext));
+	if (XE_IOCTL_ERR(xe, err))
+		return -EFAULT;
+
+	if (XE_IOCTL_ERR(xe, ext.name >=
+			 ARRAY_SIZE(engine_user_extension_funcs)))
+		return -EINVAL;
+
+	err = engine_user_extension_funcs[ext.name](xe, e, extensions, create);
+	if (XE_IOCTL_ERR(xe, err))
+		return err;
+
+	if (ext.next_extension)
+		return engine_user_extensions(xe, e, ext.next_extension,
+					      ++ext_number, create);
+
+	return 0;
+}
+
 static const enum xe_engine_class user_to_xe_engine_class[] = {
 	[DRM_XE_ENGINE_CLASS_RENDER] = XE_ENGINE_CLASS_RENDER,
 	[DRM_XE_ENGINE_CLASS_COPY] = XE_ENGINE_CLASS_COPY,
@@ -228,9 +331,6 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 	int len;
 	int err;
 
-	if (XE_IOCTL_ERR(xe, args->extensions))
-		return -EINVAL;
-
 	if (XE_IOCTL_ERR(xe, args->flags))
 		return -EINVAL;
 
@@ -264,19 +364,27 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 	if (IS_ERR(e))
 		return PTR_ERR(e);
 
+	if (args->extensions) {
+		err = engine_user_extensions(xe, e, args->extensions, 0, true);
+		if (XE_IOCTL_ERR(xe, err))
+			goto put_engine;
+	}
+
 	e->persitent.xef = xef;
 
 	mutex_lock(&xef->engine.lock);
 	err = xa_alloc(&xef->engine.xa, &id, e, xa_limit_32b, GFP_KERNEL);
 	mutex_unlock(&xef->engine.lock);
-	if (err) {
-		xe_engine_put(e);
-		return err;
-	}
+	if (err)
+		goto put_engine;
 
 	args->engine_id = id;
 
 	return 0;
+
+put_engine:
+	xe_engine_put(e);
+	return err;
 }
 
 int xe_engine_destroy_ioctl(struct drm_device *dev, void *data,
@@ -305,6 +413,39 @@ int xe_engine_destroy_ioctl(struct drm_device *dev, void *data,
 	xe_engine_put(e);
 
 	return 0;
+}
+
+int xe_engine_set_property_ioctl(struct drm_device *dev, void *data,
+				 struct drm_file *file)
+{
+	struct xe_device *xe = to_xe_device(dev);
+	struct xe_file *xef = to_xe_file(file);
+	struct drm_xe_engine_set_property *args = data;
+	struct xe_engine *e;
+	int ret;
+
+	e = xe_engine_lookup(xef, args->engine_id);
+	if (XE_IOCTL_ERR(xe, !e))
+		return -ENOENT;
+
+	if (XE_IOCTL_ERR(xe, args->property >=
+			 ARRAY_SIZE(engine_set_property_funcs))) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	ret = engine_set_property_funcs[args->property](xe, e, args->value,
+							false);
+	if (XE_IOCTL_ERR(xe, ret))
+		goto out;
+
+	if (args->extensions)
+		ret = engine_user_extensions(xe, e, args->extensions, 0,
+					     false);
+out:
+	xe_engine_put(e);
+
+	return ret;
 }
 
 int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
