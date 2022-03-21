@@ -12,6 +12,7 @@
 
 #include <drm/gpu_scheduler.h>
 
+struct dma_fence;
 struct xe_engine;
 
 /**
@@ -25,12 +26,20 @@ struct xe_guc_engine {
 	/** @entity: Scheduler entity for this xe_engine */
 	struct drm_sched_entity entity;
 	/**
-	 * @cleanup_msg: Cleanup message for this xe_engine, submitted to GPU
-	 * scheduler on final put.
+	 * @static_msgs: Static messages for this xe_engine, used when a message
+	 * needs to sent through the GPU scheduler but memory allocations are
+	 * not allowed.
 	 */
-	struct drm_sched_msg cleanup_msg;
+#define MAX_STATIC_MSG_TYPE	3
+	struct drm_sched_msg static_msgs[MAX_STATIC_MSG_TYPE];
 	/** @fini_async: do final fini async from this worker */
 	struct work_struct fini_async;
+	/** @static_fence: static fence used for suspend */
+	struct dma_fence static_fence;
+	/**
+	 * @suspend_fence: suspend fence, only non-NULL when suspend in flight
+	 */
+	struct dma_fence *suspend_fence;
 	/** @state: GuC specific state for this xe_engine */
 	u32 state;
 	/** @wqi_head: work queue item tail */
