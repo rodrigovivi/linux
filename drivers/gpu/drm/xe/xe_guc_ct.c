@@ -949,6 +949,7 @@ static int dequeue_one_g2h(struct xe_guc_ct *ct)
 static void g2h_worker_func(struct work_struct *w)
 {
 	struct xe_guc_ct *ct = container_of(w, struct xe_guc_ct, g2h_worker);
+	bool cookie = dma_fence_begin_signalling();
 	int ret;
 
 	do {
@@ -964,6 +965,8 @@ static void g2h_worker_func(struct work_struct *w)
 			kick_reset(ct);
 		}
 	} while (ret == 1);
+
+	dma_fence_end_signalling(cookie);
 }
 
 static void guc_ct_ctb_print(struct guc_ctb *ctb, struct drm_printer *p)
