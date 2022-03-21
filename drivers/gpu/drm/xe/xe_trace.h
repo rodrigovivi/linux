@@ -170,6 +170,26 @@ DEFINE_EVENT(xe_sched_job, xe_sched_job_ban,
 	     TP_ARGS(job)
 );
 
+DECLARE_EVENT_CLASS(drm_sched_msg,
+		    TP_PROTO(struct drm_sched_msg *msg),
+		    TP_ARGS(msg),
+
+		    TP_STRUCT__entry(
+			     __field(u32, opcode)
+			     ),
+
+		    TP_fast_assign(
+			   __entry->opcode = msg->opcode;
+			   ),
+
+		    TP_printk("opcode=%u", __entry->opcode)
+);
+
+DEFINE_EVENT(drm_sched_msg, drm_sched_msg,
+	     TP_PROTO(struct drm_sched_msg *msg),
+	     TP_ARGS(msg)
+);
+
 #endif /* _XE_TRACE_H_ */
 
 /* This part must be outside protection */
