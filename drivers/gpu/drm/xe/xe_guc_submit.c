@@ -183,12 +183,17 @@ static void guc_engine_kill(struct xe_engine *e);
 static void guc_engine_fini(struct xe_engine *e);
 static int guc_engine_set_priority(struct xe_engine *e,
 				   enum drm_sched_priority priority);
+static int guc_engine_set_timeslice(struct xe_engine *e, u32 timeslice);
+static int guc_engine_set_preempt_timeout(struct xe_engine *e,
+					  u32 preempt_timeout_us);
 
 static const struct xe_engine_ops guc_engine_ops = {
 	.init = guc_engine_init,
 	.kill = guc_engine_kill,
 	.fini = guc_engine_fini,
 	.set_priority = guc_engine_set_priority,
+	.set_timeslice = guc_engine_set_timeslice,
+	.set_preempt_timeout = guc_engine_set_preempt_timeout,
 };
 
 #define GUC_ID_MAX		65535
@@ -331,11 +336,12 @@ static void init_policies(struct xe_guc *guc, struct xe_engine *e)
 
 	XE_BUG_ON(!engine_registered(e));
 
-	/* FIXME: Wire these up so they can be configured */
         __guc_engine_policy_start_klv(&policy, e->guc->id);
         __guc_engine_policy_add_priority(&policy, drm_sched_prio_to_guc[prio]);
-        __guc_engine_policy_add_execution_quantum(&policy, 1 * 1000);
-        __guc_engine_policy_add_preemption_timeout(&policy, 640 * 1000);
+        __guc_engine_policy_add_execution_quantum(&policy,
+						  e->sched_props.timeslice_us);
+        __guc_engine_policy_add_preemption_timeout(&policy,
+						   e->sched_props.preempt_timeout_us);
 
 	xe_guc_ct_send(&guc->ct, (u32 *)&policy.h2g,
 		       __guc_engine_policy_action_size(&policy), 0, 0);
@@ -953,13 +959,21 @@ static void guc_engine_kill(struct xe_engine *e)
 	drm_sched_set_timeout(&e->guc->sched, MIN_SCHED_TIMEOUT);
 }
 
+static void guc_engine_add_msg(struct xe_engine *e, struct drm_sched_msg *msg,
+			       u32 opcode)
+{
+	INIT_LIST_HEAD(&msg->link);
+	msg->opcode = opcode;
+	msg->private_data = e;
+
+	drm_sched_add_msg(&e->guc->sched, msg);
+}
+
 static void guc_engine_fini(struct xe_engine *e)
 {
-	INIT_LIST_HEAD(&e->guc->cleanup_msg.link);
-	e->guc->cleanup_msg.opcode = CLEANUP;
-	e->guc->cleanup_msg.private_data = e;
+	struct drm_sched_msg *msg = &e->guc->cleanup_msg;
 
-	drm_sched_add_msg(&e->guc->sched, &e->guc->cleanup_msg);
+	guc_engine_add_msg(e, msg, CLEANUP);
 }
 
 static int guc_engine_set_priority(struct xe_engine *e,
@@ -975,12 +989,45 @@ static int guc_engine_set_priority(struct xe_engine *e,
 	if (!msg)
 		return -ENOMEM;
 
-	INIT_LIST_HEAD(&msg->link);
-	msg->opcode = SET_SCHED_PROPS;
-	msg->private_data = e;
-
 	drm_sched_entity_set_priority(e->entity, priority);
-	drm_sched_add_msg(&e->guc->sched, msg);
+	guc_engine_add_msg(e, msg, SET_SCHED_PROPS);
+
+	return 0;
+}
+
+static int guc_engine_set_timeslice(struct xe_engine *e, u32 timeslice_us)
+{
+	struct drm_sched_msg *msg;
+
+	if (e->sched_props.timeslice_us == timeslice_us || engine_banned(e) ||
+	    engine_killed(e))
+		return 0;
+
+	msg = kmalloc(sizeof(*msg), GFP_KERNEL);
+	if (!msg)
+		return -ENOMEM;
+
+	e->sched_props.timeslice_us = timeslice_us;
+	guc_engine_add_msg(e, msg, SET_SCHED_PROPS);
+
+	return 0;
+}
+
+static int guc_engine_set_preempt_timeout(struct xe_engine *e,
+					  u32 preempt_timeout_us)
+{
+	struct drm_sched_msg *msg;
+
+	if (e->sched_props.preempt_timeout_us == preempt_timeout_us ||
+	    engine_banned(e) || engine_killed(e))
+		return 0;
+
+	msg = kmalloc(sizeof(*msg), GFP_KERNEL);
+	if (!msg)
+		return -ENOMEM;
+
+	e->sched_props.preempt_timeout_us = preempt_timeout_us;
+	guc_engine_add_msg(e, msg, SET_SCHED_PROPS);
 
 	return 0;
 }
@@ -1295,7 +1342,10 @@ static void guc_engine_print(struct xe_engine *e, struct drm_printer *p)
 	drm_printf(p, "\tClass: %d\n", e->class);
 	drm_printf(p, "\tLogical mask: 0x%x\n", e->logical_mask);
 	drm_printf(p, "\tRef: %d\n", kref_read(&e->refcount));
-	drm_printf(p, "\tTimeout: %ld\n", sched->timeout);
+	drm_printf(p, "\tTimeout: %ld (ms)\n", sched->timeout);
+	drm_printf(p, "\tTimeslice: %u (us)\n", e->sched_props.timeslice_us);
+	drm_printf(p, "\tPreempt timeout: %u (us)\n",
+		   e->sched_props.preempt_timeout_us);
 	for (i = 0; i < e->width; ++i ) {
 		struct xe_lrc *lrc = e->lrc + i;
 

@@ -400,11 +400,26 @@ static int execlist_engine_set_priority(struct xe_engine *e,
 	return 0;
 }
 
+static int execlist_engine_set_timeslice(struct xe_engine *e, u32 timeslice_us)
+{
+	/* NIY */
+	return 0;
+}
+
+static int execlist_engine_set_preempt_timeout(struct xe_engine *e,
+					       u32 preempt_timeout_us)
+{
+	/* NIY */
+	return 0;
+}
+
 static const struct xe_engine_ops execlist_engine_ops = {
 	.init = execlist_engine_init,
 	.kill = execlist_engine_kill,
 	.fini = execlist_engine_fini,
 	.set_priority = execlist_engine_set_priority,
+	.set_timeslice = execlist_engine_set_timeslice,
+	.set_preempt_timeout = execlist_engine_set_preempt_timeout,
 };
 
 int xe_execlist_init(struct xe_gt *gt)
