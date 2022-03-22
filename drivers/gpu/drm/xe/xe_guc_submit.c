@@ -648,9 +648,12 @@ guc_engine_run_job(struct drm_sched_job *drm_job)
 		if (!engine_registered(e))
 			register_engine(e);
 		e->ring_ops->emit_job(job);
-
 		submit_engine(e);
 	}
+
+	/* Immediately signal a compute job's fence as this is unused */
+	if (e->flags & ENGINE_FLAG_COMPUTE)
+		dma_fence_set_error(job->fence, -ENOTSUPP);
 
 	return dma_fence_get(job->fence);
 }
