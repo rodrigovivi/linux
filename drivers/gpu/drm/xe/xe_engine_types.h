@@ -56,6 +56,7 @@ struct xe_engine {
 #define ENGINE_FLAG_BANNED	BIT(0)
 #define ENGINE_FLAG_KERNEL	BIT(1)
 #define ENGINE_FLAG_PERSISTENT	BIT(2)
+#define ENGINE_FLAG_COMPUTE	BIT(3)
 	/**
 	 * @flags: flags this is engine, should statically setup aside from ban
 	 * bit
@@ -96,6 +97,18 @@ struct xe_engine {
 		/** @preempt_timeout_us: preemption timeout in micro-seconds */
 		u32 preempt_timeout_us;
 	} sched_props;
+
+	/** @compute: compute engine state */
+	struct {
+		/** @pfence: preemption fence */
+		struct dma_fence *pfence;
+		/** @context: preemption fence context */
+		u64 context;
+		/** @seqno: preemption fence seqno */
+		u32 seqno;
+		/** @lock: preemption fences lock */
+		spinlock_t lock;
+	} compute;
 
 	/** @ops: submission backend engine operations */
 	const struct xe_engine_ops *ops;
