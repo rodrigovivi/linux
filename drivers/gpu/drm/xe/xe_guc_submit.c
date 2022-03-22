@@ -186,6 +186,7 @@ static int guc_engine_set_priority(struct xe_engine *e,
 static int guc_engine_set_timeslice(struct xe_engine *e, u32 timeslice);
 static int guc_engine_set_preempt_timeout(struct xe_engine *e,
 					  u32 preempt_timeout_us);
+static int guc_engine_set_job_timeout(struct xe_engine *e, u32 job_timeout_ms);
 
 static const struct xe_engine_ops guc_engine_ops = {
 	.init = guc_engine_init,
@@ -194,6 +195,7 @@ static const struct xe_engine_ops guc_engine_ops = {
 	.set_priority = guc_engine_set_priority,
 	.set_timeslice = guc_engine_set_timeslice,
 	.set_preempt_timeout = guc_engine_set_preempt_timeout,
+	.set_job_timeout = guc_engine_set_job_timeout,
 };
 
 #define GUC_ID_MAX		65535
@@ -1028,6 +1030,19 @@ static int guc_engine_set_preempt_timeout(struct xe_engine *e,
 
 	e->sched_props.preempt_timeout_us = preempt_timeout_us;
 	guc_engine_add_msg(e, msg, SET_SCHED_PROPS);
+
+	return 0;
+}
+
+static int guc_engine_set_job_timeout(struct xe_engine *e, u32 job_timeout_ms)
+{
+	struct drm_gpu_scheduler *sched = &e->guc->sched;
+
+	XE_BUG_ON(engine_registered(e));
+	XE_BUG_ON(engine_banned(e));
+	XE_BUG_ON(engine_killed(e));
+
+	sched->timeout = job_timeout_ms;
 
 	return 0;
 }
