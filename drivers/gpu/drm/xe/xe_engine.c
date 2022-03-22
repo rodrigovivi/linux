@@ -149,7 +149,14 @@ static void xe_engine_end(struct xe_engine *e)
 static int engine_set_priority(struct xe_device *xe, struct xe_engine *e,
 			       u64 value, bool create)
 {
-	return 0;
+	if (XE_IOCTL_ERR(xe, value > DRM_SCHED_PRIORITY_HIGH))
+		return -EINVAL;
+
+	if (XE_IOCTL_ERR(xe, value == DRM_SCHED_PRIORITY_HIGH &&
+			 !capable(CAP_SYS_NICE)))
+		return -EPERM;
+
+	return e->gt->engine_ops->set_priority(e, value);
 }
 
 static int engine_set_timeslice(struct xe_device *xe, struct xe_engine *e,
