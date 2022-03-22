@@ -178,30 +178,12 @@ static void primelockdep(struct xe_guc *guc)
 #endif
 }
 
-static int guc_engine_init(struct xe_engine *e);
-static void guc_engine_kill(struct xe_engine *e);
-static void guc_engine_fini(struct xe_engine *e);
-static int guc_engine_set_priority(struct xe_engine *e,
-				   enum drm_sched_priority priority);
-static int guc_engine_set_timeslice(struct xe_engine *e, u32 timeslice);
-static int guc_engine_set_preempt_timeout(struct xe_engine *e,
-					  u32 preempt_timeout_us);
-static int guc_engine_set_job_timeout(struct xe_engine *e, u32 job_timeout_ms);
-
-static const struct xe_engine_ops guc_engine_ops = {
-	.init = guc_engine_init,
-	.kill = guc_engine_kill,
-	.fini = guc_engine_fini,
-	.set_priority = guc_engine_set_priority,
-	.set_timeslice = guc_engine_set_timeslice,
-	.set_preempt_timeout = guc_engine_set_preempt_timeout,
-	.set_job_timeout = guc_engine_set_job_timeout,
-};
-
 #define GUC_ID_MAX		65535
 #define GUC_ID_NUMBER_MLRC	4096
 #define GUC_ID_NUMBER_SLRC	(GUC_ID_MAX - GUC_ID_NUMBER_MLRC)
 #define GUC_ID_START_MLRC	GUC_ID_NUMBER_SLRC
+
+static const struct xe_engine_ops guc_engine_ops;
 
 int xe_guc_submit_init(struct xe_guc *guc)
 {
@@ -1046,6 +1028,22 @@ static int guc_engine_set_job_timeout(struct xe_engine *e, u32 job_timeout_ms)
 
 	return 0;
 }
+
+/*
+ * All of these functions are an abstraction layer which other parts of XE can
+ * use to trap into the GuC backend. All of these functions, aside from init,
+ * really shouldn't do much other than trap into the DRM scheduler which
+ * synchronizes these operations.
+ */
+static const struct xe_engine_ops guc_engine_ops = {
+	.init = guc_engine_init,
+	.kill = guc_engine_kill,
+	.fini = guc_engine_fini,
+	.set_priority = guc_engine_set_priority,
+	.set_timeslice = guc_engine_set_timeslice,
+	.set_preempt_timeout = guc_engine_set_preempt_timeout,
+	.set_job_timeout = guc_engine_set_job_timeout,
+};
 
 static void guc_engine_stop(struct xe_guc *guc, struct xe_engine *e)
 {
