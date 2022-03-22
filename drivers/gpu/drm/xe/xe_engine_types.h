@@ -122,6 +122,8 @@ struct xe_engine_ops {
 	int (*set_timeslice)(struct xe_engine *e, u32 timeslice_us);
 	/** @set_preempt_timeout: Set preemption timeout for engine */
 	int (*set_preempt_timeout)(struct xe_engine *e, u32 preempt_timeout_us);
+	/** @set_job_timeout: Set job timeout for engine */
+	int (*set_job_timeout)(struct xe_engine *e, u32 job_timeout_ms);
 };
 
 #endif	/* _XE_ENGINE_TYPES_H_ */
