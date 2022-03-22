@@ -49,6 +49,10 @@ static struct xe_engine *__xe_engine_create(struct xe_device *xe,
 	e->ring_ops = gt->ring_ops[hwe->class];
 	INIT_LIST_HEAD(&e->persitent.link);
 
+	/* FIXME: Wire up to configurable default value */
+	e->sched_props.timeslice_us = 1 * 1000;
+	e->sched_props.preempt_timeout_us = 640 * 1000;
+
 	if (xe_engine_is_parallel(e)) {
 		e->parallel.composite_fence_ctx = dma_fence_context_alloc(1);
 		e->parallel.composite_fence_seqno = 1;
@@ -162,14 +166,20 @@ static int engine_set_priority(struct xe_device *xe, struct xe_engine *e,
 static int engine_set_timeslice(struct xe_device *xe, struct xe_engine *e,
 				u64 value, bool create)
 {
-	return 0;
+	if (!capable(CAP_SYS_NICE))
+		return -EPERM;
+
+	return e->gt->engine_ops->set_timeslice(e, value);
 }
 
 static int engine_set_preemption_timeout(struct xe_device *xe,
 					 struct xe_engine *e, u64 value,
 					 bool create)
 {
-	return 0;
+	if (!capable(CAP_SYS_NICE))
+		return -EPERM;
+
+	return e->gt->engine_ops->set_preempt_timeout(e, value);
 }
 
 static int engine_set_compute(struct xe_device *xe, struct xe_engine *e,

@@ -89,6 +89,14 @@ struct xe_engine {
 		u32 composite_fence_seqno;
 	} parallel;
 
+	/** @sched_props: scheduling properties */
+	struct {
+		/** @timeslice_us: timeslice period in micro-seconds */
+		u32 timeslice_us;
+		/** @preempt_timeout_us: preemption timeout in micro-seconds */
+		u32 preempt_timeout_us;
+	} sched_props;
+
 	/** @ring_ops: ring operations for this engine */
 	const struct xe_ring_ops *ring_ops;
 	/** @entity: DRM sched entity for this engine (1 to 1 relationship) */
@@ -110,6 +118,10 @@ struct xe_engine_ops {
 	/** @set_priority: Set priority for engine */
 	int (*set_priority)(struct xe_engine *e,
 			    enum drm_sched_priority priority);
+	/** @set_timeslice: Set timeslice for engine */
+	int (*set_timeslice)(struct xe_engine *e, u32 timeslice_us);
+	/** @set_preempt_timeout: Set preemption timeout for engine */
+	int (*set_preempt_timeout)(struct xe_engine *e, u32 preempt_timeout_us);
 };
 
 #endif	/* _XE_ENGINE_TYPES_H_ */
