@@ -97,6 +97,9 @@ struct xe_engine {
 		u32 preempt_timeout_us;
 	} sched_props;
 
+	/** @ops: submission backend engine operations */
+	const struct xe_engine_ops *ops;
+
 	/** @ring_ops: ring operations for this engine */
 	const struct xe_ring_ops *ring_ops;
 	/** @entity: DRM sched entity for this engine (1 to 1 relationship) */
