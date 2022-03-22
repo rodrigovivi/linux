@@ -53,7 +53,7 @@ static void xe_file_close(struct drm_device *dev, struct drm_file *file)
 	unsigned long idx;
 
 	xa_for_each(&xef->engine.xa, idx, e) {
-		e->gt->engine_ops->kill(e);
+		e->ops->kill(e);
 		xe_engine_put(e);
 	}
 	mutex_destroy(&xef->engine.lock);
@@ -259,7 +259,7 @@ static void device_kill_persitent_engines(struct xe_device *xe,
 	list_for_each_entry_safe(e, next, &xe->persitent_engines.list,
 				 persitent.link)
 		if (e->persitent.xef == xef) {
-			e->gt->engine_ops->kill(e);
+			e->ops->kill(e);
 			list_del_init(&e->persitent.link);
 		}
 	mutex_unlock(&xe->persitent_engines.lock);
