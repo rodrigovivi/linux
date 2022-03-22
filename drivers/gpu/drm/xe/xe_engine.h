@@ -39,6 +39,8 @@ static inline bool xe_engine_is_parallel(struct xe_engine *engine)
 	return engine->width > 1;
 }
 
+void xe_engine_kill(struct xe_engine *e);
+
 #define xe_engine_assert_held(e) \
 	do { \
 		struct xe_engine *_eng = (e); \

@@ -852,7 +852,7 @@ static void __guc_engine_process_msg_cleanup(struct drm_sched_msg *msg)
 	XE_BUG_ON(e->flags & ENGINE_FLAG_KERNEL);
 	trace_xe_engine_cleanup_entity(e);
 
-	if (engine_enabled(e))
+	if (engine_registered(e))
 		disable_scheduling_deregister(guc, e);
 	else
 		__guc_engine_fini(guc, e);
