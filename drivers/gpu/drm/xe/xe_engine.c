@@ -47,6 +47,7 @@ static struct xe_engine *__xe_engine_create(struct xe_device *xe,
 	e->logical_mask = logical_mask;
 	e->fence_irq = &gt->fence_irq[hwe->class];
 	e->ring_ops = gt->ring_ops[hwe->class];
+	e->ops = gt->engine_ops;
 	INIT_LIST_HEAD(&e->persitent.link);
 
 	/* FIXME: Wire up to configurable default value */
@@ -64,7 +65,7 @@ static struct xe_engine *__xe_engine_create(struct xe_device *xe,
 			goto err_lrc;
 	}
 
-	err = gt->engine_ops->init(e);
+	err = e->ops->init(e);
 	if (err)
 		goto err_lrc;
 
@@ -96,7 +97,7 @@ void xe_engine_destroy(struct kref *ref)
 {
 	struct xe_engine *e = container_of(ref, struct xe_engine, refcount);
 
-	e->gt->engine_ops->fini(e);
+	e->ops->fini(e);
 }
 
 void xe_engine_fini(struct xe_engine *e)
@@ -160,7 +161,7 @@ static int engine_set_priority(struct xe_device *xe, struct xe_engine *e,
 			 !capable(CAP_SYS_NICE)))
 		return -EPERM;
 
-	return e->gt->engine_ops->set_priority(e, value);
+	return e->ops->set_priority(e, value);
 }
 
 static int engine_set_timeslice(struct xe_device *xe, struct xe_engine *e,
@@ -169,7 +170,7 @@ static int engine_set_timeslice(struct xe_device *xe, struct xe_engine *e,
 	if (!capable(CAP_SYS_NICE))
 		return -EPERM;
 
-	return e->gt->engine_ops->set_timeslice(e, value);
+	return e->ops->set_timeslice(e, value);
 }
 
 static int engine_set_preemption_timeout(struct xe_device *xe,
@@ -179,7 +180,7 @@ static int engine_set_preemption_timeout(struct xe_device *xe,
 	if (!capable(CAP_SYS_NICE))
 		return -EPERM;
 
-	return e->gt->engine_ops->set_preempt_timeout(e, value);
+	return e->ops->set_preempt_timeout(e, value);
 }
 
 static int engine_set_compute(struct xe_device *xe, struct xe_engine *e,
@@ -211,7 +212,7 @@ static int engine_set_job_timeout(struct xe_device *xe, struct xe_engine *e,
 	if (!capable(CAP_SYS_NICE))
 		return -EPERM;
 
-	return e->gt->engine_ops->set_job_timeout(e, value);
+	return e->ops->set_job_timeout(e, value);
 }
 
 typedef int (*xe_engine_set_property_fn)(struct xe_device *xe,
@@ -442,7 +443,7 @@ int xe_engine_destroy_ioctl(struct drm_device *dev, void *data,
 		return -ENOENT;
 
 	if (!(e->flags & ENGINE_FLAG_PERSISTENT))
-		e->gt->engine_ops->kill(e);
+		e->ops->kill(e);
 	else
 		xe_device_add_persitent_engines(xe, e);
 
