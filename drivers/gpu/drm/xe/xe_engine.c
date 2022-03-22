@@ -174,6 +174,14 @@ static int engine_set_compute(struct xe_device *xe, struct xe_engine *e,
 static int engine_set_persistence(struct xe_device *xe, struct xe_engine *e,
 				  u64 value, bool create)
 {
+	if (XE_IOCTL_ERR(xe, !create))
+		return -EINVAL;
+
+	if (value)
+		e->flags |= ENGINE_FLAG_PERSISTENT;
+	else
+		e->flags &= ~ENGINE_FLAG_PERSISTENT;
+
 	return 0;
 }
 
@@ -357,7 +365,6 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, !vm))
 		return -ENOENT;
 
-	/* FIXME: Wire ENGINE_FLAG_PERSISTENT to engine parameter */
 	e = xe_engine_create(xe, vm, logical_mask, args->width, hwe,
 			     ENGINE_FLAG_PERSISTENT);
 	xe_vm_put(vm);
