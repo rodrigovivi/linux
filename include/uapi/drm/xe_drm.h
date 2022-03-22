@@ -294,6 +294,7 @@ struct drm_xe_engine_set_property {
 #define XE_ENGINE_PROPERTY_PREEMPTION_TIMEOUT		2
 #define XE_ENGINE_PROPERTY_COMPUTE			3
 #define XE_ENGINE_PROPERTY_PERSISTENCE			4
+#define XE_ENGINE_PROPERTY_JOB_TIMEOUT			5
 	__u32 property;
 
 	/** @value: property value */

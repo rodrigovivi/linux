@@ -202,6 +202,18 @@ static int engine_set_persistence(struct xe_device *xe, struct xe_engine *e,
 	return 0;
 }
 
+static int engine_set_job_timeout(struct xe_device *xe, struct xe_engine *e,
+				  u64 value, bool create)
+{
+	if (XE_IOCTL_ERR(xe, !create))
+		return -EINVAL;
+
+	if (!capable(CAP_SYS_NICE))
+		return -EPERM;
+
+	return e->gt->engine_ops->set_job_timeout(e, value);
+}
+
 typedef int (*xe_engine_set_property_fn)(struct xe_device *xe,
 					 struct xe_engine *e,
 					 u64 value, bool create);
@@ -212,6 +224,7 @@ static const xe_engine_set_property_fn engine_set_property_funcs[] = {
 	[XE_ENGINE_PROPERTY_PREEMPTION_TIMEOUT] = engine_set_preemption_timeout,
 	[XE_ENGINE_PROPERTY_COMPUTE] = engine_set_compute,
 	[XE_ENGINE_PROPERTY_PERSISTENCE] = engine_set_persistence,
+	[XE_ENGINE_PROPERTY_JOB_TIMEOUT] = engine_set_job_timeout,
 };
 
 static int engine_user_ext_set_property(struct xe_device *xe,
