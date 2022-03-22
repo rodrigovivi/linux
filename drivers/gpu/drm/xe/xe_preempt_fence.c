@@ -77,13 +77,12 @@ xe_preempt_fence_create(struct xe_engine *e,
 	if (!pfence)
 		return ERR_PTR(-ENOMEM);
 
-	spin_lock_init(&pfence->lock);
 	pfence->engine = xe_engine_get(e);
 	pfence->ops = ops;
 
 	INIT_WORK(&pfence->preempt_work, preempt_fence_work_func);
-	dma_fence_init(&pfence->base, &preempt_fence_ops, &pfence->lock,
-		       context, seqno);
+	dma_fence_init(&pfence->base, &preempt_fence_ops,
+		       &e->compute.lock, context, seqno);
 
 	return &pfence->base;
 }

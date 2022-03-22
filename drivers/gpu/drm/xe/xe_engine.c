@@ -14,6 +14,7 @@
 #include "xe_gt.h"
 #include "xe_lrc.h"
 #include "xe_macros.h"
+#include "xe_preempt_fence.h"
 #include "xe_trace.h"
 #include "xe_vm.h"
 
@@ -154,9 +155,97 @@ static int engine_set_preemption_timeout(struct xe_device *xe,
 	return e->ops->set_preempt_timeout(e, value);
 }
 
+static const struct xe_preempt_fence_ops preempt_fence_ops;
+
+static void preempt_complete(struct xe_engine *e)
+{
+	struct dma_fence *pfence;
+	int err;
+	bool enable_signaling = false;
+
+	pfence = xe_preempt_fence_create(e, &preempt_fence_ops,
+					 e->compute.context,
+					 ++e->compute.seqno);
+	if (IS_ERR(pfence)) {
+		XE_WARN_ON("Preempt fence allocation failed");
+		return;
+	}
+
+	/* FIXME: Do something useful, next patch */
+
+	xe_vm_lock(e->vm, NULL);
+	err = dma_resv_reserve_shared(&e->vm->resv, 1);
+	XE_WARN_ON(err);
+	if (!err) {
+		/*
+		 * If we want to call resume it must be done before publishing
+		 * the next preemption fence
+		 */
+		e->ops->resume(e);
+		dma_resv_add_shared_fence(&e->vm->resv, pfence);
+	}
+	xe_vm_unlock(e->vm);
+
+	/* Seal races with engines or fd closing */
+	spin_lock(&e->compute.lock);
+	if (e->compute.pfence) {
+		dma_fence_put(e->compute.pfence);
+		e->compute.pfence = pfence;
+	} else {
+		enable_signaling = true;
+	}
+	spin_unlock(&e->compute.lock);
+	if (enable_signaling || err)
+		dma_fence_enable_sw_signaling(pfence);
+}
+
+static const struct xe_preempt_fence_ops preempt_fence_ops = {
+	.preempt_complete = preempt_complete,
+};
+
 static int engine_set_compute(struct xe_device *xe, struct xe_engine *e,
 			      u64 value, bool create)
 {
+	if (XE_IOCTL_ERR(xe, !create))
+		return -EINVAL;
+
+	if (XE_IOCTL_ERR(xe, e->flags & ENGINE_FLAG_COMPUTE))
+		return -EINVAL;
+
+	if (value) {
+		struct dma_fence *pfence;
+		int err;
+
+		if (XE_IOCTL_ERR(xe, e->width != 1))
+			return -EINVAL;
+
+		if (XE_IOCTL_ERR(xe, !is_power_of_2(e->logical_mask)))
+			return -EINVAL;
+
+		e->compute.context = dma_fence_context_alloc(1);
+		spin_lock_init(&e->compute.lock);
+		pfence = xe_preempt_fence_create(e, &preempt_fence_ops,
+						 e->compute.context,
+						 ++e->compute.seqno);
+		if (XE_IOCTL_ERR(xe, IS_ERR(pfence)))
+			return PTR_ERR(pfence);
+
+		xe_vm_lock(e->vm, NULL);
+		err = dma_resv_reserve_shared(&e->vm->resv, 1);
+		if (XE_IOCTL_ERR(xe, err)) {
+			dma_fence_put(pfence);
+			xe_vm_unlock(e->vm);
+			return err;
+		}
+
+		e->compute.pfence = pfence;
+		dma_resv_add_shared_fence(&e->vm->resv, pfence);
+		xe_vm_unlock(e->vm);
+
+		e->flags |= ENGINE_FLAG_COMPUTE;
+		e->flags &= ~ENGINE_FLAG_PERSISTENT;
+	}
+
 	return 0;
 }
 
@@ -164,6 +253,9 @@ static int engine_set_persistence(struct xe_device *xe, struct xe_engine *e,
 				  u64 value, bool create)
 {
 	if (XE_IOCTL_ERR(xe, !create))
+		return -EINVAL;
+
+	if (XE_IOCTL_ERR(xe, e->flags & ENGINE_FLAG_COMPUTE))
 		return -EINVAL;
 
 	if (value)
@@ -392,8 +484,29 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 	return 0;
 
 put_engine:
+	xe_engine_kill(e);
 	xe_engine_put(e);
 	return err;
+}
+
+void xe_engine_kill(struct xe_engine *e)
+{
+	struct dma_fence *pfence = NULL;
+
+	e->ops->kill(e);
+
+	if (!(e->flags & ENGINE_FLAG_COMPUTE))
+	      return;
+
+	spin_lock(&e->compute.lock);
+	if (e->compute.pfence) {
+		pfence = e->compute.pfence;
+		e->compute.pfence = NULL;
+	}
+	spin_unlock(&e->compute.lock);
+
+	if (pfence)
+		dma_fence_enable_sw_signaling(pfence);
 }
 
 int xe_engine_destroy_ioctl(struct drm_device *dev, void *data,
@@ -414,7 +527,7 @@ int xe_engine_destroy_ioctl(struct drm_device *dev, void *data,
 		return -ENOENT;
 
 	if (!(e->flags & ENGINE_FLAG_PERSISTENT))
-		e->ops->kill(e);
+		xe_engine_kill(e);
 	else
 		xe_device_add_persitent_engines(xe, e);
 
