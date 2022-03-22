@@ -317,15 +317,23 @@ MAKE_ENGINE_POLICY_ADD(preemption_timeout, PREEMPTION_TIMEOUT)
 MAKE_ENGINE_POLICY_ADD(priority, SCHEDULING_PRIORITY)
 #undef MAKE_ENGINE_POLICY_ADD
 
+static const int drm_sched_prio_to_guc[] = {
+	[DRM_SCHED_PRIORITY_MIN] = GUC_CLIENT_PRIORITY_NORMAL,
+	[DRM_SCHED_PRIORITY_NORMAL] = GUC_CLIENT_PRIORITY_KMD_NORMAL,
+	[DRM_SCHED_PRIORITY_HIGH] = GUC_CLIENT_PRIORITY_HIGH,
+	[DRM_SCHED_PRIORITY_KERNEL] = GUC_CLIENT_PRIORITY_KMD_HIGH,
+};
+
 static void init_policies(struct xe_guc *guc, struct xe_engine *e)
 {
         struct engine_policy policy;
+	enum drm_sched_priority prio = e->entity->priority;
 
 	XE_BUG_ON(!engine_registered(e));
 
 	/* FIXME: Wire these up so they can be configured */
         __guc_engine_policy_start_klv(&policy, e->guc->id);
-        __guc_engine_policy_add_priority(&policy, DRM_SCHED_PRIORITY_NORMAL);
+        __guc_engine_policy_add_priority(&policy, drm_sched_prio_to_guc[prio]);
         __guc_engine_policy_add_execution_quantum(&policy, 1 * 1000);
         __guc_engine_policy_add_preemption_timeout(&policy, 640 * 1000);
 
