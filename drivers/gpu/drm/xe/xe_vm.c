@@ -1059,7 +1059,7 @@ static int xe_vm_bind(struct xe_vm *vm, struct xe_bo *bo,
 	vma = xe_vma_create(vm, bo, bo_offset, addr, addr + range - 1);
 	if (!vma) {
 		err = -ENOMEM;
-		goto err_destroy;
+		goto err;
 	}
 
 	prev = xe_vm_find_overlapping_vma(vm, vma);
