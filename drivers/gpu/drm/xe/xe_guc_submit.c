@@ -811,6 +811,7 @@ static void __guc_engine_process_msg_cleanup(struct drm_sched_msg *msg)
 	struct xe_engine *e = msg->private_data;
 	struct xe_guc *guc = engine_to_guc(e);
 
+	XE_BUG_ON(e->flags & ENGINE_FLAG_KERNEL);
 	trace_xe_engine_cleanup_entity(e);
 
 	if (engine_enabled(e))
@@ -957,7 +958,10 @@ static void guc_engine_fini(struct xe_engine *e)
 {
 	struct drm_sched_msg *msg = &e->guc->cleanup_msg;
 
-	guc_engine_add_msg(e, msg, CLEANUP);
+	if (!(e->flags & ENGINE_FLAG_KERNEL))
+		guc_engine_add_msg(e, msg, CLEANUP);
+	else
+		__guc_engine_fini(engine_to_guc(e), e);
 }
 
 static int guc_engine_set_priority(struct xe_engine *e,
