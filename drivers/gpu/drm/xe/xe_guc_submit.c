@@ -783,15 +783,28 @@ static void __guc_engine_fini_async(struct work_struct *w)
 	release_guc_id(guc, e);
 	drm_sched_entity_fini(&ge->entity);
 	drm_sched_fini(&ge->sched);
-	kfree(ge);
 
-	xe_engine_fini(e);
+	if (!(e->flags & ENGINE_FLAG_KERNEL)) {
+		kfree(ge);
+		xe_engine_fini(e);
+	}
 }
 
 static void guc_engine_fini_async(struct xe_engine *e)
 {
+	bool kernel = e->flags & ENGINE_FLAG_KERNEL;
+
 	INIT_WORK(&e->guc->fini_async, __guc_engine_fini_async);
 	queue_work(system_unbound_wq, &e->guc->fini_async);
+
+	/* We must block on kernel engines so slabs are empty on driver unload */
+	if (kernel) {
+		struct xe_guc_engine *ge = e->guc;
+
+		flush_work(&ge->fini_async);
+		kfree(ge);
+		xe_engine_fini(e);
+	}
 }
 
 static void __guc_engine_fini(struct xe_guc *guc, struct xe_engine *e)

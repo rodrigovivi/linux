@@ -15,6 +15,39 @@
 #include "xe_hw_engine.h"
 #include "xe_macros.h"
 
+static struct kmem_cache *xe_hw_fence_slab;
+
+int __init xe_hw_fence_module_init(void)
+{
+	xe_hw_fence_slab = kmem_cache_create("xe_hw_fence",
+					     sizeof(struct xe_hw_fence), 0,
+					     SLAB_HWCACHE_ALIGN, NULL);
+	if (!xe_hw_fence_slab)
+		return -ENOMEM;
+
+	return 0;
+}
+
+void xe_hw_fence_module_exit(void)
+{
+	rcu_barrier();
+	kmem_cache_destroy(xe_hw_fence_slab);
+}
+
+static struct xe_hw_fence *fence_alloc(void)
+{
+	return kmem_cache_zalloc(xe_hw_fence_slab, GFP_KERNEL);
+}
+
+static void fence_free(struct rcu_head *rcu)
+{
+	struct xe_hw_fence *fence =
+		container_of(rcu, struct xe_hw_fence, dma.rcu);
+
+	if (!WARN_ON_ONCE(!fence))
+		kmem_cache_free(xe_hw_fence_slab, fence);
+}
+
 static void hw_fence_irq_run_cb(struct irq_work *work)
 {
 	struct xe_hw_fence_irq *irq = container_of(work, typeof(*irq), work);
@@ -145,7 +178,7 @@ static void xe_hw_fence_release(struct dma_fence *dma_fence)
 	struct xe_hw_fence *fence = to_xe_hw_fence(dma_fence);
 
 	XE_BUG_ON(!list_empty(&fence->irq_link));
-	kfree_rcu(fence, dma.rcu);
+	call_rcu(&dma_fence->rcu, fence_free);
 }
 
 static const struct dma_fence_ops xe_hw_fence_ops = {
@@ -169,10 +202,9 @@ struct xe_hw_fence *xe_hw_fence_create(struct xe_hw_fence_ctx *ctx,
 {
 	struct xe_hw_fence *fence;
 
-	fence = kzalloc(sizeof(*fence), GFP_KERNEL);
+	fence = fence_alloc();
 	if (!fence)
 		return ERR_PTR(-ENOMEM);
-
 
 	dma_fence_init(&fence->dma, &xe_hw_fence_ops, &ctx->irq->lock,
 		       ctx->dma_fence_ctx, ctx->next_seqno++);
