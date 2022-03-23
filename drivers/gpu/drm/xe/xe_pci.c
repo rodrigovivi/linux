@@ -533,12 +533,12 @@ static struct pci_driver i915_pci_driver = {
 //	.driver.pm = &xe_pm_ops,
 };
 
-int i915_register_pci_driver(void)
+int xe_register_pci_driver(void)
 {
 	return pci_register_driver(&i915_pci_driver);
 }
 
-void i915_unregister_pci_driver(void)
+void xe_unregister_pci_driver(void)
 {
 	pci_unregister_driver(&i915_pci_driver);
 }
