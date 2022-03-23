@@ -107,6 +107,12 @@ retry:
 	if (err)
 		goto err_unlock_list;
 
+	if (xe_vm_is_closed(engine->vm)) {
+		drm_warn(&xe->drm, "Trying to schedule after vm is closed\n");
+		err = -EIO;
+		goto err_engine_end;
+	}
+
 	job = xe_sched_job_create(engine, xe_engine_is_parallel(engine) ?
 				  addresses : &args->address);
 	if (IS_ERR(job)) {
