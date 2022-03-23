@@ -1791,9 +1791,9 @@ static int __xe_vm_bind_ioctl(struct xe_vm *vm, struct xe_bo *bo, u64 bo_offset,
 {
 	struct xe_device *xe = vm->xe;
 
-	if (XE_IOCTL_ERR(xe, !vm->size)) {
-		DRM_ERROR("VM closed while we began looking up?\n");
-		return -ENOENT;
+	if (XE_IOCTL_ERR(xe, xe_vm_is_closed(vm))) {
+		drm_warn(&xe->drm, "Trying to call VM_BIND after vm is closed?\n");
+		return -EIO;
 	}
 
 	if (XE_IOCTL_ERR(xe, bo_offset & ~PAGE_MASK) ||
