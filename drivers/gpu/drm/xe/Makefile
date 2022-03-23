@@ -38,6 +38,7 @@ xe-y += xe_bb.o \
 	xe_debugfs.o \
 	xe_device.o \
 	xe_engine.o \
+	xe_exec.o \
 	xe_execlist.o \
 	xe_force_wake.o \
 	xe_ggtt.o \
