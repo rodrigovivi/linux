@@ -17,6 +17,51 @@
 #include "xe_macros.h"
 #include "xe_trace.h"
 
+static struct kmem_cache *xe_sched_job_slab;
+static struct kmem_cache *xe_sched_job_parallel_slab;
+
+int __init xe_sched_job_module_init(void)
+{
+	xe_sched_job_slab =
+		kmem_cache_create("xe_sched_job",
+				  sizeof(struct xe_sched_job) +
+				  sizeof(u64), 0,
+				  SLAB_HWCACHE_ALIGN, NULL);
+	if (!xe_sched_job_slab)
+		return -ENOMEM;
+
+	xe_sched_job_parallel_slab =
+		kmem_cache_create("xe_sched_job_parallel",
+				  sizeof(struct xe_sched_job) +
+				  sizeof(u64) *
+				  XE_HW_ENGINE_MAX_INSTANCE , 0,
+				  SLAB_HWCACHE_ALIGN, NULL);
+	if (!xe_sched_job_parallel_slab) {
+		kmem_cache_destroy(xe_sched_job_slab);
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+void xe_sched_job_module_exit(void)
+{
+	kmem_cache_destroy(xe_sched_job_slab);
+	kmem_cache_destroy(xe_sched_job_parallel_slab);
+}
+
+static struct xe_sched_job *job_alloc(bool parallel)
+{
+	return kmem_cache_zalloc(parallel ? xe_sched_job_parallel_slab :
+				 xe_sched_job_slab, GFP_KERNEL);
+}
+
+static void job_free(struct xe_sched_job *job)
+{
+	kmem_cache_free(xe_engine_is_parallel(job->engine) ?
+			xe_sched_job_parallel_slab : xe_sched_job_slab, job);
+}
+
 struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
 					 uint64_t *batch_addr)
 {
@@ -27,7 +72,7 @@ struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
 
 	xe_engine_assert_held(e);
 
-	job = kzalloc(sizeof(*job) + sizeof(uint64_t) * e->width, GFP_KERNEL);
+	job = job_alloc(xe_engine_is_parallel(e));
 	if (!job)
 		return ERR_PTR(-ENOMEM);
 
@@ -91,7 +136,7 @@ err_fences:
 err_sched_job:
 	drm_sched_job_cleanup(&job->drm);
 err_free:
-	kfree(job);
+	job_free(job);
 	return ERR_PTR(err);
 }
 
@@ -99,7 +144,7 @@ void xe_sched_job_free(struct xe_sched_job *job)
 {
 	dma_fence_put(job->fence);
 	drm_sched_job_cleanup(&job->drm);
-	kfree(job);
+	job_free(job);
 }
 
 bool xe_sched_job_started(struct xe_sched_job *job)
