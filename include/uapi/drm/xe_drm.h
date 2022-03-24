@@ -116,6 +116,7 @@ struct xe_user_extension {
 #define DRM_XE_EXEC			0x08
 #define DRM_XE_MMIO			0x09
 #define DRM_XE_ENGINE_SET_PROPERTY	0x0a
+#define DRM_XE_WAIT_USER_FENCE		0x0b
 
 /* Must be kept compact -- no holes */
 #define DRM_IOCTL_XE_DEVICE_QUERY	DRM_IOWR(DRM_COMMAND_BASE + DRM_XE_DEVICE_QUERY, struct drm_xe_device_query)
@@ -129,6 +130,7 @@ struct xe_user_extension {
 #define DRM_IOCTL_XE_EXEC		DRM_IOW( DRM_COMMAND_BASE + DRM_XE_EXEC, struct drm_xe_exec)
 #define DRM_IOCTL_XE_MMIO		DRM_IOWR(DRM_COMMAND_BASE + DRM_XE_MMIO, struct drm_xe_mmio)
 #define DRM_IOCTL_XE_ENGINE_SET_PROPERTY	DRM_IOW(DRM_COMMAND_BASE + DRM_XE_ENGINE_SET_PROPERTY, struct drm_xe_engine_set_property)
+#define DRM_IOCTL_XE_WAIT_USER_FENCE		DRM_IOWR(DRM_COMMAND_BASE + DRM_XE_WAIT_USER_FENCE, struct drm_xe_wait_user_fence)
 
 struct drm_xe_engine_class_instance {
 	__u16 engine_class;
@@ -303,7 +305,7 @@ struct drm_xe_engine_set_property {
 
 struct drm_xe_engine_create {
 	/** @extensions: Pointer to the first extension struct, if any */
-#define XE_ENGINE_EXTENSION_SET_PROPERTY		0
+#define XE_ENGINE_EXTENSION_SET_PROPERTY               0
 	__u64 extensions;
 
 	/** @width: submission width (number BB per exec) for this engine */
@@ -348,9 +350,21 @@ struct drm_xe_sync {
 #define DRM_XE_SYNC_SYNCOBJ		0x0
 #define DRM_XE_SYNC_TIMELINE_SYNCOBJ	0x1
 #define DRM_XE_SYNC_DMA_BUF		0x2
-#define DRM_XE_SYNC_SIGNAL		0x4
+#define DRM_XE_SYNC_USER_FENCE		0x3
+#define DRM_XE_SYNC_SIGNAL		0x10
 
-	__u32 handle;
+	union {
+		__u32 handle;
+		/**
+		 * @addr: Address of user fence. When sync passed in via exec
+		 * IOCTL this a GPU address in the VM. When sync passed in via
+		 * VM bind IOCTL this is a user pointer. In either case, it is
+		 * the users responsibility that this address is present and
+		 * mapped when the user fence is signalled. Must be qword
+		 * aligned.
+		 */
+		__u64 addr;
+	};
 
 	__u64 timeline_value;
 };
@@ -398,6 +412,54 @@ struct drm_xe_mmio {
 #define DRM_XE_MMIO_WRITE	0x8
 
 	__u64 value;
+};
+
+/**
+ * struct drm_xe_wait_user_fence - wait user fence
+ *
+ * Wait on user fence, XE will wakeup on every HW engine interrupt in the
+ * instances list and check if user fence is complete:
+ * (*addr & MASK) OP (VALUE & MASK)
+ *
+ * Returns to user on user fence completion or timeout.
+ */
+struct drm_xe_wait_user_fence {
+	/** @extensions: Pointer to the first extension struct, if any */
+	__u64 extensions;
+	/** @addr: user pointer address to wait on, must qword aligned */
+	__u64 addr;
+	/** @op: wait operation (type of comparison) */
+#define DRM_XE_UFENCE_WAIT_EQ	0
+#define DRM_XE_UFENCE_WAIT_NEQ	1
+#define DRM_XE_UFENCE_WAIT_GT	2
+#define DRM_XE_UFENCE_WAIT_GTE	3
+#define DRM_XE_UFENCE_WAIT_LT	4
+#define DRM_XE_UFENCE_WAIT_LTE	5
+	__u16 op;
+	/** @flags: wait flags */
+#define DRM_XE_UFENCE_WAIT_SOFT_OP	(1 << 0)	/* e.g. Wait on VM bind */
+#define DRM_XE_UFENCE_WAIT_ABSTIME	(1 << 1)
+	__u16 flags;
+	/** @value: compare value */
+	__u64 value;
+	/** @mask: comparison mask */
+#define DRM_XE_UFENCE_WAIT_U8		0xffu
+#define DRM_XE_UFENCE_WAIT_U16		0xffffu
+#define DRM_XE_UFENCE_WAIT_U32		0xffffffffu
+#define DRM_XE_UFENCE_WAIT_U64		0xffffffffffffffffu
+	__u64 mask;
+	/** @timeout: how long to wait before bailing, value in jiffies */
+	__s64 timeout;
+	/**
+	 * @num_engines: number of engine instances to wait on, must be zero
+	 * when DRM_XE_UFENCE_WAIT_SOFT_OP set
+	 */
+	__u64 num_engines;
+	/**
+	 * @instances: user pointer to array of drm_xe_engine_class_instance to
+	 * wait on, must be NULL when DRM_XE_UFENCE_WAIT_SOFT_OP set
+	 */
+	__u64 instances;
 };
 
 #if defined(__cplusplus)
