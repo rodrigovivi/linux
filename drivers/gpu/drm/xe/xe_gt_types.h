@@ -97,16 +97,14 @@ struct xe_gt {
 	/** @reset: state for GT resets */
 	struct {
 		/**
-		 * @lock: protets GT resets to ensure only 1 in flight at a
-		 * time
-		 */
-		struct mutex lock;
-		/**
 		 * @worker: work so GT resets can done async allowing to reset
 		 * code to safely flush all code paths
 		 */
 		struct work_struct worker;
 	} reset;
+
+	/** @ordered_wq: used to serialize GT resets and TDRs */
+	struct workqueue_struct *ordered_wq;
 
 	/** @uc: micro controllers on the GT */
 	struct xe_uc uc;
