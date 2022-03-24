@@ -458,7 +458,6 @@ struct drm_sched_backend_ops {
  * @_score: score used when the driver doesn't provide one
  * @ready: marks if the underlying HW is ready to work
  * @free_guilty: A hit to time out handler to free the guilty job.
- * @tdr_skip_signalled: skip signalled fences in the TDR
  * @pause_run_wq: pause queuing of @work_run on @run_wq
  *
  * One scheduler is implemented for each hardware ring.
@@ -484,7 +483,6 @@ struct drm_gpu_scheduler {
 	atomic_t                        _score;
 	bool				ready;
 	bool				free_guilty;
-	bool				tdr_skip_signalled;
 	bool				pause_run_wq;
 	struct device			*dev;
 };

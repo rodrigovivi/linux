@@ -11,6 +11,7 @@
 
 int xe_uc_init(struct xe_uc *uc);
 int xe_uc_init_hw(struct xe_uc *uc);
+int xe_uc_reset_prepare(struct xe_uc *uc);
 int xe_uc_stop(struct xe_uc *uc);
 int xe_uc_start(struct xe_uc *uc);
 
