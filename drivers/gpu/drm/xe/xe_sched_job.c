@@ -70,11 +70,9 @@ struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
 			goto err_fences;
 		}
 
-		/* Move ownership to dma_fence_array created above */
-		for (j = 0; j < e->width; ++j) {
+		/* Sanity check */
+		for (j = 0; j < e->width; ++j)
 			XE_BUG_ON(cf->base.seqno != fences[j]->seqno);
-			dma_fence_get(fences[j]);
-		}
 
 		job->fence = &cf->base;
 	}

@@ -44,9 +44,8 @@ static int hw_engines(struct seq_file *m, void *data)
 static int force_reset(struct seq_file *m, void *data)
 {
 	struct xe_gt *gt = node_to_gt(m->private);
-	struct drm_printer p = drm_seq_file_printer(m);
 
-	drm_printf(&p, "GT reset: ret=%d\n", xe_gt_reset(gt));
+	xe_gt_reset_async(gt);
 
 	return 0;
 }

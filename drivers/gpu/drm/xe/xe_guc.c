@@ -461,8 +461,6 @@ void xe_guc_wb(struct xe_guc *guc)
 	struct xe_device *xe = guc_to_xe(guc);
 	struct xe_gt *gt = guc_to_gt(guc);
 
-	XE_WARN_ON(!guc->ct.enabled);
-
 	if (IS_DGFX(xe))
 		xe_mmio_write32(gt, GEN11_SOFT_SCRATCH(0).reg, 0);
 }
@@ -614,6 +612,11 @@ void xe_guc_sanitize(struct xe_guc *guc)
 {
 	xe_uc_fw_change_status(&guc->fw, XE_UC_FIRMWARE_LOADABLE);
 	xa_destroy(&guc->ct.fence_lookup);
+}
+
+int xe_guc_reset_prepare(struct xe_guc *guc)
+{
+	return xe_guc_submit_reset_prepare(guc);
 }
 
 int xe_guc_stop(struct xe_guc *guc)

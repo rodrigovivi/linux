@@ -376,19 +376,6 @@ static void drm_sched_job_begin(struct drm_sched_job *s_job)
 	spin_unlock(&sched->job_list_lock);
 }
 
-static bool
-fence_is_signaled(struct dma_fence *fence)
-{
-	if (test_bit(DMA_FENCE_FLAG_SIGNALED_BIT, &fence->flags))
-		return true;
-
-	if (fence->ops->signaled && fence->ops->signaled(fence)) {
-		return true;
-	}
-
-	return false;
-}
-
 static void drm_sched_job_timedout(struct work_struct *work)
 {
 	struct drm_gpu_scheduler *sched;
@@ -402,8 +389,7 @@ static void drm_sched_job_timedout(struct work_struct *work)
 	job = list_first_entry_or_null(&sched->pending_list,
 				       struct drm_sched_job, list);
 
-	if (job && (!sched->tdr_skip_signalled ||
-		    !fence_is_signaled(job->s_fence->parent))) {
+	if (job) {
 		/*
 		 * Remove the bad job so it cannot be freed by concurrent
 		 * drm_sched_cleanup_jobs. It will be reinserted back after sched->thread
@@ -1134,7 +1120,6 @@ int drm_sched_init(struct drm_gpu_scheduler *sched,
 	INIT_WORK(&sched->work_run, drm_sched_main);
 	atomic_set(&sched->_score, 0);
 	atomic64_set(&sched->job_id_count, 0);
-	sched->tdr_skip_signalled = false;
 	sched->pause_run_wq = false;
 
 	sched->ready = true;

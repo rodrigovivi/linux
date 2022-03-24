@@ -57,6 +57,8 @@ int xe_gt_alloc(struct xe_gt *gt)
 	if (!gt->mem.gtt_mgr)
 		return -ENOMEM;
 
+	gt->ordered_wq = alloc_ordered_workqueue("gt-ordered-wq", 0);
+
 	gt_params_init(gt);
 
 	return 0;
@@ -137,23 +139,13 @@ static void gt_fini(struct drm_device *drm, void *arg)
 	struct xe_gt *gt = arg;
 	int i;
 
+	destroy_workqueue(gt->ordered_wq);
+
 	for (i = 0; i < XE_ENGINE_CLASS_MAX; ++i)
 		xe_hw_fence_irq_finish(&gt->fence_irq[i]);
 
 	if (gt->mem.vram.mapping)
 		iounmap(gt->mem.vram.mapping);
-}
-
-static void primelockdep(struct xe_gt *gt)
-{
-#if IS_ENABLED(CONFIG_LOCKDEP)
-	bool cookie = dma_fence_begin_signalling();
-
-	mutex_lock(&gt->reset.lock);
-	mutex_unlock(&gt->reset.lock);
-
-	dma_fence_end_signalling(cookie);
-#endif
 }
 
 static void gt_reset_worker(struct work_struct *w);
@@ -163,8 +155,6 @@ int xe_gt_init(struct xe_gt *gt)
 	int err;
 	int i;
 
-	mutex_init(&gt->reset.lock);
-	primelockdep(gt);
 	INIT_WORK(&gt->reset.worker, gt_reset_worker);
 
 	for (i = 0; i < XE_ENGINE_CLASS_MAX; ++i) {
@@ -252,7 +242,7 @@ int do_gt_reset(struct xe_gt *gt)
 	return err;
 }
 
-int xe_gt_reset(struct xe_gt *gt)
+static int gt_reset(struct xe_gt *gt)
 {
 	struct xe_device *xe = gt_to_xe(gt);
 	struct xe_hw_engine *hwe;
@@ -264,8 +254,6 @@ int xe_gt_reset(struct xe_gt *gt)
 		return -ENODEV;
 
 	drm_info(&xe->drm, "GT reset started\n");
-
-	mutex_lock(&gt->reset.lock);
 
 	err = xe_force_wake_get(gt->mmio.fw, XE_FORCEWAKE_ALL);
 	if (err)
@@ -299,8 +287,6 @@ int xe_gt_reset(struct xe_gt *gt)
 	err = xe_force_wake_put(gt->mmio.fw, XE_FORCEWAKE_ALL);
 	XE_WARN_ON(err);
 
-	mutex_unlock(&gt->reset.lock);
-
 	drm_info(&xe->drm, "GT reset done\n");
 
 	return 0;
@@ -308,7 +294,6 @@ int xe_gt_reset(struct xe_gt *gt)
 err_out:
 	XE_WARN_ON(xe_force_wake_put(gt->mmio.fw, XE_FORCEWAKE_ALL));
 err_unlock:
-	mutex_unlock(&gt->reset.lock);
 	drm_err(&xe->drm, "GT reset failed, err=%d\n", err);
 
 	return err;
@@ -318,12 +303,21 @@ static void gt_reset_worker(struct work_struct *w)
 {
 	struct xe_gt *gt = container_of(w, typeof(*gt), reset.worker);
 
-	xe_gt_reset(gt);
+	gt_reset(gt);
 }
 
 void xe_gt_reset_async(struct xe_gt *gt)
 {
-	queue_work(system_unbound_wq, &gt->reset.worker);
+	struct xe_device *xe = gt_to_xe(gt);
+
+	drm_info(&xe->drm, "Try GT reset\n");
+
+	/* Don't do a reset while one is already in flight */
+	if (xe_uc_reset_prepare(&gt->uc))
+		return;
+
+	drm_info(&xe->drm, "Doing GT reset\n");
+	queue_work(gt->ordered_wq, &gt->reset.worker);
 }
 
 struct xe_hw_engine *xe_gt_hw_engine(struct xe_gt *gt,
