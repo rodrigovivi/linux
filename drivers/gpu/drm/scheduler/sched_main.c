@@ -1106,7 +1106,6 @@ int drm_sched_init(struct drm_gpu_scheduler *sched,
 	INIT_WORK(&sched->work_run, drm_sched_main);
 	atomic_set(&sched->_score, 0);
 	atomic64_set(&sched->job_id_count, 0);
-	sched->tdr_skip_signalled = false;
 	sched->pause_run_wq = false;
 
 	sched->ready = true;

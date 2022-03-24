@@ -13,6 +13,7 @@ struct xe_guc;
 int xe_guc_submit_init(struct xe_guc *guc);
 void xe_guc_submit_print(struct xe_guc *guc, struct drm_printer *p);
 
+int xe_guc_submit_reset_prepare(struct xe_guc *guc);
 int xe_guc_submit_stop(struct xe_guc *guc);
 int xe_guc_submit_start(struct xe_guc *guc);
 

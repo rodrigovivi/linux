@@ -114,6 +114,15 @@ int xe_uc_init_hw(struct xe_uc *uc)
 	return 0;
 }
 
+int xe_uc_reset_prepare(struct xe_uc *uc)
+{
+	/* GuC submission not enabled, nothing to do */
+	if (!xe_gt_guc_submission_enabled(uc_to_gt(uc)))
+		return 0;
+
+	return xe_guc_reset_prepare(&uc->guc);
+}
+
 int xe_uc_stop(struct xe_uc *uc)
 {
 	/* GuC submission not enabled, nothing to do */

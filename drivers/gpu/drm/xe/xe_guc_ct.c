@@ -316,7 +316,6 @@ void xe_guc_ct_disable(struct xe_guc_ct *ct)
 	ct->enabled = false;
 	mutex_unlock(&ct->lock);
 
-	flush_work(&ct->g2h_worker);
 	xa_destroy(&ct->fence_lookup);
 }
 

@@ -372,7 +372,7 @@ static void __register_mlrc_engine(struct xe_guc *guc,
 				   struct xe_engine *e,
 				   struct guc_ctxt_registration_info *info)
 {
-#define MAX_MLRC_REG_SIZE      (11 + XE_HW_ENGINE_MAX_INSTANCE * 2)
+#define MAX_MLRC_REG_SIZE      (13 + XE_HW_ENGINE_MAX_INSTANCE * 2)
 	u32 action [MAX_MLRC_REG_SIZE];
 	int len = 0;
 	int i;
@@ -651,8 +651,9 @@ static void disable_scheduling(struct xe_guc *guc, struct xe_engine *e)
 	};
 
 	set_min_preemption_timeout(guc, e);
+	smp_rmb();
 	wait_event(guc->ct.wq, !engine_pending_enable(e) ||
-		   guc->submission_state.stopped);
+		   atomic_read(&guc->submission_state.stopped));
 
 	clear_engine_enabled(e);
 	set_engine_pending_disable(e);
@@ -686,14 +687,16 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 		 xe_sched_job_seqno(job), e->guc->id);
 	trace_xe_sched_job_timedout(job);
 
+	/* Kill the run_job entry point */
+	drm_sched_run_wq_stop(sched);
+
 	/* Kernel jobs should never fail, if they do the GT needs a reset */
 	if (e->flags & ENGINE_FLAG_KERNEL) {
+		list_add(&drm_job->list, &sched->pending_list);
+		drm_sched_run_wq_start(sched);
 		xe_gt_reset_async(e->gt);
 		goto out;
 	}
-
-	/* Kill the run_job entry point */
-	drm_sched_run_wq_stop(sched);
 
 	/* Engine state now stable, disable scheduling if needed */
 	if (engine_enabled(e)) {
@@ -709,8 +712,9 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 		 * Must wait for scheduling to be disabled before signalling
 		 * any fences, if GT broken the GT reset code should signal us.
 		 */
+		smp_rmb();
 		wait_event(guc->ct.wq, !engine_pending_disable(e) ||
-			   guc->submission_state.stopped);
+			   atomic_read(&guc->submission_state.stopped));
 	}
 
 	/* Stop fence signaling */
@@ -842,12 +846,12 @@ static int guc_engine_init(struct xe_engine *e)
 
 	err = drm_sched_init(&ge->sched, &drm_sched_ops,
 			     e->lrc[0].ring.size / MAX_JOB_SIZE_BYTES,
-			     64, HZ * 5, NULL, NULL, e->name);
+			     64, HZ * 5, guc_to_gt(guc)->ordered_wq, NULL,
+			     e->name);
 	if (err)
 		goto err_free;
 
 	sched = &ge->sched;
-	sched->tdr_skip_signalled = true;
 	err = drm_sched_entity_init(&ge->entity, DRM_SCHED_PRIORITY_NORMAL,
 				    &sched, 1, NULL);
 	if (err)
@@ -861,7 +865,7 @@ static int guc_engine_init(struct xe_engine *e)
 
 	e->entity = &ge->entity;
 
-	if (guc->submission_state.stopped)
+	if (atomic_read(&guc->submission_state.stopped))
 		drm_sched_stop(sched, NULL);
 
 	mutex_unlock(&guc->submission_state.lock);
@@ -922,7 +926,6 @@ static void guc_engine_stop(struct xe_guc *guc, struct xe_engine *e)
 
 	/* Stop scheduling + flush any DRM scheduler operations */
 	drm_sched_run_wq_stop(sched);
-	cancel_delayed_work_sync(&sched->work_tdr);
 
 	/* Clean up lost G2H + reset engine state */
 	if (engine_destroyed(e) && engine_registered(e)) {
@@ -957,16 +960,32 @@ static void guc_engine_stop(struct xe_guc *guc, struct xe_engine *e)
 	}
 }
 
+int xe_guc_submit_reset_prepare(struct xe_guc *guc)
+{
+	int ret;
+
+	/*
+	 * Using an atomic here rather than submission_state.lock as this
+	 * function can be called while holding the CT lock (engine reset
+	 * failure). submission_state.lock needs the CT lock to resubmit jobs.
+	 * Atomic is not ideal, but it works to prevent against concurrent reset
+	 * and releasing any TDRs waiting on guc->submission_state.stopped.
+	 */
+	ret = atomic_fetch_or(1, &guc->submission_state.stopped);
+	smp_wmb();
+	wake_up_all(&guc->ct.wq);
+
+	return ret;
+}
+
 int xe_guc_submit_stop(struct xe_guc *guc)
 {
 	struct xe_engine *e;
 	unsigned long index;
 
-	mutex_lock(&guc->submission_state.lock);
+	XE_BUG_ON(atomic_read(&guc->submission_state.stopped) != 1);
 
-	guc->submission_state.stopped = true;
-	smp_mb();
-	wake_up_all(&guc->ct.wq);
+	mutex_lock(&guc->submission_state.lock);
 
 	xa_for_each(&guc->submission_state.engine_lookup, index, e)
 		guc_engine_stop(guc, e);
@@ -1003,12 +1022,12 @@ int xe_guc_submit_start(struct xe_guc *guc)
 	struct xe_engine *e;
 	unsigned long index;
 
-	mutex_lock(&guc->submission_state.lock);
+	XE_BUG_ON(atomic_read(&guc->submission_state.stopped) != 1);
 
-	guc->submission_state.stopped = false;
+	mutex_lock(&guc->submission_state.lock);
+	atomic_dec(&guc->submission_state.stopped);
 	xa_for_each(&guc->submission_state.engine_lookup, index, e)
 		guc_engine_start(e);
-
 	mutex_unlock(&guc->submission_state.lock);
 
 	return 0;
@@ -1054,8 +1073,6 @@ int xe_guc_sched_done_handler(struct xe_guc *guc, u32 *msg, u32 len)
 	struct xe_engine *e;
 	u32 guc_id = msg[0];
 
-	XE_BUG_ON(guc->submission_state.stopped);
-
 	if (unlikely(len < 2)) {
 		drm_err(&xe->drm, "Invalid length %u", len);
 		return -EPROTO;
@@ -1076,12 +1093,12 @@ int xe_guc_sched_done_handler(struct xe_guc *guc, u32 *msg, u32 len)
 
 	if (engine_pending_enable(e)) {
 		clear_engine_pending_enable(e);
-		smp_mb();
+		smp_wmb();
 		wake_up_all(&guc->ct.wq);
 	} else {
 		clear_engine_pending_disable(e);
 		if (engine_banned(e)) {
-			smp_mb();
+			smp_wmb();
 			wake_up_all(&guc->ct.wq);
 		}
 		deregister_engine(guc, e);
@@ -1095,8 +1112,6 @@ int xe_guc_deregister_done_handler(struct xe_guc *guc, u32 *msg, u32 len)
 	struct xe_device *xe = guc_to_xe(guc);
 	struct xe_engine *e;
 	u32 guc_id = msg[0];
-
-	XE_BUG_ON(guc->submission_state.stopped);
 
 	if (unlikely(len < 1)) {
 		drm_err(&xe->drm, "Invalid length %u", len);
@@ -1131,8 +1146,6 @@ int xe_guc_engine_reset_handler(struct xe_guc *guc, u32 *msg, u32 len)
 	struct xe_engine *e;
 	u32 guc_id = msg[0];
 
-	XE_BUG_ON(guc->submission_state.stopped);
-
 	if (unlikely(len < 1)) {
 		drm_err(&xe->drm, "Invalid length %u", len);
 		return -EPROTO;
@@ -1166,8 +1179,6 @@ int xe_guc_engine_reset_failure_handler(struct xe_guc *guc, u32 *msg, u32 len)
 	struct xe_device *xe = guc_to_xe(guc);
 	u8 guc_class, instance;
 	u32 reason;
-
-	XE_BUG_ON(guc->submission_state.stopped);
 
 	if (unlikely(len != 3)) {
 		drm_err(&xe->drm, "Invalid length %u", len);
