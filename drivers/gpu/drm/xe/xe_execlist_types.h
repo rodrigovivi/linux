@@ -9,6 +9,7 @@
 
 #include <linux/list.h>
 #include <linux/spinlock.h>
+#include <linux/workqueue.h>
 
 #include <drm/gpu_scheduler.h>
 
@@ -39,6 +40,8 @@ struct xe_execlist_engine {
 	struct xe_execlist_port *port;
 
 	bool has_run;
+
+	struct work_struct fini_async;
 
 	enum drm_sched_priority active_priority;
 	struct list_head active_link;

@@ -9,13 +9,14 @@
 #include "xe_execlist.h"
 
 #include "xe_bo.h"
-#include "xe_device_types.h"
+#include "xe_device.h"
 #include "xe_engine.h"
 #include "xe_hw_fence.h"
 #include "xe_gt.h"
 #include "xe_lrc.h"
 #include "xe_macros.h"
 #include "xe_mmio.h"
+#include "xe_ring_ops_types.h"
 #include "xe_sched_job.h"
 
 #include "../i915/i915_reg.h"
@@ -84,7 +85,7 @@ static void __xe_execlist_port_start(struct xe_execlist_port *port,
 			port->last_ctx_id = 1;
 	}
 
-	__start_lrc(port->hwe, &exl->engine->lrc, port->last_ctx_id);
+	__start_lrc(port->hwe, exl->engine->lrc, port->last_ctx_id);
 	port->running_exl = exl;
 	exl->has_run = true;
 }
@@ -107,7 +108,7 @@ static void __xe_execlist_port_idle(struct xe_execlist_port *port)
 
 static bool xe_execlist_is_idle(struct xe_execlist_engine *exl)
 {
-	struct xe_lrc *lrc = &exl->engine->lrc;
+	struct xe_lrc *lrc = exl->engine->lrc;
 
 	return lrc->ring.tail == lrc->ring.old_tail;
 }
@@ -268,95 +269,34 @@ void xe_execlist_port_destroy(struct xe_execlist_port *port)
 	spin_unlock_irq(&gt_to_xe(port->hwe->gt)->irq.lock);
 }
 
-#define MAX_JOB_SIZE_DW 24
-#define MAX_JOB_SIZE_BYTES (MAX_JOB_SIZE_DW * 4)
-
-static void invalidate_tlb(struct xe_sched_job *job, u32 *dw, u32 *pi)
-{
-	u32 i = *pi;
-
-	if (job->engine->hwe->class != XE_ENGINE_CLASS_RENDER) {
-		dw[i] = MI_FLUSH_DW + 1;
-		if (job->engine->hwe->class == XE_ENGINE_CLASS_VIDEO_DECODE)
-			dw[i] |= MI_INVALIDATE_BSD;
-		dw[i++] |= MI_INVALIDATE_TLB | MI_FLUSH_DW_OP_STOREDW | MI_FLUSH_DW_STORE_INDEX;
-		dw[i++] = LRC_PPHWSP_SCRATCH_ADDR | MI_FLUSH_DW_USE_GTT;
-		dw[i++] = 0;
-		dw[i++] = ~0U;
-	} else {
-		u32 flags = PIPE_CONTROL_CS_STALL |
-			PIPE_CONTROL_COMMAND_CACHE_INVALIDATE |
-			PIPE_CONTROL_TLB_INVALIDATE |
-			PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE |
-			PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
-			PIPE_CONTROL_VF_CACHE_INVALIDATE |
-			PIPE_CONTROL_CONST_CACHE_INVALIDATE |
-			PIPE_CONTROL_STATE_CACHE_INVALIDATE |
-			PIPE_CONTROL_QW_WRITE |
-			PIPE_CONTROL_STORE_DATA_INDEX;
-
-		dw[i++] = MI_ARB_CHECK | BIT(8) | BIT(0);
-
-		dw[i++] = GFX_OP_PIPE_CONTROL(6);
-		dw[i++] = flags;
-		dw[i++] = LRC_PPHWSP_SCRATCH_ADDR;
-		dw[i++] = 0;
-		dw[i++] = 0;
-		dw[i++] = 0;
-
-		dw[i++] = MI_LOAD_REGISTER_IMM(1);
-		dw[i++] = GEN12_GFX_CCS_AUX_NV.reg;
-		dw[i++] = AUX_INV;
-		dw[i++] = MI_NOOP;
-
-		dw[i++] = MI_ARB_CHECK | BIT(8);
-	}
-
-	*pi = i;
-}
-
 static struct dma_fence *
-xe_execlist_run_job(struct drm_sched_job *drm_job)
+execlist_run_job(struct drm_sched_job *drm_job)
 {
 	struct xe_sched_job *job = to_xe_sched_job(drm_job);
+	struct xe_engine *e = job->engine;
 	struct xe_execlist_engine *exl = job->engine->execlist;
-	struct xe_lrc *lrc = &job->engine->lrc;
-	uint32_t dw[MAX_JOB_SIZE_DW], i = 0;
-	u32 ppgtt_flag = job->engine->vm ? BIT(8) : 0;
 
-#if 1
-	// TODO: Find a way to make flushing conditional?
-	// if (job->engine->vm && (last_vm_unbind_scheduled || !last_vm_unbind_completed))
-	invalidate_tlb(job, dw, &i);
-#endif
-
-	dw[i++] = MI_BATCH_BUFFER_START_GEN8 | ppgtt_flag;
-	dw[i++] = lower_32_bits(job->user_batch_addr);
-	dw[i++] = upper_32_bits(job->user_batch_addr);
-
-	dw[i++] = MI_STORE_DATA_IMM | BIT(22) /* GGTT */ | 2;
-	dw[i++] = xe_lrc_seqno_ggtt_addr(lrc);
-	dw[i++] = 0;
-	dw[i++] = job->fence->seqno;
-
-	dw[i++] = MI_USER_INTERRUPT;
-	dw[i++] = MI_ARB_ON_OFF | MI_ARB_ENABLE;
-
-	XE_BUG_ON(i > MAX_JOB_SIZE_DW);
-
-	xe_lrc_write_ring(lrc, dw, i * sizeof(*dw));
-
+	e->ring_ops->emit_job(job);
 	xe_execlist_make_active(exl);
 
 	return dma_fence_get(job->fence);
 }
 
+static void execlist_job_free(struct drm_sched_job *drm_job)
+{
+	struct xe_sched_job *job = to_xe_sched_job(drm_job);
+	struct xe_engine *e = job->engine;
+
+	xe_sched_job_free(job);
+	xe_engine_put(e);
+}
+
 static const struct drm_sched_backend_ops drm_sched_ops = {
-	.run_job = xe_execlist_run_job,
-	.free_job = xe_drm_sched_job_free,
+	.run_job = execlist_run_job,
+	.free_job = execlist_job_free,
 };
 
-int xe_execlist_engine_init(struct xe_engine *e)
+static int execlist_engine_init(struct xe_engine *e)
 {
 	struct drm_gpu_scheduler *sched;
 	struct xe_execlist_engine *exl;
@@ -371,7 +311,7 @@ int xe_execlist_engine_init(struct xe_engine *e)
 	exl->engine = e;
 
 	err = drm_sched_init(&exl->sched, &drm_sched_ops,
-			     e->lrc.ring.size / MAX_JOB_SIZE_BYTES,
+			     e->lrc[0].ring.size / MAX_JOB_SIZE_BYTES,
 			     XE_SCHED_HANG_LIMIT, XE_SCHED_JOB_TIMEOUT,
 			     NULL, NULL, e->hwe->name);
 	if (err)
@@ -389,6 +329,26 @@ int xe_execlist_engine_init(struct xe_engine *e)
 	e->execlist = exl;
 	e->entity = &exl->entity;
 
+	switch (e->class) {
+	case XE_ENGINE_CLASS_RENDER:
+		sprintf(e->name, "rcs%d", ffs(e->logical_mask) - 1);
+		break;
+	case XE_ENGINE_CLASS_VIDEO_DECODE:
+		sprintf(e->name, "vcs%d", ffs(e->logical_mask) - 1);
+		break;
+	case XE_ENGINE_CLASS_VIDEO_ENHANCE:
+		sprintf(e->name, "vecs%d", ffs(e->logical_mask) - 1);
+		break;
+	case XE_ENGINE_CLASS_COPY:
+		sprintf(e->name, "bcs%d", ffs(e->logical_mask) - 1);
+		break;
+	case XE_ENGINE_CLASS_COMPUTE:
+		sprintf(e->name, "ccs%d", ffs(e->logical_mask) - 1);
+		break;
+	default:
+		XE_WARN_ON(e->class);
+	}
+
 	return 0;
 
 err_sched:
@@ -398,8 +358,11 @@ err_free:
 	return err;
 }
 
-void xe_execlist_engine_fini(struct xe_engine *e)
+static void execlist_engine_fini_async(struct work_struct *w)
 {
+	struct xe_execlist_engine *ee =
+		container_of(w, struct xe_execlist_engine, fini_async);
+	struct xe_engine *e = ee->engine;
 	struct xe_execlist_engine *exl = e->execlist;
 	unsigned long flags;
 
@@ -410,9 +373,39 @@ void xe_execlist_engine_fini(struct xe_engine *e)
 		list_del(&exl->active_link);
 	spin_unlock_irqrestore(&exl->port->lock, flags);
 
+	if (e->flags & ENGINE_FLAG_PERSISTENT)
+		xe_device_remove_persitent_engines(gt_to_xe(e->gt), e);
 	drm_sched_entity_fini(&exl->entity);
 	drm_sched_fini(&exl->sched);
 	kfree(exl);
 
 	xe_engine_fini(e);
+}
+
+static void execlist_engine_kill(struct xe_engine *e)
+{
+	/* NIY */
+}
+
+static void execlist_engine_fini(struct xe_engine *e)
+{
+	INIT_WORK(&e->execlist->fini_async, execlist_engine_fini_async);
+	queue_work(system_unbound_wq, &e->execlist->fini_async);
+}
+
+static const struct xe_engine_ops execlist_engine_ops = {
+	.init = execlist_engine_init,
+	.kill = execlist_engine_kill,
+	.fini = execlist_engine_fini,
+};
+
+int xe_execlist_init(struct xe_gt *gt)
+{
+	/* GuC submission enabled, nothing to do */
+	if (xe_gt_guc_submission_enabled(gt))
+		return 0;
+
+	gt->engine_ops = &execlist_engine_ops;
+
+	return 0;
 }

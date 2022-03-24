@@ -59,6 +59,8 @@ xe-y += xe_bb.o \
 	xe_mmio.o \
 	xe_module.o \
 	xe_pci.o \
+	xe_query.o \
+	xe_ring_ops.o \
 	xe_sa.o \
 	xe_sched_job.o \
 	xe_sync.o \

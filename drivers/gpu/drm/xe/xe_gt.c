@@ -13,9 +13,10 @@
 #include "xe_force_wake.h"
 #include "xe_ggtt.h"
 #include "xe_gt.h"
-#include "xe_guc_submit.h"
+#include "xe_hw_fence.h"
 #include "xe_migrate.h"
 #include "xe_mmio.h"
+#include "xe_ring_ops.h"
 #include "xe_sa.h"
 #include "xe_ttm_gtt_mgr.h"
 #include "xe_ttm_vram_mgr.h"
@@ -115,28 +116,29 @@ static int gt_ttm_mgr_init(struct xe_gt *gt)
 	return 0;
 }
 
-/* FIXME: Likely layered wrong, push to backends */
-static const struct xe_engine_ops execlist_ops = {
-	.init = xe_execlist_engine_init,
-	.fini = xe_execlist_engine_fini,
-};
-
-static const struct xe_engine_ops guc_ops = {
-	.init = xe_guc_engine_init,
-	.fini = xe_guc_engine_fini,
-};
-
-static void gt_set_engine_ops(struct xe_gt *gt)
+static void gt_hw_engine_setup_logical_mapping(struct xe_gt *gt)
 {
-	if (xe_gt_guc_submission_enabled(gt))
-		gt->eops = &guc_ops;
-	else
-		gt->eops = &execlist_ops;
+	int class;
+
+	/* FIXME: Doing a simple logical mapping that works for most hardware */
+	for (class = 0; class < XE_ENGINE_CLASS_MAX; ++class) {
+		struct xe_hw_engine *hwe;
+		enum xe_hw_engine_id id;
+		int logical_instance = 0;
+
+		for_each_hw_engine(hwe, gt, id)
+			if (hwe->class == class)
+				hwe->logical_instance = logical_instance++;
+	}
 }
 
 static void gt_fini(struct drm_device *drm, void *arg)
 {
 	struct xe_gt *gt = arg;
+	int i;
+
+	for (i = 0; i < XE_ENGINE_CLASS_MAX; ++i)
+		xe_hw_fence_irq_finish(&gt->fence_irq[i]);
 
 	if (gt->mem.vram.mapping)
 		iounmap(gt->mem.vram.mapping);
@@ -165,10 +167,15 @@ int xe_gt_init(struct xe_gt *gt)
 	primelockdep(gt);
 	INIT_WORK(&gt->reset.worker, gt_reset_worker);
 
+	for (i = 0; i < XE_ENGINE_CLASS_MAX; ++i) {
+		gt->ring_ops[i] = xe_ring_ops_get(gt, i);
+		xe_hw_fence_irq_init(&gt->fence_irq[i]);
+	}
+
 	xe_force_wake_init(gt, gt->mmio.fw);
 	err = xe_force_wake_get(gt->mmio.fw, XE_FORCEWAKE_ALL);
 	if (err)
-		return err;
+		goto err_hw_fence_irq;
 
 	tgl_setup_private_ppat(gt);
 
@@ -184,13 +191,16 @@ int xe_gt_init(struct xe_gt *gt)
 	err = xe_uc_init(&gt->uc);
 	XE_WARN_ON(err);
 
-	gt_set_engine_ops(gt);
+	err = xe_execlist_init(gt);
+	if (err)
+		goto err_ttm_mgr;
 
 	for (i = 0; i < ARRAY_SIZE(gt->hw_engines); i++) {
 		err = xe_hw_engine_init(gt, &gt->hw_engines[i], i);
 		if (err)
 			goto err_ttm_mgr;
 	}
+	gt_hw_engine_setup_logical_mapping(gt);
 
 	err = xe_sa_bo_manager_init(gt, &gt->kernel_bb_pool, SZ_1M, 16);
 	if (err)
@@ -221,6 +231,9 @@ err_ttm_mgr:
 		iounmap(gt->mem.vram.mapping);
 err_force_wake:
 	xe_force_wake_put(gt->mmio.fw, XE_FORCEWAKE_ALL);
+err_hw_fence_irq:
+	for (i = 0; i < XE_ENGINE_CLASS_MAX; ++i)
+		xe_hw_fence_irq_finish(&gt->fence_irq[i]);
 
 	return err;
 }
@@ -315,13 +328,15 @@ void xe_gt_reset_async(struct xe_gt *gt)
 
 struct xe_hw_engine *xe_gt_hw_engine(struct xe_gt *gt,
 				     enum xe_engine_class class,
-				     uint16_t instance)
+				     uint16_t instance, bool logical)
 {
 	struct xe_hw_engine *hwe;
 	enum xe_hw_engine_id id;
 
 	for_each_hw_engine(hwe, gt, id)
-		if (hwe->class == class && hwe->instance == instance)
+		if (hwe->class == class &&
+		    ((!logical && hwe->instance == instance) ||
+		    (logical && hwe->logical_instance == instance)))
 			return hwe;
 
 	return NULL;

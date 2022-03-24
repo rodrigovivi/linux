@@ -16,6 +16,7 @@ struct xe_device;
 struct xe_file;
 
 struct xe_engine *xe_engine_create(struct xe_device *xe, struct xe_vm *vm,
+				   u32 logical_mask, u16 width,
 				   struct xe_hw_engine *hw_engine, u32 flags);
 void xe_engine_fini(struct xe_engine *e);
 void xe_engine_destroy(struct kref *ref);
@@ -31,6 +32,11 @@ static inline struct xe_engine *xe_engine_get(struct xe_engine *engine)
 static inline void xe_engine_put(struct xe_engine *engine)
 {
 	kref_put(&engine->refcount, xe_engine_destroy);
+}
+
+static inline bool xe_engine_is_parallel(struct xe_engine *engine)
+{
+	return engine->width > 1;
 }
 
 #define xe_engine_assert_held(e) \

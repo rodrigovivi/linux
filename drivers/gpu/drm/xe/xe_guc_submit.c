@@ -4,24 +4,28 @@
  */
 
 #include <linux/bitfield.h>
-#include <linux/kthread.h>
+#include <linux/bitmap.h>
+#include <linux/circ_buf.h>
+#include <linux/delay.h>
+#include <linux/dma-fence-array.h>
 
 #include <drm/drm_managed.h>
 
+#include "xe_device.h"
 #include "xe_engine.h"
+#include "xe_guc.h"
 #include "xe_guc_ct.h"
 #include "xe_guc_engine_types.h"
-#include "xe_guc_types.h"
 #include "xe_guc_submit.h"
 #include "xe_gt.h"
 #include "xe_force_wake.h"
 #include "xe_hw_fence.h"
 #include "xe_lrc.h"
 #include "xe_macros.h"
+#include "xe_ring_ops_types.h"
 #include "xe_sched_job.h"
 #include "xe_trace.h"
 
-#include "../i915/gt/intel_gpu_commands.h"
 #include "../i915/gt/intel_lrc_reg.h"
 
 static struct xe_gt *
@@ -51,7 +55,6 @@ engine_to_guc(struct xe_engine *e)
 #define ENGINE_STATE_PENDING_ENABLE	BIT(2)
 #define ENGINE_STATE_PENDING_DISABLE	BIT(3)
 #define ENGINE_STATE_DESTROYED		BIT(4)
-#define ENGINE_STATE_USED		BIT(5)
 
 static bool engine_registered(struct xe_engine *e)
 {
@@ -61,6 +64,11 @@ static bool engine_registered(struct xe_engine *e)
 static void set_engine_registered(struct xe_engine *e)
 {
 	e->guc->state |= ENGINE_STATE_REGISTERED;
+}
+
+static void clear_engine_registered(struct xe_engine *e)
+{
+	e->guc->state &= ~ENGINE_STATE_REGISTERED;
 }
 
 static bool engine_enabled(struct xe_engine *e)
@@ -128,16 +136,6 @@ static void set_engine_banned(struct xe_engine *e)
 	e->flags |= ENGINE_FLAG_BANNED;
 }
 
-static bool engine_used(struct xe_engine *e)
-{
-	return (e->guc->state & ENGINE_STATE_USED);
-}
-
-static void set_engine_used(struct xe_engine *e)
-{
-	e->guc->state |= ENGINE_STATE_USED;
-}
-
 static bool engine_reset(struct xe_engine *e)
 {
 	return e->guc->reset;
@@ -148,12 +146,23 @@ static void set_engine_reset(struct xe_engine *e)
 	e->guc->reset = true;
 }
 
+static bool engine_killed(struct xe_engine *e)
+{
+	return e->guc->killed;
+}
+
+static void set_engine_killed(struct xe_engine *e)
+{
+	e->guc->killed = true;
+}
+
 static void guc_submit_fini(struct drm_device *drm, void *arg)
 {
 	struct xe_guc *guc = arg;
 
 	xa_destroy(&guc->submission_state.engine_lookup);
 	ida_destroy(&guc->submission_state.guc_ids);
+	bitmap_free(guc->submission_state.guc_ids_bitmap);
 }
 
 static void primelockdep(struct xe_guc *guc)
@@ -169,10 +178,33 @@ static void primelockdep(struct xe_guc *guc)
 #endif
 }
 
+static int guc_engine_init(struct xe_engine *e);
+static void guc_engine_kill(struct xe_engine *e);
+static void guc_engine_fini(struct xe_engine *e);
+
+static const struct xe_engine_ops guc_engine_ops = {
+	.init = guc_engine_init,
+	.kill = guc_engine_kill,
+	.fini = guc_engine_fini,
+};
+
+#define GUC_ID_MAX		65535
+#define GUC_ID_NUMBER_MLRC	4096
+#define GUC_ID_NUMBER_SLRC	(GUC_ID_MAX - GUC_ID_NUMBER_MLRC)
+#define GUC_ID_START_MLRC	GUC_ID_NUMBER_SLRC
+
 int xe_guc_submit_init(struct xe_guc *guc)
 {
 	struct xe_device *xe = guc_to_xe(guc);
+	struct xe_gt *gt = guc_to_gt(guc);
 	int err;
+
+	guc->submission_state.guc_ids_bitmap =
+		bitmap_zalloc(GUC_ID_NUMBER_MLRC, GFP_KERNEL);
+	if (!guc->submission_state.guc_ids_bitmap)
+		return -ENOMEM;
+
+	gt->engine_ops = &guc_engine_ops;
 
 	mutex_init(&guc->submission_state.lock);
 	xa_init(&guc->submission_state.engine_lookup);
@@ -186,8 +218,6 @@ int xe_guc_submit_init(struct xe_guc *guc)
 
 	return 0;
 }
-
-#define GUC_ID_MAX	65535
 
 static int alloc_guc_id(struct xe_guc *guc, struct xe_engine *e)
 {
@@ -203,11 +233,19 @@ static int alloc_guc_id(struct xe_guc *guc, struct xe_engine *e)
 	 */
 	lockdep_assert_held(&guc->submission_state.lock);
 
-	ret = ida_simple_get(&guc->submission_state.guc_ids, 0,
-			     GUC_ID_MAX, GFP_NOWAIT);
+	if (xe_engine_is_parallel(e))
+		ret = bitmap_find_free_region(guc->submission_state.guc_ids_bitmap,
+					      GUC_ID_NUMBER_MLRC,
+					      order_base_2(e->width));
+	else
+		ret = ida_simple_get(&guc->submission_state.guc_ids, 0,
+				     GUC_ID_NUMBER_SLRC, GFP_NOWAIT);
 	if (ret < 0)
 		return ret;
+
 	e->guc->id = ret;
+	if (xe_engine_is_parallel(e))
+		e->guc->id += GUC_ID_START_MLRC;
 
 	ptr = xa_store(&guc->submission_state.engine_lookup,
 		       e->guc->id, e, GFP_NOWAIT);
@@ -227,7 +265,11 @@ static void release_guc_id(struct xe_guc *guc, struct xe_engine *e)
 {
 	mutex_lock(&guc->submission_state.lock);
 	xa_erase(&guc->submission_state.engine_lookup, e->guc->id);
-	ida_simple_remove(&guc->submission_state.guc_ids, e->guc->id);
+	if (xe_engine_is_parallel(e))
+		bitmap_release_region(guc->submission_state.guc_ids_bitmap,
+				      e->guc->id, order_base_2(e->width));
+	else
+		ida_simple_remove(&guc->submission_state.guc_ids, e->guc->id);
 	mutex_unlock(&guc->submission_state.lock);
 }
 
@@ -297,24 +339,71 @@ static void set_min_preemption_timeout(struct xe_guc *guc, struct xe_engine *e)
 		       __guc_engine_policy_action_size(&policy), 0, 0);
 }
 
-/* FIXME: Move to helper / remove e->hwe references */
-static u8 engine_class_to_guc_class(enum xe_engine_class class)
+#define PARALLEL_SCRATCH_SIZE	2048
+#define WQ_SIZE			(PARALLEL_SCRATCH_SIZE / 2)
+#define WQ_OFFSET		(PARALLEL_SCRATCH_SIZE - WQ_SIZE)
+#define CACHELINE_BYTES		64
+
+struct sync_semaphore {
+	u32 semaphore;
+	u8 unused[CACHELINE_BYTES - sizeof(u32)];
+};
+
+struct parallel_scratch {
+	struct guc_sched_wq_desc wq_desc;
+
+	struct sync_semaphore go;
+	struct sync_semaphore join[XE_HW_ENGINE_MAX_INSTANCE];
+
+	u8 unused[WQ_OFFSET - sizeof(struct guc_sched_wq_desc) -
+		sizeof(struct sync_semaphore) * (XE_HW_ENGINE_MAX_INSTANCE + 1)];
+
+	u32 wq[WQ_SIZE / sizeof(u32)];
+};
+
+#define parallel_read(map_, field_)				\
+	dma_buf_map_read_field(&map_, struct parallel_scratch,	\
+			       field_)
+#define parallel_write(map_, field_, val_)			\
+	dma_buf_map_write_field(&map_, struct parallel_scratch,	\
+				field_, val_)
+
+static void __register_mlrc_engine(struct xe_guc *guc,
+				   struct xe_engine *e,
+				   struct guc_ctxt_registration_info *info)
 {
-	switch (class) {
-	case XE_ENGINE_CLASS_RENDER:
-		return GUC_RENDER_CLASS;
-	case XE_ENGINE_CLASS_VIDEO_DECODE:
-		return GUC_VIDEO_CLASS;
-	case XE_ENGINE_CLASS_VIDEO_ENHANCE:
-		return GUC_VIDEOENHANCE_CLASS;
-	case XE_ENGINE_CLASS_COPY:
-		return GUC_BLITTER_CLASS;
-	case XE_ENGINE_CLASS_OTHER:
-	case XE_ENGINE_CLASS_COMPUTE:
-	default:
-		XE_WARN_ON(class);
-		return -1;
+#define MAX_MLRC_REG_SIZE      (11 + XE_HW_ENGINE_MAX_INSTANCE * 2)
+	u32 action [MAX_MLRC_REG_SIZE];
+	int len = 0;
+	int i;
+
+	XE_BUG_ON(!xe_engine_is_parallel(e));
+
+	action[len++] = XE_GUC_ACTION_REGISTER_CONTEXT_MULTI_LRC;
+	action[len++] = info->flags;
+	action[len++] = info->context_idx;
+	action[len++] = info->engine_class;
+	action[len++] = info->engine_submit_mask;
+	action[len++] = info->wq_desc_lo;
+	action[len++] = info->wq_desc_hi;
+	action[len++] = info->wq_base_lo;
+	action[len++] = info->wq_base_hi;
+	action[len++] = info->wq_size;
+	action[len++] = e->width;
+	action[len++] = info->hwlrca_lo;
+	action[len++] = info->hwlrca_hi;
+
+	for (i = 1; i < e->width; ++i) {
+		struct xe_lrc *lrc = e->lrc + i;
+
+		action[len++] = lower_32_bits(xe_lrc_descriptor(lrc));
+		action[len++] = upper_32_bits(xe_lrc_descriptor(lrc));
 	}
+
+	XE_BUG_ON(len > MAX_MLRC_REG_SIZE);
+#undef MAX_MLRC_REG_SIZE
+
+	xe_guc_ct_send(&guc->ct, action, len, 0, 0);
 }
 
 static void __register_engine(struct xe_guc *guc,
@@ -341,37 +430,154 @@ static void __register_engine(struct xe_guc *guc,
 static void register_engine(struct xe_engine *e)
 {
 	struct xe_guc *guc = engine_to_guc(e);
-	struct xe_lrc *lrc = &e->lrc;
+	struct xe_lrc *lrc = e->lrc;
 	struct guc_ctxt_registration_info info;
 
 	XE_BUG_ON(engine_registered(e));
 
 	memset(&info, 0, sizeof(info));
 	info.context_idx = e->guc->id;
-	info.engine_class = engine_class_to_guc_class(e->hwe->class);
-	info.engine_submit_mask = BIT(e->hwe->instance);
+	info.engine_class = xe_engine_class_to_guc_class(e->class);
+	info.engine_submit_mask = e->logical_mask;
 	info.hwlrca_lo = lower_32_bits(xe_lrc_descriptor(lrc));
 	info.hwlrca_hi = upper_32_bits(xe_lrc_descriptor(lrc));
 	info.flags = CONTEXT_REGISTRATION_FLAG_KMD;
 
+	if (xe_engine_is_parallel(e)) {
+		u32 ggtt_addr = xe_lrc_parallel_ggtt_addr(lrc);
+		struct dma_buf_map map = xe_lrc_parallel_map(lrc);
+
+		info.wq_desc_lo = lower_32_bits(ggtt_addr +
+			offsetof(struct parallel_scratch, wq_desc));
+		info.wq_desc_hi = upper_32_bits(ggtt_addr +
+			offsetof(struct parallel_scratch, wq_desc));
+		info.wq_base_lo = lower_32_bits(ggtt_addr +
+			offsetof(struct parallel_scratch, wq[0]));
+		info.wq_base_hi = upper_32_bits(ggtt_addr +
+			offsetof(struct parallel_scratch, wq[0]));
+		info.wq_size = WQ_SIZE;
+
+		e->guc->wqi_head = 0;
+		e->guc->wqi_tail = 0;
+		dma_buf_map_memset(&map, 0, PARALLEL_SCRATCH_SIZE - WQ_SIZE);
+		parallel_write(map, wq_desc.wq_status, WQ_STATUS_ACTIVE);
+	}
+
 	set_engine_registered(e);
 	trace_xe_engine_register(e);
-	__register_engine(guc, &info);
+	if (xe_engine_is_parallel(e))
+		__register_mlrc_engine(guc, e, &info);
+	else
+		__register_engine(guc, &info);
 	init_policies(guc, e);
+}
+
+static u32 wq_space_until_wrap(struct xe_engine *e)
+{
+	return (WQ_SIZE - e->guc->wqi_tail);
+}
+
+static int wq_wait_for_space(struct xe_engine *e, u32 wqi_size)
+{
+	struct dma_buf_map map = xe_lrc_parallel_map(e->lrc);
+	unsigned int sleep_period_ms = 1;
+
+#define AVAILABLE_SPACE \
+	CIRC_SPACE(e->guc->wqi_tail, e->guc->wqi_head, WQ_SIZE)
+	if (wqi_size > AVAILABLE_SPACE) {
+try_again:
+		e->guc->wqi_head = parallel_read(map, wq_desc.head);
+		if (wqi_size > AVAILABLE_SPACE) {
+			if (sleep_period_ms == 1024) {
+				xe_gt_reset_async(e->gt);
+				return -ENODEV;
+			}
+
+			msleep(sleep_period_ms);
+			sleep_period_ms <<= 1;
+			goto try_again;
+		}
+	}
+#undef AVAILABLE_SPACE
+
+	return 0;
+}
+
+static int wq_noop_append(struct xe_engine *e)
+{
+	struct dma_buf_map map = xe_lrc_parallel_map(e->lrc);
+	u32 len_dw = wq_space_until_wrap(e) / sizeof(u32) - 1;
+
+	if (wq_wait_for_space(e, wq_space_until_wrap(e)))
+		return -ENODEV;
+
+	XE_BUG_ON(!FIELD_FIT(WQ_LEN_MASK, len_dw));
+
+	parallel_write(map, wq[e->guc->wqi_tail / sizeof(u32)],
+		       FIELD_PREP(WQ_TYPE_MASK, WQ_TYPE_NOOP) |
+		       FIELD_PREP(WQ_LEN_MASK, len_dw));
+	e->guc->wqi_tail = 0;
+
+	return 0;
+}
+
+static void wq_item_append(struct xe_engine *e)
+{
+	struct dma_buf_map map = xe_lrc_parallel_map(e->lrc);
+	u32 wqi[XE_HW_ENGINE_MAX_INSTANCE + 3];
+	u32 wqi_size = (e->width + 3) * sizeof(u32);
+	u32 len_dw = (wqi_size / sizeof(u32)) - 1;
+	int i = 0, j;
+
+	if (wqi_size > wq_space_until_wrap(e)) {
+		if (wq_noop_append(e))
+			return;
+	}
+	if (wq_wait_for_space(e, wqi_size))
+		return;
+
+	wqi[i++] = FIELD_PREP(WQ_TYPE_MASK, WQ_TYPE_MULTI_LRC) |
+		FIELD_PREP(WQ_LEN_MASK, len_dw);
+	wqi[i++] = xe_lrc_descriptor(e->lrc);
+	wqi[i++] = FIELD_PREP(WQ_GUC_ID_MASK, e->guc->id) |
+		FIELD_PREP(WQ_RING_TAIL_MASK, e->lrc->ring.tail / sizeof(u64));
+	wqi[i++] = 0;
+	for (j = 1; j < e->width; ++j) {
+		struct xe_lrc *lrc = e->lrc + j;
+
+		wqi[i++] = lrc->ring.tail / sizeof(u64);
+	}
+
+	XE_BUG_ON(i != wqi_size / sizeof(u32));
+
+	dma_buf_map_incr(&map, offsetof(struct parallel_scratch,
+					wq[e->guc->wqi_tail / sizeof(u32)]));
+	dma_buf_map_memcpy_to(&map, wqi, wqi_size);
+	e->guc->wqi_tail += wqi_size;
+	XE_BUG_ON(e->guc->wqi_tail > WQ_SIZE);
+
+	xe_guc_wb(engine_to_guc(e));
+
+	map = xe_lrc_parallel_map(e->lrc);
+	parallel_write(map, wq_desc.tail, e->guc->wqi_tail);
 }
 
 static void submit_engine(struct xe_engine *e)
 {
 	struct xe_guc *guc = engine_to_guc(e);
-	struct xe_lrc *lrc = &e->lrc;
+	struct xe_lrc *lrc = e->lrc;
 	u32 action[3];
 	u32 g2h_len = 0;
 	u32 num_g2h = 0;
 	int len = 0;
+	bool extra_submit = false;
 
 	XE_BUG_ON(!engine_registered(e));
 
-	xe_lrc_write_ctx_reg(lrc, CTX_RING_TAIL, lrc->ring.tail);
+	if (xe_engine_is_parallel(e))
+		wq_item_append(e);
+	else
+		xe_lrc_write_ctx_reg(lrc, CTX_RING_TAIL, lrc->ring.tail);
 
 	if (!engine_enabled(e)) {
 		action[len++] = XE_GUC_ACTION_SCHED_CONTEXT_MODE_SET;
@@ -379,10 +585,11 @@ static void submit_engine(struct xe_engine *e)
 		action[len++] = GUC_CONTEXT_ENABLE;
 		g2h_len = G2H_LEN_DW_SCHED_CONTEXT_MODE_SET;
 		num_g2h = 1;
+		if (xe_engine_is_parallel(e))
+			extra_submit = true;
 
 		set_engine_pending_enable(e);
 		set_engine_enabled(e);
-		set_engine_used(e);
 		trace_xe_engine_scheduling_enable(e);
 	} else {
 		action[len++] = XE_GUC_ACTION_SCHED_CONTEXT;
@@ -392,64 +599,31 @@ static void submit_engine(struct xe_engine *e)
 	XE_BUG_ON(!engine_enabled(e));
 
 	xe_guc_ct_send(&guc->ct, action, len, g2h_len, num_g2h);
-}
 
-/* FIXME: Just copying execlists to get submission going */
-#define MAX_JOB_SIZE_DW 32
-#define MAX_JOB_SIZE_BYTES (MAX_JOB_SIZE_DW * 4)
+	if (extra_submit) {
+		len = 0;
+		action[len++] = XE_GUC_ACTION_SCHED_CONTEXT;
+		action[len++] = e->guc->id;
+
+		xe_guc_ct_send(&guc->ct, action, len, 0, 0);
+	}
+}
 
 static struct dma_fence *
 guc_engine_run_job(struct drm_sched_job *drm_job)
 {
 	struct xe_sched_job *job = to_xe_sched_job(drm_job);
 	struct xe_engine *e = job->engine;
-	struct xe_lrc *lrc = &job->engine->lrc;
-	uint32_t dw[MAX_JOB_SIZE_DW], i = 0;
 
 	XE_BUG_ON((engine_destroyed(e) || engine_pending_disable(e)) &&
 		  !engine_banned(e));
 
 	trace_xe_sched_job_run(job);
 
-	if (!engine_banned(e)) {
-		u32 ppgtt_flag = 0;
-
+	if (!engine_banned(e) && !engine_killed(e)) {
 		if (!engine_registered(e))
 			register_engine(e);
-
-		dw[i++] = MI_ARB_CHECK | 1 << 8 | 1;
-
-		dw[i++] = (MI_FLUSH_DW + 1) |
-			MI_FLUSH_DW_OP_STOREDW | MI_INVALIDATE_TLB;
-		dw[i++] = xe_lrc_flush_ggtt_addr(lrc) | MI_FLUSH_DW_USE_GTT;
-		dw[i++] = 0;
-		dw[i++] = 0;
-
-		dw[i++] = MI_ARB_CHECK | 1 << 8;
-
-		dw[i++] = MI_STORE_DATA_IMM | BIT(22) /* GGTT */ | 2;
-		dw[i++] = xe_lrc_start_seqno_ggtt_addr(lrc);
-		dw[i++] = 0;
-		dw[i++] = job->fence->seqno;
-
-		if (job->engine->vm)
-			ppgtt_flag = BIT(8);
-
-		dw[i++] = MI_BATCH_BUFFER_START_GEN8 | ppgtt_flag;
-		dw[i++] = lower_32_bits(job->user_batch_addr);
-		dw[i++] = upper_32_bits(job->user_batch_addr);
-
-		dw[i++] = MI_STORE_DATA_IMM | BIT(22) /* GGTT */ | 2;
-		dw[i++] = xe_lrc_seqno_ggtt_addr(lrc);
-		dw[i++] = 0;
-		dw[i++] = job->fence->seqno;
-
-		dw[i++] = MI_USER_INTERRUPT;
-		dw[i++] = MI_ARB_ON_OFF | MI_ARB_ENABLE;
-
-		XE_BUG_ON(i > MAX_JOB_SIZE_DW);
-
-		xe_lrc_write_ring(lrc, dw, i * sizeof(*dw));
+		e->ring_ops->emit_job(job);
 
 		submit_engine(e);
 	}
@@ -464,7 +638,7 @@ static void guc_engine_free_job(struct drm_sched_job *drm_job)
 
 	trace_xe_sched_job_free(job);
 
-	xe_drm_sched_job_free(drm_job);
+	xe_sched_job_free(job);
 	xe_engine_put(e);
 }
 
@@ -512,8 +686,14 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 		 xe_sched_job_seqno(job), e->guc->id);
 	trace_xe_sched_job_timedout(job);
 
+	/* Kernel jobs should never fail, if they do the GT needs a reset */
+	if (e->flags & ENGINE_FLAG_KERNEL) {
+		xe_gt_reset_async(e->gt);
+		goto out;
+	}
+
 	/* Kill the run_job entry point */
-	kthread_park(sched->thread);
+	drm_sched_run_wq_stop(sched);
 
 	/* Engine state now stable, disable scheduling if needed */
 	if (engine_enabled(e)) {
@@ -533,28 +713,52 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 			   guc->submission_state.stopped);
 	}
 
+	/* Stop fence signaling */
+	xe_hw_fence_irq_stop(e->fence_irq);
+
 	/*
 	 * Fence state now stable, stop / start scheduler which cleans up any
 	 * fences that are complete
 	 */
 	list_add(&drm_job->list, &sched->pending_list);
-	kthread_unpark(sched->thread);
+	drm_sched_run_wq_start(sched);
 	drm_sched_set_timeout(&e->guc->sched, MIN_SCHED_TIMEOUT);
 
 	/* Mark all outstanding fences as bad, thus completing them */
 	spin_lock(&sched->job_list_lock);
 	list_for_each_entry(tmp_job, &sched->pending_list, drm.list) {
+		if (test_bit(DMA_FENCE_FLAG_SIGNALED_BIT,
+			     &tmp_job->fence->flags))
+			continue;
+
 		if (!i++)
 			dma_fence_set_error(tmp_job->fence, err);
 		else
 			dma_fence_set_error(tmp_job->fence, -ECANCELED);
+
+		if (dma_fence_is_array(tmp_job->fence)) {
+			struct dma_fence_array *array =
+				to_dma_fence_array(tmp_job->fence);
+			struct dma_fence **child = array->fences;
+			unsigned int nchild = array->num_fences;
+
+			do {
+				struct dma_fence *current_fence = *child++;
+
+				if (test_bit(DMA_FENCE_FLAG_SIGNALED_BIT,
+					     &current_fence->flags))
+					continue;
+				dma_fence_set_error(current_fence, -ECANCELED);
+			} while (--nchild);
+		}
 		trace_xe_sched_job_set_error(tmp_job);
 	}
 	spin_unlock(&sched->job_list_lock);
 
-	/* Kick HW fence IRQ handler to signal fences */
-	xe_hw_fence_irq_run(&e->hwe->fence_irq);
+	/* Start fence signaling */
+	xe_hw_fence_irq_start(e->fence_irq);
 
+out:
 	return DRM_GPU_SCHED_STAT_NOMINAL;
 }
 
@@ -567,6 +771,8 @@ static void __guc_engine_fini_async(struct work_struct *w)
 
 	trace_xe_engine_destroy(e);
 
+	if (e->flags & ENGINE_FLAG_PERSISTENT)
+		xe_device_remove_persitent_engines(gt_to_xe(e->gt), e);
 	release_guc_id(guc, e);
 	drm_sched_entity_fini(&ge->entity);
 	drm_sched_fini(&ge->sched);
@@ -581,7 +787,7 @@ static void guc_engine_fini_async(struct xe_engine *e)
 	queue_work(system_unbound_wq, &e->guc->fini_async);
 }
 
-static void guc_engine_fini(struct xe_guc *guc, struct xe_engine *e)
+static void __guc_engine_fini(struct xe_guc *guc, struct xe_engine *e)
 {
 	/*
 	 * Might be done from within the GPU scheduler, need to do async as we
@@ -593,13 +799,14 @@ static void guc_engine_fini(struct xe_guc *guc, struct xe_engine *e)
 	guc_engine_fini_async(e);
 }
 
-static void guc_engine_cleanup_entity(struct drm_sched_entity *entity)
+#define CLEANUP		1	/* Non-zero values to catch uninitialized msg */
+
+static void guc_engine_process_msg(struct drm_sched_msg *msg)
 {
-	struct xe_guc_engine *ge =
-		container_of(entity, struct xe_guc_engine, entity);
-	struct xe_engine *e = ge->engine;
+	struct xe_engine *e = msg->private_data;
 	struct xe_guc *guc = engine_to_guc(e);
 
+	XE_BUG_ON(msg->opcode != CLEANUP);
 	XE_BUG_ON(!xe_gt_guc_submission_enabled(guc_to_gt(guc)));
 
 	trace_xe_engine_cleanup_entity(e);
@@ -607,18 +814,17 @@ static void guc_engine_cleanup_entity(struct drm_sched_entity *entity)
 	if (engine_enabled(e))
 		disable_scheduling(guc, e);
 	else
-		guc_engine_fini(guc, e);
-	entity->do_cleanup = false;
+		__guc_engine_fini(guc, e);
 }
 
 static const struct drm_sched_backend_ops drm_sched_ops = {
 	.run_job = guc_engine_run_job,
 	.free_job = guc_engine_free_job,
 	.timedout_job = guc_engine_timedout_job,
-	.cleanup_entity = guc_engine_cleanup_entity,
+	.process_msg = guc_engine_process_msg,
 };
 
-int xe_guc_engine_init(struct xe_engine *e)
+static int guc_engine_init(struct xe_engine *e)
 {
 	struct drm_gpu_scheduler *sched;
 	struct xe_guc *guc = engine_to_guc(e);
@@ -635,8 +841,8 @@ int xe_guc_engine_init(struct xe_engine *e)
 	ge->engine = e;
 
 	err = drm_sched_init(&ge->sched, &drm_sched_ops,
-			     e->lrc.ring.size / MAX_JOB_SIZE_BYTES,
-			     64, HZ * 5, NULL, NULL, e->hwe->name);
+			     e->lrc[0].ring.size / MAX_JOB_SIZE_BYTES,
+			     64, HZ * 5, NULL, NULL, e->name);
 	if (err)
 		goto err_free;
 
@@ -660,6 +866,26 @@ int xe_guc_engine_init(struct xe_engine *e)
 
 	mutex_unlock(&guc->submission_state.lock);
 
+	switch (e->class) {
+	case XE_ENGINE_CLASS_RENDER:
+		sprintf(e->name, "rcs%d", e->guc->id);
+		break;
+	case XE_ENGINE_CLASS_VIDEO_DECODE:
+		sprintf(e->name, "vcs%d", e->guc->id);
+		break;
+	case XE_ENGINE_CLASS_VIDEO_ENHANCE:
+		sprintf(e->name, "vecs%d", e->guc->id);
+		break;
+	case XE_ENGINE_CLASS_COPY:
+		sprintf(e->name, "bcs%d", e->guc->id);
+		break;
+	case XE_ENGINE_CLASS_COMPUTE:
+		sprintf(e->name, "ccs%d", e->guc->id);
+		break;
+	default:
+		XE_WARN_ON(e->class);
+	}
+
 	trace_xe_engine_create(e);
 
 	return 0;
@@ -674,35 +900,38 @@ err_free:
 	return err;
 }
 
-void xe_guc_engine_fini(struct xe_engine *e)
+static void guc_engine_kill(struct xe_engine *e)
 {
-	if (engine_used(e))
-		drm_sched_entity_trigger_cleanup(&e->guc->entity);
-	else
-		guc_engine_fini_async(e);
+	trace_xe_engine_kill(e);
+	set_engine_killed(e);
+	drm_sched_set_timeout(&e->guc->sched, MIN_SCHED_TIMEOUT);
+}
+
+static void guc_engine_fini(struct xe_engine *e)
+{
+	INIT_LIST_HEAD(&e->guc->cleanup_msg.link);
+	e->guc->cleanup_msg.opcode = CLEANUP;
+	e->guc->cleanup_msg.private_data = e;
+
+	drm_sched_add_msg(&e->guc->sched, &e->guc->cleanup_msg);
 }
 
 static void guc_engine_stop(struct xe_guc *guc, struct xe_engine *e)
 {
 	struct drm_gpu_scheduler *sched = &e->guc->sched;
-	long timeout = sched->timeout;
 
 	/* Stop scheduling + flush any DRM scheduler operations */
-	timeout = sched->timeout;
-	sched->timeout = MAX_SCHEDULE_TIMEOUT;
-	wake_up_all(&guc->ct.wq);
+	drm_sched_run_wq_stop(sched);
 	cancel_delayed_work_sync(&sched->work_tdr);
-	kthread_park(sched->thread);
-	sched->timeout = timeout;
 
 	/* Clean up lost G2H + reset engine state */
-	if (engine_destroyed(e)) {
+	if (engine_destroyed(e) && engine_registered(e)) {
 		if (engine_banned(e))
 			xe_engine_put(e);
 		else
-			guc_engine_fini(guc, e);
+			__guc_engine_fini(guc, e);
 	}
-	e->guc->state = 0;
+	e->guc->state &= ENGINE_STATE_DESTROYED;
 	trace_xe_engine_stop(e);
 
 	/*
@@ -737,6 +966,8 @@ int xe_guc_submit_stop(struct xe_guc *guc)
 
 	guc->submission_state.stopped = true;
 	smp_mb();
+	wake_up_all(&guc->ct.wq);
+
 	xa_for_each(&guc->submission_state.engine_lookup, index, e)
 		guc_engine_stop(guc, e);
 
@@ -754,13 +985,16 @@ static void guc_engine_start(struct xe_engine *e)
 {
 	struct drm_gpu_scheduler *sched = &e->guc->sched;
 
-	if (!engine_banned(e)) {
+	if (!engine_banned(e) && !engine_killed(e)) {
+		int i;
+
 		trace_xe_engine_resubmit(e);
-		xe_lrc_set_ring_head(&e->lrc, e->lrc.ring.tail);
+		for (i = 0; i < e->width; ++i)
+			xe_lrc_set_ring_head(e->lrc + i, e->lrc[i].ring.tail);
 		drm_sched_resubmit_jobs(sched);
 	}
 
-	kthread_unpark(sched->thread);
+	drm_sched_run_wq_start(sched);
 	drm_sched_set_timeout(sched, sched->timeout);
 }
 
@@ -882,10 +1116,11 @@ int xe_guc_deregister_done_handler(struct xe_guc *guc, u32 *msg, u32 len)
 
 	trace_xe_engine_deregister_done(e);
 
+	clear_engine_registered(e);
 	if (engine_banned(e))
 		xe_engine_put(e);
 	else
-		guc_engine_fini(guc, e);
+		__guc_engine_fini(guc, e);
 
 	return 0;
 }
@@ -921,7 +1156,7 @@ int xe_guc_engine_reset_handler(struct xe_guc *guc, u32 *msg, u32 len)
 	 */
 	set_engine_reset(e);
 	if (!engine_banned(e))
-		drm_sched_set_timeout(&e->guc->sched, 1);
+		drm_sched_set_timeout(&e->guc->sched, MIN_SCHED_TIMEOUT);
 
 	return 0;
 }
@@ -952,25 +1187,57 @@ int xe_guc_engine_reset_failure_handler(struct xe_guc *guc, u32 *msg, u32 len)
 	return 0;
 }
 
+static void guc_engine_wq_print(struct xe_engine *e, struct drm_printer *p)
+{
+	struct dma_buf_map map = xe_lrc_parallel_map(e->lrc);
+	int i;
+
+	drm_printf(p, "\tWQ head: %u (internal), %d (memory)\n",
+		   e->guc->wqi_head, parallel_read(map, wq_desc.head));
+	drm_printf(p, "\tWQ tail: %u (internal), %d (memory)\n",
+		   e->guc->wqi_tail, parallel_read(map, wq_desc.tail));
+	drm_printf(p, "\tWQ status: %u\n",
+		   parallel_read(map, wq_desc.wq_status));
+	if (parallel_read(map, wq_desc.head) !=
+	    parallel_read(map, wq_desc.tail)) {
+		for (i = parallel_read(map, wq_desc.head);
+		     i != parallel_read(map, wq_desc.tail);
+		     i = (i + sizeof(u32)) % WQ_SIZE)
+			drm_printf(p, "\tWQ[%ld]: 0x%08x\n", i / sizeof(u32),
+				   parallel_read(map, wq[i / sizeof(u32)]));
+	}
+}
+
 static void guc_engine_print(struct xe_engine *e, struct drm_printer *p)
 {
 	struct drm_gpu_scheduler *sched = &e->guc->sched;
 	struct xe_sched_job *job;
-	struct xe_lrc *lrc = &e->lrc;
+	int i;
 
 	drm_printf(p, "\nGuC ID: %d\n", e->guc->id);
+	drm_printf(p, "\tName: %s\n", e->name);
+	drm_printf(p, "\tClass: %d\n", e->class);
+	drm_printf(p, "\tLogical mask: 0x%x\n", e->logical_mask);
 	drm_printf(p, "\tRef: %d\n", kref_read(&e->refcount));
 	drm_printf(p, "\tTimeout: %ld\n", sched->timeout);
-	drm_printf(p, "\tHW Context Desc: 0x%08x\n",
-		   lower_32_bits(xe_lrc_ggtt_addr(lrc)));
-	drm_printf(p, "\tLRC Head: (memory) %u\n",
-		   xe_lrc_ring_head(lrc));
-	drm_printf(p, "\tLRC Tail: (internal) %u, (memory) %u\n",
-		   lrc->ring.tail, xe_lrc_read_ctx_reg(lrc, CTX_RING_TAIL));
-	drm_printf(p, "\tStart seqno: (memory) %d\n", xe_lrc_start_seqno(lrc));
-	drm_printf(p, "\tSeqno: (memory) %d\n", xe_lrc_seqno(lrc));
+	for (i = 0; i < e->width; ++i ) {
+		struct xe_lrc *lrc = e->lrc + i;
+
+		drm_printf(p, "\tHW Context Desc: 0x%08x\n",
+			   lower_32_bits(xe_lrc_ggtt_addr(lrc)));
+		drm_printf(p, "\tLRC Head: (memory) %u\n",
+			   xe_lrc_ring_head(lrc));
+		drm_printf(p, "\tLRC Tail: (internal) %u, (memory) %u\n",
+			   lrc->ring.tail,
+			   xe_lrc_read_ctx_reg(lrc, CTX_RING_TAIL));
+		drm_printf(p, "\tStart seqno: (memory) %d\n",
+			   xe_lrc_start_seqno(lrc));
+		drm_printf(p, "\tSeqno: (memory) %d\n", xe_lrc_seqno(lrc));
+	}
 	drm_printf(p, "\tSchedule State: 0x%x\n", e->guc->state);
 	drm_printf(p, "\tFlags: 0x%lx\n", e->flags);
+	if (xe_engine_is_parallel(e))
+		guc_engine_wq_print(e, p);
 
 	spin_lock(&sched->job_list_lock);
 	list_for_each_entry(job, &sched->pending_list, drm.list)

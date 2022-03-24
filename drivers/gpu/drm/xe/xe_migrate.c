@@ -41,12 +41,12 @@ static void xe_migrate_fini(struct drm_device *dev, void *arg)
 
 struct xe_migrate *xe_migrate_init(struct xe_gt *gt)
 {
-	struct xe_hw_engine *hwe;
+	struct xe_hw_engine *hwe, *hwe0 = NULL;
 	struct xe_device *xe = gt_to_xe(gt);
 	enum xe_hw_engine_id id;
 	struct xe_migrate *m;
+	u32 logical_mask = 0;
 	int err;
-	bool found = false;
 
 	m = drmm_kzalloc(&xe->drm, sizeof(*m), GFP_KERNEL);
 	if (!m)
@@ -54,12 +54,13 @@ struct xe_migrate *xe_migrate_init(struct xe_gt *gt)
 
 	for_each_hw_engine (hwe, gt, id) {
 		if (hwe->class == XE_ENGINE_CLASS_COPY) {
-			found = true;
-			break;
+			logical_mask |= BIT(hwe->logical_instance);
+			if (!hwe0)
+				hwe0 = hwe;
 		}
 	}
 
-	if (!found)
+	if (!logical_mask)
 		return ERR_PTR(-ENODEV);
 
 	m->gt = gt;
@@ -68,7 +69,8 @@ struct xe_migrate *xe_migrate_init(struct xe_gt *gt)
 	if (err)
 		return ERR_PTR(err);
 
-	m->eng = xe_engine_create(xe, NULL, hwe, ENGINE_FLAG_KERNEL);
+	m->eng = xe_engine_create(xe, NULL, logical_mask,
+				  1, hwe0, ENGINE_FLAG_KERNEL);
 	if (IS_ERR(m->eng)) {
 		xe_ggtt_remove_node(gt->mem.ggtt, &m->copy_node);
 		return ERR_CAST(m->eng);
@@ -210,7 +212,7 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 		continue;
 
 err_job:
-		xe_sched_job_destroy(job);
+		xe_sched_job_free(job);
 err:
 		mutex_unlock(&m->job_mutex);
 		xe_bb_free(bb, NULL);
@@ -292,7 +294,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		continue;
 
 err_job:
-		xe_sched_job_destroy(job);
+		xe_sched_job_free(job);
 		mutex_unlock(&m->job_mutex);
 err:
 		xe_bb_free(bb, NULL);
