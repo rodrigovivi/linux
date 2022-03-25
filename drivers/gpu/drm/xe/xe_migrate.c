@@ -438,7 +438,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	mutex_unlock(&m->job_mutex);
 
 	for (i = 0; i < num_syncs; i++)
-		xe_sync_entry_signal(&syncs[i], fence);
+		xe_sync_entry_signal(&syncs[i], job, fence);
 
 	xe_bb_free(bb, fence);
 
