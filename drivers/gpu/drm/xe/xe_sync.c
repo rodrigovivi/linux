@@ -1,5 +1,7 @@
 #include "xe_sync.h"
 
+#include <linux/kthread.h>
+#include <linux/sched/mm.h>
 #include <linux/uaccess.h>
 #include <drm/xe_drm.h>
 #include <drm/drm_print.h>
@@ -11,9 +13,74 @@
 
 #define SYNC_FLAGS_TYPE_MASK 0x3
 
+struct user_fence {
+	struct kref refcount;
+	struct dma_fence_cb cb;
+	struct work_struct worker;
+	struct mm_struct *mm;
+	u64 __user *addr;
+	u64 value;
+};
+
+static void user_fence_destroy(struct kref *kref)
+{
+	struct user_fence *ufence = container_of(kref, struct user_fence,
+						 refcount);
+
+	mmdrop(ufence->mm);
+	kfree(ufence);
+}
+
+static void user_fence_get(struct user_fence *ufence)
+{
+	kref_get(&ufence->refcount);
+}
+
+static void user_fence_put(struct user_fence *ufence)
+{
+	kref_put(&ufence->refcount, user_fence_destroy);
+}
+
+static struct user_fence *user_fence_create(u64 addr, u64 value)
+{
+	struct user_fence *ufence;
+
+	ufence = kmalloc(sizeof(*ufence), GFP_KERNEL);
+	if (!ufence)
+		return NULL;
+
+	kref_init(&ufence->refcount);
+	ufence->addr = u64_to_user_ptr(addr);
+	ufence->value = value;
+	ufence->mm = current->mm;
+	mmgrab(ufence->mm);
+
+	return ufence;
+}
+
+static void user_fence_worker(struct work_struct *w)
+{
+	struct user_fence *ufence = container_of(w, struct user_fence, worker);
+
+	kthread_use_mm(ufence->mm);
+	if (copy_to_user(ufence->addr, &ufence->value, sizeof(ufence->value)))
+		XE_WARN_ON("Copy to user failed");
+	kthread_unuse_mm(ufence->mm);
+	user_fence_put(ufence);
+}
+
+static void user_fence_cb(struct dma_fence *fence, struct dma_fence_cb *cb)
+{
+	struct user_fence *ufence = container_of(cb, struct user_fence, cb);
+
+	INIT_WORK(&ufence->worker, user_fence_worker);
+	queue_work(system_unbound_wq, &ufence->worker);
+}
+
 int xe_sync_entry_parse(struct xe_device *xe, struct xe_file *xef,
 			struct xe_sync_entry *sync,
-			struct drm_xe_sync __user *sync_user)
+			struct drm_xe_sync __user *sync_user,
+			bool exec, bool compute)
 {
 	struct drm_xe_sync sync_in;
 	int err;
@@ -21,11 +88,18 @@ int xe_sync_entry_parse(struct xe_device *xe, struct xe_file *xef,
 	if (copy_from_user(&sync_in, sync_user, sizeof(*sync_user)))
 		return -EFAULT;
 
-	if (XE_IOCTL_ERR(xe, sync_in.flags & ~(SYNC_FLAGS_TYPE_MASK | DRM_XE_SYNC_SIGNAL)))
+	if (XE_IOCTL_ERR(xe, sync_in.flags &
+			 ~(SYNC_FLAGS_TYPE_MASK | DRM_XE_SYNC_SIGNAL)))
 		return -EINVAL;
 
 	switch (sync_in.flags & SYNC_FLAGS_TYPE_MASK) {
 	case DRM_XE_SYNC_SYNCOBJ:
+		if (XE_IOCTL_ERR(xe, compute))
+			return -ENOTSUPP;
+
+		if (XE_IOCTL_ERR(xe, upper_32_bits(sync_in.addr)))
+			return -EINVAL;
+
 		sync->syncobj = drm_syncobj_find(xef->drm, sync_in.handle);
 		if (XE_IOCTL_ERR(xe, !sync->syncobj))
 			return -ENOENT;
@@ -38,6 +112,12 @@ int xe_sync_entry_parse(struct xe_device *xe, struct xe_file *xef,
 		break;
 
 	case DRM_XE_SYNC_TIMELINE_SYNCOBJ:
+		if (XE_IOCTL_ERR(xe, compute))
+			return -ENOTSUPP;
+
+		if (XE_IOCTL_ERR(xe, upper_32_bits(sync_in.addr)))
+			return -EINVAL;
+
 		if (XE_IOCTL_ERR(xe, sync_in.timeline_value == 0))
 			return -EINVAL;
 
@@ -66,6 +146,24 @@ int xe_sync_entry_parse(struct xe_device *xe, struct xe_file *xef,
 			return -EINVAL;
 		break;
 
+	case DRM_XE_SYNC_USER_FENCE:
+		if (XE_IOCTL_ERR(xe, !(sync_in.flags & DRM_XE_SYNC_SIGNAL)))
+			return -ENOTSUPP;
+
+		if (XE_IOCTL_ERR(xe, sync_in.addr & 0x7))
+			return -EINVAL;
+
+		if (exec) {
+			sync->addr = sync_in.addr;
+		} else {
+			sync->ufence = user_fence_create(sync_in.addr,
+							 sync_in.timeline_value);
+			if (XE_IOCTL_ERR(xe, !sync->ufence))
+				return -ENOMEM;
+		}
+
+		break;
+
 	default:
 		return -EINVAL;
 	}
@@ -90,7 +188,8 @@ int xe_sync_entry_add_deps(struct xe_sync_entry *sync, struct xe_sched_job *job)
 	return 0;
 }
 
-void xe_sync_entry_signal(struct xe_sync_entry *sync, struct dma_fence *fence)
+void xe_sync_entry_signal(struct xe_sync_entry *sync, struct xe_sched_job *job,
+			  struct dma_fence *fence)
 {
 	if (!(sync->flags & DRM_XE_SYNC_SIGNAL))
 		return;
@@ -105,6 +204,21 @@ void xe_sync_entry_signal(struct xe_sync_entry *sync, struct dma_fence *fence)
 		sync->chain_fence = NULL;
 	} else if (sync->syncobj) {
 		drm_syncobj_replace_fence(sync->syncobj, fence);
+	} else if (sync->ufence) {
+		int err;
+
+		user_fence_get(sync->ufence);
+		err = dma_fence_add_callback(fence, &sync->ufence->cb,
+					     user_fence_cb);
+		if (err) {
+			XE_WARN_ON("failed to add user fence");
+			user_fence_put(sync->ufence);
+		}
+	} else if ((sync->flags & SYNC_FLAGS_TYPE_MASK) ==
+		   DRM_XE_SYNC_USER_FENCE) {
+		job->user_fence.used = true;
+		job->user_fence.addr = sync->addr;
+		job->user_fence.value = sync->timeline_value;
 	}
 
 	/* TODO: external BO? */
@@ -118,4 +232,6 @@ void xe_sync_entry_cleanup(struct xe_sync_entry *sync)
 		dma_fence_put(sync->fence);
 	if (sync->chain_fence)
 		dma_fence_put(&sync->chain_fence->base);
+	if (sync->ufence)
+		user_fence_put(sync->ufence);
 }

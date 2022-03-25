@@ -61,6 +61,8 @@ static void invalidate_tlb(struct xe_sched_job *job, u32 *dw, u32 *pi)
 	*pi = i;
 }
 
+#define MI_STORE_QWORD_IMM_GEN8_POSTED (MI_INSTR(0x20, 3) | (1 << 21))
+
 static void __emit_job_gen12(struct xe_sched_job *job, struct xe_lrc *lrc,
 			     u64 batch_addr, u32 seqno)
 {
@@ -81,6 +83,14 @@ static void __emit_job_gen12(struct xe_sched_job *job, struct xe_lrc *lrc,
 	dw[i++] = MI_BATCH_BUFFER_START_GEN8 | ppgtt_flag;
 	dw[i++] = lower_32_bits(batch_addr);
 	dw[i++] = upper_32_bits(batch_addr);
+
+	if (job->user_fence.used) {
+		dw[i++] = MI_STORE_QWORD_IMM_GEN8_POSTED;
+		dw[i++] = lower_32_bits(job->user_fence.addr);
+		dw[i++] = upper_32_bits(job->user_fence.addr);
+		dw[i++] = lower_32_bits(job->user_fence.value);
+		dw[i++] = upper_32_bits(job->user_fence.value);
+	}
 
 	dw[i++] = MI_STORE_DATA_IMM | BIT(22) /* GGTT */ | 2;
 	dw[i++] = xe_lrc_seqno_ggtt_addr(lrc);
