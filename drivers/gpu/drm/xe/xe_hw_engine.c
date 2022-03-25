@@ -9,6 +9,7 @@
 #include <drm/drm_managed.h>
 
 #include "xe_bo.h"
+#include "xe_device_types.h"
 #include "xe_execlist.h"
 #include "xe_force_wake.h"
 #include "xe_gt.h"
@@ -302,6 +303,8 @@ err_name:
 
 void xe_hw_engine_handle_irq(struct xe_hw_engine *hwe, uint16_t intr_vec)
 {
+	wake_up_all(&gt_to_xe(hwe->gt)->ufence_wq);
+
 	if (hwe->irq_handler)
 		hwe->irq_handler(hwe, intr_vec);
 
