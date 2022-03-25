@@ -41,8 +41,9 @@ static inline u16 xe_engine_class_to_guc_class(enum xe_engine_class class)
 		return GUC_VIDEOENHANCE_CLASS;
 	case XE_ENGINE_CLASS_COPY:
 		return GUC_BLITTER_CLASS;
-	case XE_ENGINE_CLASS_OTHER:
 	case XE_ENGINE_CLASS_COMPUTE:
+		return GUC_COMPUTE_CLASS;
+	case XE_ENGINE_CLASS_OTHER:
 	default:
 		XE_WARN_ON(class);
 		return -1;
