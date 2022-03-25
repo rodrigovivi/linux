@@ -70,6 +70,9 @@ struct xe_device {
 		struct list_head list;
 	} persitent_engines;
 
+	/** @ufence_wq: user fence wait queue */
+	wait_queue_head_t ufence_wq;
+
 	/** @gt: graphics tile */
 	struct xe_gt gt;
 };

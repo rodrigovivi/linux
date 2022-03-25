@@ -14,6 +14,7 @@
 #define SYNC_FLAGS_TYPE_MASK 0x3
 
 struct user_fence {
+	struct xe_device *xe;
 	struct kref refcount;
 	struct dma_fence_cb cb;
 	struct work_struct worker;
@@ -41,7 +42,8 @@ static void user_fence_put(struct user_fence *ufence)
 	kref_put(&ufence->refcount, user_fence_destroy);
 }
 
-static struct user_fence *user_fence_create(u64 addr, u64 value)
+static struct user_fence *user_fence_create(struct xe_device *xe, u64 addr,
+					    u64 value)
 {
 	struct user_fence *ufence;
 
@@ -49,6 +51,7 @@ static struct user_fence *user_fence_create(u64 addr, u64 value)
 	if (!ufence)
 		return NULL;
 
+	ufence->xe = xe;
 	kref_init(&ufence->refcount);
 	ufence->addr = u64_to_user_ptr(addr);
 	ufence->value = value;
@@ -66,6 +69,8 @@ static void user_fence_worker(struct work_struct *w)
 	if (copy_to_user(ufence->addr, &ufence->value, sizeof(ufence->value)))
 		XE_WARN_ON("Copy to user failed");
 	kthread_unuse_mm(ufence->mm);
+
+	wake_up_all(&ufence->xe->ufence_wq);
 	user_fence_put(ufence);
 }
 
@@ -156,7 +161,7 @@ int xe_sync_entry_parse(struct xe_device *xe, struct xe_file *xef,
 		if (exec) {
 			sync->addr = sync_in.addr;
 		} else {
-			sync->ufence = user_fence_create(sync_in.addr,
+			sync->ufence = user_fence_create(xe, sync_in.addr,
 							 sync_in.timeline_value);
 			if (XE_IOCTL_ERR(xe, !sync->ufence))
 				return -ENOMEM;

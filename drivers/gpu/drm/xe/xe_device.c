@@ -21,6 +21,7 @@
 #include "xe_mmio.h"
 #include "xe_query.h"
 #include "xe_vm.h"
+#include "xe_wait_user_fence.h"
 
 static int xe_file_open(struct drm_device *dev, struct drm_file *file)
 {
@@ -79,6 +80,7 @@ static const struct drm_ioctl_desc xe_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(XE_EXEC, xe_exec_ioctl, DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(XE_MMIO, xe_mmio_ioctl, DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(XE_ENGINE_SET_PROPERTY, xe_engine_set_property_ioctl, DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(XE_WAIT_USER_FENCE, xe_wait_user_fence_ioctl, DRM_RENDER_ALLOW),
 };
 
 static const struct file_operations xe_driver_fops = {
@@ -154,6 +156,8 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 	xe->info.revid = pdev->revision;
 
 	spin_lock_init(&xe->irq.lock);
+
+	init_waitqueue_head(&xe->ufence_wq);
 
 	mutex_init(&xe->persitent_engines.lock);
 	INIT_LIST_HEAD(&xe->persitent_engines.list);

@@ -73,6 +73,7 @@ xe-y += xe_bb.o \
 	xe_uc_debugfs.o \
 	xe_uc_fw.o \
 	xe_vm.o \
+	xe_wait_user_fence.o \
 	xe_wopcm.o
 
 obj-$(CONFIG_DRM_XE) += xe.o
