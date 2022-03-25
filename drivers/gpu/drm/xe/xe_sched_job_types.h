@@ -24,6 +24,15 @@ struct xe_sched_job {
 	 * can safely reference fence, fence cannot safely reference job.
 	 */
 	struct dma_fence *fence;
+	/** @user_fence: write back value when BB is complete */
+	struct {
+		/** @used: user fence is used */
+		bool used;
+		/** @addr: address to write to */
+		u64 addr;
+		/** @value: write back value */
+		u64 value;
+	} user_fence;
 	/** @batch_addr: batch buffer address of job */
 	uint64_t batch_addr[0];
 };
