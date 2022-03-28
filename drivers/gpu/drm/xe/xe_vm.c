@@ -1113,7 +1113,7 @@ static int xe_vm_unbind(struct xe_vm *vm, struct xe_bo *bo, u64 range,
 	    XE_IOCTL_ERR(xe, vma->end != addr + range - 1))
 		return -EINVAL;
 
-	fence = xe_vm_unbind_vma(vma, syncs, num_syncs, true);
+	fence = xe_vm_unbind_vma(vma, syncs, num_syncs, false);
 	if (IS_ERR(fence))
 		return PTR_ERR(fence);
 
