@@ -749,7 +749,7 @@ struct dma_fence *xe_vm_unbind_vma(struct xe_vma *vma, struct xe_sync_entry *syn
 	if (!evict)
 		xe_vm_assert_held(vm);
 
-	XE_WARN_ON(vma->evicted == evict);
+	XE_WARN_ON(vma->evicted && evict);
 
 	xe_pt_prepare_unbind(vma, entries, &num_entries, evict);
 	XE_BUG_ON(num_entries > ARRAY_SIZE(entries));
@@ -847,21 +847,20 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 	u32 my_added_pte = 0;
 	struct xe_vm_pgtable_update *entry;
 	u32 start_ofs = xe_pt_idx(start, pt->level);
+	u32 last_ofs = xe_pt_idx(end - 1, pt->level);
 	struct xe_pt **pte = NULL;
 
 	XE_BUG_ON(start < vma->start);
 	XE_BUG_ON(end > vma->end + 1);
 
+	my_added_pte = last_ofs + 1 - start_ofs;
+	BUG_ON(!my_added_pte);
+
 	if (!pt->level) {
-		my_added_pte = xe_pt_idx(end, pt->level) - start_ofs;
-
-		vm_dbg(&xe->drm, "\t%u: Populating entry (%u + %u) [%llx...%llx)\n",
+		vm_dbg(&xe->drm, "\t%u: Populating entry [%u + %u) [%llx...%llx)\n",
 		       pt->level, start_ofs, my_added_pte, start, end);
-
-		BUG_ON(!my_added_pte);
 	} else {
 		struct xe_pt_dir *pt_dir = as_xe_pt_dir(pt);
-		u32 last_ofs = xe_pt_idx(end - 1, pt->level);
 		u32 i;
 		u64 start_end = min(xe_pt_next_start(start, pt->level), end);
 		u64 end_start = max(start, xe_pt_prev_end(end, pt->level));
@@ -875,7 +874,7 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 		if (pt_dir->entries[last_ofs] && last_ofs > start_ofs)
 			partial_end = xe_pt_partial_entry(end_start, end, pt->level);
 
-		my_added_pte = last_ofs + 1 - start_ofs - partial_begin - partial_end;
+		my_added_pte -= partial_begin + partial_end;
 
 		vm_dbg(&xe->drm, "\t%u: [%llx...%llx) partial begin/end: %u / %u, %u entries\n",
 		       pt->level, start, end, partial_begin, partial_end,
@@ -939,10 +938,9 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 				goto unwind;
 		}
 
-		/* No changes to this entry, fast return.. */
+		/* No changes to this entry, fast return, no need to free 0 size ptr.. */
 		if (!my_added_pte)
 			return 0;
-
 		goto done;
 
 unwind:
@@ -1059,7 +1057,7 @@ static int xe_vm_bind(struct xe_vm *vm, struct xe_bo *bo,
 	vma = xe_vma_create(vm, bo, bo_offset, addr, addr + range - 1);
 	if (!vma) {
 		err = -ENOMEM;
-		goto err_destroy;
+		goto err;
 	}
 
 	prev = xe_vm_find_overlapping_vma(vm, vma);
@@ -1115,7 +1113,7 @@ static int xe_vm_unbind(struct xe_vm *vm, struct xe_bo *bo, u64 range,
 	    XE_IOCTL_ERR(xe, vma->end != addr + range - 1))
 		return -EINVAL;
 
-	fence = xe_vm_unbind_vma(vma, syncs, num_syncs, true);
+	fence = xe_vm_unbind_vma(vma, syncs, num_syncs, false);
 	if (IS_ERR(fence))
 		return PTR_ERR(fence);
 

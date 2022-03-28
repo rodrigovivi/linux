@@ -436,7 +436,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	return fence;
 
 err_job:
-
+	xe_sched_job_free(job);
 err:
 	mutex_unlock(&m->job_mutex);
 	xe_bb_free(bb, NULL);
