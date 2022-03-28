@@ -102,7 +102,8 @@ static void gen11_gt_irq_postinstall(struct xe_device *xe)
 	uint32_t irqs, dmask, smask;
 
 	if (xe_gt_guc_submission_enabled(gt)) {
-		irqs = GT_RENDER_USER_INTERRUPT;
+		irqs = GT_RENDER_USER_INTERRUPT |
+			GT_RENDER_PIPECTL_NOTIFY_INTERRUPT;
 	} else {
 		irqs = GT_RENDER_USER_INTERRUPT |
 		       GT_CS_MASTER_ERROR_INTERRUPT |
