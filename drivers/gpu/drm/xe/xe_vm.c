@@ -749,7 +749,7 @@ struct dma_fence *xe_vm_unbind_vma(struct xe_vma *vma, struct xe_sync_entry *syn
 	if (!evict)
 		xe_vm_assert_held(vm);
 
-	XE_WARN_ON(vma->evicted == evict);
+	XE_WARN_ON(vma->evicted && evict);
 
 	xe_pt_prepare_unbind(vma, entries, &num_entries, evict);
 	XE_BUG_ON(num_entries > ARRAY_SIZE(entries));
