@@ -204,6 +204,12 @@ int xe_uc_fw_init(struct xe_uc_fw *uc_fw)
 			       XE_UC_FIRMWARE_DISABLED :
 			       XE_UC_FIRMWARE_NOT_SUPPORTED);
 
+	/* Transform no huc in the list into firmware disabled */
+	if (uc_fw->type == XE_UC_FW_TYPE_HUC && !xe_uc_fw_is_supported(uc_fw)) {
+		xe_uc_fw_change_status(uc_fw, XE_UC_FIRMWARE_DISABLED);
+		err = -ENOPKG;
+		return err;
+	}
 	err = request_firmware(&fw, uc_fw->path, dev);
 	if (err)
 		goto fail;
