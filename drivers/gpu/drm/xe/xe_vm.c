@@ -161,6 +161,19 @@ static void __xe_pt_write(struct ttm_bo_kmap_obj *map,
 		map_u64[idx] = data;
 }
 
+static uint64_t __xe_pt_read(struct ttm_bo_kmap_obj *map,
+		unsigned int idx)
+{
+	bool is_iomem;
+	uint64_t *map_u64;
+
+	map_u64 = ttm_kmap_obj_virtual(map, &is_iomem);
+	if (is_iomem)
+		return readq((uint64_t __iomem *)&map_u64[idx]);
+
+	return map_u64[idx];
+}
+
 static struct xe_pt *xe_pt_create(struct xe_vm *vm, unsigned int level)
 {
 	struct xe_pt *pt;
@@ -1882,4 +1895,64 @@ put_obj:
 put_vm:
 	xe_vm_put(vm);
 	return err;
+}
+
+
+static char *xe_dump_prefix_lvl[5] = { "     ", "    ", "   ", "  ", " "};
+
+static void dump_pgtt_lvl(struct xe_vm *vm, struct xe_pt *pt, int lvl, int tag64k)
+{
+	struct xe_pt_dir *pt_dir;
+	int i;
+	int err;
+	struct ttm_bo_kmap_obj map;
+
+	if (lvl == 0) {
+		err = __xe_pt_kmap(pt, &map);
+		if (!err) {
+			char *mode = "M4k";
+			int numpt = GEN8_PDES;
+
+			if (tag64k) {
+				numpt = 32;
+				mode = "M64k";
+			}
+			for (i = 0; i < numpt; i++) {
+				uint64_t v = __xe_pt_read(&map, i);
+
+				if (v) {
+					drm_info(&vm->xe->drm, "L%d %s index %d <0x%llx> %s\n",
+						lvl, xe_dump_prefix_lvl[lvl], i, v, mode);
+				}
+			}
+			ttm_bo_kunmap(&map);
+		}
+		return;
+	}
+	pt_dir = as_xe_pt_dir(pt);
+	err = __xe_pt_kmap(pt, &map);
+	if (!err) {
+		for (i = 0; i < GEN8_PDES; i++) {
+			if (pt_dir->entries[i]) {
+				uint64_t v = 0;
+				int is_64k = 0;
+
+				v = __xe_pt_read(&map, i);
+				is_64k = v & GEN12_PDE_64K;
+				drm_info(&vm->xe->drm, "L%d %s index %d exist <0x%llx> %s\n",
+					lvl, xe_dump_prefix_lvl[lvl], i, v, (is_64k)?"64k":"");
+				dump_pgtt_lvl(vm, pt_dir->entries[i], lvl-1, is_64k);
+			}
+		}
+		ttm_bo_kunmap(&map);
+	}
+}
+
+void xe_vm_dump_pgtt(struct xe_vm *vm)
+{
+	struct xe_pt *pt =  vm->pt_root;
+	uint64_t desc = xe_vm_pdp4_descriptor(vm);
+
+	drm_info(&vm->xe->drm, "dump_pgtt desc=0x%llx bo(%p)\n", desc, vm->pt_root->bo);
+	dump_pgtt_lvl(vm, pt, 3, 0);
 }
