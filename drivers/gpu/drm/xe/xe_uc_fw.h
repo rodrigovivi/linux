@@ -119,6 +119,11 @@ static inline bool xe_uc_fw_is_enabled(struct xe_uc_fw *uc_fw)
 	return __xe_uc_fw_status(uc_fw) > XE_UC_FIRMWARE_DISABLED;
 }
 
+static inline bool xe_uc_fw_is_disabled(struct xe_uc_fw *uc_fw)
+{
+	return __xe_uc_fw_status(uc_fw) == XE_UC_FIRMWARE_DISABLED;
+}
+
 static inline bool xe_uc_fw_is_available(struct xe_uc_fw *uc_fw)
 {
 	return __xe_uc_fw_status(uc_fw) >= XE_UC_FIRMWARE_AVAILABLE;
