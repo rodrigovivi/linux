@@ -43,6 +43,7 @@ static struct xe_device *uc_fw_to_xe(struct xe_uc_fw *uc_fw)
  * Must be ordered based on platform + revid, from newer to older.
  */
 #define XE_GUC_FIRMWARE_DEFS(fw_def, guc_def) \
+	fw_def(DG2,          0, guc_def(dg2,  70, 0, 2)) \
 	fw_def(DG1,          0, guc_def(dg1,  70, 0, 2)) \
 	fw_def(TIGERLAKE,    0, guc_def(tgl,  70, 0, 2))
 
