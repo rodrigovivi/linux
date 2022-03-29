@@ -228,9 +228,15 @@ static void fill_engine_enable_masks(struct xe_gt *gt,
 }
 
 #define LR_HW_CONTEXT_SIZE (80 * sizeof(u32))
-#define LRC_SKIP_SIZE (PAGE_SIZE + LR_HW_CONTEXT_SIZE)
+#define XEHP_LR_HW_CONTEXT_SIZE (96 * sizeof(u32))
+#define LR_HW_CONTEXT_SZ(xe) (GRAPHICS_VERx100(xe) >= 1250 ? \
+			      XEHP_LR_HW_CONTEXT_SIZE : \
+			      LR_HW_CONTEXT_SIZE)
+#define LRC_SKIP_SIZE(xe) (PAGE_SIZE + LR_HW_CONTEXT_SZ(xe))
+
 static void guc_prep_golden_context(struct xe_guc_ads *ads)
 {
+	struct xe_device *xe = ads_to_xe(ads);
 	struct dma_buf_map info_map = DMA_BUF_MAP_INIT_OFFSET(ads_to_map(ads),
 			offsetof(struct __guc_ads_blob, system_info));
 	u8 guc_class;
@@ -242,7 +248,7 @@ static void guc_prep_golden_context(struct xe_guc_ads *ads)
 			continue;
 
 		ads_blob_write(ads, ads.eng_state_size[guc_class],
-			       guc_ads_golden_ctxt_size(ads) - LRC_SKIP_SIZE);
+			       guc_ads_golden_ctxt_size(ads) - LRC_SKIP_SIZE(xe));
 		ads_blob_write(ads, ads.golden_context_lrca[guc_class],
 			       xe_bo_ggtt_addr(ads->bo) +
 			       guc_ads_golden_ctxt_offset(ads));
