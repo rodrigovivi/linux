@@ -46,12 +46,18 @@ int xe_huc_init(struct xe_huc *huc)
 	return 0;
 
 out:
+	if (xe_uc_fw_is_disabled(&huc->fw)) {
+		drm_info(&xe->drm, "HuC disabled\n");
+		return 0;
+	}
 	drm_err(&xe->drm, "HuC init failed with %d", ret);
 	return ret;
 }
 
 int xe_huc_upload(struct xe_huc *huc)
 {
+	if (xe_uc_fw_is_disabled(&huc->fw))
+		return 0;
 	return xe_uc_fw_upload(&huc->fw, 0, HUC_UKERNEL);
 }
 
@@ -61,6 +67,8 @@ int xe_huc_auth(struct xe_huc *huc)
 	struct xe_gt *gt = huc_to_gt(huc);
 	struct xe_guc *guc = huc_to_guc(huc);
 	int ret;
+	if (xe_uc_fw_is_disabled(&huc->fw))
+		return 0;
 
 	XE_BUG_ON(xe_uc_fw_is_running(&huc->fw));
 
@@ -97,6 +105,8 @@ fail:
 
 void xe_huc_sanitize(struct xe_huc *huc)
 {
+	if (xe_uc_fw_is_disabled(&huc->fw))
+		return;
 	xe_uc_fw_change_status(&huc->fw, XE_UC_FIRMWARE_LOADABLE);
 }
 
@@ -106,6 +116,9 @@ void xe_huc_print_info(struct xe_huc *huc, struct drm_printer *p)
 	int err;
 
 	xe_uc_fw_print(&huc->fw, p);
+
+	if (xe_uc_fw_is_disabled(&huc->fw))
+		return;
 
 	err = xe_force_wake_get(gt->mmio.fw, XE_FW_GT);
 	if (err)
