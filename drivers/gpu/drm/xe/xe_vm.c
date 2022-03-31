@@ -1197,7 +1197,7 @@ struct dma_fence *xe_vm_unbind_vma(struct xe_vma *vma, struct xe_sync_entry *syn
 	 */
 	fence = xe_migrate_update_pgtables(gt->migrate,
 					   xe_vm_has_preempt_fences(vm) ?
-					   vm : NULL,
+					   vm : NULL, evict ? NULL : vm->eng,
 					   entries, num_entries,
 					   syncs, num_syncs,
 					   xe_migrate_clear_pgtable_callback, vma);
@@ -1462,7 +1462,7 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_sync_entry *syncs, u32 num_syncs)
 
 	fence = xe_migrate_update_pgtables(gt->migrate,
 					   xe_vm_has_preempt_fences(vm) ?
-					   vm : NULL,
+					   vm : NULL, vm->eng,
 					   entries, num_entries,
 					   syncs, num_syncs,
 					   xe_vm_populate_pgtable, vma);
