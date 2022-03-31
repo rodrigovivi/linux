@@ -18,6 +18,9 @@ struct xe_file;
 struct xe_engine *xe_engine_create(struct xe_device *xe, struct xe_vm *vm,
 				   u32 logical_mask, u16 width,
 				   struct xe_hw_engine *hw_engine, u32 flags);
+struct xe_engine *xe_engine_create_class(struct xe_device *xe, struct xe_vm *vm,
+					 enum xe_engine_class class, u32 flags);
+
 void xe_engine_fini(struct xe_engine *e);
 void xe_engine_destroy(struct kref *ref);
 
