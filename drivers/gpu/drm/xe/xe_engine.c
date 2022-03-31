@@ -90,6 +90,28 @@ struct xe_engine *xe_engine_create(struct xe_device *xe, struct xe_vm *vm,
 	return e;
 }
 
+struct xe_engine *xe_engine_create_class(struct xe_device *xe, struct xe_vm *vm,
+					 enum xe_engine_class class, u32 flags)
+{
+	struct xe_hw_engine *hwe, *hwe0 = NULL;
+	struct xe_gt *gt = to_gt(xe);
+	enum xe_hw_engine_id id;
+	u32 logical_mask = 0;
+
+	for_each_hw_engine (hwe, gt, id) {
+		if (hwe->class == XE_ENGINE_CLASS_COPY) {
+			logical_mask |= BIT(hwe->logical_instance);
+			if (!hwe0)
+				hwe0 = hwe;
+		}
+	}
+
+	if (!logical_mask)
+		return ERR_PTR(-ENODEV);
+
+	return xe_engine_create(xe, vm, logical_mask, 1, hwe0, flags);
+}
+
 void xe_engine_destroy(struct kref *ref)
 {
 	struct xe_engine *e = container_of(ref, struct xe_engine, refcount);

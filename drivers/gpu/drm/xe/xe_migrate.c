@@ -44,27 +44,13 @@ static void xe_migrate_fini(struct drm_device *dev, void *arg)
 
 struct xe_migrate *xe_migrate_init(struct xe_gt *gt)
 {
-	struct xe_hw_engine *hwe, *hwe0 = NULL;
 	struct xe_device *xe = gt_to_xe(gt);
-	enum xe_hw_engine_id id;
 	struct xe_migrate *m;
-	u32 logical_mask = 0;
 	int err;
 
 	m = drmm_kzalloc(&xe->drm, sizeof(*m), GFP_KERNEL);
 	if (!m)
 		return ERR_PTR(-ENOMEM);
-
-	for_each_hw_engine (hwe, gt, id) {
-		if (hwe->class == XE_ENGINE_CLASS_COPY) {
-			logical_mask |= BIT(hwe->logical_instance);
-			if (!hwe0)
-				hwe0 = hwe;
-		}
-	}
-
-	if (!logical_mask)
-		return ERR_PTR(-ENODEV);
 
 	m->gt = gt;
 
@@ -73,8 +59,7 @@ struct xe_migrate *xe_migrate_init(struct xe_gt *gt)
 	if (err)
 		return ERR_PTR(err);
 
-	m->eng = xe_engine_create(xe, NULL, logical_mask,
-				  1, hwe0, ENGINE_FLAG_KERNEL);
+	m->eng = xe_engine_create_class(xe, NULL, XE_ENGINE_CLASS_COPY, ENGINE_FLAG_KERNEL);
 	if (IS_ERR(m->eng)) {
 		xe_ggtt_remove_node(gt->mem.ggtt, &m->copy_node);
 		return ERR_CAST(m->eng);
