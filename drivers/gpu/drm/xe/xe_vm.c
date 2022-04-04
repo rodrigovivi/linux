@@ -762,7 +762,8 @@ struct dma_fence *xe_vm_unbind_vma(struct xe_vma *vma, struct xe_sync_entry *syn
 	 * lower level, because it needs to be more conservative.
 	 */
 	fence = xe_migrate_update_pgtables(gt->migrate,
-					   vm->preempt.enabled ? vm : NULL,
+					   xe_vm_has_preempt_fences(vm) ?
+					   vm : NULL,
 					   entries, num_entries,
 					   syncs, num_syncs,
 					   xe_migrate_clear_pgtable_callback, vma);
@@ -1021,7 +1022,8 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_sync_entry *syncs, u32 num_syncs)
 	}
 
 	fence = xe_migrate_update_pgtables(gt->migrate,
-					   vm->preempt.enabled ? vm : NULL,
+					   xe_vm_has_preempt_fences(vm) ?
+					   vm : NULL,
 					   entries, num_entries,
 					   syncs, num_syncs,
 					   xe_vm_populate_pgtable, vma);
@@ -1057,7 +1059,7 @@ static void preempt_op_worker(struct work_struct *w)
 	struct xe_vm *vm = op->vm;
 	struct xe_preempt_fence *pfence, *next;
 
-	XE_BUG_ON(!vm->preempt.enabled);
+	XE_BUG_ON(!xe_vm_has_preempt_fences(vm));
 
 	xe_vm_lock(vm, NULL);
 	if (!--vm->preempt.num_inflight_ops) {
@@ -1143,7 +1145,7 @@ static int xe_vm_bind(struct xe_vm *vm, struct xe_bo *bo,
 	 * for now to test this code and show how preemption fences + VM un/bind
 	 * code interacts.
 	 */
-	if (vm->preempt.enabled) {
+	if (xe_vm_has_preempt_fences(vm)) {
 		op = kmalloc(sizeof(*op), GFP_KERNEL);
 		if (!op) {
 			err = -ENOMEM;
@@ -1170,7 +1172,7 @@ static int xe_vm_bind(struct xe_vm *vm, struct xe_bo *bo,
 		err = PTR_ERR(fence);
 		goto err_free_op;
 	}
-	if (vm->preempt.enabled)
+	if (xe_vm_has_preempt_fences(vm))
 		add_preempt_op_cb(vm, fence, op);
 
 	xe_vm_insert_vma(vm, vma);
@@ -1210,7 +1212,7 @@ static int xe_vm_unbind(struct xe_vm *vm, struct xe_bo *bo, u64 range,
 	    XE_IOCTL_ERR(xe, vma->end != addr + range - 1))
 		return -EINVAL;
 
-	if (vm->preempt.enabled) {
+	if (xe_vm_has_preempt_fences(vm)) {
 		op = kmalloc(sizeof(*op), GFP_KERNEL);
 		if (!op)
 			return -ENOMEM;
@@ -1221,7 +1223,7 @@ static int xe_vm_unbind(struct xe_vm *vm, struct xe_bo *bo, u64 range,
 		kfree(op);
 		return PTR_ERR(fence);
 	}
-	if (vm->preempt.enabled)
+	if (xe_vm_has_preempt_fences(vm))
 		add_preempt_op_cb(vm, fence, op);
 
 	xe_vm_remove_vma(vm, vma);
