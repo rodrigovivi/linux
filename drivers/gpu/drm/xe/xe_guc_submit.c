@@ -620,6 +620,7 @@ static void submit_engine(struct xe_engine *e)
 	} else {
 		action[len++] = XE_GUC_ACTION_SCHED_CONTEXT;
 		action[len++] = e->guc->id;
+		trace_xe_engine_submit(e);
 	}
 
 	xe_guc_ct_send(&guc->ct, action, len, g2h_len, num_g2h);
@@ -628,6 +629,7 @@ static void submit_engine(struct xe_engine *e)
 		len = 0;
 		action[len++] = XE_GUC_ACTION_SCHED_CONTEXT;
 		action[len++] = e->guc->id;
+		trace_xe_engine_submit(e);
 
 		xe_guc_ct_send(&guc->ct, action, len, 0, 0);
 	}
