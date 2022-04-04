@@ -54,6 +54,8 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	uint64_t addresses[XE_HW_ENGINE_MAX_INSTANCE];
 	uint32_t i, num_syncs = 0;
 	struct xe_sched_job *job;
+	struct dma_fence *userptr_fence;
+	struct xe_vm *vm;
 	int err = 0;
 
 	if (XE_IOCTL_ERR(xe, args->extensions))
@@ -94,9 +96,16 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		}
 	}
 
+	vm = engine->vm;
+	mutex_lock(&vm->userptr.list_lock);
+retry:
+	err = xe_vm_userptr_pin(vm);
+	if (err)
+		goto err_unlock_list;
+
 	err = xe_exec_begin(engine);
 	if (err)
-		goto err_syncs;
+		goto err_unlock_list;
 
 	job = xe_sched_job_create(engine, xe_engine_is_parallel(engine) ?
 				  addresses : &args->address);
@@ -111,19 +120,70 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 			goto err_put_job;
 	}
 
+	if (xe_vm_has_userptr(vm)) {
+		err = dma_resv_reserve_shared(&vm->resv, 1);
+		if (err)
+			goto err_put_job;
+	}
+
+	userptr_fence = xe_vm_userptr_bind(vm);
+	if (IS_ERR(userptr_fence)) {
+		err = PTR_ERR(userptr_fence);
+		goto err_put_job;
+	}
+
+	/*
+	 * We store the userptr fence in the VM so subsequent execs don't get
+	 * scheduled before the binding of userptrs is complete.
+	 */
+	if (userptr_fence) {
+		dma_fence_put(vm->userptr.fence);
+		vm->userptr.fence = userptr_fence;
+	}
+	if (vm->userptr.fence) {
+		if (test_bit(DMA_FENCE_FLAG_SIGNALED_BIT,
+			     &vm->userptr.fence->flags)) {
+			dma_fence_put(vm->userptr.fence);
+			vm->userptr.fence = NULL;
+		} else {
+			dma_fence_get(vm->userptr.fence);
+			err = drm_sched_job_add_dependency(&job->drm,
+							   vm->userptr.fence);
+			if (err)
+				goto err_put_job;
+		}
+	}
+
+	/*
+	 * Point of no return, if we error after this point just set an error on
+	 * the job and let the DRM scheduler / backend clean up the job.
+	 */
+
 	xe_sched_job_arm(job);
 
-	for (i = 0; i < num_syncs; i++)
+	if (xe_vm_has_userptr(vm) && !xe_vm_has_preempt_fences(vm))
+		dma_resv_add_shared_fence(&vm->resv,
+					  &job->drm.s_fence->finished);
+
+	err = xe_vm_userptr_needs_repin(vm);
+	if (err)
+		xe_sched_job_set_error(job, -ECANCELED);
+
+	for (i = 0; i < num_syncs && !err; i++)
 		xe_sync_entry_signal(&syncs[i], job,
 				     &job->drm.s_fence->finished);
 
 	xe_sched_job_push(job);
 
 err_put_job:
-	if (err)
+	if (err && err != -EAGAIN)
 		xe_sched_job_free(job);
 err_engine_end:
 	xe_exec_end(engine);
+	if (err == -EAGAIN)
+		goto retry;
+err_unlock_list:
+	mutex_unlock(&vm->userptr.list_lock);
 err_syncs:
 	for (i = 0; i < num_syncs; i++)
 		xe_sync_entry_cleanup(&syncs[i]);

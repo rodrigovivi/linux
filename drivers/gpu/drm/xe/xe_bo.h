@@ -46,36 +46,48 @@ static inline struct xe_bo *gem_to_xe_bo(const struct drm_gem_object *obj)
 
 static inline struct xe_bo *xe_bo_get(struct xe_bo *bo)
 {
-	ttm_bo_get(&bo->ttm);
+	if (bo)
+		ttm_bo_get(&bo->ttm);
 	return bo;
 }
 
 static inline void xe_bo_put(struct xe_bo *bo)
 {
-	ttm_bo_put(&bo->ttm);
+	if (bo)
+		ttm_bo_put(&bo->ttm);
 }
 
-#define xe_bo_assert_held(bo) dma_resv_assert_held((bo)->ttm.base.resv)
+static inline void xe_bo_assert_held(struct xe_bo *bo)
+{
+	if (bo)
+		dma_resv_assert_held((bo)->ttm.base.resv);
+}
 
 static inline void xe_bo_unlock_vm_held(struct xe_bo *bo)
 {
-	XE_BUG_ON(bo->vm && bo->ttm.base.resv != &bo->vm->resv);
-	if (bo->vm)
-		xe_vm_assert_held(bo->vm);
-	else
-		dma_resv_unlock(bo->ttm.base.resv);
+	if (bo) {
+		XE_BUG_ON(bo->vm && bo->ttm.base.resv != &bo->vm->resv);
+		if (bo->vm)
+			xe_vm_assert_held(bo->vm);
+		else
+			dma_resv_unlock(bo->ttm.base.resv);
+	}
 }
 
 static inline void xe_bo_lock_no_vm(struct xe_bo *bo, struct ww_acquire_ctx *ctx)
 {
-	XE_BUG_ON(bo->vm || bo->ttm.base.resv != &bo->ttm.base._resv);
-	dma_resv_lock(bo->ttm.base.resv, ctx);
+	if (bo) {
+		XE_BUG_ON(bo->vm || bo->ttm.base.resv != &bo->ttm.base._resv);
+		dma_resv_lock(bo->ttm.base.resv, ctx);
+	}
 }
 
 static inline void xe_bo_unlock_no_vm(struct xe_bo *bo)
 {
-	XE_BUG_ON(bo->vm || bo->ttm.base.resv != &bo->ttm.base._resv);
-	dma_resv_unlock(bo->ttm.base.resv);
+	if (bo) {
+		XE_BUG_ON(bo->vm || bo->ttm.base.resv != &bo->ttm.base._resv);
+		dma_resv_unlock(bo->ttm.base.resv);
+	}
 }
 
 int xe_bo_populate(struct xe_bo *bo);
