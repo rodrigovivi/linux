@@ -173,7 +173,8 @@ static void preempt_complete(struct xe_engine *e)
 	}
 
 	xe_vm_lock(vm, NULL);
-	if (!vm->preempt.num_inflight_ops) {
+	if (!vm->preempt.num_inflight_ops &&
+	    !xe_vm_userptr_pending_rebind_read(vm)) {
 		err = dma_resv_reserve_shared(&vm->resv, 1);
 		XE_WARN_ON(err);
 		if (!err) {
