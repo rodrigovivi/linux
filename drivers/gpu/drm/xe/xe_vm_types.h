@@ -16,14 +16,28 @@ struct xe_vm;
 
 struct xe_vma {
 	struct rb_node vm_node;
+	/** @vm: VM which this VMA belongs to */
 	struct xe_vm *vm;
 
+	/**
+	 * @start: start address of this VMA within its address domain, end -
+	 * start + 1 == VMA size
+	 */
 	uint64_t start;
+	/** @end: end address of this VMA within its address domain */
 	uint64_t end;
 
+	/** @bo: BO if not a userptr, must be NULL is userptr */
 	struct xe_bo *bo;
+	/** @bo_offset: offset into BO if not a userptr, unused for userptr */
 	uint64_t bo_offset;
-	struct list_head bo_link;
+
+	union {
+		/** @bo_link: link into BO if not a userptr */
+		struct list_head bo_link;
+		/** @userptr_link: link into VM if userptr */
+		struct list_head userptr_link;
+	};
 
 	/** @userptr: user pointer state */
 	struct {
@@ -45,6 +59,10 @@ struct xe_vma {
 		unsigned long notifier_seq;
 		/** @dirty: user pointer dirty (needs new VM bind) */
 		bool dirty;
+		/** @destroyed: user pointer is destroyed */
+		bool destroyed;
+		/** @initial_bind: user pointer has been bound at least once */
+		bool initial_bind;
 	} userptr;
 
 	bool evicted;
@@ -96,6 +114,25 @@ struct xe_vm {
 
 	struct xe_bo *scratch_bo;
 	struct xe_pt *scratch_pt[XE_VM_MAX_LEVEL];
+
+	/** @userptr: user pointer state */
+	struct {
+		/** @list: list of VMAs which are user pointers */
+		struct list_head list;
+		/** @list_lock: protects list of user pointers */
+		struct mutex list_lock;
+		/**
+		 * @notifier_lock: protects notifier + pending_rebind
+		 */
+		rwlock_t notifier_lock;
+		/**
+		 * @pending_rebind: number of pending userptr rebinds, used when
+		 * preempt fences are installed on this VM
+		 */
+		u32 pending_rebind;
+		/** @fence: userptr fence for a rebind from execbuf */
+		struct dma_fence *fence;
+	} userptr;
 
 	/** @preempt: preempt state */
 	struct {
