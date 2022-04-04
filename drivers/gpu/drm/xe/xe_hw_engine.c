@@ -166,6 +166,42 @@ static const struct engine_info engine_infos[] = {
 			{ .graphics_ver = 12, .base = XEHP_VEBOX4_RING_BASE }
 		},
 	},
+	[XE_HW_ENGINE_CCS0] = {
+		.name = "ccs0",
+		.class = XE_ENGINE_CLASS_COMPUTE,
+		.instance = 0,
+		.domain = XE_FW_RENDER,
+		.mmio_bases = {
+			{ .graphics_ver = 12, .base = GEN12_COMPUTE0_RING_BASE },
+		},
+	},
+	[XE_HW_ENGINE_CCS1] = {
+		.name = "ccs1",
+		.class = XE_ENGINE_CLASS_COMPUTE,
+		.instance = 1,
+		.domain = XE_FW_RENDER,
+		.mmio_bases = {
+			{ .graphics_ver = 12, .base = GEN12_COMPUTE1_RING_BASE },
+		},
+	},
+	[XE_HW_ENGINE_CCS2] = {
+		.name = "ccs2",
+		.class = XE_ENGINE_CLASS_COMPUTE,
+		.instance = 2,
+		.domain = XE_FW_RENDER,
+		.mmio_bases = {
+			{ .graphics_ver = 12, .base = GEN12_COMPUTE2_RING_BASE },
+		},
+	},
+	[XE_HW_ENGINE_CCS3] = {
+		.name = "ccs3",
+		.class = XE_ENGINE_CLASS_COMPUTE,
+		.instance = 3,
+		.domain = XE_FW_RENDER,
+		.mmio_bases = {
+			{ .graphics_ver = 12, .base = GEN12_COMPUTE3_RING_BASE },
+		},
+	},
 };
 
 static uint32_t engine_info_mmio_base(const struct engine_info *info,
