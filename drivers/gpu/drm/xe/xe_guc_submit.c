@@ -172,6 +172,11 @@ static void set_engine_killed(struct xe_engine *e)
 	e->guc->killed = true;
 }
 
+static bool engine_killed_or_banned(struct xe_engine *e)
+{
+	return engine_killed(e) || engine_banned(e);
+}
+
 static void guc_submit_fini(struct drm_device *drm, void *arg)
 {
 	struct xe_guc *guc = arg;
@@ -646,8 +651,7 @@ guc_engine_run_job(struct drm_sched_job *drm_job)
 
 	trace_xe_sched_job_run(job);
 
-	if (!engine_banned(e) && !engine_killed(e) &&
-	    !xe_sched_job_is_error(job)) {
+	if (!engine_killed_or_banned(e) && !xe_sched_job_is_error(job)) {
 		if (!engine_registered(e))
 			register_engine(e);
 		e->ring_ops->emit_job(job);
@@ -841,7 +845,7 @@ static void __guc_engine_process_msg_cleanup(struct drm_sched_msg *msg)
 
 static bool guc_engine_allowed_to_change_state(struct xe_engine *e)
 {
-	return !engine_banned(e) && !engine_killed(e) && engine_registered(e);
+	return !engine_killed_or_banned(e) && engine_registered(e);
 }
 
 static void __guc_engine_process_msg_set_sched_props(struct drm_sched_msg *msg)
@@ -1054,8 +1058,7 @@ static int guc_engine_set_priority(struct xe_engine *e,
 {
 	struct drm_sched_msg *msg;
 
-	if (e->entity->priority == priority || engine_banned(e) ||
-	    engine_killed(e))
+	if (e->entity->priority == priority || engine_killed_or_banned(e))
 		return 0;
 
 	msg = kmalloc(sizeof(*msg), GFP_KERNEL);
@@ -1072,8 +1075,8 @@ static int guc_engine_set_timeslice(struct xe_engine *e, u32 timeslice_us)
 {
 	struct drm_sched_msg *msg;
 
-	if (e->sched_props.timeslice_us == timeslice_us || engine_banned(e) ||
-	    engine_killed(e))
+	if (e->sched_props.timeslice_us == timeslice_us ||
+	    engine_killed_or_banned(e))
 		return 0;
 
 	msg = kmalloc(sizeof(*msg), GFP_KERNEL);
@@ -1092,7 +1095,7 @@ static int guc_engine_set_preempt_timeout(struct xe_engine *e,
 	struct drm_sched_msg *msg;
 
 	if (e->sched_props.preempt_timeout_us == preempt_timeout_us ||
-	    engine_banned(e) || engine_killed(e))
+	    engine_killed_or_banned(e))
 		return 0;
 
 	msg = kmalloc(sizeof(*msg), GFP_KERNEL);
@@ -1142,7 +1145,7 @@ guc_engine_suspend(struct xe_engine *e)
 	struct drm_sched_msg *msg = e->guc->static_msgs + STATIC_MSG_SUSPEND;
 	struct dma_fence *suspend_fence = &e->guc->static_fence;
 
-	if (engine_banned(e) || engine_killed(e) || e->guc->suspend_fence)
+	if (engine_killed_or_banned(e) || e->guc->suspend_fence)
 		return ERR_PTR(-EINVAL);
 
 	dma_fence_init(suspend_fence, &suspend_fence_ops,
@@ -1270,7 +1273,7 @@ static void guc_engine_start(struct xe_engine *e)
 {
 	struct drm_gpu_scheduler *sched = &e->guc->sched;
 
-	if (!engine_banned(e) && !engine_killed(e)) {
+	if (!engine_killed_or_banned(e)) {
 		int i;
 
 		trace_xe_engine_resubmit(e);
