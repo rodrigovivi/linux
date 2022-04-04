@@ -73,14 +73,23 @@ static uint64_t gen8_pde_encode(struct xe_bo *bo, uint64_t bo_offset,
 	return pde;
 }
 
-static uint64_t gen8_pte_encode(struct xe_bo *bo, uint64_t bo_offset,
-				enum xe_cache_level level,
+static dma_addr_t vma_addr(struct xe_vma *vma, uint64_t offset,
+			   size_t page_size, bool *is_lmem)
+{
+	return xe_bo_addr(vma->bo, offset, page_size, is_lmem);
+}
+
+static uint64_t gen8_pte_encode(struct xe_vma *vma, struct xe_bo *bo,
+				uint64_t offset, enum xe_cache_level level,
 				uint32_t flags)
 {
 	uint64_t pte;
 	bool is_lmem;
 
-	pte = xe_bo_addr(bo, bo_offset, GEN8_PAGE_SIZE, &is_lmem);
+	if (vma)
+		pte = vma_addr(vma, offset, GEN8_PAGE_SIZE, &is_lmem);
+	else
+		pte = xe_bo_addr(bo, offset, GEN8_PAGE_SIZE, &is_lmem);
 	pte |= _PAGE_PRESENT | _PAGE_RW;
 
 	if (unlikely(flags & PTE_READ_ONLY))
@@ -130,7 +139,7 @@ static uint64_t __xe_vm_empty_pte(struct xe_vm *vm, unsigned int level)
 		return 0;
 
 	if (level == 0)
-		return gen8_pte_encode(vm->scratch_bo, 0, XE_CACHE_WB, 0);
+		return gen8_pte_encode(NULL, vm->scratch_bo, 0, XE_CACHE_WB, 0);
 	else
 		return gen8_pde_encode(vm->scratch_pt[level - 1]->bo, 0,
 				       XE_CACHE_WB);
@@ -292,8 +301,11 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 	} else {
 		u64 bo_offset = vma->bo_offset + (start - vma->start);
 
-		for (i = start_ofs; i <= last_ofs; i++, bo_offset += GEN8_PAGE_SIZE)
-			__xe_pt_write(&map, i, gen8_pte_encode(vma->bo, bo_offset, XE_CACHE_WB, 0));
+		for (i = start_ofs; i <= last_ofs; i++,
+		     bo_offset += GEN8_PAGE_SIZE)
+			__xe_pt_write(&map, i, gen8_pte_encode(vma, vma->bo,
+							       bo_offset,
+							       XE_CACHE_WB, 0));
 	}
 
 	ttm_bo_kunmap(&map);
@@ -723,7 +735,7 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 	entry->ofs = start_ofs;
 	entry->qwords = my_removed_pte;
 	entry->pt = pt;
-	entry->target = vma->bo;
+	entry->target_vma = vma;
 	entry->target_offset = vma->bo_offset + (start - vma->start);
 }
 
@@ -797,7 +809,10 @@ xe_vm_populate_pgtable(void *data, u32 qword_ofs, u32 num_qwords,
 		if (ptes && ptes[i])
 			ptr[i] = gen8_pde_encode(ptes[i]->bo, 0, XE_CACHE_WB);
 		else
-			ptr[i] = gen8_pte_encode(update->target, bo_offset, XE_CACHE_WB, 0);
+			ptr[i] = gen8_pte_encode(update->target_vma,
+						 update->target_vma->bo,
+						 bo_offset,
+						 XE_CACHE_WB, 0);
 	}
 }
 
@@ -962,7 +977,7 @@ done:
 	entry->ofs = start_ofs;
 	entry->qwords = my_added_pte;
 	entry->pt = pt;
-	entry->target = vma->bo;
+	entry->target_vma = vma;
 	entry->target_offset = vma->bo_offset + (start - vma->start);
 	entry->pt_entries = pte;
 	return 0;
