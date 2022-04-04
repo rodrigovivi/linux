@@ -241,11 +241,21 @@ struct drm_xe_vm_bind {
 	/** @vm_id: The ID of the VM to bind to */
 	__u32 vm_id;
 
-	/** @obj: GEM object to operate on */
+	/**
+	 * @obj: GEM object to operate on, MBZ for MAP_USERPTR, MBZ for UNMAP if
+	 * VMA is a userptr
+	 */
 	__u32 obj;
 
-	/** @obj_offset: Offset into the object, MBZ for CLEAR_RANGE, ignored for unbind */
-	__u64 obj_offset;
+	union {
+		/**
+		 * @obj_offset: Offset into the object, MBZ for CLEAR_RANGE,
+		 * ignored for unbind
+		 */
+		__u64 obj_offset;
+		/** @userptr: user pointer to bind on */
+		__u64 userptr;
+	};
 
 	/** @range: Number of bytes from the object to bind to addr */
 	__u64 range;
@@ -253,11 +263,14 @@ struct drm_xe_vm_bind {
 	/** @addr: Address to operate on */
 	__u64 addr;
 
-	/** @op: Operation to perform */
+	/** @op: Operation to perform (lower 16 bits) and flags (upper 16 bits) */
 	__u32 op;
 
 #define XE_VM_BIND_OP_MAP		0x0
 #define XE_VM_BIND_OP_UNMAP		0X1
+#define XE_VM_BIND_OP_MAP_USERPTR	0X2
+
+#define XE_VM_BIND_FLAG_READONLY	BIT(16)
 
 	/** @num_syncs: amount of syncs to wait on */
 	__u32 num_syncs;
