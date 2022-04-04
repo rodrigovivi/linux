@@ -1208,7 +1208,7 @@ err:
 static int xe_vm_unbind(struct xe_vm *vm, struct xe_bo *bo, u64 range,
 			u64 addr, struct xe_sync_entry *syncs, u32 num_syncs)
 {
-	struct xe_device *xe = to_xe_device(bo->ttm.base.dev);
+	struct xe_device *xe = vm->xe;
 	struct xe_vma *vma, lookup;
 	struct dma_fence *fence;
 	struct preempt_op *op = NULL;
@@ -1312,7 +1312,7 @@ static int __xe_vm_bind_ioctl(struct xe_vm *vm, struct xe_bo *bo, u64 bo_offset,
 			      u64 range, u64 addr, u32 op,
 			      struct xe_sync_entry *syncs, u32 num_syncs)
 {
-	struct xe_device *xe = to_xe_device(bo->ttm.base.dev);
+	struct xe_device *xe = vm->xe;
 
 	if (XE_IOCTL_ERR(xe, !vm->size)) {
 		DRM_ERROR("VM closed while we began looking up?\n");
