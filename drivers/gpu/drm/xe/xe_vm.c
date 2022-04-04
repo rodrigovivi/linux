@@ -13,8 +13,10 @@
 
 #include "xe_bo.h"
 #include "xe_device.h"
+#include "xe_engine_types.h"
 #include "xe_gt.h"
 #include "xe_migrate.h"
+#include "xe_preempt_fence_types.h"
 #include "xe_sync.h"
 
 enum xe_cache_level {
@@ -759,7 +761,9 @@ struct dma_fence *xe_vm_unbind_vma(struct xe_vma *vma, struct xe_sync_entry *syn
 	 * clear again here. The eviction may have updated pagetables at a
 	 * lower level, because it needs to be more conservative.
 	 */
-	fence = xe_migrate_update_pgtables(gt->migrate, entries, num_entries,
+	fence = xe_migrate_update_pgtables(gt->migrate,
+					   vm->preempt.enabled ? vm : NULL,
+					   entries, num_entries,
 					   syncs, num_syncs,
 					   xe_migrate_clear_pgtable_callback, vma);
 	if (!IS_ERR(fence)) {
@@ -1016,7 +1020,9 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_sync_entry *syncs, u32 num_syncs)
 		       start, end);
 	}
 
-	fence = xe_migrate_update_pgtables(gt->migrate, entries, num_entries,
+	fence = xe_migrate_update_pgtables(gt->migrate,
+					   vm->preempt.enabled ? vm : NULL,
+					   entries, num_entries,
 					   syncs, num_syncs,
 					   xe_vm_populate_pgtable, vma);
 	if (!IS_ERR(fence)) {
@@ -1039,12 +1045,77 @@ err:
 	return ERR_PTR(err);
 }
 
+struct preempt_op {
+	struct xe_vm *vm;
+	struct dma_fence_cb cb;
+	struct work_struct worker;
+};
+
+static void preempt_op_worker(struct work_struct *w)
+{
+	struct preempt_op *op = container_of(w, struct preempt_op, worker);
+	struct xe_vm *vm = op->vm;
+	struct xe_preempt_fence *pfence, *next;
+
+	XE_BUG_ON(!vm->preempt.enabled);
+
+	xe_vm_lock(vm, NULL);
+	if (!--vm->preempt.num_inflight_ops) {
+		list_for_each_entry_safe(pfence, next,
+					 &vm->preempt.pending_fences, link) {
+			struct xe_engine *e = pfence->engine;
+			int err;
+
+			err = dma_resv_reserve_shared(&vm->resv, 1);
+			XE_WARN_ON(err);
+			if (!err) {
+				e->ops->resume(e);
+				dma_resv_add_shared_fence(&vm->resv,
+							  &pfence->base);
+			}
+			list_del_init(&pfence->link);
+			dma_fence_put(&pfence->base);
+		}
+	}
+	xe_vm_unlock(vm);
+
+	xe_vm_put(vm);
+	kfree(op);
+}
+
+static void preempt_op_cb(struct dma_fence *fence, struct dma_fence_cb *cb)
+{
+	struct preempt_op *op = container_of(cb, struct preempt_op, cb);
+
+	INIT_WORK(&op->worker, preempt_op_worker);
+	queue_work(system_unbound_wq, &op->worker);
+}
+
+static void add_preempt_op_cb(struct xe_vm *vm, struct dma_fence *fence,
+			      struct preempt_op *op)
+{
+	int ret;
+
+	xe_vm_assert_held(vm);
+
+	op->vm = xe_vm_get(vm);
+	ret = dma_fence_add_callback(fence, &op->cb, preempt_op_cb);
+	if (!ret) {
+		++vm->preempt.num_inflight_ops;
+	} else {
+		xe_vm_put(vm);
+		if (ret != -ENOENT)
+			XE_WARN_ON("fence add callback failed");
+	}
+}
+
 static int xe_vm_bind(struct xe_vm *vm, struct xe_bo *bo,
 		      u64 bo_offset, u64 range, u64 addr,
 		      struct xe_sync_entry *syncs, u32 num_syncs)
 {
 	struct xe_vma *vma, *prev;
 	struct dma_fence *fence;
+	struct preempt_op *op = NULL;
 	int err;
 
 	xe_vm_assert_held(vm);
@@ -1058,6 +1129,26 @@ static int xe_vm_bind(struct xe_vm *vm, struct xe_bo *bo,
 	if (!vma) {
 		err = -ENOMEM;
 		goto err;
+	}
+
+	/*
+	 * If preempt is enabled (a compute engine uses this VM), on every VM
+	 * un/bind we trigger all preempt fences (in shared slots of this VM) by
+	 * waiting on the excl slot of this VM. The preempt fences will create
+	 * new preempt fences and either resume their engines scheduling +
+	 * insert the new fences into the VM shared slots or defers this until
+	 * all operations that triggered the fence are complete.
+	 *
+	 * FIXME: We likely don't have to do this on every un/bind, but doing it
+	 * for now to test this code and show how preemption fences + VM un/bind
+	 * code interacts.
+	 */
+	if (vm->preempt.enabled) {
+		op = kmalloc(sizeof(*op), GFP_KERNEL);
+		if (!op) {
+			err = -ENOMEM;
+			goto err_destroy;
+		}
 	}
 
 	prev = xe_vm_find_overlapping_vma(vm, vma);
@@ -1077,8 +1168,11 @@ static int xe_vm_bind(struct xe_vm *vm, struct xe_bo *bo,
 	fence = xe_vm_bind_vma(vma, syncs, num_syncs);
 	if (IS_ERR(fence)) {
 		err = PTR_ERR(fence);
-		goto err_destroy;
+		goto err_free_op;
 	}
+	if (vm->preempt.enabled)
+		add_preempt_op_cb(vm, fence, op);
+
 	xe_vm_insert_vma(vm, vma);
 #if 1 // REMOVEME when tests are fixed
 	dma_fence_wait(fence, false);
@@ -1086,6 +1180,8 @@ static int xe_vm_bind(struct xe_vm *vm, struct xe_bo *bo,
 	dma_fence_put(fence);
 	return 0;
 
+err_free_op:
+	kfree(op);
 err_destroy:
 	xe_vma_destroy(vma);
 err:
@@ -1098,6 +1194,7 @@ static int xe_vm_unbind(struct xe_vm *vm, struct xe_bo *bo, u64 range,
 	struct xe_device *xe = to_xe_device(bo->ttm.base.dev);
 	struct xe_vma *vma, lookup;
 	struct dma_fence *fence;
+	struct preempt_op *op = NULL;
 
 	xe_vm_assert_held(vm);
 	xe_bo_assert_held(bo);
@@ -1113,9 +1210,19 @@ static int xe_vm_unbind(struct xe_vm *vm, struct xe_bo *bo, u64 range,
 	    XE_IOCTL_ERR(xe, vma->end != addr + range - 1))
 		return -EINVAL;
 
+	if (vm->preempt.enabled) {
+		op = kmalloc(sizeof(*op), GFP_KERNEL);
+		if (!op)
+			return -ENOMEM;
+	}
+
 	fence = xe_vm_unbind_vma(vma, syncs, num_syncs, false);
-	if (IS_ERR(fence))
+	if (IS_ERR(fence)) {
+		kfree(op);
 		return PTR_ERR(fence);
+	}
+	if (vm->preempt.enabled)
+		add_preempt_op_cb(vm, fence, op);
 
 	xe_vm_remove_vma(vm, vma);
 	xe_vma_destroy(vma);

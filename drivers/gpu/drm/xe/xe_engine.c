@@ -160,7 +160,8 @@ static const struct xe_preempt_fence_ops preempt_fence_ops;
 static void preempt_complete(struct xe_engine *e)
 {
 	struct dma_fence *pfence;
-	int err;
+	struct xe_vm *vm = e->vm;
+	int err = 0;
 	bool enable_signaling = false;
 
 	pfence = xe_preempt_fence_create(e, &preempt_fence_ops,
@@ -171,32 +172,28 @@ static void preempt_complete(struct xe_engine *e)
 		return;
 	}
 
-	/* FIXME: Do something useful, next patch */
-
-	xe_vm_lock(e->vm, NULL);
-	err = dma_resv_reserve_shared(&e->vm->resv, 1);
-	XE_WARN_ON(err);
-	if (!err) {
-		/*
-		 * If we want to call resume it must be done before publishing
-		 * the next preemption fence
-		 */
-		e->ops->resume(e);
-		dma_resv_add_shared_fence(&e->vm->resv, pfence);
+	xe_vm_lock(vm, NULL);
+	if (!vm->preempt.num_inflight_ops) {
+		err = dma_resv_reserve_shared(&vm->resv, 1);
+		XE_WARN_ON(err);
+		if (!err) {
+			e->ops->resume(e);
+			dma_resv_add_shared_fence(&vm->resv, pfence);
+		}
+	} else {
+		dma_fence_get(pfence);
+		list_add_tail(&to_preempt_fence(pfence)->link,
+			      &vm->preempt.pending_fences);
 	}
-	xe_vm_unlock(e->vm);
-
-	/* Seal races with engines or fd closing */
-	spin_lock(&e->compute.lock);
 	if (e->compute.pfence) {
 		dma_fence_put(e->compute.pfence);
 		e->compute.pfence = pfence;
 	} else {
 		enable_signaling = true;
 	}
-	spin_unlock(&e->compute.lock);
 	if (enable_signaling || err)
 		dma_fence_enable_sw_signaling(pfence);
+	xe_vm_unlock(vm);
 }
 
 static const struct xe_preempt_fence_ops preempt_fence_ops = {
@@ -213,6 +210,7 @@ static int engine_set_compute(struct xe_device *xe, struct xe_engine *e,
 		return -EINVAL;
 
 	if (value) {
+		struct xe_vm *vm = e->vm;
 		struct dma_fence *pfence;
 		int err;
 
@@ -230,17 +228,21 @@ static int engine_set_compute(struct xe_device *xe, struct xe_engine *e,
 		if (XE_IOCTL_ERR(xe, IS_ERR(pfence)))
 			return PTR_ERR(pfence);
 
-		xe_vm_lock(e->vm, NULL);
-		err = dma_resv_reserve_shared(&e->vm->resv, 1);
+		xe_vm_lock(vm, NULL);
+		if (!vm->preempt.enabled) {
+			vm->preempt.enabled = true;
+			INIT_LIST_HEAD(&vm->preempt.pending_fences);
+		}
+		err = dma_resv_reserve_shared(&vm->resv, 1);
 		if (XE_IOCTL_ERR(xe, err)) {
 			dma_fence_put(pfence);
-			xe_vm_unlock(e->vm);
+			xe_vm_unlock(vm);
 			return err;
 		}
 
 		e->compute.pfence = pfence;
-		dma_resv_add_shared_fence(&e->vm->resv, pfence);
-		xe_vm_unlock(e->vm);
+		dma_resv_add_shared_fence(&vm->resv, pfence);
+		xe_vm_unlock(vm);
 
 		e->flags |= ENGINE_FLAG_COMPUTE;
 		e->flags &= ~ENGINE_FLAG_PERSISTENT;
@@ -491,22 +493,21 @@ put_engine:
 
 void xe_engine_kill(struct xe_engine *e)
 {
-	struct dma_fence *pfence = NULL;
-
 	e->ops->kill(e);
 
 	if (!(e->flags & ENGINE_FLAG_COMPUTE))
 	      return;
 
-	spin_lock(&e->compute.lock);
+	xe_vm_lock(e->vm, NULL);
 	if (e->compute.pfence) {
-		pfence = e->compute.pfence;
+		if (!list_empty(&to_preempt_fence(e->compute.pfence)->link)) {
+			dma_fence_put(e->compute.pfence);
+			list_del(&to_preempt_fence(e->compute.pfence)->link);
+		}
+		dma_fence_enable_sw_signaling(e->compute.pfence);
 		e->compute.pfence = NULL;
 	}
-	spin_unlock(&e->compute.lock);
-
-	if (pfence)
-		dma_fence_enable_sw_signaling(pfence);
+	xe_vm_unlock(e->vm);
 }
 
 int xe_engine_destroy_ioctl(struct drm_device *dev, void *data,

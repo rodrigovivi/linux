@@ -33,6 +33,8 @@ struct xe_preempt_fence_ops {
 struct xe_preempt_fence {
 	/** @base: dma fence base */
 	struct dma_fence base;
+	/** @link: link into list of pending preempt fences */
+	struct list_head link;
 	/** @engine: xe engine for this preempt fence */
 	struct xe_engine *engine;
 	/** @sfence: suspend fence returned from backend suspend vfunc */

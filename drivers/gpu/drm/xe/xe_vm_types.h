@@ -73,6 +73,28 @@ struct xe_vm {
 
 	struct xe_bo *scratch_bo;
 	struct xe_pt *scratch_pt[XE_VM_MAX_LEVEL];
+
+	/** @preempt: preempt state */
+	struct {
+		/**
+		 * @enabled: Preempt fences are enabled on this VM (used by
+		 * compute engine)
+		 */
+		bool enabled;
+		/**
+		 * @num_inflight_ops: number pendings ops (e.g. inflight
+		 * un/binds) before the pending preempt fences can call resume
+		 * on their respective engines and be inserted back into
+		 * the shared slots
+		 */
+		u32 num_inflight_ops;
+		/**
+		 * @list: list of pending preempt fences, when the number of
+		 * number of inflight ops reaches zero, each fence's engine is
+		 * resumed and inserted into a shared slot
+		 */
+		struct list_head pending_fences;
+	} preempt;
 };
 
 #endif	/* _XE_VM_TYPES_H_ */
