@@ -49,6 +49,11 @@ DEFINE_EVENT(xe_engine, xe_engine_create,
 	     TP_ARGS(e)
 );
 
+DEFINE_EVENT(xe_engine, xe_engine_submit,
+	     TP_PROTO(struct xe_engine *e),
+	     TP_ARGS(e)
+);
+
 DEFINE_EVENT(xe_engine, xe_engine_scheduling_enable,
 	     TP_PROTO(struct xe_engine *e),
 	     TP_ARGS(e)
