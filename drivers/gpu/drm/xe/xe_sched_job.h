@@ -20,6 +20,10 @@ struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
 void xe_sched_job_free(struct xe_sched_job *job);
 
 void xe_sched_job_set_error(struct xe_sched_job *job, int error);
+static inline bool xe_sched_job_is_error(struct xe_sched_job *job)
+{
+	return job->fence->error < 0;
+}
 
 bool xe_sched_job_started(struct xe_sched_job *job);
 bool xe_sched_job_completed(struct xe_sched_job *job);
