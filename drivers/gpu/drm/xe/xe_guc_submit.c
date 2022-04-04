@@ -646,7 +646,8 @@ guc_engine_run_job(struct drm_sched_job *drm_job)
 
 	trace_xe_sched_job_run(job);
 
-	if (!engine_banned(e) && !engine_killed(e)) {
+	if (!engine_banned(e) && !engine_killed(e) &&
+	    !xe_sched_job_is_error(job)) {
 		if (!engine_registered(e))
 			register_engine(e);
 		e->ring_ops->emit_job(job);
@@ -654,7 +655,7 @@ guc_engine_run_job(struct drm_sched_job *drm_job)
 	}
 
 	/* Immediately signal a compute job's fence as this is unused */
-	if (e->flags & ENGINE_FLAG_COMPUTE)
+	if (e->flags & ENGINE_FLAG_COMPUTE && !xe_sched_job_is_error(job))
 		xe_sched_job_set_error(job, -ENOTSUPP);
 
 	return dma_fence_get(job->fence);
