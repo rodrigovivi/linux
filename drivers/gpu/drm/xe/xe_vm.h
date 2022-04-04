@@ -59,6 +59,11 @@ void xe_vm_close_and_put(struct xe_vm *vm);
 struct dma_fence *xe_vm_bind_vma(struct xe_vma *vma, struct xe_sync_entry *syncs, u32 num_syncs);
 struct dma_fence *xe_vm_unbind_vma(struct xe_vma *vma, struct xe_sync_entry *syncs, u32 num_syncs, bool evict);
 
+static inline bool xe_vm_has_preempt_fences(struct xe_vm *vm)
+{
+	return vm->preempt.enabled;
+}
+
 extern struct ttm_device_funcs xe_ttm_funcs;
 
 #endif /* _XE_VM_H_ */
