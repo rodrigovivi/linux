@@ -1340,6 +1340,9 @@ static void xe_vm_tv_populate(struct xe_vm *vm, struct ttm_validate_buffer *tv)
 	tv->bo = &vm->pt_root->bo->ttm;
 }
 
+#define VM_BIND_OP(op)	(op & 0xffff)
+#define SUPPORTED_FLAGS	(0xffff)	/* TODO: read-only */
+
 int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 		     struct drm_file *file)
 {
@@ -1359,7 +1362,8 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 	struct xe_sync_entry *syncs;
 
 	if (XE_IOCTL_ERR(xe, args->extensions) ||
-	    XE_IOCTL_ERR(xe, args->op > XE_VM_BIND_OP_UNMAP))
+	    XE_IOCTL_ERR(xe, VM_BIND_OP(args->op) > XE_VM_BIND_OP_UNMAP) ||
+	    XE_IOCTL_ERR(xe, args->op & ~SUPPORTED_FLAGS))
 		return -EINVAL;
 
 	vm = xe_vm_lookup(xef, args->vm_id);
@@ -1398,7 +1402,8 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 	err = ttm_eu_reserve_buffers(&ww, &objs, true, &dups);
 	if (!err) {
 		err = __xe_vm_bind_ioctl(vm, bo, args->obj_offset,
-					args->range, args->addr, args->op,
+					args->range, args->addr,
+					VM_BIND_OP(args->op),
 					syncs, num_syncs);
 		ttm_eu_backoff_reservation(&ww, &objs);
 	}
