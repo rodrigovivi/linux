@@ -655,7 +655,7 @@ guc_engine_run_job(struct drm_sched_job *drm_job)
 
 	/* Immediately signal a compute job's fence as this is unused */
 	if (e->flags & ENGINE_FLAG_COMPUTE)
-		dma_fence_set_error(job->fence, -ENOTSUPP);
+		xe_sched_job_set_error(job, -ENOTSUPP);
 
 	return dma_fence_get(job->fence);
 }
@@ -761,35 +761,10 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 	drm_sched_run_wq_start(sched);
 	drm_sched_set_timeout(&e->guc->sched, MIN_SCHED_TIMEOUT);
 
-	/* Mark all outstanding fences as bad, thus completing them */
+	/* Mark all outstanding jobs as bad, thus completing them */
 	spin_lock(&sched->job_list_lock);
-	list_for_each_entry(tmp_job, &sched->pending_list, drm.list) {
-		if (test_bit(DMA_FENCE_FLAG_SIGNALED_BIT,
-			     &tmp_job->fence->flags))
-			continue;
-
-		if (!i++)
-			dma_fence_set_error(tmp_job->fence, err);
-		else
-			dma_fence_set_error(tmp_job->fence, -ECANCELED);
-
-		if (dma_fence_is_array(tmp_job->fence)) {
-			struct dma_fence_array *array =
-				to_dma_fence_array(tmp_job->fence);
-			struct dma_fence **child = array->fences;
-			unsigned int nchild = array->num_fences;
-
-			do {
-				struct dma_fence *current_fence = *child++;
-
-				if (test_bit(DMA_FENCE_FLAG_SIGNALED_BIT,
-					     &current_fence->flags))
-					continue;
-				dma_fence_set_error(current_fence, -ECANCELED);
-			} while (--nchild);
-		}
-		trace_xe_sched_job_set_error(tmp_job);
-	}
+	list_for_each_entry(tmp_job, &sched->pending_list, drm.list)
+		xe_sched_job_set_error(tmp_job, !i++ ? err : -ECANCELED);
 	spin_unlock(&sched->job_list_lock);
 
 	/* Start fence signaling */
