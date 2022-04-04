@@ -77,6 +77,7 @@ xe_preempt_fence_create(struct xe_engine *e,
 	if (!pfence)
 		return ERR_PTR(-ENOMEM);
 
+	INIT_LIST_HEAD(&pfence->link);
 	pfence->engine = xe_engine_get(e);
 	pfence->ops = ops;
 

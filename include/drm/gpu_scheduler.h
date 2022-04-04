@@ -41,6 +41,7 @@
  */
 #define DRM_SCHED_FENCE_DONT_PIPELINE	DMA_FENCE_FLAG_USER_BITS
 
+struct dma_resv;
 struct drm_gem_object;
 
 struct drm_gpu_scheduler;
@@ -543,7 +544,9 @@ int drm_sched_job_add_dependency(struct drm_sched_job *job,
 int drm_sched_job_add_implicit_dependencies(struct drm_sched_job *job,
 					    struct drm_gem_object *obj,
 					    bool write);
-
+int drm_sched_job_add_implicit_dependencies_resv(struct drm_sched_job *job,
+						 struct dma_resv *resv,
+						 bool write);
 
 void drm_sched_entity_modify_sched(struct drm_sched_entity *entity,
 				    struct drm_gpu_scheduler **sched_list,
