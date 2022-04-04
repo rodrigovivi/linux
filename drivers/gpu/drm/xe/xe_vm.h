@@ -7,7 +7,8 @@
 #ifndef _XE_VM_H_
 #define _XE_VM_H_
 
-#include <xe_vm_types.h>
+#include "xe_macros.h"
+#include "xe_vm_types.h"
 
 struct drm_device;
 struct drm_file;
@@ -62,6 +63,29 @@ struct dma_fence *xe_vm_unbind_vma(struct xe_vma *vma, struct xe_sync_entry *syn
 static inline bool xe_vm_has_preempt_fences(struct xe_vm *vm)
 {
 	return vm->preempt.enabled;
+}
+
+int xe_vm_userptr_pin(struct xe_vm *vm);
+int xe_vm_userptr_needs_repin(struct xe_vm *vm);
+struct dma_fence *xe_vm_userptr_bind(struct xe_vm *vm);
+static inline bool xe_vm_has_userptr(struct xe_vm *vm)
+{
+	lockdep_assert_held(&vm->userptr.list_lock);
+
+	return !list_empty(&vm->userptr.list);
+}
+
+static inline int xe_vm_userptr_pending_rebind_read(struct xe_vm *vm)
+{
+	int val;
+
+	XE_BUG_ON(!xe_vm_has_preempt_fences(vm));
+
+	read_lock(&vm->userptr.notifier_lock);
+	val = vm->userptr.pending_rebind;
+	read_unlock(&vm->userptr.notifier_lock);
+
+	return val;
 }
 
 extern struct ttm_device_funcs xe_ttm_funcs;
