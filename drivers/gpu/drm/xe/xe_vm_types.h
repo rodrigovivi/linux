@@ -46,8 +46,8 @@ struct xe_vm_pgtable_update {
 	/** @pt: opaque pointer useful for the caller of xe_migrate_update_pgtables */
 	struct xe_pt *pt;
 
-	/** @target: Target bo to write */
-	struct xe_bo *target;
+	/** @target_vma: Target vma to write */
+	struct xe_vma *target_vma;
 
 	/** @target_offset: Target object offset */
 	u64 target_offset;
