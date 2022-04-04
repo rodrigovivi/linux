@@ -20,6 +20,7 @@ uint32_t lrc_size(struct xe_device *xe, enum xe_engine_class class)
 {
 	switch (class) {
 	case XE_ENGINE_CLASS_RENDER:
+	case XE_ENGINE_CLASS_COMPUTE:
 		switch (GRAPHICS_VER(xe)) {
 		case 12:
 		case 11:
