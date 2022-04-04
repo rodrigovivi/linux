@@ -147,6 +147,32 @@ void xe_sched_job_free(struct xe_sched_job *job)
 	job_free(job);
 }
 
+void xe_sched_job_set_error(struct xe_sched_job *job, int error)
+{
+	if (test_bit(DMA_FENCE_FLAG_SIGNALED_BIT, &job->fence->flags))
+		return;
+
+	dma_fence_set_error(job->fence, error);
+
+	if (dma_fence_is_array(job->fence)) {
+		struct dma_fence_array *array =
+			to_dma_fence_array(job->fence);
+		struct dma_fence **child = array->fences;
+		unsigned int nchild = array->num_fences;
+
+		do {
+			struct dma_fence *current_fence = *child++;
+
+			if (test_bit(DMA_FENCE_FLAG_SIGNALED_BIT,
+				     &current_fence->flags))
+				continue;
+			dma_fence_set_error(current_fence, error);
+		} while (--nchild);
+	}
+
+	trace_xe_sched_job_set_error(job);
+}
+
 bool xe_sched_job_started(struct xe_sched_job *job)
 {
 	struct xe_lrc *lrc = job->engine->lrc;
