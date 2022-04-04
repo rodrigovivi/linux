@@ -9,6 +9,7 @@
 
 #include <linux/dma-resv.h>
 #include <linux/kref.h>
+#include <linux/mmu_notifier.h>
 
 struct xe_bo;
 struct xe_vm;
@@ -23,6 +24,28 @@ struct xe_vma {
 	struct xe_bo *bo;
 	uint64_t bo_offset;
 	struct list_head bo_link;
+
+	/** @userptr: user pointer state */
+	struct {
+		/** @ptr: user pointer */
+		uintptr_t ptr;
+		/**
+		 * @notifier: MMU notifier for user pointer (invalidation call back)
+		 */
+		struct mmu_interval_notifier notifier;
+		/**
+		 * @dma_address: DMA address for each of page of this user pointer
+		 */
+		dma_addr_t *dma_address;
+		/** @rebind_work: worker to rebind this VMA / BO */
+		struct work_struct rebind_work;
+		/** @destroy_work: worker to destroy this BO */
+		struct work_struct destroy_work;
+		/** @notifier_seq: notifier sequence number */
+		unsigned long notifier_seq;
+		/** @dirty: user pointer dirty (needs new VM bind) */
+		bool dirty;
+	} userptr;
 
 	bool evicted;
 };
