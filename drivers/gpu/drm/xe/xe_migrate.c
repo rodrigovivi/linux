@@ -341,6 +341,7 @@ static void write_pgtable(struct xe_bb *bb, u64 ggtt_ofs,
 
 struct dma_fence *
 xe_migrate_update_pgtables(struct xe_migrate *m,
+			   struct xe_vm *vm,
 			   struct xe_vm_pgtable_update *updates,
 			   u32 num_updates,
 			   struct xe_sync_entry *syncs, u32 num_syncs,
@@ -415,6 +416,14 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	if (IS_ERR(job)) {
 		err = PTR_ERR(job);
 		goto err;
+	}
+
+	if (vm) {
+		err = drm_sched_job_add_implicit_dependencies_resv(&job->drm,
+								   &vm->resv,
+								   true);
+		if (err)
+			goto err_job;
 	}
 
 	for (i = 0; !err && i < num_syncs; i++)

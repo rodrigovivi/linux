@@ -752,6 +752,42 @@ int drm_sched_job_add_dependency(struct drm_sched_job *job,
 EXPORT_SYMBOL(drm_sched_job_add_dependency);
 
 /**
+ * drm_sched_job_add_implicit_dependencies_resv - adds implicit dependencies as job
+ *   dependencies
+ * @job: scheduler job to add the dependencies to
+ * @resv: the resv to add new dependencies from.
+ * @write: whether the job might write the object (so we need to depend on
+ * shared fences in the reservation object).
+ *
+ * This should be called after drm_gem_lock_reservations() on your array of
+ * GEM objects used in the job but before updating the reservations with your
+ * own fences.
+ *
+ * Returns:
+ * 0 on success, or an error on failing to expand the array.
+ */
+int drm_sched_job_add_implicit_dependencies_resv(struct drm_sched_job *job,
+						 struct dma_resv *resv,
+						 bool write)
+{
+	struct dma_resv_iter cursor;
+	struct dma_fence *fence;
+	int ret;
+
+	dma_resv_for_each_fence(&cursor, resv, write, fence) {
+		/* Make sure to grab an additional ref on the added fence */
+		dma_fence_get(fence);
+		ret = drm_sched_job_add_dependency(job, fence);
+		if (ret) {
+			dma_fence_put(fence);
+			return ret;
+		}
+	}
+	return 0;
+}
+EXPORT_SYMBOL(drm_sched_job_add_implicit_dependencies_resv);
+
+/**
  * drm_sched_job_add_implicit_dependencies - adds implicit dependencies as job
  *   dependencies
  * @job: scheduler job to add the dependencies to
@@ -770,20 +806,8 @@ int drm_sched_job_add_implicit_dependencies(struct drm_sched_job *job,
 					    struct drm_gem_object *obj,
 					    bool write)
 {
-	struct dma_resv_iter cursor;
-	struct dma_fence *fence;
-	int ret;
-
-	dma_resv_for_each_fence(&cursor, obj->resv, write, fence) {
-		/* Make sure to grab an additional ref on the added fence */
-		dma_fence_get(fence);
-		ret = drm_sched_job_add_dependency(job, fence);
-		if (ret) {
-			dma_fence_put(fence);
-			return ret;
-		}
-	}
-	return 0;
+	return drm_sched_job_add_implicit_dependencies_resv(job, obj->resv,
+							    write);
 }
 EXPORT_SYMBOL(drm_sched_job_add_implicit_dependencies);
 
