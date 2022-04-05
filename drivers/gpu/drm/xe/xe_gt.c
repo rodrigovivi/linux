@@ -191,6 +191,8 @@ int xe_gt_init(struct xe_gt *gt)
 	err = xe_force_wake_put(gt->mmio.fw, XE_FORCEWAKE_ALL);
 	XE_WARN_ON(err);
 
+	xe_force_wake_prune(gt, gt->mmio.fw);
+
 	err = drmm_add_action_or_reset(&gt_to_xe(gt)->drm, gt_fini, gt);
 	if (err)
 		return err;
