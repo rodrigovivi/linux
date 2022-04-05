@@ -319,7 +319,8 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 		     bo_offset += GEN8_PAGE_SIZE)
 			__xe_pt_write(&map, i, gen8_pte_encode(vma, vma->bo,
 							       bo_offset,
-							       XE_CACHE_WB, 0));
+							       XE_CACHE_WB,
+							       vma->pte_flags));
 	}
 
 	ttm_bo_kunmap(&map);
@@ -384,6 +385,7 @@ static int vma_userptr_pin_pages(struct xe_vma *vma)
 	bool in_kthread = !current->mm;
 	unsigned long notifier_seq;
 	int pinned, ret, i;
+	bool read_only = vma->pte_flags & PTE_READ_ONLY;
 
 	XE_BUG_ON(!vma_is_userptr(vma));
 
@@ -404,9 +406,9 @@ retry:
 
 	pinned = ret = 0;
 	while (pinned < num_pages) {
-		/* TODO: read-only */
 		ret = pin_user_pages_fast(vma->userptr.ptr + pinned * PAGE_SIZE,
-					  num_pages - pinned, FOLL_WRITE,
+					  num_pages - pinned,
+					  read_only ? 0 : FOLL_WRITE,
 					  &pages[pinned]);
 		if (ret < 0)
 			goto out;
@@ -426,9 +428,8 @@ retry:
 		}
 	}
 
-	/* TODO: Don't do this for read-only */
 	for (i = 0; i < pinned; ++i) {
-		if (trylock_page(pages[i])) {
+		if (!read_only && trylock_page(pages[i])) {
 			set_page_dirty(pages[i]);
 			unlock_page(pages[i]);
 		}
@@ -677,7 +678,8 @@ struct dma_fence *xe_vm_userptr_bind(struct xe_vm *vm)
 static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 				    struct xe_bo *bo,
 				    uint64_t bo_offset_or_userptr,
-				    uint64_t start, uint64_t end)
+				    uint64_t start, uint64_t end,
+				    bool read_only)
 {
 	struct xe_vma *vma;
 
@@ -693,6 +695,8 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 	vma->vm = vm;
 	vma->start = start;
 	vma->end = end;
+	if (read_only)
+		vma->pte_flags = PTE_READ_ONLY;
 
 	if (bo) {
 		xe_bo_assert_held(bo);
@@ -1202,7 +1206,8 @@ xe_vm_populate_pgtable(void *data, u32 qword_ofs, u32 num_qwords,
 			ptr[i] = gen8_pte_encode(update->target_vma,
 						 update->target_vma->bo,
 						 bo_offset,
-						 XE_CACHE_WB, 0);
+						 XE_CACHE_WB,
+						 update->target_vma->pte_flags);
 	}
 }
 
@@ -1565,9 +1570,9 @@ err_free_op:
 	return err;
 }
 
-static int xe_vm_bind(struct xe_vm *vm, struct xe_bo *bo,
-		      u64 bo_offset, u64 range, u64 addr,
-		      struct xe_sync_entry *syncs, u32 num_syncs)
+static int xe_vm_bind(struct xe_vm *vm, struct xe_bo *bo, u64 bo_offset,
+		      u64 range, u64 addr, struct xe_sync_entry *syncs,
+		      u32 num_syncs, bool read_only)
 {
 	struct xe_vma *vma;
 	int err;
@@ -1579,7 +1584,8 @@ static int xe_vm_bind(struct xe_vm *vm, struct xe_bo *bo,
 	if (err)
 		goto err;
 
-	vma = xe_vma_create(vm, bo, bo_offset, addr, addr + range - 1);
+	vma = xe_vma_create(vm, bo, bo_offset, addr, addr + range - 1,
+			    read_only);
 	if (!vma) {
 		err = -ENOMEM;
 		goto err;
@@ -1599,12 +1605,13 @@ err:
 
 static int xe_vm_bind_userptr(struct xe_vm *vm, u64 userptr, u64 range,
 			      u64 addr, struct xe_sync_entry *syncs,
-			      u32 num_syncs)
+			      u32 num_syncs, bool read_only)
 {
 	struct xe_vma *vma;
 	int err;
 
-	vma = xe_vma_create(vm, NULL, userptr, addr, addr + range - 1);
+	vma = xe_vma_create(vm, NULL, userptr, addr, addr + range - 1,
+			    read_only);
 	if (IS_ERR(vma)) {
 		err = PTR_ERR(vma);
 		goto err;
@@ -1748,6 +1755,8 @@ int xe_vm_destroy_ioctl(struct drm_device *dev, void *data,
 	return 0;
 }
 
+#define VM_BIND_OP(op)	(op & 0xffff)
+
 static int __xe_vm_bind_ioctl(struct xe_vm *vm, struct xe_bo *bo, u64 bo_offset,
 			      u64 range, u64 addr, u32 op,
 			      struct xe_sync_entry *syncs, u32 num_syncs)
@@ -1775,14 +1784,16 @@ static int __xe_vm_bind_ioctl(struct xe_vm *vm, struct xe_bo *bo, u64 bo_offset,
 	    XE_IOCTL_ERR(xe, bo && bo_offset > bo->size - range))
 		return -EINVAL;
 
-	switch (op) {
+	switch (VM_BIND_OP(op)) {
 	case XE_VM_BIND_OP_MAP:
-		return xe_vm_bind(vm, bo, bo_offset, range, addr, syncs, num_syncs);
+		return xe_vm_bind(vm, bo, bo_offset, range, addr, syncs,
+				  num_syncs, op & XE_VM_BIND_FLAG_READONLY);
 	case XE_VM_BIND_OP_UNMAP:
 		return xe_vm_unbind(vm, bo, range, addr, syncs, num_syncs);
 	case XE_VM_BIND_OP_MAP_USERPTR:
 		return xe_vm_bind_userptr(vm, bo_offset, range, addr, syncs,
-					  num_syncs);
+					  num_syncs,
+					  op & XE_VM_BIND_FLAG_READONLY);
 	default:
 		XE_IOCTL_ERR(xe, op > XE_VM_BIND_OP_MAP_USERPTR);
 		return -EINVAL;
@@ -1795,8 +1806,7 @@ static void xe_vm_tv_populate(struct xe_vm *vm, struct ttm_validate_buffer *tv)
 	tv->bo = &vm->pt_root->bo->ttm;
 }
 
-#define VM_BIND_OP(op)	(op & 0xffff)
-#define SUPPORTED_FLAGS	(0xffff)	/* TODO: read-only */
+#define SUPPORTED_FLAGS	(XE_VM_BIND_FLAG_READONLY | 0xffff)
 
 int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 		     struct drm_file *file)
@@ -1870,15 +1880,13 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 		if (!err) {
 			err = __xe_vm_bind_ioctl(vm, bo, args->obj_offset,
 						args->range, args->addr,
-						VM_BIND_OP(args->op),
-						syncs, num_syncs);
+						args->op, syncs, num_syncs);
 			ttm_eu_backoff_reservation(&ww, &objs);
 		}
 	} else {
 		err = __xe_vm_bind_ioctl(vm, NULL, args->userptr,
 					 args->range, args->addr,
-					 VM_BIND_OP(args->op),
-					 syncs, num_syncs);
+					 args->op, syncs, num_syncs);
 	}
 
 free_syncs:
