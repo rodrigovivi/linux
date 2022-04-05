@@ -223,6 +223,8 @@ static void fill_engine_enable_masks(struct xe_gt *gt,
 		       engine_enable_mask(gt, XE_ENGINE_CLASS_VIDEO_DECODE));
 	info_map_write(info_map, engine_enabled_masks[GUC_VIDEOENHANCE_CLASS],
 		       engine_enable_mask(gt, XE_ENGINE_CLASS_VIDEO_ENHANCE));
+	info_map_write(info_map, engine_enabled_masks[GUC_COMPUTE_CLASS],
+		       engine_enable_mask(gt, XE_ENGINE_CLASS_COMPUTE));
 }
 
 #define LR_HW_CONTEXT_SIZE (80 * sizeof(u32))
