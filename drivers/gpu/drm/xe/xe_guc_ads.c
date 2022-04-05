@@ -199,15 +199,30 @@ static void guc_policies_init(struct xe_guc_ads *ads)
 	ads_blob_write(ads, policies.is_valid, 1);
 }
 
+static u32 engine_enable_mask(struct xe_gt *gt, enum xe_engine_class class)
+{
+	struct xe_hw_engine *hwe;
+	enum xe_hw_engine_id id;
+	u32 mask = 0;
+
+	for_each_hw_engine(hwe, gt, id)
+		if (hwe->class == class)
+			mask |= BIT(hwe->instance);
+
+	return mask;
+}
+
 static void fill_engine_enable_masks(struct xe_gt *gt,
 				     struct dma_buf_map *info_map)
 {
-	info_map_write(info_map, engine_enabled_masks[GUC_RENDER_CLASS], 1);
-	info_map_write(info_map, engine_enabled_masks[GUC_BLITTER_CLASS], 1);
+	info_map_write(info_map, engine_enabled_masks[GUC_RENDER_CLASS],
+		       engine_enable_mask(gt, XE_ENGINE_CLASS_RENDER));
+	info_map_write(info_map, engine_enabled_masks[GUC_BLITTER_CLASS],
+		       engine_enable_mask(gt, XE_ENGINE_CLASS_COPY));
 	info_map_write(info_map, engine_enabled_masks[GUC_VIDEO_CLASS],
-		       VDBOX_MASK(gt));
+		       engine_enable_mask(gt, XE_ENGINE_CLASS_VIDEO_DECODE));
 	info_map_write(info_map, engine_enabled_masks[GUC_VIDEOENHANCE_CLASS],
-		       VEBOX_MASK(gt));
+		       engine_enable_mask(gt, XE_ENGINE_CLASS_VIDEO_ENHANCE));
 }
 
 #define LR_HW_CONTEXT_SIZE (80 * sizeof(u32))

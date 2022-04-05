@@ -13,19 +13,6 @@
 #include "xe_sa_types.h"
 #include "xe_uc_types.h"
 
-#define ENGINE_INSTANCES_MASK(gt, first, count) ({		\
-	unsigned int first__ = (first);					\
-	unsigned int count__ = (count);					\
-	((gt)->info.engine_mask &					\
-	 GENMASK(first__ + count__ - 1, first__)) >> first__;		\
-})
-#define VDBOX_MASK(gt) \
-	ENGINE_INSTANCES_MASK(gt, XE_HW_ENGINE_VCS0, \
-			      (XE_HW_ENGINE_VCS7 - XE_HW_ENGINE_VCS0 + 1))
-#define VEBOX_MASK(gt) \
-	ENGINE_INSTANCES_MASK(gt, XE_HW_ENGINE_VECS0, \
-			      (XE_HW_ENGINE_VECS3 - XE_HW_ENGINE_VECS0 + 1))
-
 struct xe_engine_ops;
 struct xe_force_wake;
 struct xe_ggtt;
