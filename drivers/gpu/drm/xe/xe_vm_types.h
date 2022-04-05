@@ -26,6 +26,8 @@ struct xe_vma {
 	uint64_t start;
 	/** @end: end address of this VMA within its address domain */
 	uint64_t end;
+	/** @pte_flags: pte flags for this VMA */
+	uint32_t pte_flags;
 
 	/** @bo: BO if not a userptr, must be NULL is userptr */
 	struct xe_bo *bo;
