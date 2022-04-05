@@ -260,8 +260,8 @@ void xe_hw_engine_enable_ring(struct xe_hw_engine *hwe)
 	hw_engine_mmio_read32(hwe, RING_MI_MODE(0).reg);
 }
 
-int xe_hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
-		      enum xe_hw_engine_id id)
+static int hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
+			  enum xe_hw_engine_id id)
 {
 	struct xe_device *xe = gt_to_xe(gt);
 	const struct engine_info *info = &engine_infos[id];
@@ -335,6 +335,39 @@ err_name:
 	hwe->name = NULL;
 
 	return err;
+}
+
+static void hw_engine_setup_logical_mapping(struct xe_gt *gt)
+{
+	int class;
+
+	/* FIXME: Doing a simple logical mapping that works for most hardware */
+	for (class = 0; class < XE_ENGINE_CLASS_MAX; ++class) {
+		struct xe_hw_engine *hwe;
+		enum xe_hw_engine_id id;
+		int logical_instance = 0;
+
+		for_each_hw_engine(hwe, gt, id)
+			if (hwe->class == class)
+				hwe->logical_instance = logical_instance++;
+	}
+}
+
+int xe_hw_engines_init(struct xe_gt *gt)
+{
+	int i, err;
+
+	/* TODO: Read fuses */
+
+	for (i = 0; i < ARRAY_SIZE(gt->hw_engines); i++) {
+		err = hw_engine_init(gt, &gt->hw_engines[i], i);
+		if (err)
+			return err;
+	}
+
+	hw_engine_setup_logical_mapping(gt);
+
+	return 0;
 }
 
 void xe_hw_engine_handle_irq(struct xe_hw_engine *hwe, uint16_t intr_vec)
