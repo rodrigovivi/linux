@@ -15,6 +15,7 @@
 #include "xe_engine_types.h"
 #include "xe_guc_engine_types.h"
 #include "xe_sched_job.h"
+#include "xe_vm_types.h"
 
 DECLARE_EVENT_CLASS(xe_engine,
 		    TP_PROTO(struct xe_engine *e),
@@ -200,6 +201,53 @@ DEFINE_EVENT(drm_sched_msg, drm_sched_msg_recv,
 	     TP_ARGS(msg)
 );
 
+DECLARE_EVENT_CLASS(xe_vma,
+		    TP_PROTO(struct xe_vma *vma),
+		    TP_ARGS(vma),
+
+		    TP_STRUCT__entry(
+			     __field(u64, vma)
+			     __field(u64, start)
+			     __field(u64, end)
+			     __field(u64, ptr)
+			     ),
+
+		    TP_fast_assign(
+			   __entry->vma = (u64)vma;
+			   __entry->start = vma->start;
+			   __entry->end = vma->end;
+			   __entry->ptr = (u64)vma->userptr.ptr;
+			   ),
+
+		    TP_printk("vma=0x%016llx, start=0x%016llx, end=0x%016llx, ptr=0x%016llx,",
+			      __entry->vma, __entry->start, __entry->end,
+			      __entry->ptr)
+);
+
+DEFINE_EVENT(xe_vma, xe_vma_bind,
+	     TP_PROTO(struct xe_vma *vma),
+	     TP_ARGS(vma)
+);
+
+DEFINE_EVENT(xe_vma, xe_vma_unbind,
+	     TP_PROTO(struct xe_vma *vma),
+	     TP_ARGS(vma)
+);
+
+DEFINE_EVENT(xe_vma, xe_vma_userptr_rebind_worker,
+	     TP_PROTO(struct xe_vma *vma),
+	     TP_ARGS(vma)
+);
+
+DEFINE_EVENT(xe_vma, xe_vma_userptr_rebind_exec,
+	     TP_PROTO(struct xe_vma *vma),
+	     TP_ARGS(vma)
+);
+
+DEFINE_EVENT(xe_vma, xe_vma_userptr_invalidate,
+	     TP_PROTO(struct xe_vma *vma),
+	     TP_ARGS(vma)
+);
 #endif /* _XE_TRACE_H_ */
 
 /* This part must be outside protection */
