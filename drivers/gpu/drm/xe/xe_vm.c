@@ -20,6 +20,7 @@
 #include "xe_migrate.h"
 #include "xe_preempt_fence_types.h"
 #include "xe_sync.h"
+#include "xe_trace.h"
 
 enum xe_cache_level {
 	XE_CACHE_NONE,
@@ -508,6 +509,8 @@ static void vma_rebind_work_func(struct work_struct *w)
 
 	XE_BUG_ON(!vma_is_userptr(vma));
 
+	trace_xe_vma_userptr_rebind_worker(vma);
+
 retry:
 	ret = vma_userptr_pin_pages(vma);
 	XE_WARN_ON(ret < 0);
@@ -572,6 +575,7 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 	long err;
 
 	XE_BUG_ON(!vma_is_userptr(vma));
+	trace_xe_vma_userptr_invalidate(vma);
 
 	if (!mmu_notifier_range_blockable(range))
 		return false;
@@ -660,6 +664,7 @@ struct dma_fence *xe_vm_userptr_bind(struct xe_vm *vm)
 	list_for_each_entry(vma, &vm->userptr.list, userptr_link) {
 		if (vma->userptr.dirty) {
 			dma_fence_put(fence);
+			trace_xe_vma_userptr_rebind_exec(vma);
 			fence = xe_vm_bind_vma(vma, NULL, 0);
 		}
 		if (IS_ERR(fence))
@@ -1146,6 +1151,7 @@ struct dma_fence *xe_vm_unbind_vma(struct xe_vma *vma, struct xe_sync_entry *syn
 	xe_bo_assert_held(vma->bo);
 	if (!evict)
 		xe_vm_assert_held(vm);
+	trace_xe_vma_unbind(vma);
 
 	XE_WARN_ON(vma->evicted && evict);
 
@@ -1398,6 +1404,7 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_sync_entry *syncs, u32 num_syncs)
 
 	xe_bo_assert_held(vma->bo);
 	xe_vm_assert_held(vm);
+	trace_xe_vma_bind(vma);
 
 	err = xe_pt_prepare_bind(vma, entries, &num_entries);
 	if (err)
