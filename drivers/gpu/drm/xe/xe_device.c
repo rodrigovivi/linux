@@ -231,6 +231,7 @@ int xe_device_probe(struct xe_device *xe)
 void xe_device_remove(struct xe_device *xe)
 {
 	mutex_destroy(&xe->persitent_engines.lock);
+	xe_irq_shutdown(xe);
 	drm_dev_unregister(&xe->drm);
 	ttm_device_fini(&xe->ttm);
 }
