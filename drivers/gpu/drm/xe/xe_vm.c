@@ -1564,8 +1564,43 @@ static void add_preempt_op_cb(struct xe_vm *vm, struct dma_fence *fence,
 	}
 }
 
+struct async_op_fence {
+	struct dma_fence fence;
+	struct dma_fence_cb cb;
+	struct xe_vm *vm;
+};
+
+static void async_op_fence_cb(struct dma_fence *fence, struct dma_fence_cb *cb)
+{
+	struct async_op_fence *afence =
+		container_of(cb, struct async_op_fence, cb);
+
+	dma_fence_signal(&afence->fence);
+	xe_vm_put(afence->vm);
+	dma_fence_put(&afence->fence);
+}
+
+static void add_async_op_fence_cb(struct xe_vm *vm,
+				  struct dma_fence *fence,
+				  struct async_op_fence *afence)
+{
+	int ret;
+
+	afence->vm = xe_vm_get(vm);
+	dma_fence_get(&afence->fence);
+	ret = dma_fence_add_callback(fence, &afence->cb, async_op_fence_cb);
+	if (ret == -ENOENT)
+		dma_fence_signal(&afence->fence);
+	if (ret) {
+		xe_vm_put(vm);
+		dma_fence_put(&afence->fence);
+	}
+	XE_WARN_ON(ret && ret != -ENOENT);
+}
+
 static int __xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma,
-			struct xe_sync_entry *syncs, u32 num_syncs)
+			struct xe_sync_entry *syncs, u32 num_syncs,
+			struct async_op_fence *afence)
 {
 	struct xe_vma *prev;
 	struct dma_fence *fence;
@@ -1611,6 +1646,8 @@ static int __xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma,
 		err = PTR_ERR(fence);
 		goto err_free_op;
 	}
+	if (afence)
+		add_async_op_fence_cb(vm, fence, afence);
 	if (xe_vm_has_preempt_fences(vm))
 		add_preempt_op_cb(vm, fence, op);
 
@@ -1628,7 +1665,8 @@ err_free_op:
 
 static int xe_vm_bind(struct xe_vm *vm, struct xe_bo *bo, u64 bo_offset,
 		      u64 range, u64 addr, struct xe_sync_entry *syncs,
-		      u32 num_syncs, bool read_only)
+		      u32 num_syncs, struct async_op_fence *afence,
+		      bool read_only)
 {
 	struct xe_vma *vma;
 	int err;
@@ -1647,7 +1685,7 @@ static int xe_vm_bind(struct xe_vm *vm, struct xe_bo *bo, u64 bo_offset,
 		goto err;
 	}
 
-	err = __xe_vm_bind(vm, vma, syncs, num_syncs);
+	err = __xe_vm_bind(vm, vma, syncs, num_syncs, afence);
 	if (err)
 		goto err_destroy;
 
@@ -1661,7 +1699,8 @@ err:
 
 static int xe_vm_bind_userptr(struct xe_vm *vm, u64 userptr, u64 range,
 			      u64 addr, struct xe_sync_entry *syncs,
-			      u32 num_syncs, bool read_only)
+			      u32 num_syncs, struct async_op_fence *afence,
+			      bool read_only)
 {
 	struct xe_vma *vma;
 	int err;
@@ -1680,7 +1719,7 @@ static int xe_vm_bind_userptr(struct xe_vm *vm, u64 userptr, u64 range,
 	xe_vm_lock(vm, NULL);
 	err = dma_resv_reserve_shared(&vm->resv, 1);
 	if (!err)
-		err = __xe_vm_bind(vm, vma, syncs, num_syncs);
+		err = __xe_vm_bind(vm, vma, syncs, num_syncs, afence);
 	xe_vm_unlock(vm);
 	if (err)
 		goto err_destroy;
@@ -1709,7 +1748,8 @@ err:
 }
 
 static int xe_vm_unbind(struct xe_vm *vm, struct xe_bo *bo, u64 range,
-			u64 addr, struct xe_sync_entry *syncs, u32 num_syncs)
+			u64 addr, struct xe_sync_entry *syncs, u32 num_syncs,
+			struct async_op_fence *afence)
 {
 	struct xe_device *xe = vm->xe;
 	struct xe_vma *vma, lookup;
@@ -1741,6 +1781,8 @@ static int xe_vm_unbind(struct xe_vm *vm, struct xe_bo *bo, u64 range,
 		kfree(op);
 		return PTR_ERR(fence);
 	}
+	if (afence)
+		add_async_op_fence_cb(vm, fence, afence);
 	if (xe_vm_has_preempt_fences(vm))
 		add_preempt_op_cb(vm, fence, op);
 
@@ -1815,17 +1857,20 @@ int xe_vm_destroy_ioctl(struct drm_device *dev, void *data,
 
 static int __vm_bind_iotcl(struct xe_vm *vm, struct xe_bo *bo, u64 bo_offset,
 			   u64 range, u64 addr, u32 op,
-			   struct xe_sync_entry *syncs, u32 num_syncs)
+			   struct xe_sync_entry *syncs, u32 num_syncs,
+			   struct async_op_fence *afence)
 {
 	switch (VM_BIND_OP(op)) {
 	case XE_VM_BIND_OP_MAP:
 		return xe_vm_bind(vm, bo, bo_offset, range, addr, syncs,
-				  num_syncs, op & XE_VM_BIND_FLAG_READONLY);
+				  num_syncs, afence,
+				  op & XE_VM_BIND_FLAG_READONLY);
 	case XE_VM_BIND_OP_UNMAP:
-		return xe_vm_unbind(vm, bo, range, addr, syncs, num_syncs);
+		return xe_vm_unbind(vm, bo, range, addr, syncs, num_syncs,
+				    afence);
 	case XE_VM_BIND_OP_MAP_USERPTR:
 		return xe_vm_bind_userptr(vm, bo_offset, range, addr, syncs,
-					  num_syncs,
+					  num_syncs, afence,
 					  op & XE_VM_BIND_FLAG_READONLY);
 	default:
 		XE_BUG_ON("NOT POSSIBLE");
@@ -1841,7 +1886,8 @@ static void xe_vm_tv_populate(struct xe_vm *vm, struct ttm_validate_buffer *tv)
 
 static int vm_bind_ioctl(struct xe_vm *vm, struct xe_bo *bo,
 			 struct drm_xe_vm_bind *args,
-			 struct xe_sync_entry *syncs, u32 num_syncs)
+			 struct xe_sync_entry *syncs, u32 num_syncs,
+			 struct async_op_fence *fence)
 {
 	int err;
 
@@ -1864,13 +1910,13 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_bo *bo,
 		if (!err) {
 			err = __vm_bind_iotcl(vm, bo, args->obj_offset,
 					      args->range, args->addr, args->op,
-					      syncs, num_syncs);
+					      syncs, num_syncs, fence);
 			ttm_eu_backoff_reservation(&ww, &objs);
 		}
 	} else {
 		err = __vm_bind_iotcl(vm, NULL, args->userptr,
 				      args->range, args->addr, args->op,
-				      syncs, num_syncs);
+				      syncs, num_syncs, fence);
 	}
 
 	return err;
@@ -1882,6 +1928,7 @@ struct async_op {
 	struct xe_sync_entry *syncs;
 	u32 num_syncs;
 	struct list_head link;
+	struct async_op_fence *fence;
 };
 
 static void async_op_work_func(struct work_struct *w)
@@ -1895,32 +1942,35 @@ static void async_op_work_func(struct work_struct *w)
 		if (vm->async_ops.pause && !vm->async_ops.flush)
 			break;
 
-		spin_lock(&vm->async_ops.lock);
+		spin_lock_irq(&vm->async_ops.lock);
 		op = list_first_entry_or_null(&vm->async_ops.pending,
 					      struct async_op, link);
 		if (op)
 			list_del_init(&op->link);
-		spin_unlock(&vm->async_ops.lock);
+		spin_unlock_irq(&vm->async_ops.lock);
 
 		if (!op)
 			break;
 
 		if (!vm->async_ops.flush) {
 			err = vm_bind_ioctl(vm, op->bo, &op->args, op->syncs,
-					    op->num_syncs);
+					    op->num_syncs, op->fence);
 			if (err) {
 				drm_warn(&vm->xe->drm, "Async VM op(%d) failed with %d",
 					 VM_BIND_OP(op->args.op), err);
 
-				spin_lock(&vm->async_ops.lock);
+				spin_lock_irq(&vm->async_ops.lock);
 				list_add(&op->link, &vm->async_ops.pending);
-				spin_unlock(&vm->async_ops.lock);
+				spin_unlock_irq(&vm->async_ops.lock);
 
 				/* TODO: Notify user of VM bind error */
 
 				vm->async_ops.pause = true;
 				break;
 			}
+		} else if (!test_bit(DMA_FENCE_FLAG_SIGNALED_BIT,
+				     &op->fence->fence.flags)) {
+			dma_fence_signal(&op->fence->fence);
 		}
 
 		while (op->num_syncs--)
@@ -1929,29 +1979,63 @@ static void async_op_work_func(struct work_struct *w)
 		if (op->bo)
 			drm_gem_object_put(&op->bo->ttm.base);
 		xe_vm_put(vm);
+		dma_fence_put(&op->fence->fence);
 		kfree(op);
 	}
 }
+
+static const char *async_op_fence_get_driver_name(struct dma_fence *dma_fence)
+{
+	return "xe";
+}
+
+static const char *
+async_op_fence_get_timeline_name(struct dma_fence *dma_fence)
+{
+	return "async_op_fence";
+}
+
+static const struct dma_fence_ops async_op_fence_ops = {
+	.get_driver_name = async_op_fence_get_driver_name,
+	.get_timeline_name = async_op_fence_get_timeline_name,
+};
 
 static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_bo *bo,
 			       struct drm_xe_vm_bind *args,
 			       struct xe_sync_entry *syncs, u32 num_syncs)
 {
 	struct async_op *op;
+	bool installed = false;
+	int i;
 
 	op = kmalloc(sizeof(*op), GFP_KERNEL);
 	if (!op)
 		return -ENOMEM;
 
+	op->fence = kmalloc(sizeof(*op->fence), GFP_KERNEL);
+	if (!op->fence) {
+		kfree(op->fence);
+		return -ENOMEM;
+	}
+
+	dma_fence_init(&op->fence->fence, &async_op_fence_ops,
+		       &vm->async_ops.lock, 0, 0);
 	op->bo = bo;
 	op->args = *args;
 	op->syncs = syncs;
 	op->num_syncs = num_syncs;
 	INIT_LIST_HEAD(&op->link);
 
-	spin_lock(&vm->async_ops.lock);
+	for (i = 0; i < num_syncs; i++)
+		installed |= xe_sync_entry_signal(&syncs[i], NULL,
+						  &op->fence->fence);
+
+	if (!installed)
+		dma_fence_signal(&op->fence->fence);
+
+	spin_lock_irq(&vm->async_ops.lock);
 	list_add_tail(&op->link, &vm->async_ops.pending);
-	spin_unlock(&vm->async_ops.lock);
+	spin_unlock_irq(&vm->async_ops.lock);
 
 	if (!vm->async_ops.pause)
 		queue_work(system_unbound_wq, &vm->async_ops.work);
@@ -2059,7 +2143,7 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 		if (!err)
 			return 0;
 	} else {
-		err = vm_bind_ioctl(vm, bo, args, syncs, num_syncs);
+		err = vm_bind_ioctl(vm, bo, args, syncs, num_syncs, NULL);
 	}
 
 free_syncs:
