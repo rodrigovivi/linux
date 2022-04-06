@@ -420,7 +420,8 @@ static irq_handler_t xe_irq_handler(struct xe_device *xe)
 static void irq_uninstall(struct drm_device *drm, void *arg)
 {
 	struct xe_device *xe = arg;
-	int irq = to_pci_dev(xe->drm.dev)->irq;
+	struct pci_dev *pdev = to_pci_dev(xe->drm.dev);
+	int irq = pdev->irq;
 
 	if (!xe->irq.enabled)
 		return;
@@ -428,6 +429,8 @@ static void irq_uninstall(struct drm_device *drm, void *arg)
 	xe->irq.enabled = false;
 	xe_irq_reset(xe);
 	free_irq(irq, xe);
+	if (pdev->msi_enabled)
+		pci_disable_msi(pdev);
 }
 
 int xe_irq_install(struct xe_device *xe)
@@ -460,4 +463,9 @@ int xe_irq_install(struct xe_device *xe)
 	xe_irq_postinstall(xe);
 
 	return err;
+}
+
+void xe_irq_shutdown(struct xe_device *xe)
+{
+	irq_uninstall(&xe->drm, xe);
 }
