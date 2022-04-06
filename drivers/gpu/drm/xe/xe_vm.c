@@ -1892,11 +1892,14 @@ static void async_op_work_func(struct work_struct *w)
 		struct async_op *op;
 		int err;
 
+		if (vm->async_ops.pause && !vm->async_ops.flush)
+			break;
+
 		spin_lock(&vm->async_ops.lock);
 		op = list_first_entry_or_null(&vm->async_ops.pending,
 					      struct async_op, link);
 		if (op)
-			list_del(&op->link);
+			list_del_init(&op->link);
 		spin_unlock(&vm->async_ops.lock);
 
 		if (!op)
@@ -1905,7 +1908,19 @@ static void async_op_work_func(struct work_struct *w)
 		if (!vm->async_ops.flush) {
 			err = vm_bind_ioctl(vm, op->bo, &op->args, op->syncs,
 					    op->num_syncs);
-			XE_WARN_ON(err);	/* FIXME: handle */
+			if (err) {
+				drm_warn(&vm->xe->drm, "Async VM op(%d) failed with %d",
+					 VM_BIND_OP(op->args.op), err);
+
+				spin_lock(&vm->async_ops.lock);
+				list_add(&op->link, &vm->async_ops.pending);
+				spin_unlock(&vm->async_ops.lock);
+
+				/* TODO: Notify user of VM bind error */
+
+				vm->async_ops.pause = true;
+				break;
+			}
 		}
 
 		while (op->num_syncs--)
@@ -1938,7 +1953,8 @@ static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_bo *bo,
 	list_add_tail(&op->link, &vm->async_ops.pending);
 	spin_unlock(&vm->async_ops.lock);
 
-	queue_work(system_unbound_wq, &vm->async_ops.work);
+	if (!vm->async_ops.pause)
+		queue_work(system_unbound_wq, &vm->async_ops.work);
 
 	return 0;
 }
@@ -1965,7 +1981,7 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 
 	if (XE_IOCTL_ERR(xe, args->extensions) ||
 	    XE_IOCTL_ERR(xe, VM_BIND_OP(op) >
-			 XE_VM_BIND_OP_MAP_USERPTR) ||
+			 XE_VM_BIND_OP_RESTART) ||
 	    XE_IOCTL_ERR(xe, op & ~SUPPORTED_FLAGS) ||
 	    XE_IOCTL_ERR(xe, !args->obj &&
 			 VM_BIND_OP(op) == XE_VM_BIND_OP_MAP) ||
@@ -1976,7 +1992,7 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, args->obj_offset & ~PAGE_MASK) ||
 	    XE_IOCTL_ERR(xe, addr & ~PAGE_MASK) ||
 	    XE_IOCTL_ERR(xe, range & ~PAGE_MASK) ||
-	    XE_IOCTL_ERR(xe, !range))
+	    XE_IOCTL_ERR(xe, !range && VM_BIND_OP(op) != XE_VM_BIND_OP_RESTART))
 		return -EINVAL;
 
 	vm = xe_vm_lookup(xef, args->vm_id);
@@ -1987,6 +2003,19 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 		DRM_ERROR("VM closed while we began looking up?\n");
 		err = -ENOENT;
 		goto put_vm;
+	}
+
+	if (VM_BIND_OP(op) == XE_VM_BIND_OP_RESTART) {
+		if (XE_IOCTL_ERR(xe, args->num_syncs))
+			err = EINVAL;
+		if (XE_IOCTL_ERR(xe, !vm->async_ops.pause))
+			err = -EPROTO;
+		if (!err) {
+			vm->async_ops.pause = false;
+			queue_work(system_unbound_wq, &vm->async_ops.work);
+		}
+		xe_vm_put(vm);
+		return err;
 	}
 
 	if (XE_IOCTL_ERR(xe, !range) ||
