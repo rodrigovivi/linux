@@ -1798,9 +1798,9 @@ int xe_vm_destroy_ioctl(struct drm_device *dev, void *data,
 
 #define VM_BIND_OP(op)	(op & 0xffff)
 
-static int __xe_vm_bind_ioctl(struct xe_vm *vm, struct xe_bo *bo, u64 bo_offset,
-			      u64 range, u64 addr, u32 op,
-			      struct xe_sync_entry *syncs, u32 num_syncs)
+static int __vm_bind_iotcl(struct xe_vm *vm, struct xe_bo *bo, u64 bo_offset,
+			   u64 range, u64 addr, u32 op,
+			   struct xe_sync_entry *syncs, u32 num_syncs)
 {
 	switch (VM_BIND_OP(op)) {
 	case XE_VM_BIND_OP_MAP:
@@ -1824,6 +1824,43 @@ static void xe_vm_tv_populate(struct xe_vm *vm, struct ttm_validate_buffer *tv)
 	tv->bo = &vm->pt_root->bo->ttm;
 }
 
+static int vm_bind_ioctl(struct xe_vm *vm, struct xe_bo *bo,
+			 struct drm_xe_vm_bind *args,
+			 struct xe_sync_entry *syncs, u32 num_syncs)
+{
+	int err;
+
+	if (!(VM_BIND_OP(args->op) == XE_VM_BIND_OP_MAP_USERPTR)) {
+		LIST_HEAD(objs);
+		LIST_HEAD(dups);
+		struct ttm_validate_buffer tv_bo, tv_vm;
+		struct ww_acquire_ctx ww;
+
+		xe_vm_tv_populate(vm, &tv_vm);
+		list_add_tail(&tv_vm.head, &objs);
+
+		if (bo) {
+			tv_bo.bo = &bo->ttm;
+			tv_bo.num_shared = 1;
+			list_add(&tv_bo.head, &objs);
+		}
+
+		err = ttm_eu_reserve_buffers(&ww, &objs, true, &dups);
+		if (!err) {
+			err = __vm_bind_iotcl(vm, bo, args->obj_offset,
+					      args->range, args->addr, args->op,
+					      syncs, num_syncs);
+			ttm_eu_backoff_reservation(&ww, &objs);
+		}
+	} else {
+		err = __vm_bind_iotcl(vm, NULL, args->userptr,
+				      args->range, args->addr, args->op,
+				      syncs, num_syncs);
+	}
+
+	return err;
+}
+
 #define SUPPORTED_FLAGS	(XE_VM_BIND_FLAG_READONLY | 0xffff)
 
 int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
@@ -1834,10 +1871,6 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 	struct drm_xe_vm_bind *args = data;
 	struct drm_xe_sync __user *syncs_user;
 	struct drm_gem_object *gem_obj = NULL;
-	LIST_HEAD(objs);
-	LIST_HEAD(dups);
-	struct ttm_validate_buffer tv_bo, tv_vm;
-	struct ww_acquire_ctx ww;
 	struct xe_bo *bo = NULL;
 	struct xe_vm *vm;
 	int err = 0;
@@ -1846,7 +1879,6 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 	u64 range = args->range;
 	u64 addr = args->addr;
 	u32 op = args->op;
-	bool map_userptr = VM_BIND_OP(op) == XE_VM_BIND_OP_MAP_USERPTR;
 
 	if (XE_IOCTL_ERR(xe, args->extensions) ||
 	    XE_IOCTL_ERR(xe, VM_BIND_OP(op) >
@@ -1854,7 +1886,8 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 	    XE_IOCTL_ERR(xe, op & ~SUPPORTED_FLAGS) ||
 	    XE_IOCTL_ERR(xe, !args->obj &&
 			 VM_BIND_OP(op) == XE_VM_BIND_OP_MAP) ||
-	    XE_IOCTL_ERR(xe, args->obj && map_userptr))
+	    XE_IOCTL_ERR(xe, args->obj &&
+			 VM_BIND_OP(op) == XE_VM_BIND_OP_MAP_USERPTR))
 		return -EINVAL;
 
 	if (XE_IOCTL_ERR(xe, args->obj_offset & ~PAGE_MASK) ||
@@ -1909,27 +1942,7 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 			goto free_syncs;
 	}
 
-	if (!map_userptr) {
-		xe_vm_tv_populate(vm, &tv_vm);
-		list_add_tail(&tv_vm.head, &objs);
-
-		if (bo) {
-			tv_bo.bo = &bo->ttm;
-			tv_bo.num_shared = 1;
-			list_add(&tv_bo.head, &objs);
-		}
-
-		err = ttm_eu_reserve_buffers(&ww, &objs, true, &dups);
-		if (!err) {
-			err = __xe_vm_bind_ioctl(vm, bo, args->obj_offset,
-						 range, addr, op, syncs,
-						 num_syncs);
-			ttm_eu_backoff_reservation(&ww, &objs);
-		}
-	} else {
-		err = __xe_vm_bind_ioctl(vm, NULL, args->userptr,
-					 range, addr, op, syncs, num_syncs);
-	}
+	err = vm_bind_ioctl(vm, bo, args, syncs, num_syncs);
 
 free_syncs:
 	while (num_syncs--)
