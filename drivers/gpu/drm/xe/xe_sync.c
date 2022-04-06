@@ -194,12 +194,12 @@ int xe_sync_entry_add_deps(struct xe_sync_entry *sync, struct xe_sched_job *job)
 	return 0;
 }
 
-void xe_sync_entry_signal(struct xe_sync_entry *sync, struct xe_sched_job *job,
+bool xe_sync_entry_signal(struct xe_sync_entry *sync, struct xe_sched_job *job,
 			  struct dma_fence *fence)
 {
 	if (!(sync->flags & DRM_XE_SYNC_SIGNAL) ||
 	    sync->flags & SYNC_FLAGS_FENCE_INSTALLED)
-		return;
+		return false;
 
 	if (sync->chain_fence) {
 		drm_syncobj_add_point(sync->syncobj, sync->chain_fence,
@@ -228,8 +228,11 @@ void xe_sync_entry_signal(struct xe_sync_entry *sync, struct xe_sched_job *job,
 		job->user_fence.value = sync->timeline_value;
 	}
 
-	sync->flags |= SYNC_FLAGS_FENCE_INSTALLED;
 	/* TODO: external BO? */
+
+	sync->flags |= SYNC_FLAGS_FENCE_INSTALLED;
+
+	return true;
 }
 
 void xe_sync_entry_cleanup(struct xe_sync_entry *sync)
