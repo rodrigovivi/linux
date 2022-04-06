@@ -131,6 +131,8 @@ struct xe_vm {
 		spinlock_t lock;
 		/** @flush: flush all pending async VM ops */
 		bool flush;
+		/** @pause: pause all pending async VM ops */
+		bool pause;
 	} async_ops;
 
 	/** @userptr: user pointer state */
