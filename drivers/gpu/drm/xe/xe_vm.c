@@ -1602,7 +1602,6 @@ static int __xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma,
 			struct xe_sync_entry *syncs, u32 num_syncs,
 			struct async_op_fence *afence)
 {
-	struct xe_vma *prev;
 	struct dma_fence *fence;
 	struct preempt_op *op = NULL;
 	int err;
@@ -1627,20 +1626,6 @@ static int __xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma,
 			return -ENOMEM;
 	}
 
-	prev = xe_vm_find_overlapping_vma(vm, vma);
-
-	/* Already something mapped here? */
-	if (prev) {
-		printk(KERN_DEBUG "VM reserved [0x%08x %08x, 0x%08x %08x]\n",
-		       upper_32_bits(vma->start), lower_32_bits(vma->start),
-		       upper_32_bits(vma->end), lower_32_bits(vma->end));
-		printk(KERN_DEBUG "Overlapping VM: [0x%08x %08x, 0x%08x %08x]\n",
-		       upper_32_bits(prev->start), lower_32_bits(prev->start),
-		       upper_32_bits(prev->end), lower_32_bits(prev->end));
-		err = -EBUSY;
-		goto err_free_op;
-	}
-
 	fence = xe_vm_bind_vma(vma, syncs, num_syncs);
 	if (IS_ERR(fence)) {
 		err = PTR_ERR(fence);
@@ -1651,7 +1636,6 @@ static int __xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma,
 	if (xe_vm_has_preempt_fences(vm))
 		add_preempt_op_cb(vm, fence, op);
 
-	xe_vm_insert_vma(vm, vma);
 #if 1 // REMOVEME when tests are fixed
 	dma_fence_wait(fence, false);
 #endif
@@ -1663,58 +1647,21 @@ err_free_op:
 	return err;
 }
 
-static int xe_vm_bind(struct xe_vm *vm, struct xe_bo *bo, u64 bo_offset,
-		      u64 range, u64 addr, struct xe_sync_entry *syncs,
-		      u32 num_syncs, struct async_op_fence *afence,
-		      bool read_only)
+static int xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma, struct xe_bo *bo,
+		      struct xe_sync_entry *syncs, u32 num_syncs,
+		      struct async_op_fence *afence)
 {
-	struct xe_vma *vma;
-	int err;
-
 	xe_vm_assert_held(vm);
 	xe_bo_assert_held(bo);
 
-	err = xe_bo_populate(bo);
-	if (err)
-		goto err;
-
-	vma = xe_vma_create(vm, bo, bo_offset, addr, addr + range - 1,
-			    read_only);
-	if (!vma) {
-		err = -ENOMEM;
-		goto err;
-	}
-
-	err = __xe_vm_bind(vm, vma, syncs, num_syncs, afence);
-	if (err)
-		goto err_destroy;
-
-	return 0;
-
-err_destroy:
-	xe_vma_destroy(vma);
-err:
-	return err;
+	return __xe_vm_bind(vm, vma, syncs, num_syncs, afence);
 }
 
-static int xe_vm_bind_userptr(struct xe_vm *vm, u64 userptr, u64 range,
-			      u64 addr, struct xe_sync_entry *syncs,
-			      u32 num_syncs, struct async_op_fence *afence,
-			      bool read_only)
+static int xe_vm_bind_userptr(struct xe_vm *vm, struct xe_vma *vma,
+			      struct xe_sync_entry *syncs, u32 num_syncs,
+			      struct async_op_fence *afence)
 {
-	struct xe_vma *vma;
 	int err;
-
-	vma = xe_vma_create(vm, NULL, userptr, addr, addr + range - 1,
-			    read_only);
-	if (IS_ERR(vma)) {
-		err = PTR_ERR(vma);
-		goto err;
-	}
-
-	err = vma_userptr_pin_pages(vma);
-	if (err)
-		goto err_destroy;
 
 	xe_vm_lock(vm, NULL);
 	err = dma_resv_reserve_shared(&vm->resv, 1);
@@ -1722,7 +1669,7 @@ static int xe_vm_bind_userptr(struct xe_vm *vm, u64 userptr, u64 range,
 		err = __xe_vm_bind(vm, vma, syncs, num_syncs, afence);
 	xe_vm_unlock(vm);
 	if (err)
-		goto err_destroy;
+		return err;
 
 	/* Once initial bind done, make userptr available to execs */
 	mutex_lock(&vm->userptr.list_lock);
@@ -1740,35 +1687,17 @@ static int xe_vm_bind_userptr(struct xe_vm *vm, u64 userptr, u64 range,
 				      MAX_SCHEDULE_TIMEOUT);
 
 	return 0;
-
-err_destroy:
-	xe_vma_destroy(vma);
-err:
-	return err;
 }
 
-static int xe_vm_unbind(struct xe_vm *vm, struct xe_bo *bo, u64 range,
-			u64 addr, struct xe_sync_entry *syncs, u32 num_syncs,
-			struct async_op_fence *afence)
+static int xe_vm_unbind(struct xe_vm *vm, struct xe_vma *vma,
+			struct xe_bo *bo, struct xe_sync_entry *syncs,
+			u32 num_syncs, struct async_op_fence *afence)
 {
-	struct xe_device *xe = vm->xe;
-	struct xe_vma *vma, lookup;
 	struct dma_fence *fence;
 	struct preempt_op *op = NULL;
 
 	xe_vm_assert_held(vm);
 	xe_bo_assert_held(bo);
-
-	lookup.start = addr;
-	lookup.end = addr + range - 1;
-
-	vma = xe_vm_find_overlapping_vma(vm, &lookup);
-
-	if (XE_IOCTL_ERR(xe, !vma) ||
-	    XE_IOCTL_ERR(xe, vma->bo != bo) ||
-	    XE_IOCTL_ERR(xe, vma->start != addr) ||
-	    XE_IOCTL_ERR(xe, vma->end != addr + range - 1))
-		return -EINVAL;
 
 	if (xe_vm_has_preempt_fences(vm)) {
 		op = kmalloc(sizeof(*op), GFP_KERNEL);
@@ -1786,9 +1715,7 @@ static int xe_vm_unbind(struct xe_vm *vm, struct xe_bo *bo, u64 range,
 	if (xe_vm_has_preempt_fences(vm))
 		add_preempt_op_cb(vm, fence, op);
 
-	xe_vm_remove_vma(vm, vma);
 	xe_vma_destroy(vma);
-
 #if 1 // REMOVEME when tests are fixed
 	dma_fence_wait(fence, false);
 #endif
@@ -1855,23 +1782,19 @@ int xe_vm_destroy_ioctl(struct drm_device *dev, void *data,
 
 #define VM_BIND_OP(op)	(op & 0xffff)
 
-static int __vm_bind_iotcl(struct xe_vm *vm, struct xe_bo *bo, u64 bo_offset,
+static int __vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
+			   struct xe_bo *bo, u64 bo_offset,
 			   u64 range, u64 addr, u32 op,
 			   struct xe_sync_entry *syncs, u32 num_syncs,
 			   struct async_op_fence *afence)
 {
 	switch (VM_BIND_OP(op)) {
 	case XE_VM_BIND_OP_MAP:
-		return xe_vm_bind(vm, bo, bo_offset, range, addr, syncs,
-				  num_syncs, afence,
-				  op & XE_VM_BIND_FLAG_READONLY);
+		return xe_vm_bind(vm, vma, bo, syncs, num_syncs, afence);
 	case XE_VM_BIND_OP_UNMAP:
-		return xe_vm_unbind(vm, bo, range, addr, syncs, num_syncs,
-				    afence);
+		return xe_vm_unbind(vm, vma, bo, syncs, num_syncs, afence);
 	case XE_VM_BIND_OP_MAP_USERPTR:
-		return xe_vm_bind_userptr(vm, bo_offset, range, addr, syncs,
-					  num_syncs, afence,
-					  op & XE_VM_BIND_FLAG_READONLY);
+		return xe_vm_bind_userptr(vm, vma, syncs, num_syncs, afence);
 	default:
 		XE_BUG_ON("NOT POSSIBLE");
 		return -EINVAL;
@@ -1884,7 +1807,7 @@ static void xe_vm_tv_populate(struct xe_vm *vm, struct ttm_validate_buffer *tv)
 	tv->bo = &vm->pt_root->bo->ttm;
 }
 
-static int vm_bind_ioctl(struct xe_vm *vm, struct xe_bo *bo,
+static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma, struct xe_bo *bo,
 			 struct drm_xe_vm_bind *args,
 			 struct xe_sync_entry *syncs, u32 num_syncs,
 			 struct async_op_fence *fence)
@@ -1908,13 +1831,13 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_bo *bo,
 
 		err = ttm_eu_reserve_buffers(&ww, &objs, true, &dups);
 		if (!err) {
-			err = __vm_bind_iotcl(vm, bo, args->obj_offset,
+			err = __vm_bind_ioctl(vm, vma, bo, args->obj_offset,
 					      args->range, args->addr, args->op,
 					      syncs, num_syncs, fence);
 			ttm_eu_backoff_reservation(&ww, &objs);
 		}
 	} else {
-		err = __vm_bind_iotcl(vm, NULL, args->userptr,
+		err = __vm_bind_ioctl(vm, vma, NULL, args->userptr,
 				      args->range, args->addr, args->op,
 				      syncs, num_syncs, fence);
 	}
@@ -1923,6 +1846,7 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_bo *bo,
 }
 
 struct async_op {
+	struct xe_vma *vma;
 	struct xe_bo *bo;
 	struct drm_xe_vm_bind args;
 	struct xe_sync_entry *syncs;
@@ -1953,8 +1877,9 @@ static void async_op_work_func(struct work_struct *w)
 			break;
 
 		if (!vm->async_ops.flush) {
-			err = vm_bind_ioctl(vm, op->bo, &op->args, op->syncs,
-					    op->num_syncs, op->fence);
+			err = vm_bind_ioctl(vm, op->vma, op->bo, &op->args,
+					    op->syncs, op->num_syncs,
+					    op->fence);
 			if (err) {
 				drm_warn(&vm->xe->drm, "Async VM op(%d) failed with %d",
 					 VM_BIND_OP(op->args.op), err);
@@ -1968,9 +1893,21 @@ static void async_op_work_func(struct work_struct *w)
 				vm->async_ops.pause = true;
 				break;
 			}
-		} else if (!test_bit(DMA_FENCE_FLAG_SIGNALED_BIT,
-				     &op->fence->fence.flags)) {
-			dma_fence_signal(&op->fence->fence);
+		} else {
+			if (VM_BIND_OP(op->args.op) == XE_VM_BIND_OP_UNMAP) {
+				if (op->bo && op->bo->vm != vm)
+					dma_resv_lock(op->bo->ttm.base.resv,
+						      NULL);
+				xe_vm_lock(vm, NULL);
+				xe_vma_destroy(op->vma);
+				xe_vm_unlock(vm);
+				if (op->bo && op->bo->vm != vm)
+					dma_resv_unlock(op->bo->ttm.base.resv);
+			}
+
+			if (!test_bit(DMA_FENCE_FLAG_SIGNALED_BIT,
+				      &op->fence->fence.flags))
+				dma_fence_signal(&op->fence->fence);
 		}
 
 		while (op->num_syncs--)
@@ -2000,8 +1937,8 @@ static const struct dma_fence_ops async_op_fence_ops = {
 	.get_timeline_name = async_op_fence_get_timeline_name,
 };
 
-static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_bo *bo,
-			       struct drm_xe_vm_bind *args,
+static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_vma *vma,
+			       struct xe_bo *bo, struct drm_xe_vm_bind *args,
 			       struct xe_sync_entry *syncs, u32 num_syncs)
 {
 	struct async_op *op;
@@ -2020,6 +1957,7 @@ static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_bo *bo,
 
 	dma_fence_init(&op->fence->fence, &async_op_fence_ops,
 		       &vm->async_ops.lock, 0, 0);
+	op->vma = vma;
 	op->bo = bo;
 	op->args = *args;
 	op->syncs = syncs;
@@ -2043,11 +1981,104 @@ static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_bo *bo,
 	return 0;
 }
 
+struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
+					u64 bo_offset_or_userptr, u64 addr,
+					u64 range, u32 op)
+{
+	struct xe_device *xe = vm->xe;
+	struct xe_vma *vma, lookup;
+	int err;
+
+	lookup.start = addr;
+	lookup.end = addr + range - 1;
+
+	if (bo) {
+		if (bo->vm != vm)
+			dma_resv_lock(bo->ttm.base.resv, NULL);
+		xe_vm_lock(vm, NULL);
+	}
+	switch (VM_BIND_OP(op)) {
+	case XE_VM_BIND_OP_MAP:
+		vma = xe_vm_find_overlapping_vma(vm, &lookup);
+		if (XE_IOCTL_ERR(xe, vma)) {
+			vma = ERR_PTR(-EBUSY);
+			goto out_unlock;
+		}
+
+		err = xe_bo_populate(bo);
+		if (err) {
+			vma = ERR_PTR(err);
+			goto out_unlock;
+		}
+
+		vma = xe_vma_create(vm, bo, bo_offset_or_userptr, addr,
+				    addr + range - 1,
+				    op & XE_VM_BIND_FLAG_READONLY);
+		if (!vma) {
+			vma = ERR_PTR(-ENOMEM);
+			goto out_unlock;
+		}
+
+		xe_vm_insert_vma(vm, vma);
+		break;
+	case XE_VM_BIND_OP_UNMAP:
+		if (!bo)
+			xe_vm_lock(vm, NULL);
+
+		vma = xe_vm_find_overlapping_vma(vm, &lookup);
+
+		if (XE_IOCTL_ERR(xe, !vma) ||
+		    XE_IOCTL_ERR(xe, vma->bo != bo) ||
+		    XE_IOCTL_ERR(xe, vma->start != addr) ||
+		    XE_IOCTL_ERR(xe, vma->end != addr + range - 1)) {
+			vma = ERR_PTR(-EINVAL);
+			if (!bo)
+				xe_vm_unlock(vm);
+			goto out_unlock;
+		}
+
+		xe_vm_remove_vma(vm, vma);
+		if (!bo)
+			xe_vm_unlock(vm);
+		break;
+	case XE_VM_BIND_OP_MAP_USERPTR:
+		XE_BUG_ON(bo);
+
+		vma = xe_vma_create(vm, NULL, bo_offset_or_userptr, addr,
+				    addr + range - 1,
+				    op & XE_VM_BIND_FLAG_READONLY);
+		if (!vma)
+			return ERR_PTR(-ENOMEM);
+
+		err = vma_userptr_pin_pages(vma);
+		xe_vm_lock(vm, NULL);
+		if (err || xe_vm_find_overlapping_vma(vm, &lookup)) {
+			xe_vma_destroy(vma);
+			vma = err ? ERR_PTR(err) : ERR_PTR(-EBUSY);
+		} else {
+			xe_vm_insert_vma(vm, vma);
+		}
+		xe_vm_unlock(vm);
+		break;
+	default:
+		XE_BUG_ON("NOT POSSIBLE");
+		vma = ERR_PTR(-EINVAL);
+	}
+
+out_unlock:
+	if (bo) {
+		xe_vm_unlock(vm);
+		if (bo->vm != vm)
+			dma_resv_unlock(bo->ttm.base.resv);
+	}
+
+	return vma;
+}
+
 #define SUPPORTED_FLAGS	\
 	(XE_VM_BIND_FLAG_ASYNC | XE_VM_BIND_FLAG_READONLY | 0xffff)
 
-int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
-		     struct drm_file *file)
+int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 {
 	struct xe_device *xe = to_xe_device(dev);
 	struct xe_file *xef = to_xe_file(file);
@@ -2056,6 +2087,7 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 	struct drm_gem_object *gem_obj = NULL;
 	struct xe_bo *bo = NULL;
 	struct xe_vm *vm;
+	struct xe_vma *vma;
 	int err = 0;
 	u32 num_syncs;
 	struct xe_sync_entry *syncs;
@@ -2138,12 +2170,34 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 			goto free_syncs;
 	}
 
+	vma = vm_bind_ioctl_lookup_vma(vm, bo, args->obj_offset, addr, range,
+				       op);
+	if (IS_ERR(vma)) {
+		err = PTR_ERR(vma);
+		goto free_syncs;
+	}
+
 	if (op & XE_VM_BIND_FLAG_ASYNC) {
-		err = vm_bind_ioctl_async(vm, bo, args, syncs, num_syncs);
+		err = vm_bind_ioctl_async(vm, vma, bo, args, syncs, num_syncs);
 		if (!err)
 			return 0;
 	} else {
-		err = vm_bind_ioctl(vm, bo, args, syncs, num_syncs, NULL);
+		err = vm_bind_ioctl(vm, vma, bo, args, syncs, num_syncs, NULL);
+	}
+
+	if (err) {
+		switch (VM_BIND_OP(op)) {
+		case XE_VM_BIND_OP_MAP:
+		case XE_VM_BIND_OP_MAP_USERPTR:
+			if (bo && bo->vm != vm)
+				dma_resv_lock(bo->ttm.base.resv, NULL);
+			xe_vm_lock(vm, NULL);
+			xe_vm_remove_vma(vm, vma);
+			xe_vma_destroy(vma);
+			xe_vm_unlock(vm);
+			if (bo && bo->vm != vm)
+				dma_resv_unlock(bo->ttm.base.resv);
+		}
 	}
 
 free_syncs:
