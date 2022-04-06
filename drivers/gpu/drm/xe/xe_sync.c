@@ -12,6 +12,7 @@
 #include "xe_macros.h"
 
 #define SYNC_FLAGS_TYPE_MASK 0x3
+#define SYNC_FLAGS_FENCE_INSTALLED	0x10000
 
 struct user_fence {
 	struct xe_device *xe;
@@ -196,7 +197,8 @@ int xe_sync_entry_add_deps(struct xe_sync_entry *sync, struct xe_sched_job *job)
 void xe_sync_entry_signal(struct xe_sync_entry *sync, struct xe_sched_job *job,
 			  struct dma_fence *fence)
 {
-	if (!(sync->flags & DRM_XE_SYNC_SIGNAL))
+	if (!(sync->flags & DRM_XE_SYNC_SIGNAL) ||
+	    sync->flags & SYNC_FLAGS_FENCE_INSTALLED)
 		return;
 
 	if (sync->chain_fence) {
@@ -226,6 +228,7 @@ void xe_sync_entry_signal(struct xe_sync_entry *sync, struct xe_sched_job *job,
 		job->user_fence.value = sync->timeline_value;
 	}
 
+	sync->flags |= SYNC_FLAGS_FENCE_INSTALLED;
 	/* TODO: external BO? */
 }
 
