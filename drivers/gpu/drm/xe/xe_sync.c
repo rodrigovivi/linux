@@ -81,6 +81,7 @@ static void user_fence_cb(struct dma_fence *fence, struct dma_fence_cb *cb)
 
 	INIT_WORK(&ufence->worker, user_fence_worker);
 	queue_work(system_unbound_wq, &ufence->worker);
+	dma_fence_put(fence);
 }
 
 int xe_sync_entry_parse(struct xe_device *xe, struct xe_file *xef,
@@ -214,12 +215,14 @@ bool xe_sync_entry_signal(struct xe_sync_entry *sync, struct xe_sched_job *job,
 	} else if (sync->ufence) {
 		int err;
 
+		dma_fence_get(fence);
 		user_fence_get(sync->ufence);
 		err = dma_fence_add_callback(fence, &sync->ufence->cb,
 					     user_fence_cb);
 		if (err) {
 			XE_WARN_ON("failed to add user fence");
 			user_fence_put(sync->ufence);
+			dma_fence_put(fence);
 		}
 	} else if ((sync->flags & SYNC_FLAGS_TYPE_MASK) ==
 		   DRM_XE_SYNC_USER_FENCE) {
