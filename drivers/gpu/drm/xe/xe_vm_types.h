@@ -127,7 +127,7 @@ struct xe_vm {
 		struct list_head pending;
 		/** @work: worker to execute async VM ops */
 		struct work_struct work;
-		/** @lock: protects list of pending async VM ops */
+		/** @lock: protects list of pending async VM ops and fences */
 		spinlock_t lock;
 		/** @flush: flush all pending async VM ops */
 		bool flush;
