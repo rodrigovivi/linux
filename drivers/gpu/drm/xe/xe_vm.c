@@ -947,6 +947,31 @@ static void flush_async_ops(struct xe_vm *vm)
 	flush_work(&vm->async_ops.work);
 }
 
+static void vm_async_op_error_capture(struct xe_vm *vm, int err,
+				      u32 op, u64 addr, u64 size)
+{
+	struct drm_xe_vm_bind_op_error_capture capture;
+	uint64_t __user *address =
+		u64_to_user_ptr(vm->async_ops.error_capture.addr);
+	bool in_kthread = !current->mm;
+
+	capture.error = err;
+	capture.op = op;
+	capture.addr = addr;
+	capture.size = size;
+
+	if (in_kthread)
+		kthread_use_mm(vm->async_ops.error_capture.mm);
+
+	if (copy_to_user(address, &capture, sizeof(capture)))
+		XE_WARN_ON("Copy to user failed");
+
+	if (in_kthread)
+		kthread_unuse_mm(vm->async_ops.error_capture.mm);
+
+	wake_up_all(&vm->async_ops.error_capture.wq);
+}
+
 void xe_vm_close_and_put(struct xe_vm *vm)
 {
 	struct rb_root contested = RB_ROOT;
@@ -1012,6 +1037,10 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 			xe_bo_unlock_no_vm(bo);
 		}
 	}
+
+	if (vm->async_ops.error_capture.addr)
+		vm_async_op_error_capture(vm, -ENODEV, XE_VM_BIND_OP_CLOSE,
+					  0, 0);
 
 	xe_vm_put(vm);
 }
@@ -1728,6 +1757,19 @@ static int xe_vm_unbind(struct xe_vm *vm, struct xe_vma *vma,
 static int vm_set_error_capture_address(struct xe_device *xe, struct xe_vm *vm,
 					u64 value)
 {
+	if (XE_IOCTL_ERR(xe, !value))
+		return -EINVAL;
+
+	if (XE_IOCTL_ERR(xe, !(vm->flags & VM_FLAG_ASYNC_BIND_OPS)))
+		return -ENOTSUPP;
+
+	if (XE_IOCTL_ERR(xe, vm->async_ops.error_capture.addr))
+		return -ENOTSUPP;
+
+	vm->async_ops.error_capture.mm = current->mm;
+	vm->async_ops.error_capture.addr = value;
+	init_waitqueue_head(&vm->async_ops.error_capture.wq);
+
 	return 0;
 }
 
@@ -1966,9 +2008,14 @@ static void async_op_work_func(struct work_struct *w)
 				list_add(&op->link, &vm->async_ops.pending);
 				spin_unlock_irq(&vm->async_ops.lock);
 
-				/* TODO: Notify user of VM bind error */
-
 				vm->async_ops.pause = true;
+				smp_mb();
+
+				if (vm->async_ops.error_capture.addr)
+					vm_async_op_error_capture(vm, err,
+								  op->args.op,
+								  op->args.addr,
+								  op->args.range);
 				break;
 			}
 		} else {
