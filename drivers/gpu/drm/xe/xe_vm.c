@@ -1725,6 +1725,75 @@ static int xe_vm_unbind(struct xe_vm *vm, struct xe_vma *vma,
 	return 0;
 }
 
+static int vm_set_error_capture_address(struct xe_device *xe, struct xe_vm *vm,
+					u64 value)
+{
+	return 0;
+}
+
+typedef int (*xe_vm_set_property_fn)(struct xe_device *xe, struct xe_vm *vm,
+				     u64 value);
+
+static const xe_vm_set_property_fn vm_set_property_funcs[] = {
+	[XE_VM_PROPERTY_BIND_OP_ERROR_CAPTURE_ADDRESS] =
+		vm_set_error_capture_address,
+};
+
+static int vm_user_ext_set_property(struct xe_device *xe, struct xe_vm *vm,
+				    u64 extension)
+{
+	uint64_t __user *address = u64_to_user_ptr(extension);
+	struct drm_xe_ext_vm_set_property ext;
+	int err;
+
+	err = __copy_from_user(&ext, address, sizeof(ext));
+	if (XE_IOCTL_ERR(xe, err))
+		return -EFAULT;
+
+	if (XE_IOCTL_ERR(xe, ext.property >=
+			 ARRAY_SIZE(vm_set_property_funcs)))
+		return -EINVAL;
+
+	return vm_set_property_funcs[ext.property](xe, vm, ext.value);
+}
+
+typedef int (*xe_vm_user_extension_fn)(struct xe_device *xe, struct xe_vm *vm,
+				       u64 extension);
+
+static const xe_vm_set_property_fn vm_user_extension_funcs[] = {
+	[XE_VM_EXTENSION_SET_PROPERTY] = vm_user_ext_set_property,
+};
+
+#define MAX_USER_EXTENSIONS	16
+static int vm_user_extensions(struct xe_device *xe, struct xe_vm *vm,
+			      u64 extensions, int ext_number)
+{
+	uint64_t __user *address = u64_to_user_ptr(extensions);
+	struct xe_user_extension ext;
+	int err;
+
+	if (XE_IOCTL_ERR(xe, ext_number >= MAX_USER_EXTENSIONS))
+		return -E2BIG;
+
+	err = __copy_from_user(&ext, address, sizeof(ext));
+	if (XE_IOCTL_ERR(xe, err))
+		return -EFAULT;
+
+	if (XE_IOCTL_ERR(xe, ext.name >=
+			 ARRAY_SIZE(vm_user_extension_funcs)))
+		return -EINVAL;
+
+	err = vm_user_extension_funcs[ext.name](xe, vm, extensions);
+	if (XE_IOCTL_ERR(xe, err))
+		return err;
+
+	if (ext.next_extension)
+		return vm_user_extensions(xe, vm, ext.next_extension,
+					  ++ext_number);
+
+	return 0;
+}
+
 #define ALL_DRM_XE_VM_CREATE_FLAGS (DRM_XE_VM_CREATE_SCRATCH_PAGE | \
 				    DRM_XE_VM_CREATE_COMPUTE_MODE | \
 				    DRM_XE_VM_CREATE_ASYNC_BIND_OPS)
@@ -1739,15 +1808,20 @@ int xe_vm_create_ioctl(struct drm_device *dev, void *data,
 	u32 id;
 	int err;
 
-	if (XE_IOCTL_ERR(xe, args->extensions))
-		return -EINVAL;
-
 	if (XE_IOCTL_ERR(xe, args->flags & ~ALL_DRM_XE_VM_CREATE_FLAGS))
 		return -EINVAL;
 
 	vm = xe_vm_create(xe, args->flags);
 	if (IS_ERR(vm))
 		return PTR_ERR(vm);
+
+	if (args->extensions) {
+		err = vm_user_extensions(xe, vm, args->extensions, 0);
+		if (XE_IOCTL_ERR(xe, err)) {
+			xe_vm_close_and_put(vm);
+			return err;
+		}
+	}
 
 	mutex_lock(&xef->vm.lock);
 	err = xa_alloc(&xef->vm.xa, &id, vm, xa_limit_32b, GFP_KERNEL);
