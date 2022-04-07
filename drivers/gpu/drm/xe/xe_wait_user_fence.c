@@ -11,6 +11,7 @@
 #include "xe_device.h"
 #include "xe_gt.h"
 #include "xe_macros.h"
+#include "xe_vm.h"
 
 static int do_compare(u64 addr, u64 value, u64 mask, u16 op)
 {
@@ -76,7 +77,8 @@ int check_hw_engines(struct xe_device *xe,
 }
 
 #define VALID_FLAGS	(DRM_XE_UFENCE_WAIT_SOFT_OP | \
-			 DRM_XE_UFENCE_WAIT_ABSTIME )
+			 DRM_XE_UFENCE_WAIT_ABSTIME | \
+			 DRM_XE_UFENCE_WAIT_VM_ERROR)
 #define MAX_OP		DRM_XE_UFENCE_WAIT_LTE
 
 int xe_wait_user_fence_ioctl(struct drm_device *dev, void *data,
@@ -88,8 +90,12 @@ int xe_wait_user_fence_ioctl(struct drm_device *dev, void *data,
 	struct drm_xe_engine_class_instance eci[XE_HW_ENGINE_MAX_INSTANCE];
 	struct drm_xe_engine_class_instance __user *user_eci =
 		u64_to_user_ptr(args->instances);
+	struct xe_vm *vm = NULL;
 	unsigned long timeout;
+	u64 addr = args->addr;
 	int err;
+	bool no_engines = args->flags & DRM_XE_UFENCE_WAIT_SOFT_OP ||
+		args->flags & DRM_XE_UFENCE_WAIT_VM_ERROR;
 
 	if (XE_IOCTL_ERR(xe, args->extensions))
 		return -EINVAL;
@@ -100,18 +106,18 @@ int xe_wait_user_fence_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, args->op > MAX_OP))
 		return -EINVAL;
 
-	if (XE_IOCTL_ERR(xe, args->flags & DRM_XE_UFENCE_WAIT_SOFT_OP &&
+	if (XE_IOCTL_ERR(xe, no_engines &&
 			 (args->num_engines || args->instances)))
 		return -EINVAL;
 
-	if (XE_IOCTL_ERR(xe, !(args->flags & DRM_XE_UFENCE_WAIT_SOFT_OP) &&
-			 !args->num_engines))
+	if (XE_IOCTL_ERR(xe, !no_engines && !args->num_engines))
 		return -EINVAL;
 
-	if (XE_IOCTL_ERR(xe, args->addr & 0x7))
+	if (XE_IOCTL_ERR(xe, !(args->flags & DRM_XE_UFENCE_WAIT_VM_ERROR) &&
+			 addr & 0x7))
 		return -EINVAL;
 
-	if (!(args->flags & DRM_XE_UFENCE_WAIT_SOFT_OP)) {
+	if (!no_engines) {
 		err = copy_from_user(eci, user_eci,
 				     sizeof(struct drm_xe_engine_class_instance) *
 			     args->num_engines);
@@ -123,6 +129,22 @@ int xe_wait_user_fence_ioctl(struct drm_device *dev, void *data,
 			return -EINVAL;
 	}
 
+	if (args->flags & DRM_XE_UFENCE_WAIT_VM_ERROR) {
+		if (XE_IOCTL_ERR(xe, args->vm_id >> 32))
+			return -EINVAL;
+
+		vm = xe_vm_lookup(to_xe_file(file), args->vm_id);
+		if (XE_IOCTL_ERR(xe, !vm))
+			return -ENOENT;
+
+		if (XE_IOCTL_ERR(xe, !vm->async_ops.error_capture.addr)) {
+			xe_vm_put(vm);
+			return -ENOTSUPP;
+		}
+
+		addr = vm->async_ops.error_capture.addr;
+	}
+
 	/*
 	 * FIXME: Very simple implementation at the moment, single wait queue
 	 * for everything. Could be optimized to have a wait queue for every
@@ -130,9 +152,12 @@ int xe_wait_user_fence_ioctl(struct drm_device *dev, void *data,
 	 * work with the wait_event_* macros.
 	 */
 	timeout = args->timeout;
-	add_wait_queue(&xe->ufence_wq, &w_wait);
+	if (vm)
+		add_wait_queue(&vm->async_ops.error_capture.wq, &w_wait);
+	else
+		add_wait_queue(&xe->ufence_wq, &w_wait);
 	for (;;) {
-		err = do_compare(args->addr, args->value, args->mask, args->op);
+		err = do_compare(addr, args->value, args->mask, args->op);
 		if (err <= 0)
 			break;
 
@@ -148,7 +173,12 @@ int xe_wait_user_fence_ioctl(struct drm_device *dev, void *data,
 
 		timeout = wait_woken(&w_wait, TASK_INTERRUPTIBLE, timeout);
 	}
-	remove_wait_queue(&xe->ufence_wq, &w_wait);
+	if (vm) {
+		remove_wait_queue(&vm->async_ops.error_capture.wq, &w_wait);
+		xe_vm_put(vm);
+	} else {
+		remove_wait_queue(&xe->ufence_wq, &w_wait);
+	}
 	if (XE_IOCTL_ERR(xe, err < 0))
 		return err;
 	else if (XE_IOCTL_ERR(xe, !timeout))
