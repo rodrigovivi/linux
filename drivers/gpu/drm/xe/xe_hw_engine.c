@@ -248,8 +248,27 @@ static u32 hw_engine_mmio_read32(struct xe_hw_engine *hwe, u32 reg)
 	return xe_mmio_read32(hwe->gt, reg + hwe->mmio_base);
 }
 
+static bool has_css(struct xe_gt *gt)
+{
+	struct xe_hw_engine *hwe;
+	enum xe_hw_engine_id id;
+
+	for_each_hw_engine(hwe, gt, id)
+		if (hwe->class == XE_ENGINE_CLASS_COMPUTE)
+			return true;
+
+	return false;
+}
+
+#define GEN12_RCU_MODE			_MMIO(0x14800)
+#define   GEN12_RCU_MODE_CCS_ENABLE	REG_BIT(0)
+
 void xe_hw_engine_enable_ring(struct xe_hw_engine *hwe)
 {
+	if (hwe->class == XE_ENGINE_CLASS_RENDER && has_css(hwe->gt))
+		xe_mmio_write32(hwe->gt, GEN12_RCU_MODE.reg,
+				_MASKED_BIT_ENABLE(GEN12_RCU_MODE_CCS_ENABLE));
+
 	hw_engine_mmio_write32(hwe, RING_HWSTAM(0).reg, ~0x0);
 	hw_engine_mmio_write32(hwe, RING_HWS_PGA(0).reg,
 			       xe_bo_ggtt_addr(hwe->hwsp));
