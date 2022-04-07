@@ -1636,9 +1636,6 @@ static int __xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma,
 	if (xe_vm_has_preempt_fences(vm))
 		add_preempt_op_cb(vm, fence, op);
 
-#if 1 // REMOVEME when tests are fixed
-	dma_fence_wait(fence, false);
-#endif
 	dma_fence_put(fence);
 	return 0;
 
@@ -1716,9 +1713,6 @@ static int xe_vm_unbind(struct xe_vm *vm, struct xe_vma *vma,
 		add_preempt_op_cb(vm, fence, op);
 
 	xe_vma_destroy(vma);
-#if 1 // REMOVEME when tests are fixed
-	dma_fence_wait(fence, false);
-#endif
 	dma_fence_put(fence);
 	return 0;
 }
