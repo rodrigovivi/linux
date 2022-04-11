@@ -62,7 +62,7 @@ static void xe_file_close(struct drm_device *dev, struct drm_file *file)
 	device_kill_persitent_engines(xe, xef);
 
 	xa_for_each(&xef->vm.xa, idx, vm)
-		xe_vm_put(vm);
+		xe_vm_close_and_put(vm);
 	mutex_destroy(&xef->vm.lock);
 
 	kfree(xef);
