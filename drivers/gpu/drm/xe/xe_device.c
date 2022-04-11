@@ -169,32 +169,6 @@ err_put:
 	return ERR_PTR(err);
 }
 
-static int xe_set_dma_info(struct xe_device *xe)
-{
-	unsigned int mask_size = 39; /* TODO: Don't hard-code */
-	int err;
-
-	/*
-	 * We don't have a max segment size, so set it to the max so sg's
-	 * debugging layer doesn't complain
-	 */
-	dma_set_max_seg_size(xe->drm.dev, UINT_MAX);
-
-	err = dma_set_mask(xe->drm.dev, DMA_BIT_MASK(mask_size));
-	if (err)
-		goto mask_err;
-
-	err = dma_set_coherent_mask(xe->drm.dev, DMA_BIT_MASK(mask_size));
-	if (err)
-		goto mask_err;
-
-	return 0;
-
-mask_err:
-	drm_err(&xe->drm, "Can't set DMA mask/consistent mask (%d)\n", err);
-	return err;
-}
-
 int xe_device_probe(struct xe_device *xe)
 {
 	int err;
@@ -204,10 +178,6 @@ int xe_device_probe(struct xe_device *xe)
 		return err;
 
 	err = xe_mmio_init(xe);
-	if (err)
-		return err;
-
-	err = xe_set_dma_info(xe);
 	if (err)
 		return err;
 

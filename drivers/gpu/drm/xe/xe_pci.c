@@ -155,7 +155,7 @@ struct intel_device_info {
 
 	enum xe_platform platform;
 
-	unsigned int dma_mask_size; /* available DMA address bits */
+	u8 dma_mask_size; /* available DMA address bits */
 
 	enum intel_ppgtt_type ppgtt_type;
 	unsigned int ppgtt_size; /* log2, e.g. 31/32/48 bits */
@@ -495,6 +495,7 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 				   devinfo->graphics_rel;
 	xe->info.is_dgfx = devinfo->is_dgfx;
 	xe->info.platform = devinfo->platform;
+	xe->info.dma_mask_size = devinfo->dma_mask_size;
 	to_gt(xe)->info.engine_mask = devinfo->platform_engine_mask;
 
 	pci_set_drvdata(pdev, xe);
