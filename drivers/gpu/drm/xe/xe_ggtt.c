@@ -18,22 +18,13 @@
 
 #include "../i915/i915_reg.h"
 
-#define PTE_READ_ONLY	BIT(0)
-#define PTE_LM		BIT(1)
-
-#define GEN8_PTE_SHIFT 12
-#define GEN8_PAGE_SIZE (1 << GEN8_PTE_SHIFT)
-#define GEN8_PTE_MASK (GEN8_PAGE_SIZE - 1)
-
-#define GEN12_GGTT_PTE_LM	BIT_ULL(1)
-
 static uint64_t gen8_pte_encode(struct xe_bo *bo, uint64_t bo_offset)
 {
 	uint64_t pte;
 	bool is_lmem;
 
 	pte = xe_bo_addr(bo, bo_offset, GEN8_PAGE_SIZE, &is_lmem);
-	pte |= _PAGE_PRESENT;
+	pte |= GEN8_PAGE_PRESENT;
 
 	if (is_lmem)
 		pte |= GEN12_GGTT_PTE_LM;

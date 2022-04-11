@@ -28,23 +28,6 @@ enum xe_cache_level {
 	XE_CACHE_WB,
 };
 
-#define PTE_READ_ONLY	BIT(0)
-#define PTE_LM		BIT(1)
-
-#define PPAT_UNCACHED			(_PAGE_PWT | _PAGE_PCD)
-#define PPAT_CACHED_PDE			0 /* WB LLC */
-#define PPAT_CACHED			_PAGE_PAT /* WB LLCeLLC */
-#define PPAT_DISPLAY_ELLC		_PAGE_PCD /* WT eLLC */
-
-#define GEN8_PTE_SHIFT 12
-#define GEN8_PAGE_SIZE (1 << GEN8_PTE_SHIFT)
-#define GEN8_PTE_MASK (GEN8_PAGE_SIZE - 1)
-#define GEN8_PDE_SHIFT (GEN8_PTE_SHIFT - 3)
-#define GEN8_PDES (1 << GEN8_PDE_SHIFT)
-#define GEN8_PDE_MASK (GEN8_PDES - 1)
-
-#define GEN12_PPGTT_PTE_LM	BIT_ULL(11)
-
 #define XE_VM_DEBUG 0
 
 #if XE_VM_DEBUG
@@ -64,7 +47,7 @@ static uint64_t gen8_pde_encode(struct xe_bo *bo, uint64_t bo_offset,
 	bool is_lmem;
 
 	pde = xe_bo_addr(bo, bo_offset, GEN8_PAGE_SIZE, &is_lmem);
-	pde |= _PAGE_PRESENT | _PAGE_RW;
+	pde |= GEN8_PAGE_PRESENT | GEN8_PAGE_RW;
 
 	XE_WARN_ON(IS_DGFX(xe_bo_device(bo)) && !is_lmem);
 
@@ -104,10 +87,10 @@ static uint64_t gen8_pte_encode(struct xe_vma *vma, struct xe_bo *bo,
 		pte = vma_addr(vma, offset, GEN8_PAGE_SIZE, &is_lmem);
 	else
 		pte = xe_bo_addr(bo, offset, GEN8_PAGE_SIZE, &is_lmem);
-	pte |= _PAGE_PRESENT | _PAGE_RW;
+	pte |= GEN8_PAGE_PRESENT | GEN8_PAGE_RW;
 
 	if (unlikely(flags & PTE_READ_ONLY))
-		pte &= ~_PAGE_RW;
+		pte &= ~GEN8_PAGE_RW;
 
 	if (is_lmem)
 		pte |= GEN12_PPGTT_PTE_LM;
