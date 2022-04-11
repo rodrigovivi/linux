@@ -28,6 +28,8 @@ enum xe_cache_level {
 	XE_CACHE_WB,
 };
 
+#define TEST_VM_ASYNC_OPS_ERROR
+
 #define XE_VM_DEBUG 0
 
 #if XE_VM_DEBUG
@@ -1997,9 +1999,21 @@ static void async_op_work_func(struct work_struct *w)
 			break;
 
 		if (!vm->async_ops.flush) {
+#ifdef TEST_VM_ASYNC_OPS_ERROR
+#define FORCE_ASYNC_OP_ERROR	BIT(31)
+			if (!(op->args.op & FORCE_ASYNC_OP_ERROR)) {
+				err = vm_bind_ioctl(vm, op->vma, op->bo,
+						    &op->args, op->syncs,
+						    op->num_syncs, op->fence);
+			} else {
+				err = -ENOMEM;
+				op->args.op &= ~FORCE_ASYNC_OP_ERROR;
+			}
+#else
 			err = vm_bind_ioctl(vm, op->vma, op->bo, &op->args,
 					    op->syncs, op->num_syncs,
 					    op->fence);
+#endif
 			if (err) {
 				drm_warn(&vm->xe->drm, "Async VM op(%d) failed with %d",
 					 VM_BIND_OP(op->args.op), err);
@@ -2200,8 +2214,14 @@ out_unlock:
 	return vma;
 }
 
+#ifdef TEST_VM_ASYNC_OPS_ERROR
+#define SUPPORTED_FLAGS	\
+	(FORCE_ASYNC_OP_ERROR | XE_VM_BIND_FLAG_ASYNC | \
+	 XE_VM_BIND_FLAG_READONLY | 0xffff)
+#else
 #define SUPPORTED_FLAGS	\
 	(XE_VM_BIND_FLAG_ASYNC | XE_VM_BIND_FLAG_READONLY | 0xffff)
+#endif
 
 int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 {
