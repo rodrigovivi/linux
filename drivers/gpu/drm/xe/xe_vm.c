@@ -841,6 +841,8 @@ static void xe_vm_remove_vma(struct xe_vm *vm, struct xe_vma *vma)
 	rb_erase(&vma->vm_node, &vm->vmas);
 }
 
+static void async_op_work_func(struct work_struct *w);
+
 struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 {
 	struct xe_vm *vm;
@@ -863,6 +865,10 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 	INIT_LIST_HEAD(&vm->userptr.list);
 	mutex_init(&vm->userptr.list_lock);
 	rwlock_init(&vm->userptr.notifier_lock);
+
+	INIT_LIST_HEAD(&vm->async_ops.pending);
+	INIT_WORK(&vm->async_ops.work, async_op_work_func);
+	spin_lock_init(&vm->async_ops.lock);
 
 	xe_vm_lock(vm, NULL);
 
@@ -928,9 +934,18 @@ err_unlock:
 	return ERR_PTR(err);
 }
 
+static void flush_async_ops(struct xe_vm *vm)
+{
+	vm->async_ops.flush = true;
+	queue_work(system_unbound_wq, &vm->async_ops.work);
+	flush_work(&vm->async_ops.work);
+}
+
 void xe_vm_close_and_put(struct xe_vm *vm)
 {
 	struct rb_root contested = RB_ROOT;
+
+	flush_async_ops(vm);
 
 	xe_vm_lock(vm, NULL);
 	while (vm->vmas.rb_node) {
@@ -1861,7 +1876,75 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_bo *bo,
 	return err;
 }
 
-#define SUPPORTED_FLAGS	(XE_VM_BIND_FLAG_READONLY | 0xffff)
+struct async_op {
+	struct xe_bo *bo;
+	struct drm_xe_vm_bind args;
+	struct xe_sync_entry *syncs;
+	u32 num_syncs;
+	struct list_head link;
+};
+
+static void async_op_work_func(struct work_struct *w)
+{
+	struct xe_vm *vm = container_of(w, struct xe_vm, async_ops.work);
+
+	for (;;) {
+		struct async_op *op;
+		int err;
+
+		spin_lock(&vm->async_ops.lock);
+		op = list_first_entry_or_null(&vm->async_ops.pending,
+					      struct async_op, link);
+		if (op)
+			list_del(&op->link);
+		spin_unlock(&vm->async_ops.lock);
+
+		if (!op)
+			break;
+
+		if (!vm->async_ops.flush) {
+			err = vm_bind_ioctl(vm, op->bo, &op->args, op->syncs,
+					    op->num_syncs);
+			XE_WARN_ON(err);	/* FIXME: handle */
+		}
+
+		while (op->num_syncs--)
+			xe_sync_entry_cleanup(&op->syncs[op->num_syncs]);
+		kfree(op->syncs);
+		if (op->bo)
+			drm_gem_object_put(&op->bo->ttm.base);
+		xe_vm_put(vm);
+		kfree(op);
+	}
+}
+
+static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_bo *bo,
+			       struct drm_xe_vm_bind *args,
+			       struct xe_sync_entry *syncs, u32 num_syncs)
+{
+	struct async_op *op;
+
+	op = kmalloc(sizeof(*op), GFP_KERNEL);
+	if (!op)
+		return -ENOMEM;
+
+	op->bo = bo;
+	op->args = *args;
+	op->syncs = syncs;
+	op->num_syncs = num_syncs;
+	INIT_LIST_HEAD(&op->link);
+
+	spin_lock(&vm->async_ops.lock);
+	list_add_tail(&op->link, &vm->async_ops.pending);
+	spin_unlock(&vm->async_ops.lock);
+
+	queue_work(system_unbound_wq, &vm->async_ops.work);
+
+	return 0;
+}
+
+#define SUPPORTED_FLAGS	\
+	(XE_VM_BIND_FLAG_ASYNC | XE_VM_BIND_FLAG_READONLY | 0xffff)
 
 int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 		     struct drm_file *file)
@@ -1942,7 +2025,13 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 			goto free_syncs;
 	}
 
-	err = vm_bind_ioctl(vm, bo, args, syncs, num_syncs);
+	if (op & XE_VM_BIND_FLAG_ASYNC) {
+		err = vm_bind_ioctl_async(vm, bo, args, syncs, num_syncs);
+		if (!err)
+			return 0;
+	} else {
+		err = vm_bind_ioctl(vm, bo, args, syncs, num_syncs);
+	}
 
 free_syncs:
 	while (num_syncs--)
@@ -1955,7 +2044,6 @@ put_vm:
 	xe_vm_put(vm);
 	return err;
 }
-
 
 static char *xe_dump_prefix_lvl[5] = { "     ", "    ", "   ", "  ", " "};
 
