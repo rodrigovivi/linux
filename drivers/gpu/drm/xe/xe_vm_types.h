@@ -121,6 +121,7 @@ struct xe_vm {
 	/** @flags: flags for this VM, statically setup a creation time */
 #define VM_FLAGS_64K		BIT(0)
 #define VM_FLAG_COMPUTE_MODE	BIT(1)
+#define VM_FLAG_ASYNC_BIND_OPS	BIT(2)
 	unsigned long flags;
 
 	/** @async_ops: async VM operations (bind / unbinds) */
