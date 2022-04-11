@@ -22,6 +22,8 @@
 #define GRAPHICS_VERx100(xe) ((xe)->info.graphics_verx100)
 #define IS_DGFX(xe) ((xe)->info.is_dgfx)
 
+#define XE_VRAM_FLAGS_NEED64K		BIT(0)
+
 /**
  * struct xe_device - Top level struct of XE device
  */
@@ -43,6 +45,8 @@ struct xe_device {
 		u8 revid;
 		/** @dma_mask_size: DMA address bits */
 		u8 dma_mask_size;
+		/** @vram_flags: Vram flags */
+		u8 vram_flags;
 	} info;
 
 	/** @irq: device interrupt state */
