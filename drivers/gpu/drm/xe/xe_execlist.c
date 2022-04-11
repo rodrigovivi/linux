@@ -30,18 +30,29 @@
 	GENMASK_ULL(GEN11_SW_CTX_ID_WIDTH + GEN11_SW_CTX_ID_SHIFT - 1, \
 		    GEN11_SW_CTX_ID_SHIFT)
 
+#define XEHP_SW_CTX_ID \
+	GENMASK_ULL(XEHP_SW_CTX_ID_WIDTH + XEHP_SW_CTX_ID_SHIFT - 1, \
+		    XEHP_SW_CTX_ID_SHIFT)
+
+
 static void __start_lrc(struct xe_hw_engine *hwe, struct xe_lrc *lrc,
 			uint32_t ctx_id)
 {
 	struct xe_gt *gt = hwe->gt;
+	struct xe_device *xe = gt_to_xe(gt);
 	uint64_t lrc_desc;
 
 	printk(KERN_INFO "__start_lrc(%s, 0x%p, %u)\n", hwe->name, lrc, ctx_id);
 
 	lrc_desc = xe_lrc_descriptor(lrc);
 
-	XE_BUG_ON(!FIELD_FIT(GEN11_SW_CTX_ID, ctx_id));
-	lrc_desc |= FIELD_PREP(GEN11_SW_CTX_ID, ctx_id);
+	if (GRAPHICS_VERx100(xe) >= 1250) {
+		XE_BUG_ON(!FIELD_FIT(XEHP_SW_CTX_ID, ctx_id));
+		lrc_desc |= FIELD_PREP(XEHP_SW_CTX_ID, ctx_id);
+	} else {
+		XE_BUG_ON(!FIELD_FIT(GEN11_SW_CTX_ID, ctx_id));
+		lrc_desc |= FIELD_PREP(GEN11_SW_CTX_ID, ctx_id);
+	}
 
 	xe_lrc_write_ctx_reg(lrc, CTX_RING_TAIL, lrc->ring.tail);
 	lrc->ring.old_tail = lrc->ring.tail;
@@ -75,13 +86,19 @@ static void __start_lrc(struct xe_hw_engine *hwe, struct xe_lrc *lrc,
 static void __xe_execlist_port_start(struct xe_execlist_port *port,
 				     struct xe_execlist_engine *exl)
 {
+	struct xe_device *xe = gt_to_xe(port->hwe->gt);
+	int max_ctx = FIELD_MAX(GEN11_SW_CTX_ID);
+
+	if (GRAPHICS_VERx100(xe) >= 1250)
+		max_ctx = FIELD_MAX(XEHP_SW_CTX_ID);
+
 	xe_execlist_port_assert_held(port);
 
 	if (port->running_exl != exl || !exl->has_run) {
 		port->last_ctx_id++;
 
 		/* 0 is reserved for the kernel context */
-		if (port->last_ctx_id > FIELD_MAX(GEN11_SW_CTX_ID))
+		if (port->last_ctx_id > max_ctx)
 			port->last_ctx_id = 1;
 	}
 
@@ -99,7 +116,8 @@ static void __xe_execlist_port_idle(struct xe_execlist_port *port)
 	if (!port->running_exl)
 		return;
 
-	printk(KERN_INFO "__xe_execlist_port_idle()");
+	printk(KERN_INFO "__xe_execlist_port_idle(%d:%d)\n", port->hwe->class,
+	       port->hwe->instance);
 
 	xe_lrc_write_ring(&port->hwe->kernel_lrc, noop, sizeof(noop));
 	__start_lrc(port->hwe, &port->hwe->kernel_lrc, 0);
@@ -149,7 +167,8 @@ static uint64_t read_execlist_status(struct xe_hw_engine *hwe)
 	lo = xe_mmio_read32(gt, RING_EXECLIST_STATUS_LO(hwe->mmio_base).reg);
 	hi = xe_mmio_read32(gt, RING_EXECLIST_STATUS_HI(hwe->mmio_base).reg);
 
-	printk(KERN_INFO "EXECLIST_STATUS = 0x%08x %08x\n", hi, lo);
+	printk(KERN_INFO "EXECLIST_STATUS %d:%d = 0x%08x %08x\n", hwe->class,
+	       hwe->instance, hi, lo);
 
 	return lo | (uint64_t)hi << 32;
 }

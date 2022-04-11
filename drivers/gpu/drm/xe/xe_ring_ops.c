@@ -15,6 +15,15 @@
 #include "../i915/gt/intel_gpu_commands.h"
 #include "../i915/gt/intel_lrc_reg.h"
 
+#define PIPE_CONTROL_RENDER_ONLY_FLAGS (\
+		PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH | \
+		PIPE_CONTROL_DEPTH_CACHE_FLUSH | \
+		PIPE_CONTROL_TILE_CACHE_FLUSH | \
+		PIPE_CONTROL_DEPTH_STALL | \
+		PIPE_CONTROL_STALL_AT_SCOREBOARD | \
+		PIPE_CONTROL_VF_CACHE_INVALIDATE)
+
+
 static void invalidate_tlb(struct xe_sched_job *job, u32 *dw, u32 *pi)
 {
 	u32 i = *pi;
@@ -40,6 +49,9 @@ static void invalidate_tlb(struct xe_sched_job *job, u32 *dw, u32 *pi)
 			PIPE_CONTROL_STATE_CACHE_INVALIDATE |
 			PIPE_CONTROL_QW_WRITE |
 			PIPE_CONTROL_STORE_DATA_INDEX;
+
+		if (job->engine->class == XE_ENGINE_CLASS_COMPUTE)
+			flags &= ~PIPE_CONTROL_RENDER_ONLY_FLAGS;
 
 		dw[i++] = MI_ARB_CHECK | BIT(8) | BIT(0);
 

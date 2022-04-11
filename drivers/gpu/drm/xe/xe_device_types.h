@@ -18,9 +18,11 @@
 
 #define XE_BO_INVALID_OFFSET	LONG_MAX
 
-#define GRAPHICS_VER(xe) ((xe)->info.graphics_verx10 / 10)
-#define GRAPHICS_VERx10(xe) ((xe)->info.graphics_verx10)
+#define GRAPHICS_VER(xe) ((xe)->info.graphics_verx100 / 100)
+#define GRAPHICS_VERx100(xe) ((xe)->info.graphics_verx100)
 #define IS_DGFX(xe) ((xe)->info.is_dgfx)
+
+#define XE_VRAM_FLAGS_NEED64K		BIT(0)
 
 /**
  * struct xe_device - Top level struct of XE device
@@ -31,8 +33,8 @@ struct xe_device {
 
 	/** @info: device info */
 	struct {
-		/** @graphics_verx10: graphics version */
-		uint8_t graphics_verx10;
+		/** @graphics_verx100: graphics version */
+		u32 graphics_verx100;
 		/** @is_dgfx: is discrete device */
 		bool is_dgfx;
 		/** @platform: XE platform enum */
@@ -41,6 +43,10 @@ struct xe_device {
 		u16 devid;
 		/** @revid: device revision */
 		u8 revid;
+		/** @dma_mask_size: DMA address bits */
+		u8 dma_mask_size;
+		/** @vram_flags: Vram flags */
+		u8 vram_flags;
 	} info;
 
 	/** @irq: device interrupt state */

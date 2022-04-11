@@ -248,24 +248,12 @@ static u32 hw_engine_mmio_read32(struct xe_hw_engine *hwe, u32 reg)
 	return xe_mmio_read32(hwe->gt, reg + hwe->mmio_base);
 }
 
-static bool has_css(struct xe_gt *gt)
-{
-	struct xe_hw_engine *hwe;
-	enum xe_hw_engine_id id;
-
-	for_each_hw_engine(hwe, gt, id)
-		if (hwe->class == XE_ENGINE_CLASS_COMPUTE)
-			return true;
-
-	return false;
-}
-
 #define GEN12_RCU_MODE			_MMIO(0x14800)
 #define   GEN12_RCU_MODE_CCS_ENABLE	REG_BIT(0)
 
 void xe_hw_engine_enable_ring(struct xe_hw_engine *hwe)
 {
-	if (hwe->class == XE_ENGINE_CLASS_RENDER && has_css(hwe->gt))
+	if (hwe->class == XE_ENGINE_CLASS_RENDER && COMPUTE_MASK(hwe->gt))
 		xe_mmio_write32(hwe->gt, GEN12_RCU_MODE.reg,
 				_MASKED_BIT_ENABLE(GEN12_RCU_MODE_CCS_ENABLE));
 
@@ -386,7 +374,7 @@ static void read_fuses(struct xe_gt *gt)
 	 */
 
 	media_fuse = xe_mmio_read32(gt, GEN11_GT_VEBOX_VDBOX_DISABLE.reg);
-	if (GRAPHICS_VERx10(xe) < 125)
+	if (GRAPHICS_VERx100(xe) < 1250)
 		media_fuse = ~media_fuse;
 
 	vdbox_mask = media_fuse & GEN11_GT_VDBOX_DISABLE_MASK;
@@ -509,4 +497,5 @@ void xe_hw_engine_print_state(struct xe_hw_engine *hwe, struct drm_printer *p)
 		   hw_engine_mmio_read32(hwe, IPEIR(0).reg));
 	drm_printf(p, "\tIPEHR: 0x%08x\n\n",
 		   hw_engine_mmio_read32(hwe, IPEHR(0).reg));
+
 }

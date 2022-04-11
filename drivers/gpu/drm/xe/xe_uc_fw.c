@@ -43,6 +43,7 @@ static struct xe_device *uc_fw_to_xe(struct xe_uc_fw *uc_fw)
  * Must be ordered based on platform + revid, from newer to older.
  */
 #define XE_GUC_FIRMWARE_DEFS(fw_def, guc_def) \
+	fw_def(DG2,          0, guc_def(dg2,  70, 0, 2)) \
 	fw_def(DG1,          0, guc_def(dg1,  70, 0, 2)) \
 	fw_def(TIGERLAKE,    0, guc_def(tgl,  70, 0, 2))
 
@@ -204,6 +205,12 @@ int xe_uc_fw_init(struct xe_uc_fw *uc_fw)
 			       XE_UC_FIRMWARE_DISABLED :
 			       XE_UC_FIRMWARE_NOT_SUPPORTED);
 
+	/* Transform no huc in the list into firmware disabled */
+	if (uc_fw->type == XE_UC_FW_TYPE_HUC && !xe_uc_fw_is_supported(uc_fw)) {
+		xe_uc_fw_change_status(uc_fw, XE_UC_FIRMWARE_DISABLED);
+		err = -ENOPKG;
+		return err;
+	}
 	err = request_firmware(&fw, uc_fw->path, dev);
 	if (err)
 		goto fail;

@@ -129,7 +129,7 @@ static u32 guc_ctl_wa_flags(struct xe_guc *guc)
 
 	/* Wa_22012773006:gen11,gen12 < XeHP */
 	if (GRAPHICS_VER(xe) >= 11 &&
-	    GRAPHICS_VERx10(xe) < 125)
+	    GRAPHICS_VERx100(xe) < 1250)
 		flags |= GUC_WA_POLLCS;
 
 	return flags;
@@ -250,12 +250,15 @@ err_out:
 static void guc_prepare_xfer(struct xe_guc *guc)
 {
 	struct xe_gt *gt = guc_to_gt(guc);
-	u32 shim_flags = GUC_DISABLE_SRAM_INIT_TO_ZEROES |
-			 GUC_ENABLE_READ_CACHE_LOGIC |
-			 GUC_ENABLE_MIA_CACHING |
-			 GUC_ENABLE_READ_CACHE_FOR_SRAM_DATA |
-			 GUC_ENABLE_READ_CACHE_FOR_WOPCM_DATA |
-			 GUC_ENABLE_MIA_CLOCK_GATING;
+	struct xe_device *xe =  guc_to_xe(guc);
+	u32 shim_flags = GUC_ENABLE_READ_CACHE_LOGIC |
+		GUC_ENABLE_READ_CACHE_FOR_SRAM_DATA |
+		GUC_ENABLE_READ_CACHE_FOR_WOPCM_DATA |
+		GUC_ENABLE_MIA_CLOCK_GATING;
+
+	if (GRAPHICS_VERx100(xe) < 1250)
+		shim_flags |= GUC_DISABLE_SRAM_INIT_TO_ZEROES |
+				GUC_ENABLE_MIA_CACHING;
 
 	/* Must program this register before loading the ucode with DMA */
 	xe_mmio_write32(gt, GUC_SHIM_CONTROL.reg, shim_flags);
@@ -264,8 +267,7 @@ static void guc_prepare_xfer(struct xe_guc *guc)
 }
 
 /*
- * FIXME: Only supporting MMIO RSA at the moment, rsa in memory only required on
- * DG2+
+ * Supporting MMIO & in memory RSA
  */
 static int guc_xfer_rsa(struct xe_guc *guc)
 {
@@ -273,6 +275,13 @@ static int guc_xfer_rsa(struct xe_guc *guc)
 	u32 rsa[UOS_RSA_SCRATCH_COUNT];
 	size_t copied;
 	int i;
+
+	if (guc->fw.rsa_size > 256) {
+		u32 rsa_ggtt_addr = xe_bo_ggtt_addr(guc->fw.bo) +
+				    xe_uc_fw_rsa_offset(&guc->fw);
+		xe_mmio_write32(gt, UOS_RSA_SCRATCH(0).reg, rsa_ggtt_addr);
+		return 0;
+	}
 
 	copied = xe_uc_fw_copy_rsa(&guc->fw, rsa, sizeof(rsa));
 	if (copied < sizeof(rsa))

@@ -155,7 +155,7 @@ struct intel_device_info {
 
 	enum xe_platform platform;
 
-	unsigned int dma_mask_size; /* available DMA address bits */
+	u8 dma_mask_size; /* available DMA address bits */
 
 	enum intel_ppgtt_type ppgtt_type;
 	unsigned int ppgtt_size; /* log2, e.g. 31/32/48 bits */
@@ -201,6 +201,7 @@ struct intel_device_info {
 		u32 degamma_lut_tests;
 		u32 gamma_lut_tests;
 	} color;
+	u8 vram_flags;
 };
 
 #define PLATFORM(x) .platform = (x)
@@ -402,7 +403,8 @@ struct intel_device_info {
 	}, \
 	TGL_CURSOR_OFFSETS, \
 	.has_global_mocs = 1, \
-	.display.has_dsb = 1
+	.display.has_dsb = 1, \
+	.vram_flags = 0
 
 static const struct intel_device_info tgl_info = {
 	GEN12_FEATURES,
@@ -435,6 +437,54 @@ static const struct intel_device_info dg1_info __maybe_unused = {
 	.ppgtt_size = 47,
 };
 
+#define XE_HP_PAGE_SIZES \
+	.page_sizes = I915_GTT_PAGE_SIZE_4K | \
+	I915_GTT_PAGE_SIZE_64K | \
+	I915_GTT_PAGE_SIZE_2M
+
+#define XE_HP_FEATURES \
+	.graphics_ver = 12, \
+	.graphics_rel = 50, \
+	XE_HP_PAGE_SIZES, \
+	.dma_mask_size = 46, \
+	.has_64bit_reloc = 1, \
+	.has_global_mocs = 1, \
+	.has_gt_uc = 1, \
+	.has_llc = 1, \
+	.has_logical_ring_contexts = 1, \
+	.has_logical_ring_elsq = 1, \
+	.has_rc6 = 1, \
+	.has_reset_engine = 1, \
+	.has_rps = 1, \
+	.has_runtime_pm = 1, \
+	.ppgtt_size = 48, \
+	.ppgtt_type = INTEL_PPGTT_FULL, \
+	.dma_mask_size = 46
+
+#define XE_HPM_FEATURES \
+	.media_ver = 12, \
+	.media_rel = 50
+
+__maybe_unused
+static const struct intel_device_info ats_m_info = {
+	XE_HP_FEATURES,
+	XE_HPM_FEATURES,
+	DGFX_FEATURES,
+	.display = { },
+	.pipe_mask = 0,
+	.graphics_rel = 55,
+	.media_rel = 55,
+	PLATFORM(XE_DG2),
+	.platform_engine_mask =
+		BIT(XE_HW_ENGINE_RCS0) | BIT(XE_HW_ENGINE_BCS0) |
+		BIT(XE_HW_ENGINE_VECS0) | BIT(XE_HW_ENGINE_VECS1) |
+		BIT(XE_HW_ENGINE_VCS0) | BIT(XE_HW_ENGINE_VCS2) |
+		BIT(XE_HW_ENGINE_CCS0) | BIT(XE_HW_ENGINE_CCS1) |
+		BIT(XE_HW_ENGINE_CCS2) | BIT(XE_HW_ENGINE_CCS3),
+	.require_force_probe = 1,
+	.vram_flags = XE_VRAM_FLAGS_NEED64K,
+};
+
 #undef GEN
 #undef PLATFORM
 
@@ -447,6 +497,8 @@ static const struct intel_device_info dg1_info __maybe_unused = {
 static const struct pci_device_id pciidlist[] = {
 	INTEL_TGL_12_GT2_IDS(&tgl_info),
 	INTEL_DG1_IDS(&dg1_info),
+	INTEL_ATS_M_IDS(&ats_m_info),
+	INTEL_DG2_IDS(&ats_m_info), /* TODO: switch to proper dg2_info */
 	{0, 0, 0}
 };
 MODULE_DEVICE_TABLE(pci, pciidlist);
@@ -491,11 +543,12 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	/* TODO: Once we sort out includes, embed the intel_device_info
 	 * directly in xe_device
 	 */
-	XE_BUG_ON(devinfo->graphics_rel % 10);
-	xe->info.graphics_verx10 = devinfo->graphics_ver * 10 +
-				   devinfo->graphics_rel / 10;
+	xe->info.graphics_verx100 = devinfo->graphics_ver * 100 +
+				   devinfo->graphics_rel;
 	xe->info.is_dgfx = devinfo->is_dgfx;
 	xe->info.platform = devinfo->platform;
+	xe->info.dma_mask_size = devinfo->dma_mask_size;
+	xe->info.vram_flags = devinfo->vram_flags;
 	to_gt(xe)->info.engine_mask = devinfo->platform_engine_mask;
 
 	pci_set_drvdata(pdev, xe);
