@@ -116,7 +116,8 @@ static void __xe_execlist_port_idle(struct xe_execlist_port *port)
 	if (!port->running_exl)
 		return;
 
-	printk(KERN_INFO "__xe_execlist_port_idle()");
+	printk(KERN_INFO "__xe_execlist_port_idle(%d:%d)\n", port->hwe->class,
+	       port->hwe->instance);
 
 	xe_lrc_write_ring(&port->hwe->kernel_lrc, noop, sizeof(noop));
 	__start_lrc(port->hwe, &port->hwe->kernel_lrc, 0);
@@ -166,7 +167,8 @@ static uint64_t read_execlist_status(struct xe_hw_engine *hwe)
 	lo = xe_mmio_read32(gt, RING_EXECLIST_STATUS_LO(hwe->mmio_base).reg);
 	hi = xe_mmio_read32(gt, RING_EXECLIST_STATUS_HI(hwe->mmio_base).reg);
 
-	printk(KERN_INFO "EXECLIST_STATUS = 0x%08x %08x\n", hi, lo);
+	printk(KERN_INFO "EXECLIST_STATUS %d:%d = 0x%08x %08x\n", hwe->class,
+	       hwe->instance, hi, lo);
 
 	return lo | (uint64_t)hi << 32;
 }
