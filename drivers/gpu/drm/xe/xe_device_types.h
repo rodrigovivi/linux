@@ -41,6 +41,8 @@ struct xe_device {
 		u16 devid;
 		/** @revid: device revision */
 		u8 revid;
+		/** @dma_mask_size: DMA address bits */
+		u8 dma_mask_size;
 	} info;
 
 	/** @irq: device interrupt state */
