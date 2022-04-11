@@ -16,7 +16,7 @@
 
 static int xe_set_dma_info(struct xe_device *xe)
 {
-	unsigned int mask_size = 39; /* TODO */
+	unsigned int mask_size = xe->info.dma_mask_size;
 	int err;
 
 	/*
