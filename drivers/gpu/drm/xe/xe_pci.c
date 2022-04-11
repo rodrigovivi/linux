@@ -491,9 +491,8 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	/* TODO: Once we sort out includes, embed the intel_device_info
 	 * directly in xe_device
 	 */
-	XE_BUG_ON(devinfo->graphics_rel % 10);
-	xe->info.graphics_verx10 = devinfo->graphics_ver * 10 +
-				   devinfo->graphics_rel / 10;
+	xe->info.graphics_verx100 = devinfo->graphics_ver * 100 +
+				   devinfo->graphics_rel;
 	xe->info.is_dgfx = devinfo->is_dgfx;
 	xe->info.platform = devinfo->platform;
 	to_gt(xe)->info.engine_mask = devinfo->platform_engine_mask;

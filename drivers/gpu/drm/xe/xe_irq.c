@@ -386,7 +386,7 @@ static void dg1_irq_reset(struct xe_device *xe)
 
 static void xe_irq_reset(struct xe_device *xe)
 {
-	if (GRAPHICS_VERx10(xe) >= 121) {
+	if (GRAPHICS_VERx100(xe) >= 1210) {
 		dg1_irq_reset(xe);
 	} else if (GRAPHICS_VER(xe) >= 11) {
 		gen11_irq_reset(xe);
@@ -397,7 +397,7 @@ static void xe_irq_reset(struct xe_device *xe)
 
 static void xe_irq_postinstall(struct xe_device *xe)
 {
-	if (GRAPHICS_VERx10(xe) >= 121) {
+	if (GRAPHICS_VERx100(xe) >= 1210) {
 		dg1_irq_postinstall(xe);
 	} else if (GRAPHICS_VER(xe) >= 11) {
 		gen11_irq_postinstall(xe);
@@ -408,7 +408,7 @@ static void xe_irq_postinstall(struct xe_device *xe)
 
 static irq_handler_t xe_irq_handler(struct xe_device *xe)
 {
-	if (GRAPHICS_VERx10(xe) >= 121) {
+	if (GRAPHICS_VERx100(xe) >= 1210) {
 		return dg1_irq_handler;
 	} else if (GRAPHICS_VER(xe) >= 11) {
 		return gen11_irq_handler;
