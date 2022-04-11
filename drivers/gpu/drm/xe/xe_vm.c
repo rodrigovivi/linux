@@ -187,7 +187,8 @@ static struct xe_pt *xe_pt_create(struct xe_vm *vm, unsigned int level)
 		return NULL;
 
 	bo = xe_bo_create(vm->xe, vm, SZ_4K, ttm_bo_type_kernel,
-			  XE_BO_CREATE_VRAM_IF_DGFX(vm->xe));
+			  XE_BO_CREATE_VRAM_IF_DGFX(vm->xe) |
+			  XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT);
 	if (IS_ERR(bo)) {
 		err = PTR_ERR(bo);
 		goto err_kfree;
@@ -210,13 +211,20 @@ static int xe_pt_populate_empty(struct xe_vm *vm, struct xe_pt *pt)
 	struct ttm_bo_kmap_obj map;
 	uint64_t empty;
 	int err, i;
+	int numpte = GEN8_PDES;
+	int flags = 0;
 
 	err = __xe_pt_kmap(pt, &map);
 	if (err)
 		return err;
 
-	empty = __xe_vm_empty_pte(vm, pt->level);
-	for (i = 0; i < GEN8_PDES; i++)
+	if (vm->flags & XE_VM_FLAGS_64K && pt->level == 1) {
+		numpte = 32;
+		flags = GEN12_PDE_64K;
+	}
+
+	empty = __xe_vm_empty_pte(vm, pt->level) | flags;
+	for (i = 0; i < numpte; i++)
 		__xe_pt_write(&map, i, empty);
 
 	ttm_bo_kunmap(&map);
@@ -257,6 +265,20 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 	bool init = !pt->num_live;
 	u32 i;
 	int err;
+	u32 page_size = GEN8_PAGE_SIZE;
+	u32 numpdes = GEN8_PDES;
+	u32 flags = 0;
+
+	if (vma->bo && vma->bo->flags & XE_BO_INTERNAL_64K) {
+		page_size = SZ_64K;
+		if (pt->level == 1)
+			flags = GEN12_PDE_64K;
+		else if (pt->level == 0) {
+			numpdes = 32;
+			start_ofs = start_ofs / 16;
+			last_ofs = last_ofs / 16;
+		}
+	}
 
 	if (pt->level) {
 		struct xe_pt_dir *pt_dir = as_xe_pt_dir(pt);
@@ -295,11 +317,11 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 		return err;
 
 	if (init) {
-		u64 empty = __xe_vm_empty_pte(vma->vm, pt->level);
+		u64 empty = __xe_vm_empty_pte(vma->vm, pt->level) | flags;
 
 		for (i = 0; i < start_ofs; i++)
 			__xe_pt_write(&map, i, empty);
-		for (i = last_ofs + 1; i < GEN8_PDES; i++)
+		for (i = last_ofs + 1; i < numpdes; i++)
 			__xe_pt_write(&map, i, empty);
 	}
 
@@ -307,12 +329,13 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 		struct xe_pt_dir *pt_dir = as_xe_pt_dir(pt);
 
 		for (i = start_ofs; i <= last_ofs; i++)
-			__xe_pt_write(&map, i, gen8_pde_encode(pt_dir->entries[i]->bo, 0, XE_CACHE_WB));
+			__xe_pt_write(&map, i, gen8_pde_encode(pt_dir->entries[i]->bo,
+							       0, XE_CACHE_WB) | flags);
 	} else {
 		u64 bo_offset = vma->bo_offset + (start - vma->start);
 
 		for (i = start_ofs; i <= last_ofs; i++,
-		     bo_offset += GEN8_PAGE_SIZE)
+		     bo_offset += page_size)
 			__xe_pt_write(&map, i, gen8_pte_encode(vma, vma->bo,
 							       bo_offset,
 							       XE_CACHE_WB,
@@ -323,20 +346,24 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 	return 0;
 }
 
-static void xe_pt_destroy(struct xe_pt *pt)
+static void xe_pt_destroy(struct xe_pt *pt, uint32_t flags)
 {
 	int i;
+	int numpdes = GEN8_PDES;
 
 	XE_BUG_ON(!list_empty(&pt->bo->vmas));
 	ttm_bo_unpin(&pt->bo->ttm);
 	xe_bo_put(pt->bo);
 
+	if (pt->level == 0 && flags & XE_VM_FLAGS_64K)
+		numpdes = 32;
+
 	if (pt->level > 0 && pt->num_live) {
 		struct xe_pt_dir *pt_dir = as_xe_pt_dir(pt);
 
-		for (i = 0; i < GEN8_PDES; i++) {
+		for (i = 0; i < numpdes; i++) {
 			if (pt_dir->entries[i])
-				xe_pt_destroy(pt_dir->entries[i]);
+				xe_pt_destroy(pt_dir->entries[i], flags);
 		}
 	}
 	kfree(pt);
@@ -838,6 +865,9 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 
 	xe_vm_lock(vm, NULL);
 
+	if (IS_DGFX(xe) && xe->info.vram_flags & XE_VRAM_FLAGS_NEED64K)
+		vm->flags = XE_VM_FLAGS_64K;
+
 	vm->pt_root = xe_pt_create(vm, 3);
 	if (IS_ERR(vm->pt_root)) {
 		err = PTR_ERR(vm->pt_root);
@@ -847,7 +877,8 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 	if (flags & DRM_XE_VM_CREATE_SCRATCH_PAGE) {
 		vm->scratch_bo = xe_bo_create(xe, vm, SZ_4K,
 					      ttm_bo_type_kernel,
-					      XE_BO_CREATE_VRAM_IF_DGFX(xe));
+					      XE_BO_CREATE_VRAM_IF_DGFX(xe) |
+					      XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT);
 		if (IS_ERR(vm->scratch_bo)) {
 			err = PTR_ERR(vm->scratch_bo);
 			goto err_destroy_root;
@@ -861,7 +892,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 			}
 			err = xe_pt_populate_empty(vm, vm->scratch_pt[i]);
 			if (err) {
-				xe_pt_destroy(vm->scratch_pt[i]);
+				xe_pt_destroy(vm->scratch_pt[i], vm->flags);
 				goto err_scratch_pt;
 			}
 		}
@@ -877,10 +908,10 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 
 err_scratch_pt:
 	while (i)
-		xe_pt_destroy(vm->scratch_pt[--i]);
+		xe_pt_destroy(vm->scratch_pt[--i], vm->flags);
 	xe_bo_put(vm->scratch_bo);
 err_destroy_root:
-	xe_pt_destroy(vm->pt_root);
+	xe_pt_destroy(vm->pt_root, vm->flags);
 err_unlock:
 	xe_vm_unlock(vm);
 	kfree(vma);
@@ -920,9 +951,9 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 
 		xe_bo_put(vm->scratch_bo);
 		for (i = 0; i < vm->pt_root->level; i++)
-			xe_pt_destroy(vm->scratch_pt[i]);
+			xe_pt_destroy(vm->scratch_pt[i], vm->flags);
 	}
-	xe_pt_destroy(vm->pt_root);
+	xe_pt_destroy(vm->pt_root, vm->flags);
 	vm->size = 0;
 	vm->pt_root = NULL;
 
@@ -1024,7 +1055,8 @@ xe_pt_commit_unbind(struct xe_vma *vma,
 
 			for (i = entry->ofs; i < entry->ofs + entry->qwords; i++) {
 				if (pt_dir->entries[i])
-					xe_pt_destroy(pt_dir->entries[i]);
+					xe_pt_destroy(pt_dir->entries[i],
+						      vma->vm->flags);
 
 				pt_dir->entries[i] = NULL;
 			}
@@ -1216,7 +1248,7 @@ static void xe_pt_abort_bind(struct xe_vma *vma, struct xe_vm_pgtable_update *en
 			continue;
 
 		for (j = 0; j < entries[i].qwords; j++)
-			xe_pt_destroy(entries[i].pt_entries[j]);
+			xe_pt_destroy(entries[i].pt_entries[j], vma->vm->flags);
 		kfree(entries[i].pt_entries);
 	}
 }
@@ -1241,7 +1273,7 @@ static void xe_pt_commit_bind(struct xe_vma *vma, struct xe_vm_pgtable_update *e
 			struct xe_pt *newpte = entries[i].pt_entries[j];
 
 			if (pt_dir->entries[j_])
-				xe_pt_destroy(pt_dir->entries[j_]);
+				xe_pt_destroy(pt_dir->entries[j_], vma->vm->flags);
 
 			pt_dir->entries[j_] = newpte;
 		}
@@ -1329,7 +1361,7 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 
 			err = xe_pt_populate_for_vma(vma, entry, cur, end);
 			if (err) {
-				xe_pt_destroy(entry);
+				xe_pt_destroy(entry, vma->vm->flags);
 				goto unwind;
 			}
 
@@ -1356,7 +1388,7 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 
 unwind:
 		while (i--)
-			xe_pt_destroy(pte[i]);
+			xe_pt_destroy(pte[i], vma->vm->flags);
 
 		kfree(pte);
 		return err;
