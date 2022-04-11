@@ -121,6 +121,18 @@ struct xe_vm {
 	/** @flags: Flags */
 	uint32_t flags;
 
+	/** @async_ops: async VM operations (bind / unbinds) */
+	struct {
+		/** @list: list of pending async VM ops */
+		struct list_head pending;
+		/** @work: worker to execute async VM ops */
+		struct work_struct work;
+		/** @lock: protects list of pending async VM ops */
+		spinlock_t lock;
+		/** @flush: flush all pending async VM ops */
+		bool flush;
+	} async_ops;
+
 	/** @userptr: user pointer state */
 	struct {
 		/** @list: list of VMAs which are user pointers */
