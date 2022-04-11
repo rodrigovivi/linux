@@ -477,8 +477,10 @@ static const struct intel_device_info ats_m_info = {
 	PLATFORM(XE_DG2),
 	.platform_engine_mask =
 		BIT(XE_HW_ENGINE_RCS0) | BIT(XE_HW_ENGINE_BCS0) |
-		BIT(XE_HW_ENGINE_VECS0) | BIT(XE_HW_ENGINE_VCS0) |
-		BIT(XE_HW_ENGINE_VCS2),
+		BIT(XE_HW_ENGINE_VECS0) | BIT(XE_HW_ENGINE_VECS1) |
+		BIT(XE_HW_ENGINE_VCS0) | BIT(XE_HW_ENGINE_VCS2) |
+		BIT(XE_HW_ENGINE_CCS0) | BIT(XE_HW_ENGINE_CCS1) |
+		BIT(XE_HW_ENGINE_CCS2) | BIT(XE_HW_ENGINE_CCS3),
 	.require_force_probe = 1,
 	.vram_flags = XE_VRAM_FLAGS_NEED64K,
 };
@@ -496,6 +498,7 @@ static const struct pci_device_id pciidlist[] = {
 	INTEL_TGL_12_GT2_IDS(&tgl_info),
 	INTEL_DG1_IDS(&dg1_info),
 	INTEL_ATS_M_IDS(&ats_m_info),
+	INTEL_DG2_IDS(&ats_m_info), /* TODO: switch to proper dg2_info */
 	{0, 0, 0}
 };
 MODULE_DEVICE_TABLE(pci, pciidlist);
