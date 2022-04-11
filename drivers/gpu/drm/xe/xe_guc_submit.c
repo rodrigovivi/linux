@@ -746,6 +746,7 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 	/* Engine state now stable, disable scheduling if needed */
 	if (engine_enabled(e)) {
 		struct xe_guc *guc = engine_to_guc(e);
+		int ret;
 
 		if (engine_reset(e))
 			err = -EIO;
@@ -756,10 +757,24 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 		/*
 		 * Must wait for scheduling to be disabled before signalling
 		 * any fences, if GT broken the GT reset code should signal us.
+		 *
+		 * FIXME: Tests can generate a ton of 0x6000 (IOMMU CAT fault
+		 * error) messages which can cause the schedule disable to get
+		 * lost. If this occurs, trigger a GT reset to recover.
 		 */
 		smp_rmb();
-		wait_event(guc->ct.wq, !engine_pending_disable(e) ||
-			   atomic_read(&guc->submission_state.stopped));
+		ret = wait_event_timeout(guc->ct.wq,
+					 !engine_pending_disable(e) ||
+					 atomic_read(&guc->submission_state.stopped),
+					 HZ * 5);
+		if (!ret) {
+			XE_WARN_ON("Schedule disable failed to respond");
+			sched->timeout = MIN_SCHED_TIMEOUT;
+			list_add(&drm_job->list, &sched->pending_list);
+			drm_sched_run_wq_start(sched);
+			xe_gt_reset_async(e->gt);
+			goto out;
+		}
 	}
 
 	/* Stop fence signaling */
