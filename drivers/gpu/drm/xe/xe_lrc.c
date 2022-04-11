@@ -563,7 +563,7 @@ static const u8 xehp_rcs_offsets[] = {
 static const u8 *reg_offsets(struct xe_device *xe, enum xe_engine_class class)
 {
 	if (class == XE_ENGINE_CLASS_RENDER) {
-		if (GRAPHICS_VERx10(xe) >= 125)
+		if (GRAPHICS_VERx100(xe) >= 1250)
 			return xehp_rcs_offsets;
 		else if (GRAPHICS_VER(xe) >= 12)
 			return gen12_rcs_offsets;
@@ -605,7 +605,7 @@ static int lrc_ring_mi_mode(struct xe_hw_engine *hwe)
 {
 	struct xe_device *xe = gt_to_xe(hwe->gt);
 
-	if (GRAPHICS_VERx10(xe) >= 125)
+	if (GRAPHICS_VERx100(xe) >= 1250)
 		return 0x70;
 	else if (GRAPHICS_VER(xe) >= 12)
 		return 0x60;

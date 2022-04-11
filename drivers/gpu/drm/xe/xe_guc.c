@@ -129,7 +129,7 @@ static u32 guc_ctl_wa_flags(struct xe_guc *guc)
 
 	/* Wa_22012773006:gen11,gen12 < XeHP */
 	if (GRAPHICS_VER(xe) >= 11 &&
-	    GRAPHICS_VERx10(xe) < 125)
+	    GRAPHICS_VERx100(xe) < 1250)
 		flags |= GUC_WA_POLLCS;
 
 	return flags;
