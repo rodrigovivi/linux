@@ -201,6 +201,7 @@ struct intel_device_info {
 		u32 degamma_lut_tests;
 		u32 gamma_lut_tests;
 	} color;
+	u8 vram_flags;
 };
 
 #define PLATFORM(x) .platform = (x)
@@ -402,7 +403,8 @@ struct intel_device_info {
 	}, \
 	TGL_CURSOR_OFFSETS, \
 	.has_global_mocs = 1, \
-	.display.has_dsb = 1
+	.display.has_dsb = 1, \
+	.vram_flags = 0
 
 static const struct intel_device_info tgl_info = {
 	GEN12_FEATURES,
@@ -478,6 +480,7 @@ static const struct intel_device_info ats_m_info = {
 		BIT(XE_HW_ENGINE_VECS0) | BIT(XE_HW_ENGINE_VCS0) |
 		BIT(XE_HW_ENGINE_VCS2),
 	.require_force_probe = 1,
+	.vram_flags = XE_VRAM_FLAGS_NEED64K,
 };
 
 #undef GEN
@@ -542,6 +545,7 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	xe->info.is_dgfx = devinfo->is_dgfx;
 	xe->info.platform = devinfo->platform;
 	xe->info.dma_mask_size = devinfo->dma_mask_size;
+	xe->info.vram_flags = devinfo->vram_flags;
 	to_gt(xe)->info.engine_mask = devinfo->platform_engine_mask;
 
 	pci_set_drvdata(pdev, xe);
