@@ -908,6 +908,9 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 	if (flags & DRM_XE_VM_CREATE_COMPUTE_MODE)
 		vm->flags |= VM_FLAG_COMPUTE_MODE;
 
+	if (flags & DRM_XE_VM_CREATE_ASYNC_BIND_OPS)
+		vm->flags |= VM_FLAG_ASYNC_BIND_OPS;
+
 	/* Fill pt_root after allocating scratch tables */
 	err = xe_pt_populate_empty(vm, vm->pt_root);
 	if (err)
@@ -1723,7 +1726,8 @@ static int xe_vm_unbind(struct xe_vm *vm, struct xe_vma *vma,
 }
 
 #define ALL_DRM_XE_VM_CREATE_FLAGS (DRM_XE_VM_CREATE_SCRATCH_PAGE | \
-				    DRM_XE_VM_CREATE_COMPUTE_MODE)
+				    DRM_XE_VM_CREATE_COMPUTE_MODE | \
+				    DRM_XE_VM_CREATE_ASYNC_BIND_OPS)
 
 int xe_vm_create_ioctl(struct drm_device *dev, void *data,
 		       struct drm_file *file)
@@ -2094,6 +2098,7 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	u64 range = args->range;
 	u64 addr = args->addr;
 	u32 op = args->op;
+	bool async = (op & XE_VM_BIND_FLAG_ASYNC);
 
 	if (XE_IOCTL_ERR(xe, args->extensions) ||
 	    XE_IOCTL_ERR(xe, VM_BIND_OP(op) >
@@ -2122,6 +2127,8 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	}
 
 	if (VM_BIND_OP(op) == XE_VM_BIND_OP_RESTART) {
+		if (XE_IOCTL_ERR(xe, !(vm->flags & VM_FLAG_ASYNC_BIND_OPS)))
+			return -ENOTSUPP;
 		if (XE_IOCTL_ERR(xe, args->num_syncs))
 			err = EINVAL;
 		if (XE_IOCTL_ERR(xe, !vm->async_ops.pause))
@@ -2133,6 +2140,10 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		xe_vm_put(vm);
 		return err;
 	}
+
+	if (XE_IOCTL_ERR(xe, !vm->async_ops.pause &&
+			 async != !!(vm->flags & VM_FLAG_ASYNC_BIND_OPS)))
+		return -ENOTSUPP;
 
 	if (XE_IOCTL_ERR(xe, !range) ||
 	    XE_IOCTL_ERR(xe, range > vm->size) ||
@@ -2177,7 +2188,7 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		goto free_syncs;
 	}
 
-	if (op & XE_VM_BIND_FLAG_ASYNC) {
+	if (async) {
 		err = vm_bind_ioctl_async(vm, vma, bo, args, syncs, num_syncs);
 		if (!err)
 			return 0;
