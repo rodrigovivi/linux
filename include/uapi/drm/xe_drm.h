@@ -286,7 +286,22 @@ struct drm_xe_vm_bind {
 #define XE_VM_BIND_OP_UNMAP		0X1
 #define XE_VM_BIND_OP_MAP_USERPTR	0X2
 
-#define XE_VM_BIND_FLAG_READONLY	BIT(16)
+#define XE_VM_BIND_FLAG_READONLY	(0x1 << 16)
+	/*
+	 * A bind ops completions are always async, hence the support for out
+	 * sync. This flag indicates the allocation of the memory for new page
+	 * tables and the job to program the pages tables is asynchronous
+	 * relative to the IOCTL. That part of a bind operation can fail under
+	 * memory pressure, the job in practice can't fail unless the system is
+	 * totally shot.
+	 *
+	 * If this flag is clear and the IOCTL doesn't return an error, in
+	 * practice the bind op is good and will complete.
+	 *
+	 * If this flag is set and doesn't return return an error, the bind op
+	 * can still fail and recovery is needed (TODO: explain how to recover).
+	 */
+#define XE_VM_BIND_FLAG_ASYNC		(0x1 << 17)
 
 	/** @num_syncs: amount of syncs to wait on */
 	__u32 num_syncs;
