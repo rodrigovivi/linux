@@ -386,7 +386,7 @@ static void read_fuses(struct xe_gt *gt)
 	 */
 
 	media_fuse = xe_mmio_read32(gt, GEN11_GT_VEBOX_VDBOX_DISABLE.reg);
-	if (GRAPHICS_VERx10(xe) < 125)
+	if (GRAPHICS_VERx100(xe) < 1250)
 		media_fuse = ~media_fuse;
 
 	vdbox_mask = media_fuse & GEN11_GT_VDBOX_DISABLE_MASK;

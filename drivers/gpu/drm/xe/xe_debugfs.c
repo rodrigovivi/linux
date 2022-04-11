@@ -19,7 +19,7 @@ static int info(struct seq_file *m, void *data)
 	struct xe_device *xe = node_to_xe(m->private);
 	struct drm_printer p = drm_seq_file_printer(m);
 
-	drm_printf(&p, "graphics_verx10 %d\n", xe->info.graphics_verx10);
+	drm_printf(&p, "graphics_verx100 %d\n", xe->info.graphics_verx100);
 	drm_printf(&p, "is_dgfx %s\n", xe->info.is_dgfx ? "yes" : "no");
 	drm_printf(&p, "platform %d\n", xe->info.platform);
 	drm_printf(&p, "devid 0x%x\n", xe->info.devid);
