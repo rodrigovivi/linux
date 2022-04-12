@@ -143,8 +143,6 @@ struct xe_vm {
 			/** @wq: user fence wait queue for VM errors */
 			wait_queue_head_t wq;
 		} error_capture;
-		/** @flush: flush all pending async VM ops */
-		bool flush;
 		/** @pause: pause all pending async VM ops */
 		bool pause;
 	} async_ops;
