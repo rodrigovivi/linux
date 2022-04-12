@@ -14,7 +14,7 @@
 
 struct xe_bb *xe_bb_new(struct xe_gt *gt, u32 dwords)
 {
-	struct xe_bb *bb = kmalloc(GFP_KERNEL, sizeof(*bb));
+	struct xe_bb *bb = kmalloc(sizeof(*bb), GFP_KERNEL);
 	int err;
 
 	if (!bb)
