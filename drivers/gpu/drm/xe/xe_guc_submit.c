@@ -284,7 +284,8 @@ static void release_guc_id(struct xe_guc *guc, struct xe_engine *e)
 	xa_erase(&guc->submission_state.engine_lookup, e->guc->id);
 	if (xe_engine_is_parallel(e))
 		bitmap_release_region(guc->submission_state.guc_ids_bitmap,
-				      e->guc->id, order_base_2(e->width));
+				      e->guc->id - GUC_ID_START_MLRC,
+				      order_base_2(e->width));
 	else
 		ida_simple_remove(&guc->submission_state.guc_ids, e->guc->id);
 	mutex_unlock(&guc->submission_state.lock);
