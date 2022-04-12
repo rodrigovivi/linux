@@ -946,7 +946,6 @@ err_unlock:
 
 static void flush_async_ops(struct xe_vm *vm)
 {
-	vm->async_ops.flush = true;
 	queue_work(system_unbound_wq, &vm->async_ops.work);
 	flush_work(&vm->async_ops.work);
 }
@@ -1993,7 +1992,7 @@ static void async_op_work_func(struct work_struct *w)
 		struct async_op *op;
 		int err;
 
-		if (vm->async_ops.pause && !vm->async_ops.flush)
+		if (vm->async_ops.pause && vm->size)
 			break;
 
 		spin_lock_irq(&vm->async_ops.lock);
@@ -2006,7 +2005,7 @@ static void async_op_work_func(struct work_struct *w)
 		if (!op)
 			break;
 
-		if (!vm->async_ops.flush) {
+		if (vm->size) {
 #ifdef TEST_VM_ASYNC_OPS_ERROR
 #define FORCE_ASYNC_OP_ERROR	BIT(31)
 			if (!(op->args.op & FORCE_ASYNC_OP_ERROR)) {
