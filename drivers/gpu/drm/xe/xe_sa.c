@@ -49,7 +49,8 @@ int xe_sa_bo_manager_init(struct xe_gt *gt,
 	sa_manager->gpu_addr = xe_bo_ggtt_addr(bo);
 
 	if (bo->vmap.is_iomem) {
-		sa_manager->cpu_ptr = kzalloc(GFP_KERNEL, sa_manager->base.size);
+		sa_manager->cpu_ptr = kzalloc(sa_manager->base.size,
+					      GFP_KERNEL);
 		if (!sa_manager->cpu_ptr) {
 			xe_bo_put(sa_manager->bo);
 			sa_manager->bo = NULL;
