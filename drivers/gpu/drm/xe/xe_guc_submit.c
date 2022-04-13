@@ -721,6 +721,7 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 	int err = -ETIME;
 	int i = 0;
 
+	XE_WARN_ON(e->flags & ENGINE_FLAG_COMPUTE_MODE);
 	XE_WARN_ON(e->flags & ENGINE_FLAG_KERNEL);
 	XE_WARN_ON(e->flags & ENGINE_FLAG_VM && !engine_killed(e));
 
@@ -883,8 +884,10 @@ static void __guc_engine_process_msg_set_sched_props(struct drm_sched_msg *msg)
 static void suspend_fence_signal(struct xe_engine *e)
 {
 	struct dma_fence *suspend_fence = e->guc->suspend_fence;
+	struct xe_guc *guc = engine_to_guc(e);
 
-	XE_BUG_ON(!engine_suspended(e));
+	XE_BUG_ON(!engine_suspended(e) && !engine_killed(e) &&
+		  !atomic_read(&guc->submission_state.stopped));
 	XE_BUG_ON(!suspend_fence);
 
 	e->guc->suspend_fence = NULL;
@@ -1048,7 +1051,8 @@ static void guc_engine_kill(struct xe_engine *e)
 {
 	trace_xe_engine_kill(e);
 	set_engine_killed(e);
-	drm_sched_set_timeout(&e->guc->sched, MIN_SCHED_TIMEOUT);
+	if (!(e->flags & ENGINE_FLAG_COMPUTE_MODE))
+		drm_sched_set_timeout(&e->guc->sched, MIN_SCHED_TIMEOUT);
 }
 
 static void guc_engine_add_msg(struct xe_engine *e, struct drm_sched_msg *msg,
