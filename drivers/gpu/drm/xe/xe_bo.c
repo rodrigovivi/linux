@@ -537,6 +537,9 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, args->size > SIZE_MAX))
 		return -EINVAL;
 
+	if (XE_IOCTL_ERR(xe, args->size & ~PAGE_MASK))
+		return -EINVAL;
+
 	if (args->vm_id) {
 		vm = xe_vm_lookup(xef, args->vm_id);
 		if (XE_IOCTL_ERR(xe, !vm))
