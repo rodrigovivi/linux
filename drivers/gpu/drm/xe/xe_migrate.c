@@ -95,12 +95,15 @@ static void emit_arb_clear(struct xe_bb *bb)
 	bb->cs[bb->len++] = MI_ARB_ON_OFF | MI_ARB_DISABLE;
 }
 
-#define MAX_GGTT_UPDATE_SIZE (2 * DIV_ROUND_UP(CHUNK_SZ >> 12, 0xff) + (CHUNK_SZ >> 11))
+#define MAX_GGTT_UPDATE_SIZE \
+	(2 * DIV_ROUND_UP(CHUNK_SZ >> GEN8_PTE_SHIFT, 0xff) /* (nr of MI_UPDATE_GTT) */ + \
+	 2 * (CHUNK_SZ >> GEN8_PTE_SHIFT) /* size of each entry in dwords * nr of entries*/ )
+
 static void emit_pte(struct xe_ggtt *ggtt, struct xe_bb *bb, u64 ggtt_ofs,
 		     struct ttm_resource *res, struct xe_res_cursor *cur,
 		     u32 ofs, u32 size, struct ttm_tt *ttm)
 {
-	u32 ptes = size >> 12;
+	u32 ptes = size >> GEN8_PTE_SHIFT;
 	bool lmem = res->mem_type == TTM_PL_VRAM;
 
 	while (ptes) {
@@ -109,8 +112,8 @@ static void emit_pte(struct xe_ggtt *ggtt, struct xe_bb *bb, u64 ggtt_ofs,
 		bb->cs[bb->len++] = MI_UPDATE_GTT | (chunk * 2);
 		bb->cs[bb->len++] = ggtt_ofs;
 
-		ofs += chunk << 12;
-		ggtt_ofs += chunk << 12;
+		ofs += chunk << GEN8_PTE_SHIFT;
+		ggtt_ofs += chunk << GEN8_PTE_SHIFT;
 		ptes -= chunk;
 
 		while (chunk--) {
@@ -120,7 +123,7 @@ static void emit_pte(struct xe_ggtt *ggtt, struct xe_bb *bb, u64 ggtt_ofs,
 				addr = cur->start;
 				addr |= 3;
 			} else {
-				u32 ofs = cur->start >> PAGE_SHIFT;
+				u32 ofs = cur->start >> GEN8_PTE_SHIFT;
 
 				addr = ttm->dma_address[ofs];
 				addr |= 1;
@@ -129,7 +132,7 @@ static void emit_pte(struct xe_ggtt *ggtt, struct xe_bb *bb, u64 ggtt_ofs,
 			bb->cs[bb->len++] = lower_32_bits(addr);
 			bb->cs[bb->len++] = upper_32_bits(addr);
 
-			xe_res_next(cur, 4096);
+			xe_res_next(cur, GEN8_PAGE_SIZE);
 		}
 	}
 }
@@ -146,15 +149,15 @@ static void emit_copy(struct xe_gt *gt, struct xe_bb *bb,
 		      u64 src_ofs, u64 dst_ofs, unsigned int size)
 {
 	bb->cs[bb->len++] = GEN9_XY_FAST_COPY_BLT_CMD | (10 - 2);
-	bb->cs[bb->len++] = BLT_DEPTH_32 | PAGE_SIZE;
+	bb->cs[bb->len++] = BLT_DEPTH_32 | GEN8_PAGE_SIZE;
 	bb->cs[bb->len++] = 0;
-	bb->cs[bb->len++] = size >> PAGE_SHIFT << 16 | PAGE_SIZE / 4;
-	bb->cs[bb->len++] = dst_ofs; /* dst offset */
-	bb->cs[bb->len++] = dst_ofs >> 32ULL;
+	bb->cs[bb->len++] = (size >> GEN8_PTE_SHIFT) << 16 | GEN8_PAGE_SIZE / 4;
+	bb->cs[bb->len++] = lower_32_bits(dst_ofs);
+	bb->cs[bb->len++] = upper_32_bits(dst_ofs);
 	bb->cs[bb->len++] = 0;
-	bb->cs[bb->len++] = PAGE_SIZE;
-	bb->cs[bb->len++] = src_ofs; /* src offset */
-	bb->cs[bb->len++] = src_ofs >> 32ULL;
+	bb->cs[bb->len++] = GEN8_PAGE_SIZE;
+	bb->cs[bb->len++] = lower_32_bits(src_ofs);
+	bb->cs[bb->len++] = upper_32_bits(src_ofs);
 }
 
 struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
@@ -230,14 +233,14 @@ err:
 
 static int emit_clear(struct xe_bb *bb, u64 src_ofs, u32 size, u32 value)
 {
-	BUG_ON(size >> PAGE_SHIFT > S16_MAX);
+	BUG_ON(size >> GEN8_PTE_SHIFT > S16_MAX);
 
 	bb->cs[bb->len++] = XY_COLOR_BLT_CMD | BLT_WRITE_RGBA | (7 - 2);
-	bb->cs[bb->len++] = BLT_DEPTH_32 | BLT_ROP_COLOR_COPY | PAGE_SIZE;
+	bb->cs[bb->len++] = BLT_DEPTH_32 | BLT_ROP_COLOR_COPY | GEN8_PAGE_SIZE;
 	bb->cs[bb->len++] = 0;
-	bb->cs[bb->len++] = size >> PAGE_SHIFT << 16 | PAGE_SIZE / 4;
-	bb->cs[bb->len++] = src_ofs; /* offset */
-	bb->cs[bb->len++] = src_ofs >> 32ULL;
+	bb->cs[bb->len++] = (size >> GEN8_PTE_SHIFT) << 16 | GEN8_PAGE_SIZE / 4;
+	bb->cs[bb->len++] = lower_32_bits(src_ofs);
+	bb->cs[bb->len++] = upper_32_bits(src_ofs);
 	bb->cs[bb->len++] = value;
 
 	return 0;
