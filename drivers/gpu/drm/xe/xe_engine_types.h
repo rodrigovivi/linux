@@ -57,6 +57,8 @@ struct xe_engine {
 #define ENGINE_FLAG_KERNEL	BIT(1)
 #define ENGINE_FLAG_PERSISTENT	BIT(2)
 #define ENGINE_FLAG_COMPUTE	BIT(3)
+#define ENGINE_FLAG_VM		BIT(4)
+
 	/**
 	 * @flags: flags this is engine, should statically setup aside from ban
 	 * bit
