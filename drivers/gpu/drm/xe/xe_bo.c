@@ -239,8 +239,12 @@ static void __xe_bo_vunmap(struct xe_bo *bo);
 
 static void xe_ttm_bo_release_notify(struct ttm_buffer_object *ttm_bo)
 {
-	struct xe_bo *bo = ttm_to_xe_bo(ttm_bo);
+	struct xe_bo *bo;
 
+	if (!xe_bo_is_xe_bo(ttm_bo))
+		return;
+
+	bo = ttm_to_xe_bo(ttm_bo);
 	__xe_bo_vunmap(bo);
 }
 
@@ -252,6 +256,7 @@ struct ttm_device_funcs xe_ttm_funcs = {
 	.io_mem_reserve = xe_ttm_io_mem_reserve,
 	.io_mem_pfn = xe_ttm_io_mem_pfn,
 	.release_notify = xe_ttm_bo_release_notify,
+	.eviction_valuable = ttm_bo_eviction_valuable,
 };
 
 static void xe_ttm_bo_destroy(struct ttm_buffer_object *ttm_bo)
