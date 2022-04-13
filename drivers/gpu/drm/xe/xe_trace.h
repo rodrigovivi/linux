@@ -201,6 +201,39 @@ DEFINE_EVENT(drm_sched_msg, drm_sched_msg_recv,
 	     TP_ARGS(msg)
 );
 
+DECLARE_EVENT_CLASS(xe_hw_fence,
+		    TP_PROTO(struct xe_hw_fence *fence),
+		    TP_ARGS(fence),
+
+		    TP_STRUCT__entry(
+			     __field(u64, ctx)
+			     __field(u32, seqno)
+			     ),
+
+		    TP_fast_assign(
+			   __entry->ctx = fence->dma.context;
+			   __entry->seqno = fence->dma.seqno;
+			   ),
+
+		    TP_printk("ctx=0x%016llx, seqno=0x%08x", __entry->ctx,
+			      __entry->seqno)
+);
+
+DEFINE_EVENT(xe_hw_fence, xe_hw_fence_create,
+	     TP_PROTO(struct xe_hw_fence *fence),
+	     TP_ARGS(fence)
+);
+
+DEFINE_EVENT(xe_hw_fence, xe_hw_fence_signal,
+	     TP_PROTO(struct xe_hw_fence *fence),
+	     TP_ARGS(fence)
+);
+
+DEFINE_EVENT(xe_hw_fence, xe_hw_fence_free,
+	     TP_PROTO(struct xe_hw_fence *fence),
+	     TP_ARGS(fence)
+);
+
 DECLARE_EVENT_CLASS(xe_vma,
 		    TP_PROTO(struct xe_vma *vma),
 		    TP_ARGS(vma),

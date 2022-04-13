@@ -14,6 +14,7 @@
 #include "xe_gt.h"
 #include "xe_hw_engine.h"
 #include "xe_macros.h"
+#include "xe_trace.h"
 
 static struct kmem_cache *xe_hw_fence_slab;
 
@@ -61,8 +62,10 @@ static void hw_fence_irq_run_cb(struct irq_work *work)
 			struct dma_fence *dma_fence = &fence->dma;
 
 			dma_fence_get(dma_fence);
-			if (dma_fence_is_signaled_locked(dma_fence))
+			if (dma_fence_is_signaled_locked(dma_fence)) {
+				trace_xe_hw_fence_signal(fence);
 				list_del_init(&fence->irq_link);
+			}
 			dma_fence_put(dma_fence);
 		}
 	}
@@ -177,6 +180,7 @@ static void xe_hw_fence_release(struct dma_fence *dma_fence)
 {
 	struct xe_hw_fence *fence = to_xe_hw_fence(dma_fence);
 
+	trace_xe_hw_fence_free(fence);
 	XE_BUG_ON(!list_empty(&fence->irq_link));
 	call_rcu(&dma_fence->rcu, fence_free);
 }
@@ -212,6 +216,8 @@ struct xe_hw_fence *xe_hw_fence_create(struct xe_hw_fence_ctx *ctx,
 	fence->ctx = ctx;
 	fence->seqno_map = seqno_map;
 	INIT_LIST_HEAD(&fence->irq_link);
+
+	trace_xe_hw_fence_create(fence);
 
 	return fence;
 }
