@@ -904,7 +904,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 	if (err)
 		goto err_scratch_pt;
 
-	eng = xe_engine_create_class(xe, NULL, XE_ENGINE_CLASS_COPY, 0);
+	eng = xe_engine_create_class(xe, NULL, XE_ENGINE_CLASS_COPY, ENGINE_FLAG_VM);
 	if (IS_ERR(eng)) {
 		err = PTR_ERR(eng);
 		goto err_scratch_pt;

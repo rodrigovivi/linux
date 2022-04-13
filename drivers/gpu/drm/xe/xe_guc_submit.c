@@ -722,6 +722,8 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 	int i = 0;
 
 	XE_WARN_ON(e->flags & ENGINE_FLAG_KERNEL);
+	XE_WARN_ON(e->flags & ENGINE_FLAG_VM && !engine_killed(e));
+
 	drm_warn(&xe->drm, "Timedout job: seqno=%u, guc_id=%d",
 		 xe_sched_job_seqno(job), e->guc->id);
 	trace_xe_sched_job_timedout(job);
@@ -729,8 +731,12 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 	/* Kill the run_job entry point */
 	drm_sched_run_wq_stop(sched);
 
-	/* Kernel jobs should never fail, if they do the GT needs a reset */
-	if (e->flags & ENGINE_FLAG_KERNEL) {
+	/*
+	 * Kernel jobs should never fail, nor should VM jobs if they do
+	 * somethings has gone wrong and the GT needs a reset
+	 */
+	if (e->flags & ENGINE_FLAG_KERNEL ||
+	    (e->flags & ENGINE_FLAG_VM && !engine_killed(e))) {
 		list_add(&drm_job->list, &sched->pending_list);
 		drm_sched_run_wq_start(sched);
 		xe_gt_reset_async(e->gt);
@@ -1206,10 +1212,11 @@ static void guc_engine_stop(struct xe_guc *guc, struct xe_engine *e)
 	trace_xe_engine_stop(e);
 
 	/*
-	 * Ban any engine (aside from kernel) with a started but not complete
-	 * job or if a job has gone through a GT reset more than twice.
+	 * Ban any engine (aside from kernel and engines used for VM ops) with a
+	 * started but not complete job or if a job has gone through a GT reset
+	 * more than twice.
 	 */
-	if (!(e->flags & ENGINE_FLAG_KERNEL)) {
+	if (!(e->flags & (ENGINE_FLAG_KERNEL | ENGINE_FLAG_VM))) {
 		struct drm_sched_job *drm_job =
 			list_first_entry_or_null(&sched->pending_list,
 						 struct drm_sched_job, list);
