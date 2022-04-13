@@ -52,7 +52,7 @@ int xe_sa_bo_manager_init(struct xe_gt *gt,
 		sa_manager->cpu_ptr = kzalloc(sa_manager->base.size,
 					      GFP_KERNEL);
 		if (!sa_manager->cpu_ptr) {
-			xe_bo_put(sa_manager->bo);
+			xe_bo_unpin_map_no_vm(sa_manager->bo);
 			sa_manager->bo = NULL;
 			return -ENOMEM;
 		}
