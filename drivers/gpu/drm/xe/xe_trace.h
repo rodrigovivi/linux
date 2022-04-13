@@ -182,13 +182,17 @@ DECLARE_EVENT_CLASS(drm_sched_msg,
 
 		    TP_STRUCT__entry(
 			     __field(u32, opcode)
+			     __field(u16, guc_id)
 			     ),
 
 		    TP_fast_assign(
 			   __entry->opcode = msg->opcode;
+			   __entry->guc_id =
+			   ((struct xe_engine *)msg->private_data)->guc->id;
 			   ),
 
-		    TP_printk("opcode=%u", __entry->opcode)
+		    TP_printk("guc_id=%d, opcode=%u", __entry->guc_id,
+			      __entry->opcode)
 );
 
 DEFINE_EVENT(drm_sched_msg, drm_sched_msg_add,
