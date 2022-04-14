@@ -99,7 +99,6 @@ struct xe_vm_pgtable_update {
 	struct xe_pt **pt_entries;
 };
 
-#define XE_VM_FLAGS_64K			BIT(0)
 
 struct xe_vm {
 	struct xe_device *xe;
@@ -118,8 +117,11 @@ struct xe_vm {
 
 	struct xe_bo *scratch_bo;
 	struct xe_pt *scratch_pt[XE_VM_MAX_LEVEL];
-	/** @flags: Flags */
-	uint32_t flags;
+
+	/** @flags: flags for this VM, statically setup a creation time */
+#define VM_FLAGS_64K		BIT(0)
+#define VM_FLAG_COMPUTE_MODE	BIT(1)
+	unsigned long flags;
 
 	/** @async_ops: async VM operations (bind / unbinds) */
 	struct {
