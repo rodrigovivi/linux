@@ -1943,6 +1943,21 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma, struct xe_bo *bo,
 {
 	int err;
 
+	/*
+	 * We can't do an unbind until all in syncs are signalled as we destroy
+	 * the PTEs immediately in the unbind code. If doing an async VM unbind,
+	 * no penalty for sleeping here.
+	 */
+	if (VM_BIND_OP(args->op) == XE_VM_BIND_OP_UNMAP) {
+		int i;
+
+		for (i = 0; i < num_syncs; i++) {
+			err = xe_sync_entry_wait(&syncs[i]);
+			if (err)
+				return err;
+		}
+	}
+
 	if (!(VM_BIND_OP(args->op) == XE_VM_BIND_OP_MAP_USERPTR)) {
 		LIST_HEAD(objs);
 		LIST_HEAD(dups);
