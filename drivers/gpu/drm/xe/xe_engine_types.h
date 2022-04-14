@@ -53,11 +53,11 @@ struct xe_engine {
 	/** @fence_irq: fence IRQ used to signal job completion */
 	struct xe_hw_fence_irq *fence_irq;
 
-#define ENGINE_FLAG_BANNED	BIT(0)
-#define ENGINE_FLAG_KERNEL	BIT(1)
-#define ENGINE_FLAG_PERSISTENT	BIT(2)
-#define ENGINE_FLAG_COMPUTE	BIT(3)
-#define ENGINE_FLAG_VM		BIT(4)
+#define ENGINE_FLAG_BANNED		BIT(0)
+#define ENGINE_FLAG_KERNEL		BIT(1)
+#define ENGINE_FLAG_PERSISTENT		BIT(2)
+#define ENGINE_FLAG_COMPUTE_MODE	BIT(3)
+#define ENGINE_FLAG_VM			BIT(4)
 
 	/**
 	 * @flags: flags this is engine, should statically setup aside from ban

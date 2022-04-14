@@ -223,13 +223,13 @@ static const struct xe_preempt_fence_ops preempt_fence_ops = {
 	.preempt_complete = preempt_complete,
 };
 
-static int engine_set_compute(struct xe_device *xe, struct xe_engine *e,
-			      u64 value, bool create)
+static int engine_set_compute_mode(struct xe_device *xe, struct xe_engine *e,
+				   u64 value, bool create)
 {
 	if (XE_IOCTL_ERR(xe, !create))
 		return -EINVAL;
 
-	if (XE_IOCTL_ERR(xe, e->flags & ENGINE_FLAG_COMPUTE))
+	if (XE_IOCTL_ERR(xe, e->flags & ENGINE_FLAG_COMPUTE_MODE))
 		return -EINVAL;
 
 	if (value) {
@@ -267,7 +267,7 @@ static int engine_set_compute(struct xe_device *xe, struct xe_engine *e,
 		dma_resv_add_shared_fence(&vm->resv, pfence);
 		xe_vm_unlock(vm);
 
-		e->flags |= ENGINE_FLAG_COMPUTE;
+		e->flags |= ENGINE_FLAG_COMPUTE_MODE;
 		e->flags &= ~ENGINE_FLAG_PERSISTENT;
 	}
 
@@ -280,7 +280,7 @@ static int engine_set_persistence(struct xe_device *xe, struct xe_engine *e,
 	if (XE_IOCTL_ERR(xe, !create))
 		return -EINVAL;
 
-	if (XE_IOCTL_ERR(xe, e->flags & ENGINE_FLAG_COMPUTE))
+	if (XE_IOCTL_ERR(xe, e->flags & ENGINE_FLAG_COMPUTE_MODE))
 		return -EINVAL;
 
 	if (value)
@@ -311,7 +311,7 @@ static const xe_engine_set_property_fn engine_set_property_funcs[] = {
 	[XE_ENGINE_PROPERTY_PRIORITY] = engine_set_priority,
 	[XE_ENGINE_PROPERTY_TIMESLICE] = engine_set_timeslice,
 	[XE_ENGINE_PROPERTY_PREEMPTION_TIMEOUT] = engine_set_preemption_timeout,
-	[XE_ENGINE_PROPERTY_COMPUTE] = engine_set_compute,
+	[XE_ENGINE_PROPERTY_COMPUTE_MODE] = engine_set_compute_mode,
 	[XE_ENGINE_PROPERTY_PERSISTENCE] = engine_set_persistence,
 	[XE_ENGINE_PROPERTY_JOB_TIMEOUT] = engine_set_job_timeout,
 };
@@ -518,7 +518,7 @@ void xe_engine_kill(struct xe_engine *e)
 {
 	e->ops->kill(e);
 
-	if (!(e->flags & ENGINE_FLAG_COMPUTE))
+	if (!(e->flags & ENGINE_FLAG_COMPUTE_MODE))
 	      return;
 
 	xe_vm_lock(e->vm, NULL);
