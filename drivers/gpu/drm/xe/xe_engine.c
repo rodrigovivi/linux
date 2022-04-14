@@ -237,6 +237,9 @@ static int engine_set_compute_mode(struct xe_device *xe, struct xe_engine *e,
 		struct dma_fence *pfence;
 		int err;
 
+		if (XE_IOCTL_ERR(xe, !(e->vm->flags & VM_FLAG_COMPUTE_MODE)))
+			return -ENOTSUPP;
+
 		if (XE_IOCTL_ERR(xe, e->width != 1))
 			return -EINVAL;
 
@@ -494,6 +497,12 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 		err = engine_user_extensions(xe, e, args->extensions, 0, true);
 		if (XE_IOCTL_ERR(xe, err))
 			goto put_engine;
+	}
+
+	if (XE_IOCTL_ERR(xe, !!(e->vm->flags & VM_FLAG_COMPUTE_MODE) !=
+			 !!(e->flags & ENGINE_FLAG_COMPUTE_MODE))) {
+		err = -ENOTSUPP;
+		goto put_engine;
 	}
 
 	e->persitent.xef = xef;

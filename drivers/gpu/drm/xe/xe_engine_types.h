@@ -60,7 +60,7 @@ struct xe_engine {
 #define ENGINE_FLAG_VM			BIT(4)
 
 	/**
-	 * @flags: flags this is engine, should statically setup aside from ban
+	 * @flags: flags for this engine, should statically setup aside from ban
 	 * bit
 	 */
 	unsigned long flags;
