@@ -47,84 +47,87 @@ engine_to_guc(struct xe_engine *e)
 }
 
 /*
- * Helpers for engine state, no lock required as transitions are mutually
- * exclusive.
+ * Helpers for engine state, using an atomic as some of the bits can transition
+ * as the same time (e.g. a suspend can be happning at the same time as schedule
+ * engine done being processed).
  */
-#define ENGINE_STATE_REGISTERED		BIT(0)
-#define ENGINE_STATE_ENABLED		BIT(1)
-#define ENGINE_STATE_PENDING_ENABLE	BIT(2)
-#define ENGINE_STATE_PENDING_DISABLE	BIT(3)
-#define ENGINE_STATE_DESTROYED		BIT(4)
-#define ENGINE_STATE_SUSPENDED		BIT(5)
+#define ENGINE_STATE_REGISTERED		(1 << 0)
+#define ENGINE_STATE_ENABLED		(1 << 1)
+#define ENGINE_STATE_PENDING_ENABLE	(1 << 2)
+#define ENGINE_STATE_PENDING_DISABLE	(1 << 3)
+#define ENGINE_STATE_DESTROYED		(1 << 4)
+#define ENGINE_STATE_SUSPENDED		(1 << 5)
+#define ENGINE_STATE_RESET		(1 << 6)
+#define ENGINE_STATE_KILLED		(1 << 7)
 
 static bool engine_registered(struct xe_engine *e)
 {
-	return (e->guc->state & ENGINE_STATE_REGISTERED);
+	return atomic_read(&e->guc->state) & ENGINE_STATE_REGISTERED;
 }
 
 static void set_engine_registered(struct xe_engine *e)
 {
-	e->guc->state |= ENGINE_STATE_REGISTERED;
+	atomic_or(ENGINE_STATE_REGISTERED, &e->guc->state);
 }
 
 static void clear_engine_registered(struct xe_engine *e)
 {
-	e->guc->state &= ~ENGINE_STATE_REGISTERED;
+	atomic_and(~ENGINE_STATE_REGISTERED, &e->guc->state);
 }
 
 static bool engine_enabled(struct xe_engine *e)
 {
-	return (e->guc->state & ENGINE_STATE_ENABLED);
+	return atomic_read(&e->guc->state) & ENGINE_STATE_ENABLED;
 }
 
 static void set_engine_enabled(struct xe_engine *e)
 {
-	e->guc->state |= ENGINE_STATE_ENABLED;
+	atomic_or(ENGINE_STATE_ENABLED, &e->guc->state);
 }
 
 static void clear_engine_enabled(struct xe_engine *e)
 {
-	e->guc->state &= ~ENGINE_STATE_ENABLED;
+	atomic_and(~ENGINE_STATE_ENABLED, &e->guc->state);
 }
 
 static bool engine_pending_enable(struct xe_engine *e)
 {
-	return (e->guc->state & ENGINE_STATE_PENDING_ENABLE);
+	return atomic_read(&e->guc->state) & ENGINE_STATE_PENDING_ENABLE;
 }
 
 static void set_engine_pending_enable(struct xe_engine *e)
 {
-	e->guc->state |= ENGINE_STATE_PENDING_ENABLE;
+	atomic_or(ENGINE_STATE_PENDING_ENABLE, &e->guc->state);
 }
 
 static void clear_engine_pending_enable(struct xe_engine *e)
 {
-	e->guc->state &= ~ENGINE_STATE_PENDING_ENABLE;
+	atomic_and(~ENGINE_STATE_PENDING_ENABLE, &e->guc->state);
 }
 
 static bool engine_pending_disable(struct xe_engine *e)
 {
-	return (e->guc->state & ENGINE_STATE_PENDING_DISABLE);
+	return atomic_read(&e->guc->state) & ENGINE_STATE_PENDING_DISABLE;
 }
 
 static void set_engine_pending_disable(struct xe_engine *e)
 {
-	e->guc->state |= ENGINE_STATE_PENDING_DISABLE;
+	atomic_or(ENGINE_STATE_PENDING_DISABLE, &e->guc->state);
 }
 
 static void clear_engine_pending_disable(struct xe_engine *e)
 {
-	e->guc->state &= ~ENGINE_STATE_PENDING_DISABLE;
+	atomic_and(~ENGINE_STATE_PENDING_DISABLE, &e->guc->state);
 }
 
 static bool engine_destroyed(struct xe_engine *e)
 {
-	return (e->guc->state & ENGINE_STATE_DESTROYED);
+	return atomic_read(&e->guc->state) & ENGINE_STATE_DESTROYED;
 }
 
 static void set_engine_destroyed(struct xe_engine *e)
 {
-	e->guc->state |= ENGINE_STATE_DESTROYED;
+	atomic_or(ENGINE_STATE_DESTROYED, &e->guc->state);
 }
 
 static bool engine_banned(struct xe_engine *e)
@@ -139,37 +142,37 @@ static void set_engine_banned(struct xe_engine *e)
 
 static bool engine_suspended(struct xe_engine *e)
 {
-	return (e->guc->state & ENGINE_STATE_SUSPENDED);
+	return atomic_read(&e->guc->state) & ENGINE_STATE_SUSPENDED;
 }
 
 static void set_engine_suspended(struct xe_engine *e)
 {
-	e->guc->state |= ENGINE_STATE_SUSPENDED;
+	atomic_or(ENGINE_STATE_SUSPENDED, &e->guc->state);
 }
 
 static void clear_engine_suspended(struct xe_engine *e)
 {
-	e->guc->state &= ~ENGINE_STATE_SUSPENDED;
+	atomic_and(~ENGINE_STATE_SUSPENDED, &e->guc->state);
 }
 
 static bool engine_reset(struct xe_engine *e)
 {
-	return e->guc->reset;
+	return atomic_read(&e->guc->state) & ENGINE_STATE_RESET;
 }
 
 static void set_engine_reset(struct xe_engine *e)
 {
-	e->guc->reset = true;
+	atomic_or(ENGINE_STATE_RESET, &e->guc->state);
 }
 
 static bool engine_killed(struct xe_engine *e)
 {
-	return e->guc->killed;
+	return atomic_read(&e->guc->state) & ENGINE_STATE_KILLED;
 }
 
 static void set_engine_killed(struct xe_engine *e)
 {
-	e->guc->killed = true;
+	atomic_or(ENGINE_STATE_KILLED, &e->guc->state);
 }
 
 static bool engine_killed_or_banned(struct xe_engine *e)
@@ -1227,7 +1230,8 @@ static void guc_engine_stop(struct xe_guc *guc, struct xe_engine *e)
 	}
 	if (e->guc->suspend_fence)
 		suspend_fence_signal(e);
-	e->guc->state &= ENGINE_STATE_DESTROYED | ENGINE_STATE_SUSPENDED;
+	atomic_and(ENGINE_STATE_DESTROYED | ENGINE_STATE_SUSPENDED,
+		   &e->guc->state);
 	trace_xe_engine_stop(e);
 
 	/*
@@ -1381,7 +1385,7 @@ int xe_guc_sched_done_handler(struct xe_guc *guc, u32 *msg, u32 len)
 	if (unlikely(!engine_pending_enable(e) &&
 		     !engine_pending_disable(e))) {
 		drm_err(&xe->drm, "Unexpected engine state 0x%04x",
-			e->guc->state);
+			atomic_read(&e->guc->state));
 		return -EPROTO;
 	}
 
@@ -1425,7 +1429,7 @@ int xe_guc_deregister_done_handler(struct xe_guc *guc, u32 *msg, u32 len)
 	if (!engine_destroyed(e) || engine_pending_disable(e) ||
 	    engine_pending_enable(e) || engine_enabled(e)) {
 		drm_err(&xe->drm, "Unexpected engine state 0x%04x",
-			e->guc->state);
+			atomic_read(&e->guc->state));
 		return -EPROTO;
 	}
 
@@ -1548,7 +1552,7 @@ static void guc_engine_print(struct xe_engine *e, struct drm_printer *p)
 			   xe_lrc_start_seqno(lrc));
 		drm_printf(p, "\tSeqno: (memory) %d\n", xe_lrc_seqno(lrc));
 	}
-	drm_printf(p, "\tSchedule State: 0x%x\n", e->guc->state);
+	drm_printf(p, "\tSchedule State: 0x%x\n", atomic_read(&e->guc->state));
 	drm_printf(p, "\tFlags: 0x%lx\n", e->flags);
 	if (xe_engine_is_parallel(e))
 		guc_engine_wq_print(e, p);
