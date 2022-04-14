@@ -659,8 +659,8 @@ guc_engine_run_job(struct drm_sched_job *drm_job)
 		submit_engine(e);
 	}
 
-	/* Immediately signal a compute job's fence as this is unused */
-	if (e->flags & ENGINE_FLAG_COMPUTE && !xe_sched_job_is_error(job))
+	/* Immediately signal a compute mode job's fence as this is unused */
+	if (e->flags & ENGINE_FLAG_COMPUTE_MODE && !xe_sched_job_is_error(job))
 		xe_sched_job_set_error(job, -ENOTSUPP);
 
 	return dma_fence_get(job->fence);
