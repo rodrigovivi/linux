@@ -926,6 +926,8 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 	vm->eng = eng;
 
 	xe_vm_unlock(vm);
+	trace_xe_vm_create(vm);
+
 	return vm;
 
 err_scratch_pt:
@@ -1054,6 +1056,7 @@ void xe_vm_free(struct kref *ref)
 	/* xe_vm_close_and_put was not called? */
 	XE_WARN_ON(vm->pt_root);
 
+	trace_xe_vm_free(vm);
 	dma_fence_put(vm->userptr.fence);
 	dma_resv_fini(&vm->resv);
 	kfree(vm);
@@ -2015,6 +2018,7 @@ static void async_op_work_func(struct work_struct *w)
 					    op->fence);
 #endif
 			if (err) {
+				trace_xe_vma_fail(op->vma);
 				drm_warn(&vm->xe->drm, "Async VM op(%d) failed with %d",
 					 VM_BIND_OP(op->args.op), err);
 
@@ -2033,6 +2037,8 @@ static void async_op_work_func(struct work_struct *w)
 				break;
 			}
 		} else {
+			trace_xe_vma_flush(op->vma);
+
 			if (VM_BIND_OP(op->args.op) == XE_VM_BIND_OP_UNMAP) {
 				if (op->bo && op->bo->vm != vm)
 					dma_resv_lock(op->bo->ttm.base.resv,
@@ -2269,15 +2275,18 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 
 	if (VM_BIND_OP(op) == XE_VM_BIND_OP_RESTART) {
 		if (XE_IOCTL_ERR(xe, !(vm->flags & VM_FLAG_ASYNC_BIND_OPS)))
-			return -ENOTSUPP;
-		if (XE_IOCTL_ERR(xe, args->num_syncs))
+			err = -ENOTSUPP;
+		if (XE_IOCTL_ERR(xe, !err && args->num_syncs))
 			err = EINVAL;
-		if (XE_IOCTL_ERR(xe, !vm->async_ops.pause))
+		if (XE_IOCTL_ERR(xe, !err && !vm->async_ops.pause))
 			err = -EPROTO;
+
 		if (!err) {
+			trace_xe_vm_restart(vm);
 			vm->async_ops.pause = false;
 			queue_work(system_unbound_wq, &vm->async_ops.work);
 		}
+
 		xe_vm_put(vm);
 		return err;
 	}
