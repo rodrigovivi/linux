@@ -218,7 +218,7 @@ static int xe_pt_populate_empty(struct xe_vm *vm, struct xe_pt *pt)
 	if (err)
 		return err;
 
-	if (vm->flags & XE_VM_FLAGS_64K && pt->level == 1) {
+	if (vm->flags & VM_FLAGS_64K && pt->level == 1) {
 		numpte = 32;
 		flags = GEN12_PDE_64K;
 	}
@@ -355,7 +355,7 @@ static void xe_pt_destroy(struct xe_pt *pt, uint32_t flags)
 	ttm_bo_unpin(&pt->bo->ttm);
 	xe_bo_put(pt->bo);
 
-	if (pt->level == 0 && flags & XE_VM_FLAGS_64K)
+	if (pt->level == 0 && flags & VM_FLAGS_64K)
 		numpdes = 32;
 
 	if (pt->level > 0 && pt->num_live) {
@@ -873,7 +873,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 	xe_vm_lock(vm, NULL);
 
 	if (IS_DGFX(xe) && xe->info.vram_flags & XE_VRAM_FLAGS_NEED64K)
-		vm->flags = XE_VM_FLAGS_64K;
+		vm->flags |= VM_FLAGS_64K;
 
 	vm->pt_root = xe_pt_create(vm, 3);
 	if (IS_ERR(vm->pt_root)) {
@@ -904,6 +904,9 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 			}
 		}
 	}
+
+	if (flags & DRM_XE_VM_CREATE_COMPUTE_MODE)
+		vm->flags |= VM_FLAG_COMPUTE_MODE;
 
 	/* Fill pt_root after allocating scratch tables */
 	err = xe_pt_populate_empty(vm, vm->pt_root);
@@ -1719,7 +1722,8 @@ static int xe_vm_unbind(struct xe_vm *vm, struct xe_vma *vma,
 	return 0;
 }
 
-#define ALL_DRM_XE_VM_CREATE_FLAGS DRM_XE_VM_CREATE_SCRATCH_PAGE
+#define ALL_DRM_XE_VM_CREATE_FLAGS (DRM_XE_VM_CREATE_SCRATCH_PAGE | \
+				    DRM_XE_VM_CREATE_COMPUTE_MODE)
 
 int xe_vm_create_ioctl(struct drm_device *dev, void *data,
 		       struct drm_file *file)
