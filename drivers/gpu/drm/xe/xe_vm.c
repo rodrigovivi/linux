@@ -945,7 +945,15 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 {
 	struct rb_root contested = RB_ROOT;
 
+	vm->size = 0;
+	smp_mb();
 	flush_async_ops(vm);
+
+	if (vm->eng) {
+		xe_engine_kill(vm->eng);
+		xe_engine_put(vm->eng);
+		vm->eng = NULL;
+	}
 
 	xe_vm_lock(vm, NULL);
 	while (vm->vmas.rb_node) {
@@ -977,13 +985,7 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 			xe_pt_destroy(vm->scratch_pt[i], vm->flags);
 	}
 	xe_pt_destroy(vm->pt_root, vm->flags);
-	vm->size = 0;
 	vm->pt_root = NULL;
-
-	if (vm->eng) {
-		xe_engine_put(vm->eng);
-		vm->eng = NULL;
-	}
 
 	xe_vm_unlock(vm);
 	if (contested.rb_node) {
