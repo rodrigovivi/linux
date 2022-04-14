@@ -340,7 +340,8 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 			   struct xe_vm_pgtable_update *updates,
 			   u32 num_updates,
 			   struct xe_sync_entry *syncs, u32 num_syncs,
-			   xe_migrate_populatefn_t populatefn, void *arg)
+			   xe_migrate_populatefn_t populatefn, void *arg,
+			   bool wait_excl)
 {
 	struct xe_gt *gt = m->gt;
 	struct xe_sched_job *job;
@@ -425,7 +426,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 		goto err_bb;
 	}
 
-	if (vm) {
+	if (wait_excl) {
 		err = drm_sched_job_add_implicit_dependencies_resv(&job->drm,
 								   &vm->resv,
 								   true);

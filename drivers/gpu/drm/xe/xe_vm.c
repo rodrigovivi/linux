@@ -522,15 +522,16 @@ static void reinstall_preempt_fences(struct xe_vm *vm)
 	}
 }
 
-struct dma_fence *
-xe_vm_bind_vma(struct xe_vma *vma, struct xe_sync_entry *syncs, u32 num_syncs);
+struct async_op_fence;
+static int __xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma,
+			struct xe_sync_entry *syncs, u32 num_syncs,
+			struct async_op_fence *afence);
 
 static void vma_rebind_work_func(struct work_struct *w)
 {
 	struct xe_vma *vma =
 		container_of(w, struct xe_vma, userptr.rebind_work);
 	struct xe_vm *vm = vma->vm;
-	struct dma_fence *fence;
 	int ret;
 
 	XE_BUG_ON(!vma_is_userptr(vma));
@@ -546,9 +547,8 @@ retry:
 	if (!vma->userptr.destroyed && vma->userptr.dirty) {
 		ret = dma_resv_reserve_shared(&vm->resv, 1);
 		if (!ret) {
-			fence = xe_vm_bind_vma(vma, NULL, 0);
-			if (!IS_ERR(fence)) {
-				dma_fence_put(fence);
+			ret = __xe_vm_bind(vm, vma, NULL, 0, NULL);
+			if (!ret) {
 				ret = vma_userptr_needs_repin(vma);
 				if (ret == -EAGAIN) {
 					xe_vm_unlock(vm);
@@ -691,7 +691,7 @@ struct dma_fence *xe_vm_userptr_bind(struct xe_vm *vm)
 		if (vma->userptr.dirty) {
 			dma_fence_put(fence);
 			trace_xe_vma_userptr_rebind_exec(vma);
-			fence = xe_vm_bind_vma(vma, NULL, 0);
+			fence = xe_vm_bind_vma(vma, NULL, 0, true);
 		}
 		if (IS_ERR(fence))
 			return fence;
@@ -1242,7 +1242,9 @@ xe_pt_prepare_unbind(struct xe_vma *vma,
 	XE_BUG_ON(!*num_entries);
 }
 
-struct dma_fence *xe_vm_unbind_vma(struct xe_vma *vma, struct xe_sync_entry *syncs, u32 num_syncs, bool evict)
+struct dma_fence *xe_vm_unbind_vma(struct xe_vma *vma,
+				   struct xe_sync_entry *syncs, u32 num_syncs,
+				   bool evict, bool kernel_op)
 {
 	struct xe_vm_pgtable_update entries[XE_VM_MAX_LEVEL * 2 + 1];
 	struct xe_vm *vm = vma->vm;
@@ -1266,11 +1268,12 @@ struct dma_fence *xe_vm_unbind_vma(struct xe_vma *vma, struct xe_sync_entry *syn
 	 * lower level, because it needs to be more conservative.
 	 */
 	fence = xe_migrate_update_pgtables(gt->migrate,
-					   xe_vm_has_preempt_fences(vm) ?
-					   vm : NULL, evict ? NULL : vm->eng,
+					   vm, evict ? NULL : vm->eng,
 					   entries, num_entries,
 					   syncs, num_syncs,
-					   xe_migrate_clear_pgtable_callback, vma);
+					   xe_migrate_clear_pgtable_callback,
+					   vma, kernel_op &&
+					   xe_vm_has_preempt_fences(vm));
 	if (!IS_ERR(fence)) {
 		if (!evict) {
 			/* add shared fence now for pagetable delayed destroy */
@@ -1496,7 +1499,8 @@ xe_pt_prepare_bind(struct xe_vma *vma,
 }
 
 struct dma_fence *
-xe_vm_bind_vma(struct xe_vma *vma, struct xe_sync_entry *syncs, u32 num_syncs)
+xe_vm_bind_vma(struct xe_vma *vma, struct xe_sync_entry *syncs, u32 num_syncs,
+	       bool kernel_op)
 {
 	struct xe_vm_pgtable_update entries[XE_VM_MAX_LEVEL * 2 + 1];
 	struct xe_vm *vm = vma->vm;
@@ -1531,11 +1535,12 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_sync_entry *syncs, u32 num_syncs)
 	}
 
 	fence = xe_migrate_update_pgtables(gt->migrate,
-					   xe_vm_has_preempt_fences(vm) ?
-					   vm : NULL, vm->eng,
+					   vm, vm->eng,
 					   entries, num_entries,
 					   syncs, num_syncs,
-					   xe_vm_populate_pgtable, vma);
+					   xe_vm_populate_pgtable, vma,
+					   kernel_op &&
+					   xe_vm_has_preempt_fences(vm));
 	if (!IS_ERR(fence)) {
 		/* add shared fence now for pagetable delayed destroy */
 		dma_resv_add_shared_fence(&vm->resv, fence);
@@ -1652,30 +1657,30 @@ static int __xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma,
 
 	/*
 	 * If preempt is enabled (a compute engine uses this VM), on every VM
-	 * un/bind we trigger all preempt fences (in shared slots of this VM) by
-	 * waiting on the excl slot of this VM. The preempt fences will create
-	 * new preempt fences and either resume their engines scheduling +
-	 * insert the new fences into the VM shared slots or defers this until
-	 * all operations that triggered the fence are complete.
+	 * kernel initiated un/bind we trigger all preempt fences (in shared
+	 * slots of this VM) by waiting on the excl slot of this VM. The preempt
+	 * fences will create new preempt fences and either resume their engines
+	 * scheduling + insert the new fences into the VM shared slots or defers
+	 * this until all operations that triggered the fence are complete.
 	 *
-	 * FIXME: We likely don't have to do this on every un/bind, but doing it
-	 * for now to test this code and show how preemption fences + VM un/bind
-	 * code interacts.
+	 * FIXME: Being really lazy and assuming if not using async VM un/bind
+	 * that this was kernel initiated. This has a added benifit of being
+	 * able to stress preempt fences from user space.
 	 */
-	if (xe_vm_has_preempt_fences(vm)) {
+	if (xe_vm_has_preempt_fences(vm) && !afence) {
 		op = kmalloc(sizeof(*op), GFP_KERNEL);
 		if (!op)
 			return -ENOMEM;
 	}
 
-	fence = xe_vm_bind_vma(vma, syncs, num_syncs);
+	fence = xe_vm_bind_vma(vma, syncs, num_syncs, !!op);
 	if (IS_ERR(fence)) {
 		err = PTR_ERR(fence);
 		goto err_free_op;
 	}
 	if (afence)
 		add_async_op_fence_cb(vm, fence, afence);
-	if (xe_vm_has_preempt_fences(vm))
+	if (op)
 		add_preempt_op_cb(vm, fence, op);
 
 	dma_fence_put(fence);
@@ -1738,20 +1743,20 @@ static int xe_vm_unbind(struct xe_vm *vm, struct xe_vma *vma,
 	xe_vm_assert_held(vm);
 	xe_bo_assert_held(bo);
 
-	if (xe_vm_has_preempt_fences(vm)) {
+	if (xe_vm_has_preempt_fences(vm) && !afence) {
 		op = kmalloc(sizeof(*op), GFP_KERNEL);
 		if (!op)
 			return -ENOMEM;
 	}
 
-	fence = xe_vm_unbind_vma(vma, syncs, num_syncs, false);
+	fence = xe_vm_unbind_vma(vma, syncs, num_syncs, false, !!op);
 	if (IS_ERR(fence)) {
 		kfree(op);
 		return PTR_ERR(fence);
 	}
 	if (afence)
 		add_async_op_fence_cb(vm, fence, afence);
-	if (xe_vm_has_preempt_fences(vm))
+	if (op)
 		add_preempt_op_cb(vm, fence, op);
 
 	xe_vma_destroy(vma);
