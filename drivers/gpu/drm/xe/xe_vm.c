@@ -1974,6 +1974,26 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma, struct xe_bo *bo,
 	return err;
 }
 
+static int lock_vm_bo(struct xe_vm *vm, struct xe_bo *bo,
+		      struct ttm_validate_buffer *tv_vm,
+		      struct ttm_validate_buffer *tv_bo,
+		      struct ww_acquire_ctx *ww, struct list_head *objs)
+{
+	LIST_HEAD(dups);
+
+	tv_vm->bo = &vm->pt_root->bo->ttm;
+	tv_vm->num_shared = 0;
+	list_add_tail(&tv_vm->head, objs);
+
+	if (bo && bo->vm != vm) {
+		tv_bo->bo = &bo->ttm;
+		tv_bo->num_shared = 0;
+		list_add(&tv_bo->head, objs);
+	}
+
+	return ttm_eu_reserve_buffers(ww, objs, true, &dups);
+}
+
 struct async_op {
 	struct xe_vma *vma;
 	struct xe_bo *bo;
@@ -1992,7 +2012,7 @@ static void async_op_work_func(struct work_struct *w)
 		struct async_op *op;
 		int err;
 
-		if (vm->async_ops.pause && vm->size)
+		if (vm->async_ops.pause && !xe_vm_is_closed(vm))
 			break;
 
 		spin_lock_irq(&vm->async_ops.lock);
@@ -2005,7 +2025,7 @@ static void async_op_work_func(struct work_struct *w)
 		if (!op)
 			break;
 
-		if (vm->size) {
+		if (!xe_vm_is_closed(vm)) {
 #ifdef TEST_VM_ASYNC_OPS_ERROR
 #define FORCE_ASYNC_OP_ERROR	BIT(31)
 			if (!(op->args.op & FORCE_ASYNC_OP_ERROR)) {
@@ -2044,14 +2064,17 @@ static void async_op_work_func(struct work_struct *w)
 			trace_xe_vma_flush(op->vma);
 
 			if (VM_BIND_OP(op->args.op) == XE_VM_BIND_OP_UNMAP) {
-				if (op->bo && op->bo->vm != vm)
-					dma_resv_lock(op->bo->ttm.base.resv,
-						      NULL);
-				xe_vm_lock(vm, NULL);
-				xe_vma_destroy(op->vma);
-				xe_vm_unlock(vm);
-				if (op->bo && op->bo->vm != vm)
-					dma_resv_unlock(op->bo->ttm.base.resv);
+				struct ww_acquire_ctx ww;
+				struct ttm_validate_buffer tv_bo, tv_vm;
+				LIST_HEAD(objs);
+
+				if (!lock_vm_bo(vm, op->bo, &tv_vm, &tv_bo, &ww,
+						&objs)) {
+					xe_vma_destroy(op->vma);
+					ttm_eu_backoff_reservation(&ww, &objs);
+				} else {
+					XE_WARN_ON("Failed to lock VM/BO");
+				}
 			}
 
 			if (!test_bit(DMA_FENCE_FLAG_SIGNALED_BIT,
@@ -2135,6 +2158,9 @@ struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 					u64 range, u32 op)
 {
 	struct xe_device *xe = vm->xe;
+	struct ww_acquire_ctx ww;
+	struct ttm_validate_buffer tv_bo, tv_vm;
+	LIST_HEAD(objs);
 	struct xe_vma *vma, lookup;
 	int err;
 
@@ -2142,10 +2168,13 @@ struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 	lookup.end = addr + range - 1;
 
 	if (bo) {
-		if (bo->vm != vm)
-			dma_resv_lock(bo->ttm.base.resv, NULL);
-		xe_vm_lock(vm, NULL);
+		err = lock_vm_bo(vm, bo, &tv_vm, &tv_bo, &ww, &objs);
+		if (err) {
+			vma = ERR_PTR(err);
+			return vma;
+		}
 	}
+
 	switch (VM_BIND_OP(op)) {
 	case XE_VM_BIND_OP_MAP:
 		vma = xe_vm_find_overlapping_vma(vm, &lookup);
@@ -2215,11 +2244,8 @@ struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 	}
 
 out_unlock:
-	if (bo) {
-		xe_vm_unlock(vm);
-		if (bo->vm != vm)
-			dma_resv_unlock(bo->ttm.base.resv);
-	}
+	if (bo)
+		ttm_eu_backoff_reservation(&ww, &objs);
 
 	return vma;
 }
@@ -2351,17 +2377,20 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	}
 
 	if (err) {
+		struct ww_acquire_ctx ww;
+		struct ttm_validate_buffer tv_bo, tv_vm;
+		LIST_HEAD(objs);
+
 		switch (VM_BIND_OP(op)) {
 		case XE_VM_BIND_OP_MAP:
 		case XE_VM_BIND_OP_MAP_USERPTR:
-			if (bo && bo->vm != vm)
-				dma_resv_lock(bo->ttm.base.resv, NULL);
-			xe_vm_lock(vm, NULL);
-			xe_vm_remove_vma(vm, vma);
-			xe_vma_destroy(vma);
-			xe_vm_unlock(vm);
-			if (bo && bo->vm != vm)
-				dma_resv_unlock(bo->ttm.base.resv);
+			if (!lock_vm_bo(vm, bo, &tv_vm, &tv_bo, &ww, &objs)) {
+				xe_vm_remove_vma(vm, vma);
+				xe_vma_destroy(vma);
+				ttm_eu_backoff_reservation(&ww, &objs);
+			} else {
+				XE_WARN_ON("Failed to lock VM/BO");
+			}
 		}
 	}
 
