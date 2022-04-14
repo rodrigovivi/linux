@@ -229,14 +229,45 @@ struct drm_xe_gem_mmap_offset {
 	__u64 offset;
 };
 
+/**
+ * struct drm_xe_vm_bind_op_error_capture - format of VM bind op error capture
+ */
+struct drm_xe_vm_bind_op_error_capture {
+	/** @error: errno that occured */
+	__s32 error;
+	/** @op: operation that encounter an error */
+#define XE_VM_BIND_OP_CLOSE	0xffffffff
+	__u32 op;
+	/** @addr: address of bind op */
+	__u64 addr;
+	/** @size: size of bind */
+	__u64 size;
+};
+
+/** struct drm_xe_ext_vm_set_property - VM set property extension */
+struct drm_xe_ext_vm_set_property {
+	/** @base: base user extension */
+	struct xe_user_extension base;
+
+	/** @property: property to set */
+#define XE_VM_PROPERTY_BIND_OP_ERROR_CAPTURE_ADDRESS		0
+	__u32 property;
+
+	/** @value: property value */
+	__u64 value;
+};
+
 struct drm_xe_vm_create {
 	/** @extensions: Pointer to the first extension struct, if any */
+#define XE_VM_EXTENSION_SET_PROPERTY	0
 	__u64 extensions;
 
 	/** @flags: Flags */
 	__u32 flags;
 
-#define DRM_XE_VM_CREATE_SCRATCH_PAGE	0x1
+#define DRM_XE_VM_CREATE_SCRATCH_PAGE	(0x1 << 0)
+#define DRM_XE_VM_CREATE_COMPUTE_MODE	(0x1 << 1)
+#define DRM_XE_VM_CREATE_ASYNC_BIND_OPS	(0x1 << 2)
 
 	/** @vm_id: Returned VM ID */
 	__u32 vm_id;
@@ -300,7 +331,17 @@ struct drm_xe_vm_bind {
 	 * practice the bind op is good and will complete.
 	 *
 	 * If this flag is set and doesn't return return an error, the bind op
-	 * can still fail and recovery is needed (TODO: explain how to recover).
+	 * can still fail and recovery is needed. If configured, the bind op that
+	 * caused the error will be captured in drm_xe_vm_bind_op_error_capture.
+	 * Once the user sees the error (via a ufence +
+	 * XE_VM_PROPERTY_BIND_OP_ERROR_CAPTURE_ADDRESS), it should free memory
+	 * via non-async unbinds, and then restart all queue'd async binds op via
+	 * XE_VM_BIND_OP_RESTART. Or alternatively the user should destroy the
+	 * VM.
+	 *
+	 * This flag is only allowed when DRM_XE_VM_CREATE_ASYNC_BIND_OPS is
+	 * configured in the VM and must be set if the VM is configured with
+	 * DRM_XE_VM_CREATE_ASYNC_BIND_OPS and not in an error state.
 	 */
 #define XE_VM_BIND_FLAG_ASYNC		(0x1 << 17)
 
@@ -339,7 +380,13 @@ struct drm_xe_engine_set_property {
 #define XE_ENGINE_PROPERTY_PRIORITY			0
 #define XE_ENGINE_PROPERTY_TIMESLICE			1
 #define XE_ENGINE_PROPERTY_PREEMPTION_TIMEOUT		2
-#define XE_ENGINE_PROPERTY_COMPUTE			3
+	/*
+	 * Long running or ULLS engine mode. DMA fences not allowed in this
+	 * mode. Must match the value of DRM_XE_VM_CREATE_COMPUTE_MODE, serves
+	 * as a sanity check the UMD knows what it is doing. Can only be set at
+	 * engine create time.
+	 */
+#define XE_ENGINE_PROPERTY_COMPUTE_MODE			3
 #define XE_ENGINE_PROPERTY_PERSISTENCE			4
 #define XE_ENGINE_PROPERTY_JOB_TIMEOUT			5
 	__u32 property;
@@ -471,8 +518,17 @@ struct drm_xe_mmio {
 struct drm_xe_wait_user_fence {
 	/** @extensions: Pointer to the first extension struct, if any */
 	__u64 extensions;
-	/** @addr: user pointer address to wait on, must qword aligned */
-	__u64 addr;
+	union {
+		/**
+		 * @addr: user pointer address to wait on, must qword aligned
+		 */
+		__u64 addr;
+		/**
+		 * @vm_id: The ID of the VM which encounter an error used with
+		 * DRM_XE_UFENCE_WAIT_VM_ERROR. Upper 32 bits must be clear.
+		 */
+		__u64 vm_id;
+	};
 	/** @op: wait operation (type of comparison) */
 #define DRM_XE_UFENCE_WAIT_EQ	0
 #define DRM_XE_UFENCE_WAIT_NEQ	1
@@ -484,6 +540,7 @@ struct drm_xe_wait_user_fence {
 	/** @flags: wait flags */
 #define DRM_XE_UFENCE_WAIT_SOFT_OP	(1 << 0)	/* e.g. Wait on VM bind */
 #define DRM_XE_UFENCE_WAIT_ABSTIME	(1 << 1)
+#define DRM_XE_UFENCE_WAIT_VM_ERROR	(1 << 2)
 	__u16 flags;
 	/** @value: compare value */
 	__u64 value;

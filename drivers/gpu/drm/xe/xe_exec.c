@@ -82,7 +82,8 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	for (i = 0; i < args->num_syncs; i++) {
 		err = xe_sync_entry_parse(xe, xef, &syncs[num_syncs++],
 					  &syncs_user[i], true,
-					  engine->flags & ENGINE_FLAG_COMPUTE);
+					  engine->flags &
+					  ENGINE_FLAG_COMPUTE_MODE);
 		if (err)
 			goto err_syncs;
 	}
