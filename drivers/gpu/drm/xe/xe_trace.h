@@ -222,6 +222,16 @@ DECLARE_EVENT_CLASS(xe_vma,
 		    TP_printk("vma=0x%016llx, start=0x%016llx, end=0x%016llx, ptr=0x%016llx,",
 			      __entry->vma, __entry->start, __entry->end,
 			      __entry->ptr)
+)
+
+DEFINE_EVENT(xe_vma, xe_vma_flush,
+	     TP_PROTO(struct xe_vma *vma),
+	     TP_ARGS(vma)
+);
+
+DEFINE_EVENT(xe_vma, xe_vma_fail,
+	     TP_PROTO(struct xe_vma *vma),
+	     TP_ARGS(vma)
 );
 
 DEFINE_EVENT(xe_vma, xe_vma_bind,
@@ -248,6 +258,37 @@ DEFINE_EVENT(xe_vma, xe_vma_userptr_invalidate,
 	     TP_PROTO(struct xe_vma *vma),
 	     TP_ARGS(vma)
 );
+
+DECLARE_EVENT_CLASS(xe_vm,
+		    TP_PROTO(struct xe_vm *vm),
+		    TP_ARGS(vm),
+
+		    TP_STRUCT__entry(
+			     __field(u64, vm)
+			     ),
+
+		    TP_fast_assign(
+			   __entry->vm = (u64)vm;
+			   ),
+
+		    TP_printk("vm=0x%016llx",  __entry->vm)
+);
+
+DEFINE_EVENT(xe_vm, xe_vm_create,
+	     TP_PROTO(struct xe_vm *vm),
+	     TP_ARGS(vm)
+);
+
+DEFINE_EVENT(xe_vm, xe_vm_free,
+	     TP_PROTO(struct xe_vm *vm),
+	     TP_ARGS(vm)
+);
+
+DEFINE_EVENT(xe_vm, xe_vm_restart,
+	     TP_PROTO(struct xe_vm *vm),
+	     TP_ARGS(vm)
+);
+
 #endif /* _XE_TRACE_H_ */
 
 /* This part must be outside protection */
