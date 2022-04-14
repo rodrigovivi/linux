@@ -15,7 +15,7 @@
 
 #include "xe_bo.h"
 #include "xe_device.h"
-#include "xe_engine_types.h"
+#include "xe_engine.h"
 #include "xe_gt.h"
 #include "xe_migrate.h"
 #include "xe_preempt_fence_types.h"
@@ -846,6 +846,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 	struct xe_vm *vm;
 	struct xe_vma *vma;
 	int err, i = 0;
+	struct xe_engine *eng;
 
 	vm = kzalloc(sizeof(*vm), GFP_KERNEL);
 	if (!vm)
@@ -901,7 +902,14 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 	/* Fill pt_root after allocating scratch tables */
 	err = xe_pt_populate_empty(vm, vm->pt_root);
 	if (err)
-		goto err_destroy_root;
+		goto err_scratch_pt;
+
+	eng = xe_engine_create_class(xe, NULL, XE_ENGINE_CLASS_COPY, ENGINE_FLAG_VM);
+	if (IS_ERR(eng)) {
+		err = PTR_ERR(eng);
+		goto err_scratch_pt;
+	}
+	vm->eng = eng;
 
 	xe_vm_unlock(vm);
 	return vm;
@@ -956,6 +964,11 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 	xe_pt_destroy(vm->pt_root, vm->flags);
 	vm->size = 0;
 	vm->pt_root = NULL;
+
+	if (vm->eng) {
+		xe_engine_put(vm->eng);
+		vm->eng = NULL;
+	}
 
 	xe_vm_unlock(vm);
 	if (contested.rb_node) {
@@ -1197,7 +1210,7 @@ struct dma_fence *xe_vm_unbind_vma(struct xe_vma *vma, struct xe_sync_entry *syn
 	 */
 	fence = xe_migrate_update_pgtables(gt->migrate,
 					   xe_vm_has_preempt_fences(vm) ?
-					   vm : NULL,
+					   vm : NULL, evict ? NULL : vm->eng,
 					   entries, num_entries,
 					   syncs, num_syncs,
 					   xe_migrate_clear_pgtable_callback, vma);
@@ -1462,7 +1475,7 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_sync_entry *syncs, u32 num_syncs)
 
 	fence = xe_migrate_update_pgtables(gt->migrate,
 					   xe_vm_has_preempt_fences(vm) ?
-					   vm : NULL,
+					   vm : NULL, vm->eng,
 					   entries, num_entries,
 					   syncs, num_syncs,
 					   xe_vm_populate_pgtable, vma);
@@ -1791,9 +1804,9 @@ static int __xe_vm_bind_ioctl(struct xe_vm *vm, struct xe_bo *bo, u64 bo_offset,
 {
 	struct xe_device *xe = vm->xe;
 
-	if (XE_IOCTL_ERR(xe, !vm->size)) {
-		DRM_ERROR("VM closed while we began looking up?\n");
-		return -ENOENT;
+	if (XE_IOCTL_ERR(xe, xe_vm_is_closed(vm))) {
+		drm_warn(&xe->drm, "Trying to call VM_BIND after vm is closed?\n");
+		return -EIO;
 	}
 
 	if (XE_IOCTL_ERR(xe, bo_offset & ~PAGE_MASK) ||

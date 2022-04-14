@@ -26,6 +26,8 @@ struct xe_migrate {
 	struct xe_engine *eng;
 	struct xe_gt *gt;
 	struct mutex job_mutex;
+
+	struct drm_suballoc_manager vm_update_sa;
 };
 
 #define CHUNK_SZ SZ_8M
@@ -34,6 +36,7 @@ static void xe_migrate_fini(struct drm_device *dev, void *arg)
 {
 	struct xe_migrate *m = arg;
 
+	drm_suballoc_manager_fini(&m->vm_update_sa);
 	mutex_destroy(&m->job_mutex);
 	xe_engine_put(m->eng);
 	xe_ggtt_remove_node(m->gt->mem.ggtt, &m->copy_node);
@@ -41,41 +44,29 @@ static void xe_migrate_fini(struct drm_device *dev, void *arg)
 
 struct xe_migrate *xe_migrate_init(struct xe_gt *gt)
 {
-	struct xe_hw_engine *hwe, *hwe0 = NULL;
 	struct xe_device *xe = gt_to_xe(gt);
-	enum xe_hw_engine_id id;
 	struct xe_migrate *m;
-	u32 logical_mask = 0;
 	int err;
 
 	m = drmm_kzalloc(&xe->drm, sizeof(*m), GFP_KERNEL);
 	if (!m)
 		return ERR_PTR(-ENOMEM);
 
-	for_each_hw_engine (hwe, gt, id) {
-		if (hwe->class == XE_ENGINE_CLASS_COPY) {
-			logical_mask |= BIT(hwe->logical_instance);
-			if (!hwe0)
-				hwe0 = hwe;
-		}
-	}
-
-	if (!logical_mask)
-		return ERR_PTR(-ENODEV);
-
 	m->gt = gt;
 
-	err = xe_ggtt_insert_special_node(gt->mem.ggtt, &m->copy_node, 2 * CHUNK_SZ, 2 * CHUNK_SZ);
+	/* first 2 CHUNK_SZ, are used by the copy engine, last CHUNK_SZ is shared by bound VM updates */
+	err = xe_ggtt_insert_special_node(gt->mem.ggtt, &m->copy_node, 3 * CHUNK_SZ, CHUNK_SZ);
 	if (err)
 		return ERR_PTR(err);
 
-	m->eng = xe_engine_create(xe, NULL, logical_mask,
-				  1, hwe0, ENGINE_FLAG_KERNEL);
+	m->eng = xe_engine_create_class(xe, NULL, XE_ENGINE_CLASS_COPY, ENGINE_FLAG_KERNEL);
 	if (IS_ERR(m->eng)) {
 		xe_ggtt_remove_node(gt->mem.ggtt, &m->copy_node);
 		return ERR_CAST(m->eng);
 	}
 	mutex_init(&m->job_mutex);
+	drm_suballoc_manager_init(&m->vm_update_sa, CHUNK_SZ, GEN8_PAGE_SIZE);
+
 	err = drmm_add_action_or_reset(&xe->drm, xe_migrate_fini, m);
 	if (err)
 		return ERR_PTR(err);
@@ -89,12 +80,15 @@ static void emit_arb_clear(struct xe_bb *bb)
 	bb->cs[bb->len++] = MI_ARB_ON_OFF | MI_ARB_DISABLE;
 }
 
-#define MAX_GGTT_UPDATE_SIZE (2 * DIV_ROUND_UP(CHUNK_SZ >> 12, 0xff) + (CHUNK_SZ >> 11))
+#define MAX_GGTT_UPDATE_SIZE \
+	(2 * DIV_ROUND_UP(CHUNK_SZ >> GEN8_PTE_SHIFT, 0xff) /* (nr of MI_UPDATE_GTT) */ + \
+	 2 * (CHUNK_SZ >> GEN8_PTE_SHIFT) /* size of each entry in dwords * nr of entries*/ )
+
 static void emit_pte(struct xe_ggtt *ggtt, struct xe_bb *bb, u64 ggtt_ofs,
 		     struct ttm_resource *res, struct xe_res_cursor *cur,
 		     u32 ofs, u32 size, struct ttm_tt *ttm)
 {
-	u32 ptes = size >> 12;
+	u32 ptes = size >> GEN8_PTE_SHIFT;
 	bool lmem = res->mem_type == TTM_PL_VRAM;
 
 	while (ptes) {
@@ -103,8 +97,8 @@ static void emit_pte(struct xe_ggtt *ggtt, struct xe_bb *bb, u64 ggtt_ofs,
 		bb->cs[bb->len++] = MI_UPDATE_GTT | (chunk * 2);
 		bb->cs[bb->len++] = ggtt_ofs;
 
-		ofs += chunk << 12;
-		ggtt_ofs += chunk << 12;
+		ofs += chunk << GEN8_PTE_SHIFT;
+		ggtt_ofs += chunk << GEN8_PTE_SHIFT;
 		ptes -= chunk;
 
 		while (chunk--) {
@@ -114,7 +108,7 @@ static void emit_pte(struct xe_ggtt *ggtt, struct xe_bb *bb, u64 ggtt_ofs,
 				addr = cur->start;
 				addr |= 3;
 			} else {
-				u32 ofs = cur->start >> PAGE_SHIFT;
+				u32 ofs = cur->start >> GEN8_PTE_SHIFT;
 
 				addr = ttm->dma_address[ofs];
 				addr |= 1;
@@ -123,7 +117,7 @@ static void emit_pte(struct xe_ggtt *ggtt, struct xe_bb *bb, u64 ggtt_ofs,
 			bb->cs[bb->len++] = lower_32_bits(addr);
 			bb->cs[bb->len++] = upper_32_bits(addr);
 
-			xe_res_next(cur, 4096);
+			xe_res_next(cur, GEN8_PAGE_SIZE);
 		}
 	}
 }
@@ -140,15 +134,15 @@ static void emit_copy(struct xe_gt *gt, struct xe_bb *bb,
 		      u64 src_ofs, u64 dst_ofs, unsigned int size)
 {
 	bb->cs[bb->len++] = GEN9_XY_FAST_COPY_BLT_CMD | (10 - 2);
-	bb->cs[bb->len++] = BLT_DEPTH_32 | PAGE_SIZE;
+	bb->cs[bb->len++] = BLT_DEPTH_32 | GEN8_PAGE_SIZE;
 	bb->cs[bb->len++] = 0;
-	bb->cs[bb->len++] = size >> PAGE_SHIFT << 16 | PAGE_SIZE / 4;
-	bb->cs[bb->len++] = dst_ofs; /* dst offset */
-	bb->cs[bb->len++] = dst_ofs >> 32ULL;
+	bb->cs[bb->len++] = (size >> GEN8_PTE_SHIFT) << 16 | GEN8_PAGE_SIZE / 4;
+	bb->cs[bb->len++] = lower_32_bits(dst_ofs);
+	bb->cs[bb->len++] = upper_32_bits(dst_ofs);
 	bb->cs[bb->len++] = 0;
-	bb->cs[bb->len++] = PAGE_SIZE;
-	bb->cs[bb->len++] = src_ofs; /* src offset */
-	bb->cs[bb->len++] = src_ofs >> 32ULL;
+	bb->cs[bb->len++] = GEN8_PAGE_SIZE;
+	bb->cs[bb->len++] = lower_32_bits(src_ofs);
+	bb->cs[bb->len++] = upper_32_bits(src_ofs);
 }
 
 struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
@@ -224,14 +218,14 @@ err:
 
 static int emit_clear(struct xe_bb *bb, u64 src_ofs, u32 size, u32 value)
 {
-	BUG_ON(size >> PAGE_SHIFT > S16_MAX);
+	BUG_ON(size >> GEN8_PTE_SHIFT > S16_MAX);
 
 	bb->cs[bb->len++] = XY_COLOR_BLT_CMD | BLT_WRITE_RGBA | (7 - 2);
-	bb->cs[bb->len++] = BLT_DEPTH_32 | BLT_ROP_COLOR_COPY | PAGE_SIZE;
+	bb->cs[bb->len++] = BLT_DEPTH_32 | BLT_ROP_COLOR_COPY | GEN8_PAGE_SIZE;
 	bb->cs[bb->len++] = 0;
-	bb->cs[bb->len++] = size >> PAGE_SHIFT << 16 | PAGE_SIZE / 4;
-	bb->cs[bb->len++] = src_ofs; /* offset */
-	bb->cs[bb->len++] = src_ofs >> 32ULL;
+	bb->cs[bb->len++] = (size >> GEN8_PTE_SHIFT) << 16 | GEN8_PAGE_SIZE / 4;
+	bb->cs[bb->len++] = lower_32_bits(src_ofs);
+	bb->cs[bb->len++] = upper_32_bits(src_ofs);
 	bb->cs[bb->len++] = value;
 
 	return 0;
@@ -342,6 +336,7 @@ static void write_pgtable(struct xe_bb *bb, u64 ggtt_ofs,
 struct dma_fence *
 xe_migrate_update_pgtables(struct xe_migrate *m,
 			   struct xe_vm *vm,
+			   struct xe_engine *eng,
 			   struct xe_vm_pgtable_update *updates,
 			   u32 num_updates,
 			   struct xe_sync_entry *syncs, u32 num_syncs,
@@ -350,8 +345,10 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	struct xe_gt *gt = m->gt;
 	struct xe_sched_job *job;
 	struct dma_fence *fence;
+	struct drm_suballoc *sa_bo = NULL;
 	struct xe_bb *bb;
 	u32 i, batch_size;
+	u64 ggtt_ofs;
 	int err = 0;
 
 	/* fixed + PTE entries */
@@ -367,20 +364,32 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 
 	/*
 	 * XXX: Create temp bo to copy from, if batch_size becomes too big?
-	 * 1GiB bo would need upwards of ~512KiB of updates. Or just allow huge
-	 * pages..
+	 *
+	 * Worst case: Sum(2 * (each lower level page size) + (top level page size))
+	 * Should be reasonably bound..
 	 */
 	XE_BUG_ON(batch_size >= SZ_128K);
 
+	ggtt_ofs = m->copy_node.start;
+	if (!eng) {
+		sa_bo = drm_suballoc_new(&m->vm_update_sa, num_updates * GEN8_PAGE_SIZE);
+		if (IS_ERR(sa_bo))
+			return ERR_CAST(sa_bo);
+
+		ggtt_ofs += 2 * CHUNK_SZ + sa_bo->soffset;
+	}
+
 	bb = xe_bb_new(gt, batch_size);
-	if (IS_ERR(bb))
-		return ERR_CAST(bb);
+	if (IS_ERR(bb)) {
+		err = PTR_ERR(bb);
+		goto err;
+	}
 
 	emit_arb_clear(bb);
 
 	/* Map our PT's to gtt */
 	bb->cs[bb->len++] = MI_UPDATE_GTT | (num_updates * 2);
-	bb->cs[bb->len++] = m->copy_node.start;
+	bb->cs[bb->len++] = ggtt_ofs;
 
 	for (i = 0; i < num_updates; i++) {
 		struct xe_bo *bo = updates[i].pt_bo;
@@ -404,18 +413,16 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	emit_flush(bb);
 
 	for (i = 0; i < num_updates; i++) {
-		u64 ggtt_ofs;
-
-		ggtt_ofs = m->copy_node.start + SZ_4K * i;
-
-		write_pgtable(bb, ggtt_ofs, &updates[i], populatefn, arg);
+		write_pgtable(bb, ggtt_ofs + i * GEN8_PAGE_SIZE, &updates[i], populatefn, arg);
 	}
 
-	mutex_lock(&m->job_mutex);
-	job = xe_bb_create_job(m->eng, bb);
+	if (!eng)
+		mutex_lock(&m->job_mutex);
+
+	job = xe_bb_create_job(eng ?: m->eng, bb);
 	if (IS_ERR(job)) {
 		err = PTR_ERR(job);
-		goto err;
+		goto err_bb;
 	}
 
 	if (vm) {
@@ -435,19 +442,25 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	xe_sched_job_arm(job);
 	fence = dma_fence_get(&job->drm.s_fence->finished);
 	xe_sched_job_push(job);
-	mutex_unlock(&m->job_mutex);
+
+	if (!eng)
+		mutex_unlock(&m->job_mutex);
 
 	for (i = 0; i < num_syncs; i++)
 		xe_sync_entry_signal(&syncs[i], job, fence);
 
 	xe_bb_free(bb, fence);
+	drm_suballoc_free(sa_bo, fence, -1);
 
 	return fence;
 
 err_job:
 	xe_sched_job_free(job);
-err:
-	mutex_unlock(&m->job_mutex);
+err_bb:
+	if (!eng)
+		mutex_unlock(&m->job_mutex);
 	xe_bb_free(bb, NULL);
+err:
+	drm_suballoc_free(sa_bo, NULL, 0);
 	return ERR_PTR(err);
 }

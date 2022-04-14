@@ -44,6 +44,12 @@ static inline void xe_vm_unlock(struct xe_vm *vm)
 	dma_resv_unlock(&vm->resv);
 }
 
+static inline bool xe_vm_is_closed(struct xe_vm *vm)
+{
+	/* Only guaranteed not to change when vm->resv is held */
+	return !vm->size;
+}
+
 #define xe_vm_assert_held(vm) dma_resv_assert_held(&(vm)->resv)
 
 uint64_t xe_vm_pdp4_descriptor(struct xe_vm *vm);

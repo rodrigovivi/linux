@@ -145,6 +145,21 @@ struct drm_xe_engine_class_instance {
 	__u16 gt_id;
 };
 
+struct drm_xe_query_mem_usage {
+	__u32 num_regions;
+	__u32 pad;
+
+	struct drm_xe_query_mem_region {
+#define XE_QUERY_MEM_REGION_CLASS_SYSMEM	0
+#define XE_QUERY_MEM_REGION_CLASS_LMEM		1
+		__u16 class;
+		__u16 instance;
+		__u32 pad;
+		__u64 total_size;
+		__u64 used;
+	} regions[];
+};
+
 struct drm_xe_device_query {
 	/** @extensions: Pointer to the first extension struct, if any */
 	__u64 extensions;
@@ -152,7 +167,8 @@ struct drm_xe_device_query {
 	/** @query: The type of data to query */
 	__u32 query;
 
-#define DRM_XE_DEVICE_QUERY_ENGINES 0
+#define DRM_XE_DEVICE_QUERY_ENGINES	0
+#define DRM_XE_DEVICE_QUERY_MEM_USAGE	1
 
 	/** @size: Size of the queried data */
 	__u32 size;
