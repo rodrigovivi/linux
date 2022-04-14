@@ -1802,29 +1802,6 @@ static int __xe_vm_bind_ioctl(struct xe_vm *vm, struct xe_bo *bo, u64 bo_offset,
 			      u64 range, u64 addr, u32 op,
 			      struct xe_sync_entry *syncs, u32 num_syncs)
 {
-	struct xe_device *xe = vm->xe;
-
-	if (XE_IOCTL_ERR(xe, xe_vm_is_closed(vm))) {
-		drm_warn(&xe->drm, "Trying to call VM_BIND after vm is closed?\n");
-		return -EIO;
-	}
-
-	if (XE_IOCTL_ERR(xe, bo_offset & ~PAGE_MASK) ||
-	    XE_IOCTL_ERR(xe, addr & ~PAGE_MASK) ||
-	    XE_IOCTL_ERR(xe, range & ~PAGE_MASK))
-		return -EINVAL;
-
-	/* vm arguments sane? */
-	if (XE_IOCTL_ERR(xe, !range) ||
-	    XE_IOCTL_ERR(xe, range > vm->size) ||
-	    XE_IOCTL_ERR(xe, addr > vm->size - range))
-		return -EINVAL;
-
-	/* bo sane? */
-	if (XE_IOCTL_ERR(xe, bo && range > bo->size) ||
-	    XE_IOCTL_ERR(xe, bo && bo_offset > bo->size - range))
-		return -EINVAL;
-
 	switch (VM_BIND_OP(op)) {
 	case XE_VM_BIND_OP_MAP:
 		return xe_vm_bind(vm, bo, bo_offset, range, addr, syncs,
@@ -1836,7 +1813,7 @@ static int __xe_vm_bind_ioctl(struct xe_vm *vm, struct xe_bo *bo, u64 bo_offset,
 					  num_syncs,
 					  op & XE_VM_BIND_FLAG_READONLY);
 	default:
-		XE_IOCTL_ERR(xe, op > XE_VM_BIND_OP_MAP_USERPTR);
+		XE_BUG_ON("NOT POSSIBLE");
 		return -EINVAL;
 	}
 }
@@ -1866,24 +1843,41 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 	int err = 0;
 	u32 num_syncs;
 	struct xe_sync_entry *syncs;
-	bool map_userptr = VM_BIND_OP(args->op) == XE_VM_BIND_OP_MAP_USERPTR;
+	u64 range = args->range;
+	u64 addr = args->addr;
+	u32 op = args->op;
+	bool map_userptr = VM_BIND_OP(op) == XE_VM_BIND_OP_MAP_USERPTR;
 
 	if (XE_IOCTL_ERR(xe, args->extensions) ||
-	    XE_IOCTL_ERR(xe, VM_BIND_OP(args->op) >
+	    XE_IOCTL_ERR(xe, VM_BIND_OP(op) >
 			 XE_VM_BIND_OP_MAP_USERPTR) ||
-	    XE_IOCTL_ERR(xe, args->op & ~SUPPORTED_FLAGS) ||
+	    XE_IOCTL_ERR(xe, op & ~SUPPORTED_FLAGS) ||
 	    XE_IOCTL_ERR(xe, !args->obj &&
-			 VM_BIND_OP(args->op) == XE_VM_BIND_OP_MAP) ||
+			 VM_BIND_OP(op) == XE_VM_BIND_OP_MAP) ||
 	    XE_IOCTL_ERR(xe, args->obj && map_userptr))
+		return -EINVAL;
+
+	if (XE_IOCTL_ERR(xe, args->obj_offset & ~PAGE_MASK) ||
+	    XE_IOCTL_ERR(xe, addr & ~PAGE_MASK) ||
+	    XE_IOCTL_ERR(xe, range & ~PAGE_MASK) ||
+	    XE_IOCTL_ERR(xe, !range))
 		return -EINVAL;
 
 	vm = xe_vm_lookup(xef, args->vm_id);
 	if (XE_IOCTL_ERR(xe, !vm))
 		return -ENOENT;
 
-	if (!map_userptr) {
-		xe_vm_tv_populate(vm, &tv_vm);
-		list_add_tail(&tv_vm.head, &objs);
+	if (XE_IOCTL_ERR(xe, xe_vm_is_closed(vm))) {
+		DRM_ERROR("VM closed while we began looking up?\n");
+		err = -ENOENT;
+		goto put_vm;
+	}
+
+	if (XE_IOCTL_ERR(xe, !range) ||
+	    XE_IOCTL_ERR(xe, range > vm->size) ||
+	    XE_IOCTL_ERR(xe, addr > vm->size - range)) {
+		err = -EINVAL;
+		goto put_vm;
 	}
 
 	if (args->obj) {
@@ -1891,6 +1885,13 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 		if (XE_IOCTL_ERR(xe, !gem_obj)) {
 			err = -ENOENT;
 			goto put_vm;
+		}
+		bo = gem_to_xe_bo(gem_obj);
+
+		if (XE_IOCTL_ERR(xe, range > bo->size) ||
+		    XE_IOCTL_ERR(xe, args->obj_offset > bo->size - range)) {
+			err = -EINVAL;
+			goto put_obj;
 		}
 	}
 
@@ -1909,9 +1910,10 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 	}
 
 	if (!map_userptr) {
-		if (gem_obj) {
-			bo = gem_to_xe_bo(gem_obj);
+		xe_vm_tv_populate(vm, &tv_vm);
+		list_add_tail(&tv_vm.head, &objs);
 
+		if (bo) {
 			tv_bo.bo = &bo->ttm;
 			tv_bo.num_shared = 1;
 			list_add(&tv_bo.head, &objs);
@@ -1920,14 +1922,13 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 		err = ttm_eu_reserve_buffers(&ww, &objs, true, &dups);
 		if (!err) {
 			err = __xe_vm_bind_ioctl(vm, bo, args->obj_offset,
-						args->range, args->addr,
-						args->op, syncs, num_syncs);
+						 range, addr, op, syncs,
+						 num_syncs);
 			ttm_eu_backoff_reservation(&ww, &objs);
 		}
 	} else {
 		err = __xe_vm_bind_ioctl(vm, NULL, args->userptr,
-					 args->range, args->addr,
-					 args->op, syncs, num_syncs);
+					 range, addr, op, syncs, num_syncs);
 	}
 
 free_syncs:
