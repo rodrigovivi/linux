@@ -63,8 +63,12 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data,
 
 void xe_vm_close_and_put(struct xe_vm *vm);
 
-struct dma_fence *xe_vm_bind_vma(struct xe_vma *vma, struct xe_sync_entry *syncs, u32 num_syncs);
-struct dma_fence *xe_vm_unbind_vma(struct xe_vma *vma, struct xe_sync_entry *syncs, u32 num_syncs, bool evict);
+struct dma_fence *xe_vm_bind_vma(struct xe_vma *vma,
+				 struct xe_sync_entry *syncs, u32 num_syncs,
+				 bool kernel_op);
+struct dma_fence *xe_vm_unbind_vma(struct xe_vma *vma,
+				   struct xe_sync_entry *syncs, u32 num_syncs,
+				   bool evict, bool kernel_op);
 
 static inline bool xe_vm_has_preempt_fences(struct xe_vm *vm)
 {
