@@ -186,12 +186,16 @@ int xe_device_probe(struct xe_device *xe)
 		return err;
 
 	err = xe_gt_init(to_gt(xe));
-	if (err)
+	if (err) {
+		xe_irq_shutdown(xe);
 		return err;
+	}
 
 	err = drm_dev_register(&xe->drm, 0);
-	if (err)
+	if (err) {
+		xe_irq_shutdown(xe);
 		return err;
+	}
 
 	xe_debugfs_register(xe);
 
