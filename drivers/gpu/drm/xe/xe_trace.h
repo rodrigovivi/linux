@@ -35,7 +35,7 @@ DECLARE_EVENT_CLASS(xe_engine,
 			   __entry->logical_mask = e->logical_mask;
 			   __entry->width = e->width;
 			   __entry->guc_id = e->guc->id;
-			   __entry->guc_state = e->guc->state;
+			   __entry->guc_state = atomic_read(&e->guc->state);
 			   __entry->flags = e->flags;
 			   ),
 
@@ -135,7 +135,8 @@ DECLARE_EVENT_CLASS(xe_sched_job,
 		    TP_fast_assign(
 			   __entry->seqno = xe_sched_job_seqno(job);
 			   __entry->guc_id = job->engine->guc->id;
-			   __entry->guc_state = job->engine->guc->state;
+			   __entry->guc_state =
+			   atomic_read(&job->engine->guc->state);
 			   __entry->flags = job->engine->flags;
 			   __entry->error = job->fence->error;
 			   ),

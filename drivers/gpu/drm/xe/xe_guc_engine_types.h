@@ -41,17 +41,13 @@ struct xe_guc_engine {
 	 */
 	struct dma_fence *suspend_fence;
 	/** @state: GuC specific state for this xe_engine */
-	u32 state;
+	atomic_t state;
 	/** @wqi_head: work queue item tail */
 	u32 wqi_head;
 	/** @wqi_tail: work queue item tail */
 	u32 wqi_tail;
 	/** @id: GuC id for this xe_engine */
 	u16 id;
-	/** @reset: Engine reset */
-	bool reset;
-	/** @killed: Engine killed */
-	bool killed;
 };
 
 #endif	/* _XE_GUC_ENGINE_TYPES_H_ */
