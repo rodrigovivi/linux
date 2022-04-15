@@ -728,8 +728,8 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 	XE_WARN_ON(e->flags & ENGINE_FLAG_KERNEL);
 	XE_WARN_ON(e->flags & ENGINE_FLAG_VM && !engine_killed(e));
 
-	drm_warn(&xe->drm, "Timedout job: seqno=%u, guc_id=%d",
-		 xe_sched_job_seqno(job), e->guc->id);
+	drm_warn(&xe->drm, "Timedout job: seqno=%u, guc_id=%d, flags=0x%lx",
+		 xe_sched_job_seqno(job), e->guc->id, e->flags);
 	trace_xe_sched_job_timedout(job);
 
 	/* Kill the run_job entry point */
