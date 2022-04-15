@@ -823,6 +823,7 @@ xe_vm_find_overlapping_vma(struct xe_vm *vm, const struct xe_vma *vma)
 	struct rb_node *node;
 
 	XE_BUG_ON(vma->end >= vm->size);
+	xe_vm_assert_held(vm);
 
 	node = rb_find(vma, &vm->vmas, xe_vma_cmp_vma_cb);
 
@@ -832,6 +833,7 @@ xe_vm_find_overlapping_vma(struct xe_vm *vm, const struct xe_vma *vma)
 static void xe_vm_insert_vma(struct xe_vm *vm, struct xe_vma *vma)
 {
 	XE_BUG_ON(vma->vm != vm);
+	xe_vm_assert_held(vm);
 
 	rb_add(&vma->vm_node, &vm->vmas, xe_vma_less_cb);
 }
@@ -839,6 +841,7 @@ static void xe_vm_insert_vma(struct xe_vm *vm, struct xe_vma *vma)
 static void xe_vm_remove_vma(struct xe_vm *vm, struct xe_vma *vma)
 {
 	XE_BUG_ON(vma->vm != vm);
+	xe_vm_assert_held(vm);
 
 	rb_erase(&vma->vm_node, &vm->vmas);
 }
