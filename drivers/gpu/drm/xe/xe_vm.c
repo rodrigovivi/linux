@@ -2195,6 +2195,8 @@ struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 
 	switch (VM_BIND_OP(op)) {
 	case XE_VM_BIND_OP_MAP:
+		XE_BUG_ON(!bo);
+
 		vma = xe_vm_find_overlapping_vma(vm, &lookup);
 		if (XE_IOCTL_ERR(xe, vma)) {
 			vma = ERR_PTR(-EBUSY);
