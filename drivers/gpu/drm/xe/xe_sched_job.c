@@ -13,6 +13,7 @@
 #include "xe_engine.h"
 #include "xe_gt.h"
 #include "xe_hw_engine_types.h"
+#include "xe_hw_fence.h"
 #include "xe_lrc.h"
 #include "xe_macros.h"
 #include "xe_trace.h"
@@ -171,6 +172,9 @@ void xe_sched_job_set_error(struct xe_sched_job *job, int error)
 	}
 
 	trace_xe_sched_job_set_error(job);
+
+	dma_fence_enable_sw_signaling(job->fence);
+	xe_hw_fence_irq_run(job->engine->fence_irq);
 }
 
 bool xe_sched_job_started(struct xe_sched_job *job)
