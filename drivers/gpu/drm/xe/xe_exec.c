@@ -121,12 +121,6 @@ retry:
 		goto err_engine_end;
 	}
 
-	for (i = 0; i < num_syncs; i++) {
-		err = xe_sync_entry_add_deps(&syncs[i], job);
-		if (err)
-			goto err_put_job;
-	}
-
 	if (xe_vm_has_userptr(vm)) {
 		err = dma_resv_reserve_shared(&vm->resv, 1);
 		if (err)
@@ -173,6 +167,10 @@ retry:
 					  &job->drm.s_fence->finished);
 
 	err = xe_vm_userptr_needs_repin(vm);
+
+	for (i = 0; i < num_syncs && !err; i++)
+		err = xe_sync_entry_add_deps(&syncs[i], job);
+
 	if (err)
 		xe_sched_job_set_error(job, -ECANCELED);
 
