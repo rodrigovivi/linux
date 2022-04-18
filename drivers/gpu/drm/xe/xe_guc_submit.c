@@ -1228,8 +1228,10 @@ static void guc_engine_stop(struct xe_guc *guc, struct xe_engine *e)
 		else
 			__guc_engine_fini(guc, e);
 	}
-	if (e->guc->suspend_fence)
+	if (e->guc->suspend_fence) {
+		set_engine_suspended(e);
 		suspend_fence_signal(e);
+	}
 	atomic_and(ENGINE_STATE_DESTROYED | ENGINE_STATE_SUSPENDED,
 		   &e->guc->state);
 	trace_xe_engine_stop(e);
