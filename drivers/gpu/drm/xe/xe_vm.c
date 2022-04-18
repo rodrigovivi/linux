@@ -683,12 +683,13 @@ struct dma_fence *xe_vm_userptr_bind(struct xe_vm *vm)
 	struct dma_fence *fence = NULL;
 	struct xe_vma *vma;
 
+	xe_vm_assert_held(vm);
 	lockdep_assert_held(&vm->userptr.list_lock);
 	if (!xe_vm_has_userptr(vm) || xe_vm_has_preempt_fences(vm))
 		return NULL;
 
 	list_for_each_entry(vma, &vm->userptr.list, userptr_link) {
-		if (vma->userptr.dirty) {
+		if (vma->userptr.dirty && vma->userptr.initial_bind) {
 			dma_fence_put(fence);
 			trace_xe_vma_userptr_rebind_exec(vma);
 			fence = xe_vm_bind_vma(vma, NULL, 0, true);
@@ -1554,6 +1555,7 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_sync_entry *syncs, u32 num_syncs,
 		/* This vma is live (again?) now */
 		vma->evicted = false;
 		vma->userptr.dirty = false;
+		vma->userptr.initial_bind = true;
 	} else {
 		xe_pt_abort_bind(vma, entries, num_entries);
 	}
@@ -1717,16 +1719,10 @@ static int xe_vm_bind_userptr(struct xe_vm *vm, struct xe_vma *vma,
 	if (err)
 		return err;
 
-	/* Once initial bind done, make userptr available to execs */
-	mutex_lock(&vm->userptr.list_lock);
-	list_add_tail(&vma->userptr_link, &vm->userptr.list);
-	mutex_unlock(&vm->userptr.list_lock);
-
 	/*
 	 * Corner case where initial bind no longer valid, kick preempt fences
 	 * to fix page tables
 	 */
-	vma->userptr.initial_bind = true;
 	if (xe_vm_has_preempt_fences(vm) &&
 	    vma_userptr_needs_repin(vma) == -EAGAIN)
 		dma_resv_wait_timeout(&vm->resv, true, false,
@@ -2257,6 +2253,11 @@ struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 			xe_vm_insert_vma(vm, vma);
 		}
 		xe_vm_unlock(vm);
+
+		mutex_lock(&vm->userptr.list_lock);
+		list_add_tail(&vma->userptr_link, &vm->userptr.list);
+		mutex_unlock(&vm->userptr.list_lock);
+
 		break;
 	default:
 		XE_BUG_ON("NOT POSSIBLE");
