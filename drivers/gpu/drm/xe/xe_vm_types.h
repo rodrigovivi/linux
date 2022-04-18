@@ -143,6 +143,13 @@ struct xe_vm {
 			/** @wq: user fence wait queue for VM errors */
 			wait_queue_head_t wq;
 		} error_capture;
+		/** @fence: fence state */
+		struct {
+			/** @context: context of async fence */
+			u64 context;
+			/** @seqno: seqno of async fence */
+			u32 seqno;
+		} fence;
 		/** @pause: pause all pending async VM ops */
 		bool pause;
 	} async_ops;
