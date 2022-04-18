@@ -914,8 +914,10 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 	if (flags & DRM_XE_VM_CREATE_COMPUTE_MODE)
 		vm->flags |= VM_FLAG_COMPUTE_MODE;
 
-	if (flags & DRM_XE_VM_CREATE_ASYNC_BIND_OPS)
+	if (flags & DRM_XE_VM_CREATE_ASYNC_BIND_OPS) {
+		vm->async_ops.fence.context = dma_fence_context_alloc(1);
 		vm->flags |= VM_FLAG_ASYNC_BIND_OPS;
+	}
 
 	/* Fill pt_root after allocating scratch tables */
 	err = xe_pt_populate_empty(vm, vm->pt_root);
@@ -2142,7 +2144,8 @@ static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_vma *vma,
 	}
 
 	dma_fence_init(&op->fence->fence, &async_op_fence_ops,
-		       &vm->async_ops.lock, 0, 0);
+		       &vm->async_ops.lock, vm->async_ops.fence.context,
+		       ++vm->async_ops.fence.seqno);
 	op->vma = vma;
 	op->bo = bo;
 	op->args = *args;
