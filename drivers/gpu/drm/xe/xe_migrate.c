@@ -372,7 +372,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	XE_BUG_ON(batch_size >= SZ_128K);
 
 	ggtt_ofs = m->copy_node.start;
-	if (!eng) {
+	if (eng) {
 		sa_bo = drm_suballoc_new(&m->vm_update_sa, num_updates * GEN8_PAGE_SIZE);
 		if (IS_ERR(sa_bo))
 			return ERR_CAST(sa_bo);
