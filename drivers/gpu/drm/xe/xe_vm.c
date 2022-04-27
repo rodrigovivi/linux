@@ -222,7 +222,8 @@ static int xe_pt_populate_empty(struct xe_vm *vm, struct xe_pt *pt)
 
 	if (vm->flags & VM_FLAGS_64K && pt->level == 1) {
 		numpte = 32;
-		flags = GEN12_PDE_64K;
+		if (vm->scratch_bo)
+			flags = GEN12_PDE_64K;
 	}
 
 	empty = __xe_vm_empty_pte(vm, pt->level) | flags;
@@ -322,7 +323,8 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 		return err;
 
 	if (init) {
-		u64 empty = __xe_vm_empty_pte(vma->vm, pt->level) | flags;
+		u32 init_flags = (vma->vm->scratch_bo) ? flags : 0;
+		u64 empty = __xe_vm_empty_pte(vma->vm, pt->level) | init_flags;
 
 		for (i = 0; i < start_ofs; i++)
 			__xe_pt_write(&map, i, empty);
