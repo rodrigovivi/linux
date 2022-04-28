@@ -852,12 +852,14 @@ int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 	if (IS_ERR(lrc->bo))
 		return PTR_ERR(lrc->bo);
 
-	if (!vm) {
-		err = xe_bo_pin(lrc->bo);
-		if (err)
-			goto err_unlock_put_bo;
-		lrc->flags |= XE_LRC_PINNED;
-	}
+	/*
+	 * FIXME: Perma-pinning LRC as we don't yet support moving GGTT address
+	 * via VM bind calls.
+	 */
+	err = xe_bo_pin(lrc->bo);
+	if (err)
+		goto err_unlock_put_bo;
+	lrc->flags |= XE_LRC_PINNED;
 
 	err = xe_bo_vmap(lrc->bo);
 	if (err)
@@ -926,9 +928,15 @@ void xe_lrc_finish(struct xe_lrc *lrc)
 {
 	xe_hw_fence_ctx_finish(&lrc->fence_ctx);
 	if (lrc->flags & XE_LRC_PINNED) {
-		xe_bo_lock_no_vm(lrc->bo, NULL);
+		if (lrc->bo->vm)
+			xe_vm_lock(lrc->bo->vm, NULL);
+		else
+			xe_bo_lock_no_vm(lrc->bo, NULL);
 		xe_bo_unpin(lrc->bo);
-		xe_bo_unlock_no_vm(lrc->bo);
+		if (lrc->bo->vm)
+			xe_vm_unlock(lrc->bo->vm);
+		else
+			xe_bo_unlock_no_vm(lrc->bo);
 	}
 	xe_bo_put(lrc->bo);
 }
