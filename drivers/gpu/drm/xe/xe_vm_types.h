@@ -97,6 +97,9 @@ struct xe_vm_pgtable_update {
 
 	/** @pt_entries: Newly added pagetable entries */
 	struct xe_pt **pt_entries;
+
+	/** @flags: Target flags */
+	u32 flags;
 };
 
 

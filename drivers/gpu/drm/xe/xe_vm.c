@@ -1304,15 +1304,16 @@ static void
 xe_vm_populate_pgtable(void *data, u32 qword_ofs, u32 num_qwords,
 		       struct xe_vm_pgtable_update *update, void *arg)
 {
+	u32 page_size = (update->flags & GEN12_PDE_64K) ? SZ_64K : GEN8_PAGE_SIZE;
 	u64 bo_offset = update->target_offset +
-		GEN8_PAGE_SIZE * (qword_ofs - update->ofs);
+		page_size * (qword_ofs - update->ofs);
 	struct xe_pt **ptes = update->pt_entries;
 	u64 *ptr = data;
 	u32 i;
 
-	for (i = 0; i < num_qwords; i++, bo_offset += GEN8_PAGE_SIZE) {
+	for (i = 0; i < num_qwords; i++, bo_offset += page_size) {
 		if (ptes && ptes[i])
-			ptr[i] = gen8_pde_encode(ptes[i]->bo, 0, XE_CACHE_WB);
+			ptr[i] = gen8_pde_encode(ptes[i]->bo, 0, XE_CACHE_WB) | update->flags;
 		else
 			ptr[i] = gen8_pte_encode(update->target_vma,
 						 update->target_vma->bo,
@@ -1375,6 +1376,7 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 	u32 start_ofs = xe_pt_idx(start, pt->level);
 	u32 last_ofs = xe_pt_idx(end - 1, pt->level);
 	struct xe_pt **pte = NULL;
+	u32 flags = 0;
 
 	XE_BUG_ON(start < vma->start);
 	XE_BUG_ON(end > vma->end + 1);
@@ -1383,8 +1385,15 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 	BUG_ON(!my_added_pte);
 
 	if (!pt->level) {
-		vm_dbg(&xe->drm, "\t%u: Populating entry [%u + %u) [%llx...%llx)\n",
-		       pt->level, start_ofs, my_added_pte, start, end);
+		if (vma->bo && vma->bo->flags & XE_BO_INTERNAL_64K) {
+			start_ofs = start_ofs / 16;
+			last_ofs = last_ofs / 16;
+			my_added_pte = last_ofs + 1 - start_ofs;
+			vm_dbg(&xe->drm, "\t%u: Populating entry [%u + %u) [%llx...%llx) 64K\n",
+			       pt->level, start_ofs, my_added_pte, start, end);
+		} else
+			vm_dbg(&xe->drm, "\t%u: Populating entry [%u + %u) [%llx...%llx)\n",
+			       pt->level, start_ofs, my_added_pte, start, end);
 	} else {
 		struct xe_pt_dir *pt_dir = as_xe_pt_dir(pt);
 		u32 i;
@@ -1431,9 +1440,12 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 			u64 cur_end =
 				min(xe_pt_next_start(cur, pt->level), end);
 
-			vm_dbg(&xe->drm, "\t%u: Populating %u/%u subentry %u level %u [%llx...%llx)\n",
+			if (vma->bo && vma->bo->flags & XE_BO_INTERNAL_64K && pt->level == 1)
+				flags = GEN12_PDE_64K;
+
+			vm_dbg(&xe->drm, "\t%u: Populating %u/%u subentry %u level %u [%llx...%llx) f: 0x%x\n",
 			       pt->level, i + 1, my_added_pte,
-			       start_ofs + i, pt->level - 1, cur, cur_end);
+			       start_ofs + i, pt->level - 1, cur, cur_end, flags);
 
 			entry = xe_pt_create(vma->vm, pt->level - 1);
 			if (IS_ERR(entry)) {
@@ -1486,6 +1498,7 @@ done:
 	entry->target_vma = vma;
 	entry->target_offset = vma->bo_offset + (start - vma->start);
 	entry->pt_entries = pte;
+	entry->flags = flags;
 	return 0;
 }
 
