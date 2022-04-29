@@ -282,6 +282,9 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 		}
 	}
 
+	vm_dbg(&vm->xe->drm, "\t\t%u: %d..%d F:0x%x\n", pt->level,
+	       start_ofs, last_ofs, flags);
+
 	if (pt->level) {
 		struct xe_pt_dir *pt_dir = as_xe_pt_dir(pt);
 		u64 cur = start;
@@ -1437,7 +1440,7 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 			}
 			pte[i] = entry;
 
-			err = xe_pt_populate_for_vma(vma, entry, cur, end);
+			err = xe_pt_populate_for_vma(vma, entry, cur, cur_end);
 			if (err) {
 				xe_pt_destroy(entry, vma->vm->flags);
 				goto unwind;
