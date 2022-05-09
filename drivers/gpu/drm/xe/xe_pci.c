@@ -154,6 +154,7 @@ struct intel_device_info {
 	intel_engine_mask_t platform_engine_mask; /* Engines supported by the HW */
 
 	enum xe_platform platform;
+	const char *platform_name;
 
 	u8 dma_mask_size; /* available DMA address bits */
 
@@ -204,7 +205,9 @@ struct intel_device_info {
 	u8 vram_flags;
 };
 
-#define PLATFORM(x) .platform = (x)
+#define PLATFORM(x) .platform = (x), \
+		    .platform_name = #x
+
 #define GEN(x) \
 	.graphics_ver = (x), \
 	.media_ver = (x), \
@@ -485,6 +488,31 @@ static const struct intel_device_info ats_m_info = {
 	.vram_flags = XE_VRAM_FLAGS_NEED64K,
 };
 
+
+#define XEHP_SDV_ENGINES \
+	BIT(XE_HW_ENGINE_BCS0)  | \
+	BIT(XE_HW_ENGINE_VECS0) | BIT(XE_HW_ENGINE_VECS1) | \
+	BIT(XE_HW_ENGINE_VECS2) | BIT(XE_HW_ENGINE_VECS3) | \
+	BIT(XE_HW_ENGINE_VCS0)  | BIT(XE_HW_ENGINE_VCS1)  | \
+	BIT(XE_HW_ENGINE_VCS2)  | BIT(XE_HW_ENGINE_VCS3)  | \
+	BIT(XE_HW_ENGINE_VCS4)  | BIT(XE_HW_ENGINE_VCS5)  | \
+	BIT(XE_HW_ENGINE_VCS6)  | BIT(XE_HW_ENGINE_VCS7)  | \
+	BIT(XE_HW_ENGINE_CCS0)  | BIT(XE_HW_ENGINE_CCS1)  | \
+	BIT(XE_HW_ENGINE_CCS2)  | BIT(XE_HW_ENGINE_CCS3)
+
+__maybe_unused
+static const struct intel_device_info xehp_sdv_info = {
+	XE_HP_FEATURES,
+	XE_HPM_FEATURES,
+	DGFX_FEATURES,
+	PLATFORM(XE_XEHP_SDV),
+	.display = { },
+	.pipe_mask = 0,
+	.platform_engine_mask = XEHP_SDV_ENGINES,
+	.require_force_probe = 1,
+	.vram_flags = XE_VRAM_FLAGS_NEED64K,
+};
+
 #undef GEN
 #undef PLATFORM
 
@@ -499,6 +527,7 @@ static const struct pci_device_id pciidlist[] = {
 	INTEL_DG1_IDS(&dg1_info),
 	INTEL_ATS_M_IDS(&ats_m_info),
 	INTEL_DG2_IDS(&ats_m_info), /* TODO: switch to proper dg2_info */
+	INTEL_XEHPSDV_IDS(&xehp_sdv_info),
 	{0, 0, 0}
 };
 MODULE_DEVICE_TABLE(pci, pciidlist);
@@ -550,6 +579,11 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	xe->info.dma_mask_size = devinfo->dma_mask_size;
 	xe->info.vram_flags = devinfo->vram_flags;
 	to_gt(xe)->info.engine_mask = devinfo->platform_engine_mask;
+
+	drm_dbg(&xe->drm, "%s %04x:%04x dgfx:%d gfx100:%d dma_m_s: %d",
+		devinfo->platform_name, xe->info.devid, xe->info.revid,
+		xe->info.is_dgfx, xe->info.graphics_verx100,
+		xe->info.dma_mask_size);
 
 	pci_set_drvdata(pdev, xe);
 	err = pci_enable_device(pdev);
