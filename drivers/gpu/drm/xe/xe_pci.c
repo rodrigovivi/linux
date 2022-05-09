@@ -203,6 +203,7 @@ struct intel_device_info {
 		u32 gamma_lut_tests;
 	} color;
 	u8 vram_flags;
+	bool has_tiles;
 };
 
 #define PLATFORM(x) .platform = (x), \
@@ -407,7 +408,8 @@ struct intel_device_info {
 	TGL_CURSOR_OFFSETS, \
 	.has_global_mocs = 1, \
 	.display.has_dsb = 1, \
-	.vram_flags = 0
+	.vram_flags = 0, \
+	.has_tiles = false
 
 static const struct intel_device_info tgl_info = {
 	GEN12_FEATURES,
@@ -462,7 +464,8 @@ static const struct intel_device_info dg1_info __maybe_unused = {
 	.has_runtime_pm = 1, \
 	.ppgtt_size = 48, \
 	.ppgtt_type = INTEL_PPGTT_FULL, \
-	.dma_mask_size = 46
+	.dma_mask_size = 46, \
+	.has_tiles = false
 
 #define XE_HPM_FEATURES \
 	.media_ver = 12, \
@@ -511,6 +514,7 @@ static const struct intel_device_info xehp_sdv_info = {
 	.platform_engine_mask = XEHP_SDV_ENGINES,
 	.require_force_probe = 1,
 	.vram_flags = XE_VRAM_FLAGS_NEED64K,
+	.has_tiles = true,
 };
 
 #undef GEN
@@ -579,11 +583,12 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	xe->info.dma_mask_size = devinfo->dma_mask_size;
 	xe->info.vram_flags = devinfo->vram_flags;
 	to_gt(xe)->info.engine_mask = devinfo->platform_engine_mask;
+	xe->info.tile_count = devinfo->has_tiles ? 1 : 0;
 
-	drm_dbg(&xe->drm, "%s %04x:%04x dgfx:%d gfx100:%d dma_m_s: %d",
+	drm_dbg(&xe->drm, "%s %04x:%04x dgfx:%d gfx100:%d dma_m_s:%d tc:%d",
 		devinfo->platform_name, xe->info.devid, xe->info.revid,
 		xe->info.is_dgfx, xe->info.graphics_verx100,
-		xe->info.dma_mask_size);
+		xe->info.dma_mask_size, xe->info.tile_count);
 
 	pci_set_drvdata(pdev, xe);
 	err = pci_enable_device(pdev);

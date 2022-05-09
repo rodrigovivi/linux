@@ -76,6 +76,15 @@ static void ggtt_fini(struct drm_device *drm, void *arg)
 	iounmap(ggtt->gsm);
 }
 
+#define XEHPSDV_TILE0_ADDR_RANGE		_MMIO(0x4900)
+#define XEHPSDV_TILE1_ADDR_RANGE		_MMIO(0x4904)
+#define XEHPSDV_TILE2_ADDR_RANGE		_MMIO(0x4908)
+#define XEHPSDV_TILE3_ADDR_RANGE		_MMIO(0x490C)
+#define XEHPSDV_TILE_LMEM_RANGE_SHIFT		8
+#define XEHPSDV_TILE_LMEM_BASE_SHIFT		1
+#define XEHPSDV_TILE_LMEM_BASE_MASK		REG_GENMASK(7, 1)
+#define XEHPSDV_TILE_LMEM_RANGE_MASK		REG_GENMASK(14, 8)
+
 int xe_ggtt_init(struct xe_gt *gt, struct xe_ggtt *ggtt)
 {
 	struct xe_device *xe = gt_to_xe(gt);
@@ -92,8 +101,31 @@ int xe_ggtt_init(struct xe_gt *gt, struct xe_ggtt *ggtt)
 		return -ENOMEM;
 	}
 
-	/* For Modern GENs the PTEs and register space are split in the BAR */
-	phys_addr = pci_resource_start(pdev, 0) + pci_resource_len(pdev, 0) / 2;
+	if (xe->info.tile_count > 1) {
+		static const i915_reg_t tile_addr_reg[] = {
+			XEHPSDV_TILE0_ADDR_RANGE,
+			XEHPSDV_TILE1_ADDR_RANGE,
+			XEHPSDV_TILE2_ADDR_RANGE,
+			XEHPSDV_TILE3_ADDR_RANGE,
+		};
+		u64 lmem_size, lmem_base;
+		u64 lmr = xe_mmio_read64(gt, tile_addr_reg[0].reg) & 0xffff;
+		u32 stolen = xe_mmio_read64(gt, GEN6_STOLEN_RESERVED.reg);
+		u64 dsm_base = xe_mmio_read64(gt, GEN12_DSMBASE.reg);
+
+		drm_info(&xe->drm, "XEHPSDV_TILE0_ADDR_RANGE = %llx\n", lmr);
+		drm_info(&xe->drm, "GEN6_STOLEN_RESERVED = %08x\n", stolen);
+		drm_info(&xe->drm, "GEN12_DSMBASE = %llx\n", dsm_base);
+		lmem_size = lmr >> XEHPSDV_TILE_LMEM_RANGE_SHIFT;
+		lmem_base = (lmr & 0xFF) >> XEHPSDV_TILE_LMEM_BASE_SHIFT;
+		lmem_size *= SZ_1G;
+		lmem_base *= SZ_1G;
+		drm_dbg(&xe->drm, "tile%d: 0x%llx 0x%llx\n", 0, lmem_base, lmem_size);
+		phys_addr = pci_resource_start(pdev, 0) +
+			    pci_resource_len(pdev, 0) / (2 * xe->info.tile_count);
+	} else
+		/* For Modern GENs the PTEs and register space are split in the BAR */
+		phys_addr = pci_resource_start(pdev, 0) + pci_resource_len(pdev, 0) / 2;
 	ggtt->gsm = ioremap(phys_addr, gsm_size);
 	if (!ggtt->gsm) {
 		drm_err(&xe->drm, "Failed to map the ggtt page table\n");

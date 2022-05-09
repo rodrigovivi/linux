@@ -14,6 +14,9 @@
 
 #include "../i915/i915_reg.h"
 
+#define XEHPSDV_MTCFG_ADDR		_MMIO(0x101800)
+#define TILE_COUNT			REG_GENMASK(15, 8)
+
 static int xe_set_dma_info(struct xe_device *xe)
 {
 	unsigned int mask_size = xe->info.dma_mask_size;
@@ -52,8 +55,22 @@ static void xe_mmio_probe_vram(struct xe_device *xe)
 	gt->mem.vram.size = xe_mmio_read64(gt, GEN12_GSMBASE.reg);
 	gt->mem.vram.io_start = pci_resource_start(to_pci_dev(xe->drm.dev), 2);
 
-	drm_info(&xe->drm, "VRAM: %pa\n", &gt->mem.vram.size);
+	drm_dbg(&xe->drm, "VRAM: %pa\n", &gt->mem.vram.size);
 }
+
+static void xe_mmio_probe_tiles(struct xe_device *xe)
+{
+	u32 mtcfg;
+	struct xe_gt *gt = to_gt(xe);
+
+	if (!xe->info.tile_count)
+		return;
+
+	mtcfg = xe_mmio_read64(gt, XEHPSDV_MTCFG_ADDR.reg);
+	xe->info.tile_count = REG_FIELD_GET(TILE_COUNT, mtcfg) + 1;
+	drm_dbg(&xe->drm, "tile_count: %d\n", xe->info.tile_count);
+}
+
 
 static void mmio_fini(struct drm_device *drm, void *arg)
 {
@@ -100,6 +117,7 @@ int xe_mmio_init(struct xe_device *xe)
 		return err;
 
 	xe_mmio_probe_vram(xe);
+	xe_mmio_probe_tiles(xe);
 
 	return 0;
 }

@@ -47,6 +47,8 @@ struct xe_device {
 		u8 dma_mask_size;
 		/** @vram_flags: Vram flags */
 		u8 vram_flags;
+		/** @tile_count: Number of tiles */
+		u8 tile_count;
 	} info;
 
 	/** @irq: device interrupt state */
