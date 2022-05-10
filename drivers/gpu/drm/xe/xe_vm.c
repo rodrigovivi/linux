@@ -940,6 +940,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 			err = PTR_ERR(vm->scratch_bo);
 			goto err_destroy_root;
 		}
+		xe_bo_pin(vm->scratch_bo);
 
 		for (i = 0; i < vm->pt_root->level; i++) {
 			vm->scratch_pt[i] = xe_pt_create(vm, i);
@@ -983,6 +984,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 err_scratch_pt:
 	while (i)
 		xe_pt_destroy(vm->scratch_pt[--i], vm->flags);
+	xe_bo_unpin(vm->scratch_bo);
 	xe_bo_put(vm->scratch_bo);
 err_destroy_root:
 	xe_pt_destroy(vm->pt_root, vm->flags);
@@ -1067,6 +1069,7 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 	if (vm->scratch_bo) {
 		u32 i;
 
+		xe_bo_unpin(vm->scratch_bo);
 		xe_bo_put(vm->scratch_bo);
 		for (i = 0; i < vm->pt_root->level; i++)
 			xe_pt_destroy(vm->scratch_pt[i], vm->flags);
