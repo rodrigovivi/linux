@@ -2373,6 +2373,7 @@ out_unlock:
 #define SUPPORTED_FLAGS	\
 	(XE_VM_BIND_FLAG_ASYNC | XE_VM_BIND_FLAG_READONLY | 0xffff)
 #endif
+#define XE_64K_PAGE_MASK 0xffffull
 
 int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 {
@@ -2459,6 +2460,15 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		    XE_IOCTL_ERR(xe, args->obj_offset > bo->size - range)) {
 			err = -EINVAL;
 			goto put_obj;
+		}
+
+		if (bo->flags & XE_BO_INTERNAL_64K) {
+			if (XE_IOCTL_ERR(xe, args->obj_offset & XE_64K_PAGE_MASK) ||
+			    XE_IOCTL_ERR(xe, addr & XE_64K_PAGE_MASK) ||
+			    XE_IOCTL_ERR(xe, range & XE_64K_PAGE_MASK)) {
+				err = -EINVAL;
+				goto put_obj;
+			}
 		}
 	}
 
