@@ -253,7 +253,7 @@ static u32 hw_engine_mmio_read32(struct xe_hw_engine *hwe, u32 reg)
 
 void xe_hw_engine_enable_ring(struct xe_hw_engine *hwe)
 {
-	if (hwe->class == XE_ENGINE_CLASS_RENDER && COMPUTE_MASK(hwe->gt))
+	if (hwe->class == XE_ENGINE_CLASS_COMPUTE && COMPUTE_MASK(hwe->gt) & BIT(0))
 		xe_mmio_write32(hwe->gt, GEN12_RCU_MODE.reg,
 				_MASKED_BIT_ENABLE(GEN12_RCU_MODE_CCS_ENABLE));
 
@@ -497,5 +497,9 @@ void xe_hw_engine_print_state(struct xe_hw_engine *hwe, struct drm_printer *p)
 		   hw_engine_mmio_read32(hwe, IPEIR(0).reg));
 	drm_printf(p, "\tIPEHR: 0x%08x\n\n",
 		   hw_engine_mmio_read32(hwe, IPEHR(0).reg));
+
+	if (hwe->class == XE_ENGINE_CLASS_COMPUTE)
+		drm_printf(p, "\tGEN12_RCU_MODE: 0x%08x\n",
+			   xe_mmio_read32(hwe->gt, GEN12_RCU_MODE.reg));
 
 }
