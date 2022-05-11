@@ -222,7 +222,8 @@ static int xe_pt_populate_empty(struct xe_vm *vm, struct xe_pt *pt)
 
 	if (vm->flags & VM_FLAGS_64K && pt->level == 1) {
 		numpte = 32;
-		flags = GEN12_PDE_64K;
+		if (vm->scratch_bo)
+			flags = GEN12_PDE_64K;
 	}
 
 	empty = __xe_vm_empty_pte(vm, pt->level) | flags;
@@ -282,6 +283,9 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 		}
 	}
 
+	vm_dbg(&vm->xe->drm, "\t\t%u: %d..%d F:0x%x\n", pt->level,
+	       start_ofs, last_ofs, flags);
+
 	if (pt->level) {
 		struct xe_pt_dir *pt_dir = as_xe_pt_dir(pt);
 		u64 cur = start;
@@ -319,7 +323,8 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 		return err;
 
 	if (init) {
-		u64 empty = __xe_vm_empty_pte(vma->vm, pt->level) | flags;
+		u32 init_flags = (vma->vm->scratch_bo) ? flags : 0;
+		u64 empty = __xe_vm_empty_pte(vma->vm, pt->level) | init_flags;
 
 		for (i = 0; i < start_ofs; i++)
 			__xe_pt_write(&map, i, empty);
@@ -1123,7 +1128,7 @@ xe_pt_commit_unbind(struct xe_vma *vma,
 		struct xe_vm_pgtable_update *entry = &entries[num_entries];
 		struct xe_pt *pt = entry->pt;
 
-		pt->num_live -= entries->qwords;
+		pt->num_live -= entry->qwords;
 		if (pt->level) {
 			struct xe_pt_dir *pt_dir = as_xe_pt_dir(pt);
 			u32 i;
@@ -1177,40 +1182,85 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 
 	if (!pt->level) {
 		my_removed_pte = last_ofs - start_ofs + 1;
-
+		if (vma->bo && vma->bo->flags & XE_BO_INTERNAL_64K) {
+			start_ofs = start_ofs / 16;
+			last_ofs = last_ofs / 16;
+			my_removed_pte = last_ofs - start_ofs + 1;
+			if (evict)
+				num_live = 32;
+		}
+		vm_dbg(&vma->vm->xe->drm,
+		       "\t%u: De-Populating entry [%u..%u +%u) [%llx...%llx)\n",
+			pt->level, start_ofs, last_ofs, my_removed_pte, start, end);
 		BUG_ON(!my_removed_pte);
 	} else {
 		struct xe_pt_dir *pt_dir = as_xe_pt_dir(pt);
 
-		if (pt_dir->entries[start_ofs]) {
-			u64 pte_end = min(xe_pt_next_start(start, pt->level), end);
+		u64 start_end = min(xe_pt_next_start(start, pt->level), end);
+		u64 end_start = max(start, xe_pt_prev_end(end, pt->level));
+		u64 cur = start;
+		bool partial_begin = false, partial_end = false;
+		u32 my_rm_pte = last_ofs + 1 - start_ofs;
+		u32 i;
+		u32 first_ofs = start_ofs;
 
-			__xe_pt_prepare_unbind(vma, pt_dir->entries[start_ofs],
-					       &my_removed_pte, start, pte_end,
-					       num_entries, entries, evict);
+		if (pt_dir->entries[start_ofs])
+			partial_begin = xe_pt_partial_entry(start, start_end, pt->level);
 
-			/* first entry kept? */
-			if (!my_removed_pte)
-				start_ofs++;
-		} else {
-			my_removed_pte++;
+		if (pt_dir->entries[last_ofs] && last_ofs > start_ofs)
+			partial_end = xe_pt_partial_entry(end_start, end, pt->level);
+		vm_dbg(&vma->vm->xe->drm,
+		       "\t%u: [%llx...%llx) partial begin/end: %u / %u, %u entries\n",
+		       pt->level, start, end, partial_begin, partial_end, my_rm_pte);
+		my_rm_pte -= partial_begin + partial_end;
+		if (partial_begin) {
+			u32 rem = 0;
+
+			vm_dbg(&vma->vm->xe->drm,
+			       "\t%u: Descending to first subentry %u level %u [%llx...%llx)\n",
+			       pt->level, start_ofs,
+			       pt->level - 1, start, start_end);
+			__xe_pt_prepare_unbind(vma,
+					       pt_dir->entries[start_ofs++],
+					       &rem,
+					       start, start_end,
+					       num_entries, entries, false);
+			start = cur = start_end;
+			if (rem)
+				my_removed_pte++;
 		}
+		for (i = 0; i < my_rm_pte; i++) {
+			u32 rem = 0;
+			u64 cur_end = min(xe_pt_next_start(cur, pt->level), end);
 
-		if (start_ofs < last_ofs) {
-			/* middle part */
-			my_removed_pte += last_ofs - start_ofs - 1;
+			vm_dbg(&vma->vm->xe->drm, "\t%llx...%llx / %llx",
+			       xe_pt_next_start(cur, pt->level), end, cur_end);
+			__xe_pt_prepare_unbind(vma, pt_dir->entries[start_ofs++],
+					       &rem, cur, cur_end, num_entries,
+					       entries, false);
+			if (rem) {
+				if (!my_removed_pte)
+					first_ofs = start_ofs;
+				my_removed_pte++;
+			}
+			cur = cur_end;
+		}
+		if (partial_end) {
+			u32 rem = 0;
 
-			/* last */
-			if (pt_dir->entries[last_ofs]) {
-				u64 end_start = xe_pt_prev_end(end, pt->level);
+			XE_WARN_ON(cur >= end);
+			XE_WARN_ON(cur != end_start);
 
-				__xe_pt_prepare_unbind(vma,
-						       pt_dir->entries[last_ofs],
-						       &my_removed_pte,
-						       end_start, end,
-						       num_entries, entries,
-						       evict);
-			} else {
+			vm_dbg(&vma->vm->xe->drm,
+			       "\t%u: Descending to last subentry %u level %u [%llx...%llx)\n",
+			       pt->level, last_ofs, pt->level - 1, cur, end);
+
+			__xe_pt_prepare_unbind(vma, pt_dir->entries[last_ofs],
+					       &rem, cur, end, num_entries,
+					       entries, false);
+			if (rem) {
+				if (!my_removed_pte)
+					first_ofs = last_ofs;
 				my_removed_pte++;
 			}
 		}
@@ -1218,6 +1268,8 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 		/* No changes to this entry, fast return.. */
 		if (!my_removed_pte)
 			return;
+
+		start_ofs = first_ofs;
 	}
 
 	/* Don't try to delete the root.. */
@@ -1233,6 +1285,11 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 	entry->pt = pt;
 	entry->target_vma = vma;
 	entry->target_offset = vma->bo_offset + (start - vma->start);
+	entry->flags = 0;
+
+	vm_dbg(&vma->vm->xe->drm, "REMOVE %d L:%d o:%d q:%d t:0x%llx (%llx,%llx,%llx) f:0x%x\n",
+	       (*num_entries)-1, pt->level, entry->ofs, entry->qwords, entry->target_offset,
+	       vma->bo_offset, start, vma->start, entry->flags);
 }
 
 static void
@@ -1256,6 +1313,7 @@ struct dma_fence *xe_vm_unbind_vma(struct xe_vma *vma,
 	struct xe_gt *gt = to_gt(vm->xe);
 	u32 num_entries;
 	struct dma_fence *fence = NULL;
+	u32 i;
 
 	xe_bo_assert_held(vma->bo);
 	if (!evict)
@@ -1266,6 +1324,23 @@ struct dma_fence *xe_vm_unbind_vma(struct xe_vma *vma,
 
 	xe_pt_prepare_unbind(vma, entries, &num_entries, evict);
 	XE_BUG_ON(num_entries > ARRAY_SIZE(entries));
+
+	vm_dbg(&vm->xe->drm, "%u entries to update\n", num_entries);
+	for (i = 0; i < num_entries; i++) {
+		struct xe_vm_pgtable_update *entry = &entries[i];
+
+		u64 start = vma->start + entry->target_offset - vma->bo_offset;
+		u64 len = (u64)entry->qwords << xe_pt_shift(entry->pt->level);
+		u64 end;
+
+		start = xe_pt_prev_end(start + 1, entry->pt->level);
+		end = start + len;
+
+		vm_dbg(&vm->xe->drm, "\t%u: Update level %u at (%u + %u) [%llx...%llx)\n",
+		       i, entry->pt->level, entry->ofs, entry->qwords,
+		       start, end);
+	}
+
 
 	/*
 	 * Even if we were already evicted and unbind to destroy, we need to
@@ -1299,15 +1374,16 @@ static void
 xe_vm_populate_pgtable(void *data, u32 qword_ofs, u32 num_qwords,
 		       struct xe_vm_pgtable_update *update, void *arg)
 {
+	u32 page_size = (update->flags & GEN12_PDE_64K) ? SZ_64K : GEN8_PAGE_SIZE;
 	u64 bo_offset = update->target_offset +
-		GEN8_PAGE_SIZE * (qword_ofs - update->ofs);
+		page_size * (qword_ofs - update->ofs);
 	struct xe_pt **ptes = update->pt_entries;
 	u64 *ptr = data;
 	u32 i;
 
-	for (i = 0; i < num_qwords; i++, bo_offset += GEN8_PAGE_SIZE) {
+	for (i = 0; i < num_qwords; i++, bo_offset += page_size) {
 		if (ptes && ptes[i])
-			ptr[i] = gen8_pde_encode(ptes[i]->bo, 0, XE_CACHE_WB);
+			ptr[i] = gen8_pde_encode(ptes[i]->bo, 0, XE_CACHE_WB) | update->flags;
 		else
 			ptr[i] = gen8_pte_encode(update->target_vma,
 						 update->target_vma->bo,
@@ -1370,6 +1446,7 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 	u32 start_ofs = xe_pt_idx(start, pt->level);
 	u32 last_ofs = xe_pt_idx(end - 1, pt->level);
 	struct xe_pt **pte = NULL;
+	u32 flags = 0;
 
 	XE_BUG_ON(start < vma->start);
 	XE_BUG_ON(end > vma->end + 1);
@@ -1378,8 +1455,13 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 	BUG_ON(!my_added_pte);
 
 	if (!pt->level) {
-		vm_dbg(&xe->drm, "\t%u: Populating entry [%u + %u) [%llx...%llx)\n",
-		       pt->level, start_ofs, my_added_pte, start, end);
+		if (vma->bo && vma->bo->flags & XE_BO_INTERNAL_64K) {
+			start_ofs = start_ofs / 16;
+			last_ofs = last_ofs / 16;
+			my_added_pte = last_ofs + 1 - start_ofs;
+		}
+		vm_dbg(&xe->drm, "\t%u: Populating entry [%u..%u +%u) [%llx...%llx)\n",
+		       pt->level, start_ofs, last_ofs, my_added_pte, start, end);
 	} else {
 		struct xe_pt_dir *pt_dir = as_xe_pt_dir(pt);
 		u32 i;
@@ -1426,9 +1508,12 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 			u64 cur_end =
 				min(xe_pt_next_start(cur, pt->level), end);
 
-			vm_dbg(&xe->drm, "\t%u: Populating %u/%u subentry %u level %u [%llx...%llx)\n",
+			if (vma->bo && vma->bo->flags & XE_BO_INTERNAL_64K && pt->level == 1)
+				flags = GEN12_PDE_64K;
+
+			vm_dbg(&xe->drm, "\t%u: Populating %u/%u subentry %u level %u [%llx...%llx) f: 0x%x\n",
 			       pt->level, i + 1, my_added_pte,
-			       start_ofs + i, pt->level - 1, cur, cur_end);
+			       start_ofs + i, pt->level - 1, cur, cur_end, flags);
 
 			entry = xe_pt_create(vma->vm, pt->level - 1);
 			if (IS_ERR(entry)) {
@@ -1437,7 +1522,7 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 			}
 			pte[i] = entry;
 
-			err = xe_pt_populate_for_vma(vma, entry, cur, end);
+			err = xe_pt_populate_for_vma(vma, entry, cur, cur_end);
 			if (err) {
 				xe_pt_destroy(entry, vma->vm->flags);
 				goto unwind;
@@ -1481,6 +1566,12 @@ done:
 	entry->target_vma = vma;
 	entry->target_offset = vma->bo_offset + (start - vma->start);
 	entry->pt_entries = pte;
+	entry->flags = flags;
+
+	vm_dbg(&xe->drm, "ADD %d L:%d o:%d q:%d t:0x%llx (%llx,%llx,%llx) f:0x%x\n",
+	       *num_entries-1, pt->level, entry->ofs, entry->qwords, entry->target_offset,
+	       vma->bo_offset, start, vma->start, entry->flags);
+
 	return 0;
 }
 
@@ -2282,6 +2373,7 @@ out_unlock:
 #define SUPPORTED_FLAGS	\
 	(XE_VM_BIND_FLAG_ASYNC | XE_VM_BIND_FLAG_READONLY | 0xffff)
 #endif
+#define XE_64K_PAGE_MASK 0xffffull
 
 int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 {
@@ -2368,6 +2460,15 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		    XE_IOCTL_ERR(xe, args->obj_offset > bo->size - range)) {
 			err = -EINVAL;
 			goto put_obj;
+		}
+
+		if (bo->flags & XE_BO_INTERNAL_64K) {
+			if (XE_IOCTL_ERR(xe, args->obj_offset & XE_64K_PAGE_MASK) ||
+			    XE_IOCTL_ERR(xe, addr & XE_64K_PAGE_MASK) ||
+			    XE_IOCTL_ERR(xe, range & XE_64K_PAGE_MASK)) {
+				err = -EINVAL;
+				goto put_obj;
+			}
 		}
 	}
 

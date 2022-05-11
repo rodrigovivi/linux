@@ -13,6 +13,7 @@ enum xe_platform {
 	/* gen12 */
 	XE_TIGERLAKE,
 	XE_DG1,
+	XE_XEHP_SDV,
 	XE_DG2,
 };
 
