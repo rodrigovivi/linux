@@ -32,3 +32,9 @@ config DRM_XE
 	  Experimental driver for Intel Xe series GPUs
 
 	  If "M" is selected, the module will be called xe.
+
+menu "drm/Xe Debugging"
+depends on DRM_XE
+depends on EXPERT
+source "drivers/gpu/drm/xe/Kconfig.debug"
+endmenu

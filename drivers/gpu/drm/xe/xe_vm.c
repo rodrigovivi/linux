@@ -30,9 +30,8 @@ enum xe_cache_level {
 
 #define TEST_VM_ASYNC_OPS_ERROR
 
-#define XE_VM_DEBUG 0
 
-#if XE_VM_DEBUG
+#if IS_ENABLED(CONFIG_DRM_XE_DEBUG_VM)
 #define vm_dbg drm_dbg
 #else
 __printf(2, 3)
