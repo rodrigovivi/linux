@@ -104,7 +104,7 @@ static int query_memory_usage(struct xe_device *xe,
 	usage->pad = 0;
 
 	man = ttm_manager_type(&xe->ttm, TTM_PL_TT);
-	usage->regions[0].class = XE_QUERY_MEM_REGION_CLASS_SYSMEM;
+	usage->regions[0].mem_class = XE_QUERY_MEM_REGION_CLASS_SYSMEM;
 	usage->regions[0].instance = 0;
 	usage->regions[0].pad = 0;
 	usage->regions[0].total_size = man->size << PAGE_SHIFT;
@@ -112,7 +112,7 @@ static int query_memory_usage(struct xe_device *xe,
 
 	man = ttm_manager_type(&xe->ttm, TTM_PL_VRAM);
 	if (man) {
-		usage->regions[1].class = XE_QUERY_MEM_REGION_CLASS_LMEM;
+		usage->regions[1].mem_class = XE_QUERY_MEM_REGION_CLASS_LMEM;
 		usage->regions[1].instance = 0;
 		usage->regions[1].pad = 0;
 		usage->regions[1].total_size = man->size << PAGE_SHIFT;

@@ -152,7 +152,7 @@ struct drm_xe_query_mem_usage {
 	struct drm_xe_query_mem_region {
 #define XE_QUERY_MEM_REGION_CLASS_SYSMEM	0
 #define XE_QUERY_MEM_REGION_CLASS_LMEM		1
-		__u16 class;
+		__u16 mem_class;
 		__u16 instance;
 		__u32 pad;
 		__u64 total_size;
