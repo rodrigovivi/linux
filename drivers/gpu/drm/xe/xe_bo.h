@@ -156,6 +156,14 @@ bool xe_bo_is_xe_bo(struct ttm_buffer_object *bo);
 dma_addr_t xe_bo_addr(struct xe_bo *bo, uint64_t offset,
 		      size_t page_size, bool *is_lmem);
 
+static inline dma_addr_t
+xe_bo_main_addr(struct xe_bo *bo, size_t page_size)
+{
+	bool is_lmem;
+
+	return xe_bo_addr(bo, 0, page_size, &is_lmem);
+}
+
 static inline uint32_t
 xe_bo_ggtt_addr(struct xe_bo *bo)
 {
