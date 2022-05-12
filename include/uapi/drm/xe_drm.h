@@ -213,6 +213,9 @@ struct drm_xe_gem_create {
 	 * Object handles are nonzero.
 	 */
 	__u32 handle;
+
+	/** @reserved: Reserved */
+	__u64 reserved;
 };
 
 struct drm_xe_gem_mmap_offset {
@@ -271,6 +274,9 @@ struct drm_xe_vm_create {
 
 	/** @vm_id: Returned VM ID */
 	__u32 vm_id;
+
+	/** @reserved: Reserved */
+	__u64 reserved;
 };
 
 struct drm_xe_vm_destroy {
@@ -423,6 +429,9 @@ struct drm_xe_engine_create {
 	 * index = j + i * width
 	 */
 	__u64 instances;
+
+	/** @reserved: Reserved */
+	__u64 reserved;
 };
 
 struct drm_xe_engine_destroy {
