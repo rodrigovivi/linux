@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config DRM_XE_DEBUG
+	bool "Enable additional driver debugging"
+	depends on DRM_XE
+	depends on EXPERT
+	depends on !COMPILE_TEST
+	default n
+	help
+	  Choose this option to turn on extra driver debugging that may affect
+	  performance but will catch some internal issues.
+
+	  Recommended for driver developers only.
+
+	  If in doubt, say "N".
+
+config DRM_XE_DEBUG_VM
+	bool "Enable extra VM debugging info"
+	default n
+	help
+	  Enable extra VM debugging info
+
+	  Recommended for driver developers only.
+
+	  If in doubt, say "N".
+
+config DRM_XE_DEBUG_MEM
+	bool "Enable passing SYS/LMEM addresses to user space"
+	default n
+	help
+	  Pass object location trough uapi. Intended for extended
+	  testing and development only.
+
+	  Recommended for driver developers only.
+
+	  If in doubt, say "N".

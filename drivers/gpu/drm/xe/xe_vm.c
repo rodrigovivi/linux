@@ -30,9 +30,8 @@ enum xe_cache_level {
 
 #define TEST_VM_ASYNC_OPS_ERROR
 
-#define XE_VM_DEBUG 0
 
-#if XE_VM_DEBUG
+#if IS_ENABLED(CONFIG_DRM_XE_DEBUG_VM)
 #define vm_dbg drm_dbg
 #else
 __printf(2, 3)
@@ -1975,6 +1974,11 @@ int xe_vm_create_ioctl(struct drm_device *dev, void *data,
 	}
 
 	args->vm_id = id;
+
+#if IS_ENABLED(CONFIG_DRM_XE_DEBUG_MEM)
+	/* Warning: Security issue - never enable by default */
+	args->reserved[0] = xe_bo_main_addr(vm->pt_root->bo, GEN8_PAGE_SIZE);
+#endif
 
 	return 0;
 }
