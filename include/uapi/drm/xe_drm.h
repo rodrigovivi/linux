@@ -160,6 +160,19 @@ struct drm_xe_query_mem_usage {
 	} regions[];
 };
 
+struct drm_xe_query_config {
+	__u32 num_params;
+	__u32 pad;
+#define XE_QUERY_CONFIG_REV_AND_DEVICE_ID	0
+#define XE_QUERY_CONFIG_FLAGS			1
+	#define XE_QUERY_CONFIG_FLAGS_HAS_VRAM		(0x1 << 0)
+	#define XE_QUERY_CONFIG_FLAGS_USE_GUC		(0x1 << 1)
+#define XE_QUERY_CONFIG_MIN_ALIGNEMENT		2
+#define XE_QUERY_CONFIG_GTT_SIZE		3
+#define XE_QUERY_CONFIG_TILE_COUNT		4
+	__u64 info[];
+};
+
 struct drm_xe_device_query {
 	/** @extensions: Pointer to the first extension struct, if any */
 	__u64 extensions;
@@ -169,12 +182,16 @@ struct drm_xe_device_query {
 
 #define DRM_XE_DEVICE_QUERY_ENGINES	0
 #define DRM_XE_DEVICE_QUERY_MEM_USAGE	1
+#define DRM_XE_DEVICE_QUERY_CONFIG	2
 
 	/** @size: Size of the queried data */
 	__u32 size;
 
 	/** @data: Queried data is placed here */
 	__u64 data;
+
+	/** @reserved: Reserved */
+	__u64 reserved[4];
 };
 
 struct drm_xe_gem_create {
@@ -215,7 +232,7 @@ struct drm_xe_gem_create {
 	__u32 handle;
 
 	/** @reserved: Reserved */
-	__u64 reserved;
+	__u64 reserved[4];
 };
 
 struct drm_xe_gem_mmap_offset {
@@ -230,6 +247,9 @@ struct drm_xe_gem_mmap_offset {
 
 	/** @offset: The fake offset to use for subsequent mmap call */
 	__u64 offset;
+
+	/** @reserved: Reserved */
+	__u64 reserved[4];
 };
 
 /**
@@ -258,6 +278,9 @@ struct drm_xe_ext_vm_set_property {
 
 	/** @value: property value */
 	__u64 value;
+
+	/** @reserved: Reserved */
+	__u64 reserved[4];
 };
 
 struct drm_xe_vm_create {
@@ -276,7 +299,7 @@ struct drm_xe_vm_create {
 	__u32 vm_id;
 
 	/** @reserved: Reserved */
-	__u64 reserved;
+	__u64 reserved[4];
 };
 
 struct drm_xe_vm_destroy {
@@ -285,6 +308,9 @@ struct drm_xe_vm_destroy {
 
 	/** @pad: MBZ */
 	__u32 pad;
+
+	/** @reserved: Reserved */
+	__u64 reserved[4];
 };
 
 struct drm_xe_vm_bind {
@@ -356,6 +382,9 @@ struct drm_xe_vm_bind {
 
 	/** @syncs: pointer to struct drm_xe_sync array */
 	__u64 syncs;
+
+	/** @reserved: Reserved */
+	__u64 reserved[4];
 };
 
 /** struct drm_xe_ext_engine_set_property - engine set property extension */
@@ -399,6 +428,9 @@ struct drm_xe_engine_set_property {
 
 	/** @value: property value */
 	__u64 value;
+
+	/** @reserved: Reserved */
+	__u64 reserved[4];
 };
 
 struct drm_xe_engine_create {
@@ -431,7 +463,7 @@ struct drm_xe_engine_create {
 	__u64 instances;
 
 	/** @reserved: Reserved */
-	__u64 reserved;
+	__u64 reserved[4];
 };
 
 struct drm_xe_engine_destroy {
@@ -440,6 +472,9 @@ struct drm_xe_engine_destroy {
 
 	/** @pad: MBZ */
 	__u32 pad;
+
+	/** @reserved: Reserved */
+	__u64 reserved[4];
 };
 
 struct drm_xe_sync {
@@ -468,6 +503,9 @@ struct drm_xe_sync {
 	};
 
 	__u64 timeline_value;
+
+	/** @reserved: Reserved */
+	__u64 reserved[4];
 };
 
 struct drm_xe_exec {
@@ -494,6 +532,9 @@ struct drm_xe_exec {
 	 * the width of the engine
 	 */
 	__u16 num_batch_buffer;
+
+	/** @reserved: Reserved */
+	__u64 reserved[4];
 };
 
 struct drm_xe_mmio {
@@ -513,6 +554,9 @@ struct drm_xe_mmio {
 #define DRM_XE_MMIO_WRITE	0x8
 
 	__u64 value;
+
+	/** @reserved: Reserved */
+	__u64 reserved[4];
 };
 
 /**
@@ -571,6 +615,9 @@ struct drm_xe_wait_user_fence {
 	 * wait on, must be NULL when DRM_XE_UFENCE_WAIT_SOFT_OP set
 	 */
 	__u64 instances;
+
+	/** @reserved: Reserved */
+	__u64 reserved[4];
 };
 
 #if defined(__cplusplus)
