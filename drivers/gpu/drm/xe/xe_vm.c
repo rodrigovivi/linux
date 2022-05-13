@@ -1977,7 +1977,7 @@ int xe_vm_create_ioctl(struct drm_device *dev, void *data,
 
 #if IS_ENABLED(CONFIG_DRM_XE_DEBUG_MEM)
 	/* Warning: Security issue - never enable by default */
-	args->reserved = xe_bo_main_addr(vm->pt_root->bo, GEN8_PAGE_SIZE);
+	args->reserved[0] = xe_bo_main_addr(vm->pt_root->bo, GEN8_PAGE_SIZE);
 #endif
 
 	return 0;
