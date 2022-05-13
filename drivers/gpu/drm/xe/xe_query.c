@@ -11,6 +11,7 @@
 #include "xe_gt.h"
 #include "xe_macros.h"
 #include "xe_query.h"
+#include "xe_ggtt.h"
 
 static const enum xe_engine_class xe_to_user_engine_class[] = {
 	[XE_ENGINE_CLASS_RENDER] = DRM_XE_ENGINE_CLASS_RENDER,
@@ -132,10 +133,54 @@ static int query_memory_usage(struct xe_device *xe,
 	return ret;
 }
 
+static int query_config(struct xe_device *xe,
+			 struct drm_xe_device_query *query)
+{
+	u32 num_params = 5;
+	size_t size =
+		sizeof(struct drm_xe_query_config) + num_params * sizeof(u64);
+	struct drm_xe_query_config __user *query_ptr =
+		u64_to_user_ptr(query->data);
+	struct drm_xe_query_config *config;
+
+	if (query->size == 0) {
+		query->size = size;
+		return 0;
+	} else if (XE_IOCTL_ERR(xe, query->size != size)) {
+		return -EINVAL;
+	}
+
+	config = kmalloc(size, GFP_KERNEL);
+	if (XE_IOCTL_ERR(xe, !config))
+		return -ENOMEM;
+
+	config->num_params = num_params;
+	config->pad = 0;
+	config->info[XE_QUERY_CONFIG_REV_AND_DEVICE_ID] =
+		xe->info.devid | (xe->info.revid << 16);
+	if (xe->gt.mem.vram.size)
+		config->info[XE_QUERY_CONFIG_FLAGS] = XE_QUERY_CONFIG_FLAGS_HAS_VRAM;
+	if (xe->gt.info.enable_guc)
+		config->info[XE_QUERY_CONFIG_FLAGS] |= XE_QUERY_CONFIG_FLAGS_USE_GUC;
+	config->info[XE_QUERY_CONFIG_MIN_ALIGNEMENT] =
+		xe->info.vram_flags & XE_VRAM_FLAGS_NEED64K ? SZ_64K : SZ_4K;
+	config->info[XE_QUERY_CONFIG_GTT_SIZE] = xe->gt.mem.ggtt->size;
+	config->info[XE_QUERY_CONFIG_TILE_COUNT] = xe->info.tile_count;
+
+	if (copy_to_user(query_ptr, config, size)) {
+		kfree(config);
+		return -EFAULT;
+	}
+	kfree(config);
+
+	return 0;
+}
+
 static int (* const xe_query_funcs[])(struct xe_device *xe,
 				      struct drm_xe_device_query *query) = {
 	query_engines,
 	query_memory_usage,
+	query_config,
 };
 
 int xe_query_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
