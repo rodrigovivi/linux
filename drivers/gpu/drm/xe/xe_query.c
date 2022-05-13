@@ -150,12 +150,11 @@ static int query_config(struct xe_device *xe,
 		return -EINVAL;
 	}
 
-	config = kmalloc(size, GFP_KERNEL);
+	config = kzalloc(size, GFP_KERNEL);
 	if (XE_IOCTL_ERR(xe, !config))
 		return -ENOMEM;
 
 	config->num_params = num_params;
-	config->pad = 0;
 	config->info[XE_QUERY_CONFIG_REV_AND_DEVICE_ID] =
 		xe->info.devid | (xe->info.revid << 16);
 	if (xe->gt.mem.vram.size)
