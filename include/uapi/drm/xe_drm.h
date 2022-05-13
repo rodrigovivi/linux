@@ -170,6 +170,7 @@ struct drm_xe_query_config {
 #define XE_QUERY_CONFIG_MIN_ALIGNEMENT		2
 #define XE_QUERY_CONFIG_GTT_SIZE		3
 #define XE_QUERY_CONFIG_TILE_COUNT		4
+#define XE_QUERY_CONFIG_NUM_PARAM		XE_QUERY_CONFIG_TILE_COUNT + 1
 	__u64 info[];
 };
 
