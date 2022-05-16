@@ -370,8 +370,7 @@ static void __drm_suballoc_free_anyidx(struct drm_suballoc_manager *sa_manager, 
 		sa = list_last_entry(&sa_manager->flist[i],
 				     struct drm_suballoc, flist);
 
-		if (sa->fence->context != fence->context &&
-		    !dma_fence_is_signaled(sa->fence)) {
+		if (!dma_fence_is_signaled(sa->fence)) {
 			fences[i] = dma_fence_get(sa->fence);
 			continue;
 		}
