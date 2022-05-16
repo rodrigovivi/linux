@@ -739,10 +739,12 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 	 */
 	if (e->flags & ENGINE_FLAG_KERNEL ||
 	    (e->flags & ENGINE_FLAG_VM && !engine_killed(e))) {
-		list_add(&drm_job->list, &sched->pending_list);
-		drm_sched_run_wq_start(sched);
-		xe_gt_reset_async(e->gt);
-		goto out;
+		if (!drm_sched_invalidate_job(drm_job, 2)) {
+			list_add(&drm_job->list, &sched->pending_list);
+			drm_sched_run_wq_start(sched);
+			xe_gt_reset_async(e->gt);
+			goto out;
+		}
 	}
 
 	/* Engine state now stable, disable scheduling if needed */
