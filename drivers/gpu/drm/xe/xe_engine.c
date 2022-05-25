@@ -197,11 +197,11 @@ static void preempt_complete(struct xe_engine *e)
 	xe_vm_lock(vm, NULL);
 	if (!vm->preempt.num_inflight_ops &&
 	    !xe_vm_userptr_pending_rebind_read(vm)) {
-		err = dma_resv_reserve_shared(&vm->resv, 1);
+		err = dma_resv_reserve_fences(&vm->resv, 1);
 		XE_WARN_ON(err);
 		if (!err) {
 			e->ops->resume(e);
-			dma_resv_add_shared_fence(&vm->resv, pfence);
+			dma_resv_add_fence(&vm->resv, pfence, DMA_RESV_USAGE_BOOKKEEP);
 		}
 	} else {
 		dma_fence_get(pfence);
@@ -259,7 +259,7 @@ static int engine_set_compute_mode(struct xe_device *xe, struct xe_engine *e,
 			vm->preempt.enabled = true;
 			INIT_LIST_HEAD(&vm->preempt.pending_fences);
 		}
-		err = dma_resv_reserve_shared(&vm->resv, 1);
+		err = dma_resv_reserve_fences(&vm->resv, 1);
 		if (XE_IOCTL_ERR(xe, err)) {
 			dma_fence_put(pfence);
 			xe_vm_unlock(vm);
@@ -267,7 +267,7 @@ static int engine_set_compute_mode(struct xe_device *xe, struct xe_engine *e,
 		}
 
 		e->compute.pfence = pfence;
-		dma_resv_add_shared_fence(&vm->resv, pfence);
+		dma_resv_add_fence(&vm->resv, pfence, DMA_RESV_USAGE_BOOKKEEP);
 		xe_vm_unlock(vm);
 
 		e->flags |= ENGINE_FLAG_COMPUTE_MODE;

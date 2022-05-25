@@ -514,12 +514,12 @@ static void reinstall_preempt_fences(struct xe_vm *vm)
 		struct xe_engine *e = pfence->engine;
 		int err;
 
-		err = dma_resv_reserve_shared(&vm->resv, 1);
+		err = dma_resv_reserve_fences(&vm->resv, 1);
 		XE_WARN_ON(err);
 		if (!err) {
 			e->ops->resume(e);
-			dma_resv_add_shared_fence(&vm->resv,
-						  &pfence->base);
+			dma_resv_add_fence(&vm->resv, &pfence->base,
+					   DMA_RESV_USAGE_BOOKKEEP);
 		}
 		list_del_init(&pfence->link);
 		dma_fence_put(&pfence->base);
@@ -549,7 +549,7 @@ retry:
 	xe_vm_lock(vm, NULL);
 
 	if (!vma->userptr.destroyed && vma->userptr.dirty) {
-		ret = dma_resv_reserve_shared(&vm->resv, 1);
+		ret = dma_resv_reserve_fences(&vm->resv, 1);
 		if (!ret) {
 			ret = __xe_vm_bind(vm, vma, NULL, 0, NULL);
 			if (!ret) {
@@ -627,8 +627,8 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 		vm_userptr_pending_rebind_incr(vm);
 	write_unlock(&vm->userptr.notifier_lock);
 
-	err = dma_resv_wait_timeout(&vm->resv, true, false,
-				    MAX_SCHEDULE_TIMEOUT);
+	err = dma_resv_wait_timeout(&vm->resv, DMA_RESV_USAGE_BOOKKEEP,
+				    false, MAX_SCHEDULE_TIMEOUT);
 	XE_WARN_ON(err <= 0);
 
 	/* If this VM has preemption fences installed, rebind the VMA */
@@ -1356,11 +1356,12 @@ struct dma_fence *xe_vm_unbind_vma(struct xe_vma *vma,
 	if (!IS_ERR(fence)) {
 		if (!evict) {
 			/* add shared fence now for pagetable delayed destroy */
-			dma_resv_add_shared_fence(&vm->resv, fence);
+			dma_resv_add_fence(&vm->resv, fence, DMA_RESV_USAGE_BOOKKEEP);
 
 			/* This fence will be installed by caller when doing eviction */
 			if (!vma_is_userptr(vma) && !vma->bo->vm)
-				dma_resv_add_shared_fence(vma->bo->ttm.base.resv, fence);
+				dma_resv_add_fence(vma->bo->ttm.base.resv, fence,
+						   DMA_RESV_USAGE_BOOKKEEP);
 			xe_pt_commit_unbind(vma, entries, num_entries);
 		}
 		vma->evicted = evict;
@@ -1638,10 +1639,10 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_sync_entry *syncs, u32 num_syncs,
 					   xe_vm_has_preempt_fences(vm));
 	if (!IS_ERR(fence)) {
 		/* add shared fence now for pagetable delayed destroy */
-		dma_resv_add_shared_fence(&vm->resv, fence);
+		dma_resv_add_fence(&vm->resv, fence, DMA_RESV_USAGE_BOOKKEEP);
 
 		if (!vma_is_userptr(vma) && !vma->bo->vm)
-			dma_resv_add_shared_fence(vma->bo->ttm.base.resv, fence);
+			dma_resv_add_fence(vma->bo->ttm.base.resv, fence,  DMA_RESV_USAGE_BOOKKEEP);
 		xe_pt_commit_bind(vma, entries, num_entries);
 
 		/* This vma is live (again?) now */
@@ -1804,7 +1805,7 @@ static int xe_vm_bind_userptr(struct xe_vm *vm, struct xe_vma *vma,
 	int err;
 
 	xe_vm_lock(vm, NULL);
-	err = dma_resv_reserve_shared(&vm->resv, 1);
+	err = dma_resv_reserve_fences(&vm->resv, 1);
 	if (!err)
 		err = __xe_vm_bind(vm, vma, syncs, num_syncs, afence);
 	xe_vm_unlock(vm);
@@ -1816,9 +1817,15 @@ static int xe_vm_bind_userptr(struct xe_vm *vm, struct xe_vma *vma,
 	 * to fix page tables
 	 */
 	if (xe_vm_has_preempt_fences(vm) &&
-	    vma_userptr_needs_repin(vma) == -EAGAIN)
-		dma_resv_wait_timeout(&vm->resv, true, false,
-				      MAX_SCHEDULE_TIMEOUT);
+	    vma_userptr_needs_repin(vma) == -EAGAIN) {
+		struct dma_resv_iter cursor;
+		struct dma_fence *fence;
+
+		dma_resv_iter_begin(&cursor, &vm->resv, DMA_RESV_USAGE_BOOKKEEP);
+		dma_resv_for_each_fence_unlocked(&cursor, fence)
+			dma_fence_enable_sw_signaling(fence);
+		dma_resv_iter_end(&cursor);
+	}
 
 	return 0;
 }
