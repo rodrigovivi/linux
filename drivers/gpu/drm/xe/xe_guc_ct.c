@@ -156,11 +156,11 @@ int xe_guc_ct_init(struct xe_guc_ct *ct)
 }
 
 #define desc_read(guc_ctb__, field_)				\
-	iosys_map_rd_field(&guc_ctb__->desc,			\
+	iosys_map_rd_field(&guc_ctb__->desc, 0,			\
 		     struct guc_ct_buffer_desc, field_)
 
 #define desc_write(guc_ctb__, field_, val_)			\
-	iosys_map_wr_field(&guc_ctb__->desc,			\
+	iosys_map_wr_field(&guc_ctb__->desc, 0,			\
 		     struct guc_ct_buffer_desc,	 field_, val_)
 
 static void guc_ct_ctb_h2g_init(struct guc_ctb *h2g,

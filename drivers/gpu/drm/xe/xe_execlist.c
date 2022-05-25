@@ -21,10 +21,16 @@
 
 #include "../i915/i915_reg.h"
 #include "../i915/gt/intel_gpu_commands.h"
+#include "../i915/gt/intel_gt_regs.h"
 #include "../i915/gt/intel_lrc_reg.h"
 #include "../i915/gt/intel_engine_regs.h"
 
 #define XE_EXECLIST_HANG_LIMIT 1
+
+#define GEN11_SW_CTX_ID_SHIFT 37
+#define GEN11_SW_CTX_ID_WIDTH 11
+#define XEHP_SW_CTX_ID_SHIFT  39
+#define XEHP_SW_CTX_ID_WIDTH  16
 
 #define GEN11_SW_CTX_ID \
 	GENMASK_ULL(GEN11_SW_CTX_ID_WIDTH + GEN11_SW_CTX_ID_SHIFT - 1, \

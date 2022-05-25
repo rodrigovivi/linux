@@ -23,7 +23,7 @@
 #include "xe_uc.h"
 #include "xe_wopcm.h"
 
-#include "../i915/i915_reg.h"
+#include "../i915/gt/intel_gt_regs.h"
 
 /* FIXME: Move to common param infrastructure */
 static bool enable_guc = true;

@@ -17,6 +17,7 @@
 #include "xe_wopcm.h"
 
 #include "../i915/i915_reg.h"
+#include "../i915/gt/intel_gt_regs.h"
 
 static uint64_t gen8_pte_encode(struct xe_bo *bo, uint64_t bo_offset)
 {
