@@ -16,6 +16,7 @@
 #include "xe_mmio.h"
 
 #include "../i915/i915_reg.h"
+#include "../i915/gt/intel_gt_regs.h"
 
 #define GEN12_CCS0_CCS1_INTR_MASK	_MMIO(0x190100)
 #define GEN12_CCS2_CCS3_INTR_MASK	_MMIO(0x190104)

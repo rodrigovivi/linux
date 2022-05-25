@@ -13,6 +13,7 @@
 
 #include "../i915/i915_reg.h"
 #include "../i915/gt/intel_gpu_commands.h"
+#include "../i915/gt/intel_gt_regs.h"
 #include "../i915/gt/intel_lrc_reg.h"
 
 #define PIPE_CONTROL_RENDER_ONLY_FLAGS (\

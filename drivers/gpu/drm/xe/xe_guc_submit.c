@@ -394,9 +394,9 @@ struct parallel_scratch {
 };
 
 #define parallel_read(map_, field_) \
-	iosys_map_rd_field(&map_, struct parallel_scratch, field_)
+	iosys_map_rd_field(&map_, 0, struct parallel_scratch, field_)
 #define parallel_write(map_, field_, val_) \
-	iosys_map_wr_field(&map_, struct parallel_scratch, field_, val_)
+	iosys_map_wr_field(&map_, 0, struct parallel_scratch, field_, val_)
 
 static void __register_mlrc_engine(struct xe_guc *guc,
 				   struct xe_engine *e,

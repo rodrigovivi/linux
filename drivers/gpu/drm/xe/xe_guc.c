@@ -17,6 +17,7 @@
 #include "xe_mmio.h"
 #include "xe_force_wake.h"
 #include "i915_reg_defs.h"
+#include "../i915/gt/intel_gt_regs.h"
 
 static struct xe_gt *
 guc_to_gt(struct xe_guc *guc)

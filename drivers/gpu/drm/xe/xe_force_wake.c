@@ -8,7 +8,7 @@
 #include "xe_force_wake.h"
 #include "xe_gt.h"
 #include "xe_mmio.h"
-#include "../i915/i915_reg.h"
+#include "../i915/gt/intel_gt_regs.h"
 
 #define XE_FORCE_WAKE_ACK_TIMEOUT_MS	50
 
