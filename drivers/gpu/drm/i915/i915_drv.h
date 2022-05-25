@@ -1223,6 +1223,8 @@ IS_SUBPLATFORM(const struct drm_i915_private *i915,
 })
 #define RCS_MASK(gt) \
 	ENGINE_INSTANCES_MASK(gt, RCS0, I915_MAX_RCS)
+#define BCS_MASK(gt) \
+	ENGINE_INSTANCES_MASK(gt, BCS0, I915_MAX_BCS)
 #define VDBOX_MASK(gt) \
 	ENGINE_INSTANCES_MASK(gt, VCS0, I915_MAX_VCS)
 #define VEBOX_MASK(gt) \
@@ -1372,6 +1374,8 @@ IS_SUBPLATFORM(const struct drm_i915_private *i915,
 
 #define HAS_LSPCON(dev_priv) (IS_DISPLAY_VER(dev_priv, 9, 10))
 
+#define HAS_L3_CCS_READ(i915) (INTEL_INFO(i915)->has_l3_ccs_read)
+
 /* DPF == dynamic parity feature */
 #define HAS_L3_DPF(dev_priv) (INTEL_INFO(dev_priv)->has_l3_dpf)
 #define NUM_L3_SLICES(dev_priv) (IS_HSW_GT3(dev_priv) ? \
@@ -1402,6 +1406,8 @@ IS_SUBPLATFORM(const struct drm_i915_private *i915,
 					      IS_ALDERLAKE_S(dev_priv))
 
 #define HAS_MBUS_JOINING(i915) (IS_ALDERLAKE_P(i915))
+
+#define HAS_3D_PIPELINE(i915)	(INTEL_INFO(i915)->has_3d_pipeline)
 
 /* i915_gem.c */
 void i915_gem_init_early(struct drm_i915_private *dev_priv);
