@@ -83,16 +83,17 @@ struct __guc_ads_blob {
 } __packed;
 
 #define ads_blob_read(ads_, field_) \
-	iosys_map_rd_field(ads_to_map(ads_), struct __guc_ads_blob, field_)
+	iosys_map_rd_field(ads_to_map(ads_), 0, struct __guc_ads_blob, field_)
 
-#define ads_blob_write(ads_, field_, val_) \
-	iosys_map_wr_field(ads_to_map(ads_), struct __guc_ads_blob, field_, val_)
+#define ads_blob_write(ads_, field_, val_)			\
+	iosys_map_wr_field(ads_to_map(ads_), 0,			\
+			   struct __guc_ads_blob, field_, val_)
 
 #define info_map_write(map_, field_, val_) \
-	iosys_map_wr_field(map_, struct guc_gt_system_info, field_, val_)
+	iosys_map_wr_field(map_, 0, struct guc_gt_system_info, field_, val_)
 
 #define info_map_read(map_, field_) \
-	iosys_map_rd_field(map_, struct guc_gt_system_info, field_)
+	iosys_map_rd_field(map_, 0, struct guc_gt_system_info, field_)
 
 static size_t guc_ads_regset_size(struct xe_guc_ads *ads)
 {

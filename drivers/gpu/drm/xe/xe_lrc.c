@@ -13,8 +13,18 @@
 
 #include "../i915/i915_reg.h"
 #include "../i915/gt/intel_gpu_commands.h"
+#include "../i915/gt/intel_gt_regs.h"
 #include "../i915/gt/intel_lrc_reg.h"
 #include "../i915/gt/intel_engine_regs.h"
+
+#define GEN8_CTX_VALID				(1 << 0)
+#define GEN8_CTX_L3LLC_COHERENT			(1 << 5)
+#define GEN8_CTX_PRIVILEGE			(1 << 8)
+#define GEN8_CTX_ADDRESSING_MODE_SHIFT		3
+#define INTEL_LEGACY_64B_CONTEXT		3
+
+#define GEN11_ENGINE_CLASS_SHIFT		61
+#define GEN11_ENGINE_INSTANCE_SHIFT		48
 
 uint32_t lrc_size(struct xe_device *xe, enum xe_engine_class class)
 {
