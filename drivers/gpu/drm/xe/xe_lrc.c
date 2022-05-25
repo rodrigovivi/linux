@@ -748,12 +748,12 @@ static inline uint32_t __xe_lrc_regs_offset(struct xe_lrc *lrc)
 }
 
 #define DECL_MAP_ADDR_HELPERS(elem) \
-static inline struct dma_buf_map __xe_lrc_##elem##_map(struct xe_lrc *lrc) \
+static inline struct iosys_map __xe_lrc_##elem##_map(struct xe_lrc *lrc) \
 { \
-	struct dma_buf_map map = lrc->bo->vmap; \
+	struct iosys_map map = lrc->bo->vmap; \
 \
-	XE_BUG_ON(dma_buf_map_is_null(&map)); \
-	dma_buf_map_incr(&map, __xe_lrc_##elem##_offset(lrc)); \
+	XE_BUG_ON(iosys_map_is_null(&map)); \
+	iosys_map_incr(&map, __xe_lrc_##elem##_offset(lrc)); \
 	return map; \
 } \
 static inline uint32_t __xe_lrc_##elem##_ggtt_addr(struct xe_lrc *lrc) \
@@ -777,19 +777,19 @@ uint32_t xe_lrc_ggtt_addr(struct xe_lrc *lrc)
 
 uint32_t xe_lrc_read_ctx_reg(struct xe_lrc *lrc, int reg_nr)
 {
-	struct dma_buf_map map;
+	struct iosys_map map;
 
 	map = __xe_lrc_regs_map(lrc);
-	dma_buf_map_incr(&map, reg_nr * sizeof(uint32_t));
+	iosys_map_incr(&map, reg_nr * sizeof(uint32_t));
 	return dbm_read32(map);
 }
 
 void xe_lrc_write_ctx_reg(struct xe_lrc *lrc, int reg_nr, uint32_t val)
 {
-	struct dma_buf_map map;
+	struct iosys_map map;
 
 	map = __xe_lrc_regs_map(lrc);
-	dma_buf_map_incr(&map, reg_nr * sizeof(uint32_t));
+	iosys_map_incr(&map, reg_nr * sizeof(uint32_t));
 	dbm_write32(map, val);
 }
 
@@ -827,7 +827,7 @@ int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 		struct xe_vm *vm, uint32_t ring_size)
 {
 	struct xe_device *xe = gt_to_xe(hwe->gt);
-	struct dma_buf_map map;
+	struct iosys_map map;
 	void *init_data;
 	uint32_t arb_enable;
 	int err;
@@ -869,7 +869,7 @@ int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 
 	/* Per-Process of HW status Page */
 	map = __xe_lrc_pphwsp_map(lrc);
-	dma_buf_map_memcpy_to(&map, init_data, lrc_size(xe, hwe->class));
+	iosys_map_memcpy_to(&map, 0, init_data, lrc_size(xe, hwe->class));
 	kfree(init_data);
 
 	if (vm)
@@ -953,17 +953,17 @@ static void xe_lrc_assert_ring_space(struct xe_lrc *lrc, size_t size)
 #endif
 }
 
-static void __xe_lrc_write_ring(struct xe_lrc *lrc, struct dma_buf_map ring,
+static void __xe_lrc_write_ring(struct xe_lrc *lrc, struct iosys_map ring,
 				const void *data, size_t size)
 {
-	dma_buf_map_incr(&ring, lrc->ring.tail);
-	dma_buf_map_memcpy_to(&ring, data, size);
+	iosys_map_incr(&ring, lrc->ring.tail);
+	iosys_map_memcpy_to(&ring, 0, data, size);
 	lrc->ring.tail = (lrc->ring.tail + size) & (lrc->ring.size - 1);
 }
 
 void xe_lrc_write_ring(struct xe_lrc *lrc, const void *data, size_t size)
 {
-	struct dma_buf_map ring;
+	struct iosys_map ring;
 	uint32_t rhs;
 	size_t aligned_size;
 
@@ -1026,7 +1026,7 @@ uint32_t xe_lrc_parallel_ggtt_addr(struct xe_lrc *lrc)
 	return __xe_lrc_parallel_ggtt_addr(lrc);
 }
 
-struct dma_buf_map xe_lrc_parallel_map(struct xe_lrc *lrc)
+struct iosys_map xe_lrc_parallel_map(struct xe_lrc *lrc)
 {
 	return __xe_lrc_parallel_map(lrc);
 }

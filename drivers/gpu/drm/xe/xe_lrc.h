@@ -38,6 +38,6 @@ uint32_t xe_lrc_start_seqno_ggtt_addr(struct xe_lrc *lrc);
 int32_t xe_lrc_start_seqno(struct xe_lrc *lrc);
 
 uint32_t xe_lrc_parallel_ggtt_addr(struct xe_lrc *lrc);
-struct dma_buf_map xe_lrc_parallel_map(struct xe_lrc *lrc);
+struct iosys_map xe_lrc_parallel_map(struct xe_lrc *lrc);
 
 #endif /* _XE_LRC_H_ */
