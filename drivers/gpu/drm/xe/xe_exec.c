@@ -122,7 +122,7 @@ retry:
 	}
 
 	if (xe_vm_has_userptr(vm)) {
-		err = dma_resv_reserve_shared(&vm->resv, 1);
+		err = dma_resv_reserve_fences(&vm->resv, 1);
 		if (err)
 			goto err_put_job;
 	}
@@ -163,8 +163,9 @@ retry:
 	xe_sched_job_arm(job);
 
 	if (xe_vm_has_userptr(vm) && !xe_vm_has_preempt_fences(vm))
-		dma_resv_add_shared_fence(&vm->resv,
-					  &job->drm.s_fence->finished);
+		dma_resv_add_fence(&vm->resv,
+				   &job->drm.s_fence->finished,
+				   DMA_RESV_USAGE_BOOKKEEP);
 
 	err = xe_vm_userptr_needs_repin(vm);
 

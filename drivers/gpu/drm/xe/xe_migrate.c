@@ -497,9 +497,8 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	}
 
 	if (wait_excl) {
-		err = drm_sched_job_add_implicit_dependencies_resv(&job->drm,
-								   &vm->resv,
-								   true);
+		err = drm_sched_job_add_dependencies_resv(&job->drm, &vm->resv,
+							  DMA_RESV_USAGE_KERNEL);
 		if (err)
 			goto err_job;
 	}

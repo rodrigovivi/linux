@@ -37,6 +37,7 @@ struct drm_gem_object;
 
 struct drm_gpu_scheduler;
 struct drm_sched_rq;
+enum dma_resv_usage;
 
 /* These are often used as an (initial) index
  * to an array, and as such should start at 0.
@@ -504,9 +505,9 @@ int drm_sched_job_add_dependency(struct drm_sched_job *job,
 int drm_sched_job_add_implicit_dependencies(struct drm_sched_job *job,
 					    struct drm_gem_object *obj,
 					    bool write);
-int drm_sched_job_add_implicit_dependencies_resv(struct drm_sched_job *job,
-						 struct dma_resv *resv,
-						 bool write);
+int drm_sched_job_add_dependencies_resv(struct drm_sched_job *job,
+					struct dma_resv *resv,
+					enum dma_resv_usage usage);
 
 void drm_sched_entity_modify_sched(struct drm_sched_entity *entity,
 				    struct drm_gpu_scheduler **sched_list,
