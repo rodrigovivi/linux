@@ -7,7 +7,7 @@
 #ifndef _XE_GUC_CT_TYPES_H_
 #define _XE_GUC_CT_TYPES_H_
 
-#include <linux/dma-buf-map.h>
+#include <linux/iosys-map.h>
 #include <linux/interrupt.h>
 #include <linux/spinlock_types.h>
 #include <linux/wait.h>
@@ -22,9 +22,9 @@ struct xe_bo;
  */
 struct guc_ctb {
 	/** @desc: dma buffer map for CTB descriptor */
-	struct dma_buf_map desc;
+	struct iosys_map desc;
 	/** @cmds: dma buffer map for CTB commands */
-	struct dma_buf_map cmds;
+	struct iosys_map cmds;
 	/** @size: size of CTB commands (DW) */
 	u32 size;
 	/** @resv_space: reserved space of CTB commands (DW) */

@@ -78,9 +78,9 @@ void xe_sa_bo_flush_write(struct drm_suballoc *sa_bo)
 	if (!sa_manager->bo->vmap.is_iomem)
 		return;
 
-	dma_buf_map_memcpy_to_offset(&sa_manager->bo->vmap, sa_bo->soffset, 
-				     sa_manager->cpu_ptr + sa_bo->soffset,
-				     sa_bo->eoffset - sa_bo->soffset);
+	iosys_map_memcpy_to(&sa_manager->bo->vmap, sa_bo->soffset,
+			    sa_manager->cpu_ptr + sa_bo->soffset,
+			    sa_bo->eoffset - sa_bo->soffset);
 }
 
 void xe_sa_bo_free(struct drm_suballoc *sa_bo,

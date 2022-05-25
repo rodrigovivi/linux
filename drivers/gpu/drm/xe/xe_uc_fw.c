@@ -154,7 +154,7 @@ uc_fw_auto_select(struct xe_device *xe, struct xe_uc_fw *uc_fw)
  */
 size_t xe_uc_fw_copy_rsa(struct xe_uc_fw *uc_fw, void *dst, u32 max_len)
 {
-	struct dma_buf_map map = uc_fw->bo->vmap;
+	struct iosys_map map = uc_fw->bo->vmap;
 	u32 size = min_t(u32, uc_fw->rsa_size, max_len);
 	u32 *dst32 = dst;
 	int i;
@@ -162,10 +162,10 @@ size_t xe_uc_fw_copy_rsa(struct xe_uc_fw *uc_fw, void *dst, u32 max_len)
 	XE_BUG_ON(size % 4);
 	XE_BUG_ON(!xe_uc_fw_is_available(uc_fw));
 
-	dma_buf_map_incr(&map, xe_uc_fw_rsa_offset(uc_fw));
+	iosys_map_incr(&map, xe_uc_fw_rsa_offset(uc_fw));
 	for (i = 0; i < size / sizeof(u32); ++i) {
 		dst32[i] = dbm_read32(map);
-		dma_buf_map_incr(&map, sizeof(u32));
+		iosys_map_incr(&map, sizeof(u32));
 	}
 
 	return size;

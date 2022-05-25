@@ -31,7 +31,7 @@ ads_to_xe(struct xe_guc_ads *ads)
 	return gt_to_xe(ads_to_gt(ads));
 }
 
-static struct dma_buf_map *
+static struct iosys_map *
 ads_to_map(struct xe_guc_ads *ads)
 {
 	return &ads->bo->vmap;
@@ -82,19 +82,17 @@ struct __guc_ads_blob {
 	struct guc_mmio_reg regset[0];
 } __packed;
 
-#define ads_blob_read(ads_, field_)					\
-	dma_buf_map_read_field(ads_to_map(ads_), struct __guc_ads_blob,	\
-			       field_)
+#define ads_blob_read(ads_, field_) \
+	iosys_map_rd_field(ads_to_map(ads_), struct __guc_ads_blob, field_)
 
-#define ads_blob_write(ads_, field_, val_)				\
-	dma_buf_map_write_field(ads_to_map(ads_), struct __guc_ads_blob,\
-				field_, val_)
+#define ads_blob_write(ads_, field_, val_) \
+	iosys_map_wr_field(ads_to_map(ads_), struct __guc_ads_blob, field_, val_)
 
 #define info_map_write(map_, field_, val_) \
-	dma_buf_map_write_field(map_, struct guc_gt_system_info, field_, val_)
+	iosys_map_wr_field(map_, struct guc_gt_system_info, field_, val_)
 
 #define info_map_read(map_, field_) \
-	dma_buf_map_read_field(map_, struct guc_gt_system_info, field_)
+	iosys_map_rd_field(map_, struct guc_gt_system_info, field_)
 
 static size_t guc_ads_regset_size(struct xe_guc_ads *ads)
 {
@@ -213,7 +211,7 @@ static u32 engine_enable_mask(struct xe_gt *gt, enum xe_engine_class class)
 }
 
 static void fill_engine_enable_masks(struct xe_gt *gt,
-				     struct dma_buf_map *info_map)
+				     struct iosys_map *info_map)
 {
 	info_map_write(info_map, engine_enabled_masks[GUC_RENDER_CLASS],
 		       engine_enable_mask(gt, XE_ENGINE_CLASS_RENDER));
@@ -237,7 +235,7 @@ static void fill_engine_enable_masks(struct xe_gt *gt,
 static void guc_prep_golden_context(struct xe_guc_ads *ads)
 {
 	struct xe_device *xe = ads_to_xe(ads);
-	struct dma_buf_map info_map = DMA_BUF_MAP_INIT_OFFSET(ads_to_map(ads),
+	struct iosys_map info_map = IOSYS_MAP_INIT_OFFSET(ads_to_map(ads),
 			offsetof(struct __guc_ads_blob, system_info));
 	u8 guc_class;
 
@@ -256,7 +254,7 @@ static void guc_prep_golden_context(struct xe_guc_ads *ads)
 }
 
 static void guc_mapping_table_init(struct xe_gt *gt,
-				   struct dma_buf_map *info_map)
+				   struct iosys_map *info_map)
 {
 	struct xe_hw_engine *hwe;
 	enum xe_hw_engine_id id;
@@ -311,8 +309,8 @@ static void guc_mmio_reg_state_init(struct xe_guc_ads *ads)
 
 static void guc_ads_private_data_reset(struct xe_guc_ads *ads)
 {
-	struct dma_buf_map map =
-		DMA_BUF_MAP_INIT_OFFSET(ads_to_map(ads),
+	struct iosys_map map =
+		IOSYS_MAP_INIT_OFFSET(ads_to_map(ads),
 					guc_ads_private_data_offset(ads));
 	u32 size;
 
@@ -320,14 +318,14 @@ static void guc_ads_private_data_reset(struct xe_guc_ads *ads)
 	if (!size)
 		return;
 
-	dma_buf_map_memset(&map, 0, size);
+	iosys_map_memset(&map, 0, 0, size);
 }
 
 void xe_guc_ads_populate(struct xe_guc_ads *ads)
 {
 	struct xe_device *xe = ads_to_xe(ads);
 	struct xe_gt *gt = ads_to_gt(ads);
-	struct dma_buf_map info_map = DMA_BUF_MAP_INIT_OFFSET(ads_to_map(ads),
+	struct iosys_map info_map = IOSYS_MAP_INIT_OFFSET(ads_to_map(ads),
 			offsetof(struct __guc_ads_blob, system_info));
 	u32 base = xe_bo_ggtt_addr(ads->bo);
 

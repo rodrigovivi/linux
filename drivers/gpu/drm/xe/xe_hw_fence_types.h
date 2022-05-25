@@ -7,7 +7,7 @@
 #ifndef _XE_HW_FENCE_TYPES_H_
 #define _XE_HW_FENCE_TYPES_H_
 
-#include <linux/dma-buf-map.h>
+#include <linux/iosys-map.h>
 #include <linux/dma-fence.h>
 #include <linux/irq_work.h>
 #include <linux/list.h>
@@ -65,7 +65,7 @@ struct xe_hw_fence {
 	/** @ctx: hardware fence context */
 	struct xe_hw_fence_ctx *ctx;
 	/** @seqno_map: I/O map for seqno */
-	struct dma_buf_map seqno_map;
+	struct iosys_map seqno_map;
 	/** @irq_link: Link in struct xe_hw_fence_irq.pending */
 	struct list_head irq_link;
 };

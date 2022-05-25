@@ -411,7 +411,7 @@ struct xe_bo *xe_bo_create_from_data(struct xe_device *xe, const void *data,
 	if (IS_ERR(bo))
 		return bo;
 
-	dma_buf_map_memcpy_to(&bo->vmap, data, size);
+	iosys_map_memcpy_to(&bo->vmap, 0, data, size);
 
 	return bo;
 }
@@ -486,7 +486,7 @@ int xe_bo_vmap(struct xe_bo *bo)
 {
 	xe_bo_assert_held(bo);
 
-	if (!dma_buf_map_is_null(&bo->vmap))
+	if (!iosys_map_is_null(&bo->vmap))
 		return 0;
 
 	return ttm_bo_vmap(&bo->ttm, &bo->vmap);
@@ -494,11 +494,11 @@ int xe_bo_vmap(struct xe_bo *bo)
 
 static void __xe_bo_vunmap(struct xe_bo *bo)
 {
-	if (dma_buf_map_is_null(&bo->vmap))
+	if (iosys_map_is_null(&bo->vmap))
 		return;
 
 	ttm_bo_vunmap(&bo->ttm, &bo->vmap);
-	dma_buf_map_clear(&bo->vmap);
+	iosys_map_clear(&bo->vmap);
 }
 
 void xe_bo_vunmap(struct xe_bo *bo)
