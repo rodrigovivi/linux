@@ -206,7 +206,7 @@ static struct xe_hw_fence *to_xe_hw_fence(struct dma_fence *fence)
 }
 
 struct xe_hw_fence *xe_hw_fence_create(struct xe_hw_fence_ctx *ctx,
-				       struct dma_buf_map seqno_map)
+				       struct iosys_map seqno_map)
 {
 	struct xe_hw_fence *fence;
 

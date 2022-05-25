@@ -156,17 +156,15 @@ int xe_guc_ct_init(struct xe_guc_ct *ct)
 }
 
 #define desc_read(guc_ctb__, field_)				\
-	dma_buf_map_read_field(&guc_ctb__->desc,		\
-			       struct guc_ct_buffer_desc,	\
-			       field_)
+	iosys_map_rd_field(&guc_ctb__->desc,			\
+		     struct guc_ct_buffer_desc, field_)
+
 #define desc_write(guc_ctb__, field_, val_)			\
-	dma_buf_map_write_field(&guc_ctb__->desc,		\
-				struct guc_ct_buffer_desc,	\
-				field_,				\
-				val_)
+	iosys_map_wr_field(&guc_ctb__->desc,			\
+		     struct guc_ct_buffer_desc,	 field_, val_)
 
 static void guc_ct_ctb_h2g_init(struct guc_ctb *h2g,
-				struct dma_buf_map *map)
+				struct iosys_map *map)
 {
 	h2g->size = CTB_H2G_BUFFER_SIZE / sizeof(u32);
 	h2g->resv_space = 0;
@@ -177,13 +175,13 @@ static void guc_ct_ctb_h2g_init(struct guc_ctb *h2g,
 	h2g->broken = false;
 
 	h2g->desc = *map;
-	dma_buf_map_memset(&h2g->desc, 0, sizeof(struct guc_ct_buffer_desc));
+	iosys_map_memset(&h2g->desc, 0, 0, sizeof(struct guc_ct_buffer_desc));
 
-	h2g->cmds = DMA_BUF_MAP_INIT_OFFSET(map, CTB_DESC_SIZE * 2);
+	h2g->cmds = IOSYS_MAP_INIT_OFFSET(map, CTB_DESC_SIZE * 2);
 }
 
 static void guc_ct_ctb_g2h_init(struct guc_ctb *g2h,
-				struct dma_buf_map *map)
+				struct iosys_map *map)
 {
 	g2h->size = CTB_G2H_BUFFER_SIZE / sizeof(u32);
 	g2h->resv_space = G2H_ROOM_BUFFER_SIZE / sizeof(u32);
@@ -193,10 +191,10 @@ static void guc_ct_ctb_g2h_init(struct guc_ctb *g2h,
 		g2h->resv_space;
 	g2h->broken = false;
 
-	g2h->desc = DMA_BUF_MAP_INIT_OFFSET(map, CTB_DESC_SIZE);
-	dma_buf_map_memset(&g2h->desc, 0, sizeof(struct guc_ct_buffer_desc));
+	g2h->desc = IOSYS_MAP_INIT_OFFSET(map, CTB_DESC_SIZE);
+	iosys_map_memset(&g2h->desc, 0, 0, sizeof(struct guc_ct_buffer_desc));
 
-	g2h->cmds = DMA_BUF_MAP_INIT_OFFSET(map, CTB_DESC_SIZE * 2 +
+	g2h->cmds = IOSYS_MAP_INIT_OFFSET(map, CTB_DESC_SIZE * 2 +
 					    CTB_H2G_BUFFER_SIZE);
 }
 
@@ -387,7 +385,7 @@ static int h2g_write(struct xe_guc_ct *ct, const u32 *action, u32 len,
 	u32 cmd_len = len + GUC_CTB_HDR_LEN;
 	u32 cmd_idx = 0, i;
 	u32 tail = h2g->tail;
-	struct dma_buf_map map = DMA_BUF_MAP_INIT_OFFSET(&h2g->cmds,
+	struct iosys_map map = IOSYS_MAP_INIT_OFFSET(&h2g->cmds,
 							 tail * sizeof(u32));
 
 	lockdep_assert_held(&ct->lock);
@@ -396,7 +394,7 @@ static int h2g_write(struct xe_guc_ct *ct, const u32 *action, u32 len,
 
 	/* Command will wrap, zero fill (NOPs), return and check credits again */
 	if (tail + cmd_len > h2g->size) {
-		dma_buf_map_memset(&map, 0, (h2g->size - tail) * sizeof(u32));
+		iosys_map_memset(&map, 0, 0, (h2g->size - tail) * sizeof(u32));
 		h2g_reserve_space(ct, (h2g->size - tail));
 		h2g->tail = 0;
 		desc_write(h2g, tail, h2g->tail);
@@ -427,7 +425,7 @@ static int h2g_write(struct xe_guc_ct *ct, const u32 *action, u32 len,
 		cmd[cmd_idx++] = action[i];
 
 	/* Write H2G ensuring visable before descriptor update */
-	dma_buf_map_memcpy_to(&map, cmd, cmd_len * sizeof(u32));
+	iosys_map_memcpy_to(&map, 0, cmd, cmd_len * sizeof(u32));
 	xe_guc_wb(ct_to_guc(ct));
 
 	/* Update local copies */
@@ -883,8 +881,8 @@ static int g2h_read(struct xe_guc_ct *ct, u32 *msg)
 		avail += g2h->size;
 
 	/* Read header */
-	dma_buf_map_memcpy_from_offset(msg, &g2h->cmds, sizeof(u32) * g2h->head,
-				       sizeof(u32));
+	iosys_map_memcpy_from(msg, &g2h->cmds, sizeof(u32) * g2h->head,
+			      sizeof(u32));
 	len = FIELD_GET(GUC_CTB_MSG_0_NUM_DWORDS, msg[0]) + GUC_CTB_MSG_MIN_LEN;
 	if (len > avail) {
 		drm_err(&xe->drm,
@@ -902,17 +900,16 @@ static int g2h_read(struct xe_guc_ct *ct, u32 *msg)
 	if (avail + g2h->head > g2h->size) {
 		u32 avail_til_wrap = g2h->size - g2h->head;
 
-		dma_buf_map_memcpy_from_offset(msg + 1, &g2h->cmds,
-					       sizeof(u32) * g2h->head,
-					       avail_til_wrap * sizeof(u32));
-		dma_buf_map_memcpy_from_offset(msg + 1 + avail_til_wrap,
-					       &g2h->cmds, 0,
-					       (avail - avail_til_wrap) *
-					       sizeof(u32));
+		iosys_map_memcpy_from(msg + 1,
+				      &g2h->cmds, sizeof(u32) * g2h->head,
+				      avail_til_wrap * sizeof(u32));
+		iosys_map_memcpy_from(msg + 1 + avail_til_wrap,
+				      &g2h->cmds, 0,
+				      (avail - avail_til_wrap) * sizeof(u32));
 	} else {
-		dma_buf_map_memcpy_from_offset(msg + 1, &g2h->cmds,
-					       sizeof(u32) * g2h->head,
-					       avail * sizeof(u32));
+		iosys_map_memcpy_from(msg + 1,
+				      &g2h->cmds, sizeof(u32) * g2h->head,
+				      avail * sizeof(u32));
 	}
 
 	/* Update local / descriptor header */
@@ -987,7 +984,7 @@ static void guc_ct_ctb_print(struct guc_ctb *ctb, struct drm_printer *p)
 	drm_printf(p, "\tstatus (memory): 0x%x\n", desc_read(ctb, status));
 
 	if (head != tail) {
-		struct dma_buf_map map = DMA_BUF_MAP_INIT_OFFSET(&ctb->cmds,
+		struct iosys_map map = IOSYS_MAP_INIT_OFFSET(&ctb->cmds,
 								 head * sizeof(u32));
 		while (head != tail) {
 			drm_printf(p, "\tcmd[%d]: 0x%08x\n", head,
@@ -997,7 +994,7 @@ static void guc_ct_ctb_print(struct guc_ctb *ctb, struct drm_printer *p)
 				head = 0;
 				map = ctb->cmds;
 			} else {
-				dma_buf_map_incr(&map, sizeof(u32));
+				iosys_map_incr(&map, sizeof(u32));
 			}
 		}
 	}

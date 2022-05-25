@@ -184,10 +184,10 @@ int xe_gem_mmap_offset_ioctl(struct drm_device *dev, void *data,
 
 /*
  * FIXME: The below helpers should be in common code. Lucas has a series
- * reworking the dma-buf-map headers. Let's see how that pans out and follow up
+ * reworking the iosys-map headers. Let's see how that pans out and follow up
  * on his series if needed.
  */
-static inline uint32_t dbm_read32(struct dma_buf_map map)
+static inline uint32_t dbm_read32(struct iosys_map map)
 {
 	if (map.is_iomem)
 		return readl(map.vaddr_iomem);
@@ -195,7 +195,7 @@ static inline uint32_t dbm_read32(struct dma_buf_map map)
 		return READ_ONCE(*(uint32_t *)map.vaddr);
 }
 
-static inline void dbm_write32(struct dma_buf_map map, uint32_t val)
+static inline void dbm_write32(struct iosys_map map, uint32_t val)
 {
 	if (map.is_iomem)
 		writel(val, map.vaddr_iomem);

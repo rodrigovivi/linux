@@ -7,7 +7,7 @@
 #ifndef _XE_BO_TYPES_H_
 #define _XE_BO_TYPES_H_
 
-#include <linux/dma-buf-map.h>
+#include <linux/iosys-map.h>
 
 #include <drm/drm_mm.h>
 #include <drm/ttm/ttm_bo_api.h>
@@ -34,7 +34,7 @@ struct xe_bo {
 
 	struct drm_mm_node ggtt_node;
 
-	struct dma_buf_map vmap;
+	struct iosys_map vmap;
 };
 
 #endif	/* _XE_BO_TYPES_H_ */
