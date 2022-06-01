@@ -179,11 +179,6 @@ struct xe_vm {
 	/** @preempt: preempt state */
 	struct {
 		/**
-		 * @enabled: Preempt fences are enabled on this VM (used by
-		 * compute engine)
-		 */
-		bool enabled;
-		/**
 		 * @num_inflight_ops: number pendings ops (e.g. inflight
 		 * un/binds) before the pending preempt fences can call resume
 		 * on their respective engines and be inserted back into

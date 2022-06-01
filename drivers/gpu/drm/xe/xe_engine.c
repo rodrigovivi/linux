@@ -255,10 +255,8 @@ static int engine_set_compute_mode(struct xe_device *xe, struct xe_engine *e,
 			return PTR_ERR(pfence);
 
 		xe_vm_lock(vm, NULL);
-		if (!xe_vm_has_preempt_fences(vm)) {
-			vm->preempt.enabled = true;
-			INIT_LIST_HEAD(&vm->preempt.pending_fences);
-		}
+		INIT_LIST_HEAD(&vm->preempt.pending_fences);
+
 		err = dma_resv_reserve_fences(&vm->resv, 1);
 		if (XE_IOCTL_ERR(xe, err)) {
 			dma_fence_put(pfence);
