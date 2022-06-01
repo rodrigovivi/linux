@@ -204,6 +204,7 @@ struct intel_device_info {
 	} color;
 	u8 vram_flags;
 	bool has_tiles;
+	u8 vm_max_level;
 };
 
 #define PLATFORM(x) .platform = (x), \
@@ -409,7 +410,8 @@ struct intel_device_info {
 	.has_global_mocs = 1, \
 	.display.has_dsb = 1, \
 	.vram_flags = 0, \
-	.has_tiles = false
+	.has_tiles = false, \
+	.vm_max_level = 3
 
 static const struct intel_device_info tgl_info = {
 	GEN12_FEATURES,
@@ -584,6 +586,7 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	xe->info.vram_flags = devinfo->vram_flags;
 	to_gt(xe)->info.engine_mask = devinfo->platform_engine_mask;
 	xe->info.tile_count = devinfo->has_tiles ? 1 : 0;
+	xe->info.vm_max_level = devinfo->vm_max_level;
 
 	drm_dbg(&xe->drm, "%s %04x:%04x dgfx:%d gfx100:%d dma_m_s:%d tc:%d",
 		devinfo->platform_name, xe->info.devid, xe->info.revid,
