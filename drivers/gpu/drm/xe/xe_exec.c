@@ -162,7 +162,7 @@ retry:
 
 	xe_sched_job_arm(job);
 
-	if (xe_vm_has_userptr(vm) && !xe_vm_has_preempt_fences(vm))
+	if (xe_vm_has_userptr(vm) && !xe_vm_in_compute_mode(vm))
 		dma_resv_add_fence(&vm->resv,
 				   &job->drm.s_fence->finished,
 				   DMA_RESV_USAGE_BOOKKEEP);
