@@ -49,6 +49,8 @@ struct xe_device {
 		u8 vram_flags;
 		/** @tile_count: Number of tiles */
 		u8 tile_count;
+		/** @vm_max_level: Max VM level */
+		u8 vm_max_level;
 	} info;
 
 	/** @irq: device interrupt state */

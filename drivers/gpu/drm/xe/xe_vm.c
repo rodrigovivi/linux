@@ -886,7 +886,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 	if (IS_DGFX(xe) && xe->info.vram_flags & XE_VRAM_FLAGS_NEED64K)
 		vm->flags |= VM_FLAGS_64K;
 
-	vm->pt_root = xe_pt_create(vm, 3);
+	vm->pt_root = xe_pt_create(vm, xe->info.vm_max_level);
 	if (IS_ERR(vm->pt_root)) {
 		err = PTR_ERR(vm->pt_root);
 		goto err_unlock;
@@ -2615,5 +2615,5 @@ void xe_vm_dump_pgtt(struct xe_vm *vm)
 	uint64_t desc = xe_vm_pdp4_descriptor(vm);
 
 	drm_info(&vm->xe->drm, "dump_pgtt desc=0x%llx bo(%p)\n", desc, vm->pt_root->bo);
-	dump_pgtt_lvl(vm, pt, 3, 0);
+	dump_pgtt_lvl(vm, pt, vm->xe->info.vm_max_level, 0);
 }
