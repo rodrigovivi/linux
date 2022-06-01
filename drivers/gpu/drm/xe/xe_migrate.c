@@ -163,7 +163,7 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 
 	while (size) {
 		u32 copy = min_t(u32, CHUNK_SZ, size);
-		u32 batch_size = 15 + 2 * MAX_GGTT_UPDATE_SIZE;
+		u32 batch_size = 16 + 2 * MAX_GGTT_UPDATE_SIZE;
 		struct xe_sched_job *job;
 		struct xe_bb *bb;
 		int err;
@@ -253,7 +253,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 
 		dma_fence_put(fence);
 
-		bb = xe_bb_new(gt, 12 + MAX_GGTT_UPDATE_SIZE);
+		bb = xe_bb_new(gt, 13 + MAX_GGTT_UPDATE_SIZE);
 		if (IS_ERR(bb))
 			return ERR_CAST(bb);
 
