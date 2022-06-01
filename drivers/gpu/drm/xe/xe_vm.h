@@ -70,9 +70,9 @@ struct dma_fence *xe_vm_unbind_vma(struct xe_vma *vma,
 				   struct xe_sync_entry *syncs, u32 num_syncs,
 				   bool evict, bool kernel_op);
 
-static inline bool xe_vm_has_preempt_fences(struct xe_vm *vm)
+static inline bool xe_vm_in_compute_mode(struct xe_vm *vm)
 {
-	return vm->preempt.enabled;
+	return vm->flags & VM_FLAG_COMPUTE_MODE;
 }
 
 int xe_vm_userptr_pin(struct xe_vm *vm);
@@ -89,7 +89,7 @@ static inline int xe_vm_userptr_pending_rebind_read(struct xe_vm *vm)
 {
 	int val;
 
-	XE_BUG_ON(!xe_vm_has_preempt_fences(vm));
+	XE_BUG_ON(!xe_vm_in_compute_mode(vm));
 
 	read_lock(&vm->userptr.notifier_lock);
 	val = vm->userptr.pending_rebind;

@@ -484,7 +484,7 @@ out:
 
 static void vm_userptr_pending_rebind_incr(struct xe_vm *vm)
 {
-	XE_BUG_ON(!xe_vm_has_preempt_fences(vm));
+	XE_BUG_ON(!xe_vm_in_compute_mode(vm));
 	lockdep_assert_held(&vm->userptr.notifier_lock);
 
 	++vm->userptr.pending_rebind;
@@ -494,7 +494,7 @@ static int vm_userptr_pending_rebind_decr(struct xe_vm *vm)
 {
 	int val;
 
-	XE_BUG_ON(!xe_vm_has_preempt_fences(vm));
+	XE_BUG_ON(!xe_vm_in_compute_mode(vm));
 
 	write_lock(&vm->userptr.notifier_lock);
 	val = --vm->userptr.pending_rebind;
@@ -623,7 +623,7 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 		return true;
 	}
 
-	if (xe_vm_has_preempt_fences(vm))
+	if (xe_vm_in_compute_mode(vm))
 		vm_userptr_pending_rebind_incr(vm);
 	write_unlock(&vm->userptr.notifier_lock);
 
@@ -632,7 +632,7 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 	XE_WARN_ON(err <= 0);
 
 	/* If this VM has preemption fences installed, rebind the VMA */
-	if (xe_vm_has_preempt_fences(vm))
+	if (xe_vm_in_compute_mode(vm))
 		if (!queue_work(system_unbound_wq, &vma->userptr.rebind_work))
 			vm_userptr_pending_rebind_decr(vm);
 
@@ -649,7 +649,7 @@ int xe_vm_userptr_pin(struct xe_vm *vm)
 	int err = 0;
 
 	lockdep_assert_held(&vm->userptr.list_lock);
-	if (!xe_vm_has_userptr(vm) || xe_vm_has_preempt_fences(vm))
+	if (!xe_vm_has_userptr(vm) || xe_vm_in_compute_mode(vm))
 		return 0;
 
 	list_for_each_entry(vma, &vm->userptr.list, userptr_link) {
@@ -667,7 +667,7 @@ int xe_vm_userptr_needs_repin(struct xe_vm *vm)
 	int err = 0;
 
 	lockdep_assert_held(&vm->userptr.list_lock);
-	if (!xe_vm_has_userptr(vm) || xe_vm_has_preempt_fences(vm))
+	if (!xe_vm_has_userptr(vm) || xe_vm_in_compute_mode(vm))
 		return 0;
 
 	read_lock(&vm->userptr.notifier_lock);
@@ -689,7 +689,7 @@ struct dma_fence *xe_vm_userptr_bind(struct xe_vm *vm)
 
 	xe_vm_assert_held(vm);
 	lockdep_assert_held(&vm->userptr.list_lock);
-	if (!xe_vm_has_userptr(vm) || xe_vm_has_preempt_fences(vm))
+	if (!xe_vm_has_userptr(vm) || xe_vm_in_compute_mode(vm))
 		return NULL;
 
 	list_for_each_entry(vma, &vm->userptr.list, userptr_link) {
@@ -1352,7 +1352,7 @@ struct dma_fence *xe_vm_unbind_vma(struct xe_vma *vma,
 					   syncs, num_syncs,
 					   xe_migrate_clear_pgtable_callback,
 					   vma, kernel_op &&
-					   xe_vm_has_preempt_fences(vm));
+					   xe_vm_in_compute_mode(vm));
 	if (!IS_ERR(fence)) {
 		if (!evict) {
 			/* add shared fence now for pagetable delayed destroy */
@@ -1636,7 +1636,7 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_sync_entry *syncs, u32 num_syncs,
 					   syncs, num_syncs,
 					   xe_vm_populate_pgtable, vma,
 					   kernel_op &&
-					   xe_vm_has_preempt_fences(vm));
+					   xe_vm_in_compute_mode(vm));
 	if (!IS_ERR(fence)) {
 		/* add shared fence now for pagetable delayed destroy */
 		dma_resv_add_fence(&vm->resv, fence, DMA_RESV_USAGE_BOOKKEEP);
@@ -1670,7 +1670,7 @@ static void preempt_op_worker(struct work_struct *w)
 	struct preempt_op *op = container_of(w, struct preempt_op, worker);
 	struct xe_vm *vm = op->vm;
 
-	XE_BUG_ON(!xe_vm_has_preempt_fences(vm));
+	XE_BUG_ON(!xe_vm_in_compute_mode(vm));
 
 	xe_vm_lock(vm, NULL);
 	if (!--vm->preempt.num_inflight_ops &&
@@ -1764,7 +1764,7 @@ static int __xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma,
 	 * that this was kernel initiated. This has a added benifit of being
 	 * able to stress preempt fences from user space.
 	 */
-	if (xe_vm_has_preempt_fences(vm) && !afence) {
+	if (xe_vm_in_compute_mode(vm) && !afence) {
 		op = kmalloc(sizeof(*op), GFP_KERNEL);
 		if (!op)
 			return -ENOMEM;
@@ -1816,7 +1816,7 @@ static int xe_vm_bind_userptr(struct xe_vm *vm, struct xe_vma *vma,
 	 * Corner case where initial bind no longer valid, kick preempt fences
 	 * to fix page tables
 	 */
-	if (xe_vm_has_preempt_fences(vm) &&
+	if (xe_vm_in_compute_mode(vm) &&
 	    vma_userptr_needs_repin(vma) == -EAGAIN) {
 		struct dma_resv_iter cursor;
 		struct dma_fence *fence;
@@ -1840,7 +1840,7 @@ static int xe_vm_unbind(struct xe_vm *vm, struct xe_vma *vma,
 	xe_vm_assert_held(vm);
 	xe_bo_assert_held(bo);
 
-	if (xe_vm_has_preempt_fences(vm) && !afence) {
+	if (xe_vm_in_compute_mode(vm) && !afence) {
 		op = kmalloc(sizeof(*op), GFP_KERNEL);
 		if (!op)
 			return -ENOMEM;
