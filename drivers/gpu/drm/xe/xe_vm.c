@@ -199,7 +199,7 @@ static struct xe_pt *xe_pt_create(struct xe_vm *vm, unsigned int level)
 
 	XE_BUG_ON(level > XE_VM_MAX_LEVEL);
 
-	ttm_bo_pin(&bo->ttm);
+	xe_bo_pin(bo);
 	return pt;
 
 err_kfree:
