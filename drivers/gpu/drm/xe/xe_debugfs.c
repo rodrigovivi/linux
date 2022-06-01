@@ -24,6 +24,8 @@ static int info(struct seq_file *m, void *data)
 	drm_printf(&p, "platform %d\n", xe->info.platform);
 	drm_printf(&p, "devid 0x%x\n", xe->info.devid);
 	drm_printf(&p, "revid %d\n", xe->info.revid);
+	drm_printf(&p, "tile_count %d\n", xe->info.tile_count);
+	drm_printf(&p, "vm_max_level %d\n", xe->info.vm_max_level);
 
 	return 0;
 }

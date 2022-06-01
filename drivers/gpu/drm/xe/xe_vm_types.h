@@ -74,7 +74,7 @@ struct xe_device;
 struct xe_pt;
 
 #define xe_vm_assert_held(vm) dma_resv_assert_held(&(vm)->resv)
-#define XE_VM_MAX_LEVEL 3
+#define XE_VM_MAX_LEVEL 4
 
 struct xe_vm_pgtable_update {
 	/** @bo: page table bo to write to */
