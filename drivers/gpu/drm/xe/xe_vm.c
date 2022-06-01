@@ -115,6 +115,7 @@ struct xe_pt {
 	struct xe_bo *bo;
 	unsigned int level;
 	unsigned int num_live;
+	bool rebind;
 };
 
 struct xe_pt_dir {
@@ -1401,8 +1402,13 @@ static void xe_pt_abort_bind(struct xe_vma *vma, struct xe_vm_pgtable_update *en
 		if (!entries[i].pt_entries)
 			continue;
 
-		for (j = 0; j < entries[i].qwords; j++)
-			xe_pt_destroy(entries[i].pt_entries[j], vma->vm->flags);
+		for (j = 0; j < entries[i].qwords; j++) {
+			if (!entries[i].pt_entries[j]->rebind)
+				xe_pt_destroy(entries[i].pt_entries[j],
+					      vma->vm->flags);
+			else
+				entries[i].pt_entries[j]->rebind = false;
+		}
 		kfree(entries[i].pt_entries);
 	}
 }
@@ -1426,9 +1432,12 @@ static void xe_pt_commit_bind(struct xe_vma *vma, struct xe_vm_pgtable_update *e
 			u32 j_ = j + entries[i].ofs;
 			struct xe_pt *newpte = entries[i].pt_entries[j];
 
-			if (pt_dir->entries[j_])
-				xe_pt_destroy(pt_dir->entries[j_], vma->vm->flags);
+			if (pt_dir->entries[j_]) {
+				XE_WARN_ON(pt_dir->entries[j_] != newpte);
+				XE_WARN_ON(!pt_dir->entries[j_]->rebind);
+			}
 
+			newpte->rebind = false;
 			pt_dir->entries[j_] = newpte;
 		}
 		kfree(entries[i].pt_entries);
@@ -1472,10 +1481,12 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 		bool partial_begin = false, partial_end = false;
 
 		if (pt_dir->entries[start_ofs])
-			partial_begin = xe_pt_partial_entry(start, start_end, pt->level);
+			partial_begin = xe_pt_partial_entry(start, start_end,
+							    pt->level);
 
 		if (pt_dir->entries[last_ofs] && last_ofs > start_ofs)
-			partial_end = xe_pt_partial_entry(end_start, end, pt->level);
+			partial_end = xe_pt_partial_entry(end_start, end,
+							  pt->level);
 
 		my_added_pte -= partial_begin + partial_end;
 
@@ -1515,10 +1526,16 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 			       pt->level, i + 1, my_added_pte,
 			       start_ofs + i, pt->level - 1, cur, cur_end, flags);
 
-			entry = xe_pt_create(vma->vm, pt->level - 1);
-			if (IS_ERR(entry)) {
-				err = PTR_ERR(entry);
-				goto unwind;
+			if  (!pt_dir->entries[xe_pt_idx(cur, pt->level)]) {
+				entry = xe_pt_create(vma->vm, pt->level - 1);
+				if (IS_ERR(entry)) {
+					err = PTR_ERR(entry);
+					goto unwind;
+				}
+			} else {
+				entry = pt_dir->entries[xe_pt_idx(cur,
+								  pt->level)];
+				entry->rebind = true;
 			}
 			pte[i] = entry;
 
