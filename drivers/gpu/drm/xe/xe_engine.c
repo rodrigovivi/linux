@@ -232,6 +232,9 @@ static int engine_set_compute_mode(struct xe_device *xe, struct xe_engine *e,
 	if (XE_IOCTL_ERR(xe, e->flags & ENGINE_FLAG_COMPUTE_MODE))
 		return -EINVAL;
 
+	if (XE_IOCTL_ERR(xe, e->flags & ENGINE_FLAG_VM))
+		return -EINVAL;
+
 	if (value) {
 		struct xe_vm *vm = e->vm;
 		struct dma_fence *pfence;
@@ -400,6 +403,32 @@ find_hw_engine(struct xe_device *xe,
 			       eci.engine_instance, true);
 }
 
+static u32 bind_engine_logical_mask(struct xe_device *xe,
+				    struct drm_xe_engine_class_instance *eci,
+				    u16 width, u16 num_placements)
+{
+	struct xe_hw_engine *hwe;
+	struct xe_gt *gt = to_gt(xe);
+	enum xe_hw_engine_id id;
+	u32 logical_mask = 0;
+
+	if (XE_IOCTL_ERR(xe, width != 1))
+		return 0;
+	if (XE_IOCTL_ERR(xe, num_placements != 1))
+		return 0;
+	if (XE_IOCTL_ERR(xe, eci[0].engine_instance != 0))
+		return 0;
+
+	eci[0].engine_class = DRM_XE_ENGINE_CLASS_COPY;
+
+	for_each_hw_engine(hwe, gt, id)
+		if (hwe->class ==
+		    user_to_xe_engine_class[DRM_XE_ENGINE_CLASS_COPY])
+			logical_mask |= BIT(hwe->logical_instance);
+
+	return logical_mask;
+}
+
 static u32 calc_validate_logical_mask(struct xe_device *xe,
 				      struct drm_xe_engine_class_instance *eci,
 				      u16 width, u16 num_placements)
@@ -458,6 +487,7 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 	u32 id;
 	int len;
 	int err;
+	bool bind_engine;
 
 	if (XE_IOCTL_ERR(xe, args->flags))
 		return -EINVAL;
@@ -472,8 +502,13 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, err))
 		return -EFAULT;
 
-	logical_mask = calc_validate_logical_mask(xe, eci, args->width,
-						  args->num_placements);
+	bind_engine = eci[0].engine_class == DRM_XE_ENGINE_CLASS_VM_BIND;
+	if (bind_engine)
+		logical_mask = bind_engine_logical_mask(xe, eci, args->width,
+							args->num_placements);
+	else
+		logical_mask = calc_validate_logical_mask(xe, eci, args->width,
+							  args->num_placements);
 	if (XE_IOCTL_ERR(xe, !logical_mask))
 		return -EINVAL;
 
@@ -485,8 +520,9 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, !vm))
 		return -ENOENT;
 
-	e = xe_engine_create(xe, vm, logical_mask, args->width, hwe,
-			     ENGINE_FLAG_PERSISTENT);
+	e = xe_engine_create(xe, bind_engine ? NULL : vm, logical_mask,
+			     args->width, hwe, ENGINE_FLAG_PERSISTENT |
+			     (bind_engine ? ENGINE_FLAG_VM : 0));
 	xe_vm_put(vm);
 	if (IS_ERR(e))
 		return PTR_ERR(e);
@@ -497,7 +533,7 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 			goto put_engine;
 	}
 
-	if (XE_IOCTL_ERR(xe, !!(e->vm->flags & VM_FLAG_COMPUTE_MODE) !=
+	if (XE_IOCTL_ERR(xe, e->vm && !!(e->vm->flags & VM_FLAG_COMPUTE_MODE) !=
 			 !!(e->flags & ENGINE_FLAG_COMPUTE_MODE))) {
 		err = -ENOTSUPP;
 		goto put_engine;
