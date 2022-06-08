@@ -140,6 +140,11 @@ struct drm_xe_engine_class_instance {
 #define DRM_XE_ENGINE_CLASS_VIDEO_DECODE	2
 #define DRM_XE_ENGINE_CLASS_VIDEO_ENHANCE	3
 #define DRM_XE_ENGINE_CLASS_COMPUTE		4
+	/*
+	 * Kernel only class (not actual hardware engine class). Used for
+	 * creating ordered queues of VM bind operations.
+	 */
+#define DRM_XE_ENGINE_CLASS_VM_BIND		5
 
 	__u16 engine_instance;
 	__u16 gt_id;
@@ -377,6 +382,13 @@ struct drm_xe_vm_bind {
 	 * DRM_XE_VM_CREATE_ASYNC_BIND_OPS and not in an error state.
 	 */
 #define XE_VM_BIND_FLAG_ASYNC		(0x1 << 17)
+
+	/**
+	 * @engine_id: engine_id, must be of class DRM_XE_ENGINE_CLASS_VM_BIND
+	 * and engine must have same vm_id. If zero, the default VM bind engine
+	 * is used.
+	 */
+	__u32 engine_id;
 
 	/** @num_syncs: amount of syncs to wait on */
 	__u32 num_syncs;
