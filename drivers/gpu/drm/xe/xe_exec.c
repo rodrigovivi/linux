@@ -65,6 +65,9 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	if (XE_IOCTL_ERR(xe, !engine))
 		return -ENOENT;
 
+	if (XE_IOCTL_ERR(xe, engine->flags & ENGINE_FLAG_VM))
+		return -EINVAL;
+
 	if (XE_IOCTL_ERR(xe, engine->width != args->num_batch_buffer))
 		return -EINVAL;
 
