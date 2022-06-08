@@ -98,8 +98,8 @@ struct xe_engine *xe_engine_create_class(struct xe_device *xe, struct xe_vm *vm,
 	enum xe_hw_engine_id id;
 	u32 logical_mask = 0;
 
-	for_each_hw_engine (hwe, gt, id) {
-		if (hwe->class == XE_ENGINE_CLASS_COPY) {
+	for_each_hw_engine(hwe, gt, id) {
+		if (hwe->class == class) {
 			logical_mask |= BIT(hwe->logical_instance);
 			if (!hwe0)
 				hwe0 = hwe;
