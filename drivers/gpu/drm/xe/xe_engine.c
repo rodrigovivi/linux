@@ -55,6 +55,10 @@ static struct xe_engine *__xe_engine_create(struct xe_device *xe,
 		e->parallel.composite_fence_ctx = dma_fence_context_alloc(1);
 		e->parallel.composite_fence_seqno = 1;
 	}
+	if (e->flags & ENGINE_FLAG_VM) {
+		e->bind.fence_ctx = dma_fence_context_alloc(1);
+		e->bind.fence_seqno = 1;
+	}
 
 	for (i = 0; i < width; ++i) {
 		err = xe_lrc_init(e->lrc + i, hwe, vm, SZ_16K);

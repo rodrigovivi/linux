@@ -82,15 +82,26 @@ struct xe_engine {
 		struct list_head link;
 	} persitent;
 
-	/**
-	 * @parallel: parallel submission state
-	 */
-	struct {
-		/** @composite_fence_ctx: context composite fence */
-		u64 composite_fence_ctx;
-		/** @composite_fence_seqno: seqno for composite fence */
-		u32 composite_fence_seqno;
-	} parallel;
+	union {
+		/**
+		 * @parallel: parallel submission state
+		 */
+		struct {
+			/** @composite_fence_ctx: context composite fence */
+			u64 composite_fence_ctx;
+			/** @composite_fence_seqno: seqno for composite fence */
+			u32 composite_fence_seqno;
+		} parallel;
+		/**
+		 * @bind: bind submission state
+		 */
+		struct {
+			/** @fence_ctx: context bind fence */
+			u64 fence_ctx;
+			/** @fence_seqno: seqno for bind fence */
+			u32 fence_seqno;
+		} bind;
+	};
 
 	/** @sched_props: scheduling properties */
 	struct {
