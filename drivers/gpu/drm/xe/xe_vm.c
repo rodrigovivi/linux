@@ -528,8 +528,8 @@ static void reinstall_preempt_fences(struct xe_vm *vm)
 
 struct async_op_fence;
 static int __xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma,
-			struct xe_sync_entry *syncs, u32 num_syncs,
-			struct async_op_fence *afence);
+			struct xe_engine *e, struct xe_sync_entry *syncs,
+			u32 num_syncs, struct async_op_fence *afence);
 
 static void vma_rebind_work_func(struct work_struct *w)
 {
@@ -551,7 +551,7 @@ retry:
 	if (!vma->userptr.destroyed && vma->userptr.dirty) {
 		ret = dma_resv_reserve_fences(&vm->resv, 1);
 		if (!ret) {
-			ret = __xe_vm_bind(vm, vma, NULL, 0, NULL);
+			ret = __xe_vm_bind(vm, vma, NULL, NULL, 0, NULL);
 			if (!ret) {
 				ret = vma_userptr_needs_repin(vma);
 				if (ret == -EAGAIN) {
@@ -682,6 +682,11 @@ out_unlock:
 	return err;
 }
 
+static struct dma_fence *
+xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
+	       struct xe_sync_entry *syncs, u32 num_syncs,
+	       bool kernel_op);
+
 struct dma_fence *xe_vm_userptr_bind(struct xe_vm *vm)
 {
 	struct dma_fence *fence = NULL;
@@ -696,7 +701,7 @@ struct dma_fence *xe_vm_userptr_bind(struct xe_vm *vm)
 		if (vma->userptr.dirty && vma->userptr.initial_bind) {
 			dma_fence_put(fence);
 			trace_xe_vma_userptr_rebind_exec(vma);
-			fence = xe_vm_bind_vma(vma, NULL, 0, true);
+			fence = xe_vm_bind_vma(vma, NULL, NULL, 0, true);
 		}
 		if (IS_ERR(fence))
 			return fence;
@@ -1303,9 +1308,10 @@ xe_pt_prepare_unbind(struct xe_vma *vma,
 	XE_BUG_ON(!*num_entries);
 }
 
-struct dma_fence *xe_vm_unbind_vma(struct xe_vma *vma,
-				   struct xe_sync_entry *syncs, u32 num_syncs,
-				   bool evict, bool kernel_op)
+static struct dma_fence *
+xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
+		 struct xe_sync_entry *syncs, u32 num_syncs,
+		 bool evict, bool kernel_op)
 {
 	struct xe_vm_pgtable_update entries[XE_VM_MAX_LEVEL * 2 + 1];
 	struct xe_vm *vm = vma->vm;
@@ -1347,7 +1353,7 @@ struct dma_fence *xe_vm_unbind_vma(struct xe_vma *vma,
 	 * lower level, because it needs to be more conservative.
 	 */
 	fence = xe_migrate_update_pgtables(gt->migrate,
-					   vm, evict ? NULL : vm->eng,
+					   vm, e ? e : evict ? NULL : vm->eng,
 					   entries, num_entries,
 					   syncs, num_syncs,
 					   xe_migrate_clear_pgtable_callback,
@@ -1594,8 +1600,9 @@ xe_pt_prepare_bind(struct xe_vma *vma,
 	return err;
 }
 
-struct dma_fence *
-xe_vm_bind_vma(struct xe_vma *vma, struct xe_sync_entry *syncs, u32 num_syncs,
+static struct dma_fence *
+xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
+	       struct xe_sync_entry *syncs, u32 num_syncs,
 	       bool kernel_op)
 {
 	struct xe_vm_pgtable_update entries[XE_VM_MAX_LEVEL * 2 + 1];
@@ -1631,7 +1638,7 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_sync_entry *syncs, u32 num_syncs,
 	}
 
 	fence = xe_migrate_update_pgtables(gt->migrate,
-					   vm, vm->eng,
+					   vm, e ? e: vm->eng,
 					   entries, num_entries,
 					   syncs, num_syncs,
 					   xe_vm_populate_pgtable, vma,
@@ -1743,8 +1750,8 @@ static void add_async_op_fence_cb(struct xe_vm *vm,
 }
 
 static int __xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma,
-			struct xe_sync_entry *syncs, u32 num_syncs,
-			struct async_op_fence *afence)
+			struct xe_engine *e, struct xe_sync_entry *syncs,
+			u32 num_syncs, struct async_op_fence *afence)
 {
 	struct dma_fence *fence;
 	struct preempt_op *op = NULL;
@@ -1770,7 +1777,7 @@ static int __xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma,
 			return -ENOMEM;
 	}
 
-	fence = xe_vm_bind_vma(vma, syncs, num_syncs, !!op);
+	fence = xe_vm_bind_vma(vma, e, syncs, num_syncs, !!op);
 	if (IS_ERR(fence)) {
 		err = PTR_ERR(fence);
 		goto err_free_op;
@@ -1788,26 +1795,26 @@ err_free_op:
 	return err;
 }
 
-static int xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma, struct xe_bo *bo,
-		      struct xe_sync_entry *syncs, u32 num_syncs,
-		      struct async_op_fence *afence)
+static int xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma, struct xe_engine *e,
+		      struct xe_bo *bo, struct xe_sync_entry *syncs,
+		      u32 num_syncs, struct async_op_fence *afence)
 {
 	xe_vm_assert_held(vm);
 	xe_bo_assert_held(bo);
 
-	return __xe_vm_bind(vm, vma, syncs, num_syncs, afence);
+	return __xe_vm_bind(vm, vma, e, syncs, num_syncs, afence);
 }
 
 static int xe_vm_bind_userptr(struct xe_vm *vm, struct xe_vma *vma,
-			      struct xe_sync_entry *syncs, u32 num_syncs,
-			      struct async_op_fence *afence)
+			      struct xe_engine *e, struct xe_sync_entry *syncs,
+			      u32 num_syncs, struct async_op_fence *afence)
 {
 	int err;
 
 	xe_vm_lock(vm, NULL);
 	err = dma_resv_reserve_fences(&vm->resv, 1);
 	if (!err)
-		err = __xe_vm_bind(vm, vma, syncs, num_syncs, afence);
+		err = __xe_vm_bind(vm, vma, e, syncs, num_syncs, afence);
 	xe_vm_unlock(vm);
 	if (err)
 		return err;
@@ -1831,8 +1838,9 @@ static int xe_vm_bind_userptr(struct xe_vm *vm, struct xe_vma *vma,
 }
 
 static int xe_vm_unbind(struct xe_vm *vm, struct xe_vma *vma,
-			struct xe_bo *bo, struct xe_sync_entry *syncs,
-			u32 num_syncs, struct async_op_fence *afence)
+			struct xe_engine *e, struct xe_bo *bo,
+			struct xe_sync_entry *syncs, u32 num_syncs,
+			struct async_op_fence *afence)
 {
 	struct dma_fence *fence;
 	struct preempt_op *op = NULL;
@@ -1846,7 +1854,7 @@ static int xe_vm_unbind(struct xe_vm *vm, struct xe_vma *vma,
 			return -ENOMEM;
 	}
 
-	fence = xe_vm_unbind_vma(vma, syncs, num_syncs, false, !!op);
+	fence = xe_vm_unbind_vma(vma, e, syncs, num_syncs, false, !!op);
 	if (IS_ERR(fence)) {
 		kfree(op);
 		return PTR_ERR(fence);
@@ -2015,18 +2023,18 @@ int xe_vm_destroy_ioctl(struct drm_device *dev, void *data,
 #define VM_BIND_OP(op)	(op & 0xffff)
 
 static int __vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
-			   struct xe_bo *bo, u64 bo_offset,
+			   struct xe_engine *e, struct xe_bo *bo, u64 bo_offset,
 			   u64 range, u64 addr, u32 op,
 			   struct xe_sync_entry *syncs, u32 num_syncs,
 			   struct async_op_fence *afence)
 {
 	switch (VM_BIND_OP(op)) {
 	case XE_VM_BIND_OP_MAP:
-		return xe_vm_bind(vm, vma, bo, syncs, num_syncs, afence);
+		return xe_vm_bind(vm, vma, e, bo, syncs, num_syncs, afence);
 	case XE_VM_BIND_OP_UNMAP:
-		return xe_vm_unbind(vm, vma, bo, syncs, num_syncs, afence);
+		return xe_vm_unbind(vm, vma, e, bo, syncs, num_syncs, afence);
 	case XE_VM_BIND_OP_MAP_USERPTR:
-		return xe_vm_bind_userptr(vm, vma, syncs, num_syncs, afence);
+		return xe_vm_bind_userptr(vm, vma, e, syncs, num_syncs, afence);
 	default:
 		XE_BUG_ON("NOT POSSIBLE");
 		return -EINVAL;
@@ -2039,7 +2047,8 @@ static void xe_vm_tv_populate(struct xe_vm *vm, struct ttm_validate_buffer *tv)
 	tv->bo = &vm->pt_root->bo->ttm;
 }
 
-static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma, struct xe_bo *bo,
+static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
+			 struct xe_engine *e, struct xe_bo *bo,
 			 struct drm_xe_vm_bind *args,
 			 struct xe_sync_entry *syncs, u32 num_syncs,
 			 struct async_op_fence *fence)
@@ -2078,13 +2087,13 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma, struct xe_bo *bo,
 
 		err = ttm_eu_reserve_buffers(&ww, &objs, true, &dups);
 		if (!err) {
-			err = __vm_bind_ioctl(vm, vma, bo, args->obj_offset,
+			err = __vm_bind_ioctl(vm, vma, e, bo, args->obj_offset,
 					      args->range, args->addr, args->op,
 					      syncs, num_syncs, fence);
 			ttm_eu_backoff_reservation(&ww, &objs);
 		}
 	} else {
-		err = __vm_bind_ioctl(vm, vma, NULL, args->userptr,
+		err = __vm_bind_ioctl(vm, vma, e, NULL, args->userptr,
 				      args->range, args->addr, args->op,
 				      syncs, num_syncs, fence);
 	}
@@ -2114,6 +2123,7 @@ static int lock_vm_bo(struct xe_vm *vm, struct xe_bo *bo,
 
 struct async_op {
 	struct xe_vma *vma;
+	struct xe_engine *engine;
 	struct xe_bo *bo;
 	struct drm_xe_vm_bind args;
 	struct xe_sync_entry *syncs;
@@ -2147,16 +2157,17 @@ static void async_op_work_func(struct work_struct *w)
 #ifdef TEST_VM_ASYNC_OPS_ERROR
 #define FORCE_ASYNC_OP_ERROR	BIT(31)
 			if (!(op->args.op & FORCE_ASYNC_OP_ERROR)) {
-				err = vm_bind_ioctl(vm, op->vma, op->bo,
-						    &op->args, op->syncs,
-						    op->num_syncs, op->fence);
+				err = vm_bind_ioctl(vm, op->vma, op->engine,
+						    op->bo, &op->args,
+						    op->syncs, op->num_syncs,
+						    op->fence);
 			} else {
 				err = -ENOMEM;
 				op->args.op &= ~FORCE_ASYNC_OP_ERROR;
 			}
 #else
-			err = vm_bind_ioctl(vm, op->vma, op->bo, &op->args,
-					    op->syncs, op->num_syncs,
+			err = vm_bind_ioctl(vm, op->vma, op->engine, op->bo,
+					    &op->args, op->syncs, op->num_syncs,
 					    op->fence);
 #endif
 			if (err) {
@@ -2205,6 +2216,8 @@ static void async_op_work_func(struct work_struct *w)
 		kfree(op->syncs);
 		if (op->bo)
 			drm_gem_object_put(&op->bo->ttm.base);
+		if (op->engine)
+			xe_engine_put(op->engine);
 		xe_vm_put(vm);
 		dma_fence_put(&op->fence->fence);
 		kfree(op);
@@ -2228,27 +2241,36 @@ static const struct dma_fence_ops async_op_fence_ops = {
 };
 
 static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_vma *vma,
-			       struct xe_bo *bo, struct drm_xe_vm_bind *args,
+			       struct xe_engine *e, struct xe_bo *bo,
+			       struct drm_xe_vm_bind *args,
 			       struct xe_sync_entry *syncs, u32 num_syncs)
 {
 	struct async_op *op;
 	bool installed = false;
+	u64 seqno;
 	int i;
 
+	xe_vm_lock(vm, NULL);
+
 	op = kmalloc(sizeof(*op), GFP_KERNEL);
-	if (!op)
+	if (!op) {
+		xe_vm_unlock(vm);
 		return -ENOMEM;
+	}
 
 	op->fence = kmalloc(sizeof(*op->fence), GFP_KERNEL);
 	if (!op->fence) {
+		xe_vm_unlock(vm);
 		kfree(op->fence);
 		return -ENOMEM;
 	}
 
+	seqno = e ? ++e->bind.fence_seqno : ++vm->async_ops.fence.seqno;
 	dma_fence_init(&op->fence->fence, &async_op_fence_ops,
-		       &vm->async_ops.lock, vm->async_ops.fence.context,
-		       ++vm->async_ops.fence.seqno);
+		       &vm->async_ops.lock, e ? e->bind.fence_ctx :
+		       vm->async_ops.fence.context, seqno);
 	op->vma = vma;
+	op->engine = e;
 	op->bo = bo;
 	op->args = *args;
 	op->syncs = syncs;
@@ -2268,6 +2290,8 @@ static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_vma *vma,
 
 	if (!vm->async_ops.pause)
 		queue_work(system_unbound_wq, &vm->async_ops.work);
+
+	xe_vm_unlock(vm);
 
 	return 0;
 }
@@ -2396,6 +2420,7 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	struct xe_bo *bo = NULL;
 	struct xe_vm *vm;
 	struct xe_vma *vma;
+	struct xe_engine *e = NULL;
 	int err = 0;
 	u32 num_syncs;
 	struct xe_sync_entry *syncs;
@@ -2430,6 +2455,18 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		goto put_vm;
 	}
 
+	if (args->engine_id) {
+		e = xe_engine_lookup(xef, args->engine_id);
+		if (XE_IOCTL_ERR(xe, !e)) {
+			err = -ENOENT;
+			goto put_vm;
+		}
+		if (XE_IOCTL_ERR(xe, !(e->flags & ENGINE_FLAG_VM))) {
+			err = -EINVAL;
+			goto put_vm;
+		}
+	}
+
 	if (VM_BIND_OP(op) == XE_VM_BIND_OP_RESTART) {
 		if (XE_IOCTL_ERR(xe, !(vm->flags & VM_FLAG_ASYNC_BIND_OPS)))
 			err = -ENOTSUPP;
@@ -2444,26 +2481,30 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 			queue_work(system_unbound_wq, &vm->async_ops.work);
 		}
 
+		if (e)
+			xe_engine_put(e);
 		xe_vm_put(vm);
 		return err;
 	}
 
 	if (XE_IOCTL_ERR(xe, !vm->async_ops.pause &&
-			 async != !!(vm->flags & VM_FLAG_ASYNC_BIND_OPS)))
-		return -ENOTSUPP;
+			 async != !!(vm->flags & VM_FLAG_ASYNC_BIND_OPS))) {
+		err = -ENOTSUPP;
+		goto put_engine;
+	}
 
 	if (XE_IOCTL_ERR(xe, !range) ||
 	    XE_IOCTL_ERR(xe, range > vm->size) ||
 	    XE_IOCTL_ERR(xe, addr > vm->size - range)) {
 		err = -EINVAL;
-		goto put_vm;
+		goto put_engine;
 	}
 
 	if (args->obj) {
 		gem_obj = drm_gem_object_lookup(file, args->obj);
 		if (XE_IOCTL_ERR(xe, !gem_obj)) {
 			err = -ENOENT;
-			goto put_vm;
+			goto put_engine;
 		}
 		bo = gem_to_xe_bo(gem_obj);
 
@@ -2505,11 +2546,13 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	}
 
 	if (async) {
-		err = vm_bind_ioctl_async(vm, vma, bo, args, syncs, num_syncs);
+		err = vm_bind_ioctl_async(vm, vma, e, bo, args, syncs,
+					  num_syncs);
 		if (!err)
 			return 0;
 	} else {
-		err = vm_bind_ioctl(vm, vma, bo, args, syncs, num_syncs, NULL);
+		err = vm_bind_ioctl(vm, vma, e, bo, args, syncs, num_syncs,
+				    NULL);
 	}
 
 	if (err) {
@@ -2537,6 +2580,9 @@ free_syncs:
 	kfree(syncs);
 put_obj:
 	drm_gem_object_put(gem_obj);
+put_engine:
+	if (e)
+		xe_engine_put(e);
 put_vm:
 	xe_vm_put(vm);
 	return err;
