@@ -18,10 +18,6 @@
 #include "../i915/i915_reg.h"
 #include "../i915/gt/intel_gt_regs.h"
 
-#define GEN12_CCS0_CCS1_INTR_MASK	_MMIO(0x190100)
-#define GEN12_CCS2_CCS3_INTR_MASK	_MMIO(0x190104)
-#define GEN12_CCS_RSVD_INTR_ENABLE	_MMIO(0x190048)
-
 static void gen3_assert_iir_is_zero(struct xe_device *xe, i915_reg_t reg)
 {
 	struct xe_gt *gt = to_gt(xe);
@@ -106,6 +102,7 @@ static void gen11_gt_irq_postinstall(struct xe_device *xe)
 	struct xe_gt *gt = to_gt(xe);
 	uint32_t irqs, dmask, smask;
 	uint32_t compute_mask = COMPUTE_MASK(gt);
+	uint32_t bcs_mask = BCS_MASK(gt);
 
 	if (xe_gt_guc_submission_enabled(gt)) {
 		irqs = GT_RENDER_USER_INTERRUPT |
@@ -129,6 +126,14 @@ static void gen11_gt_irq_postinstall(struct xe_device *xe)
 	/* Unmask irqs on RCS, BCS, VCS and VECS engines. */
 	xe_mmio_write32(gt, GEN11_RCS0_RSVD_INTR_MASK.reg, ~smask);
 	xe_mmio_write32(gt, GEN11_BCS_RSVD_INTR_MASK.reg, ~smask);
+	if (bcs_mask & (BIT(1)|BIT(2)))
+		xe_mmio_write32(gt, XEHPC_BCS1_BCS2_INTR_MASK.reg, ~dmask);
+	if (bcs_mask & (BIT(3)|BIT(4)))
+		xe_mmio_write32(gt, XEHPC_BCS3_BCS4_INTR_MASK.reg, ~dmask);
+	if (bcs_mask & (BIT(5)|BIT(6)))
+		xe_mmio_write32(gt, XEHPC_BCS5_BCS6_INTR_MASK.reg, ~dmask);
+	if (bcs_mask & (BIT(7)|BIT(8)))
+		xe_mmio_write32(gt, XEHPC_BCS7_BCS8_INTR_MASK.reg, ~dmask);
 	xe_mmio_write32(gt, GEN11_VCS0_VCS1_INTR_MASK.reg, ~dmask);
 	xe_mmio_write32(gt, GEN11_VCS2_VCS3_INTR_MASK.reg, ~dmask);
 	//if (HAS_ENGINE(gt, VCS4) || HAS_ENGINE(gt, VCS5))
@@ -349,6 +354,7 @@ void gen11_gt_irq_reset(struct xe_device *xe)
 {
 	struct xe_gt *gt = to_gt(xe);
 	uint32_t compute_mask = COMPUTE_MASK(gt);
+	uint32_t bcs_mask = BCS_MASK(gt);
 
 	/* Disable RCS, BCS, VCS and VECS class engines. */
 	xe_mmio_write32(gt, GEN11_RENDER_COPY_INTR_ENABLE.reg,	 0);
@@ -359,6 +365,14 @@ void gen11_gt_irq_reset(struct xe_device *xe)
 	/* Restore masks irqs on RCS, BCS, VCS and VECS engines. */
 	xe_mmio_write32(gt, GEN11_RCS0_RSVD_INTR_MASK.reg,	~0);
 	xe_mmio_write32(gt, GEN11_BCS_RSVD_INTR_MASK.reg,	~0);
+	if (bcs_mask & (BIT(1)|BIT(2)))
+		xe_mmio_write32(gt, XEHPC_BCS1_BCS2_INTR_MASK.reg, ~0);
+	if (bcs_mask & (BIT(3)|BIT(4)))
+		xe_mmio_write32(gt, XEHPC_BCS3_BCS4_INTR_MASK.reg, ~0);
+	if (bcs_mask & (BIT(5)|BIT(6)))
+		xe_mmio_write32(gt, XEHPC_BCS5_BCS6_INTR_MASK.reg, ~0);
+	if (bcs_mask & (BIT(7)|BIT(8)))
+		xe_mmio_write32(gt, XEHPC_BCS7_BCS8_INTR_MASK.reg, ~0);
 	xe_mmio_write32(gt, GEN11_VCS0_VCS1_INTR_MASK.reg,	~0);
 	xe_mmio_write32(gt, GEN11_VCS2_VCS3_INTR_MASK.reg,	~0);
 //	if (HAS_ENGINE(gt, VCS4) || HAS_ENGINE(gt, VCS5))

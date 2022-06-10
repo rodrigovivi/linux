@@ -55,6 +55,79 @@ static const struct engine_info engine_infos[] = {
 			{ .graphics_ver = 6, .base = BLT_RING_BASE }
 		},
 	},
+	[XE_HW_ENGINE_BCS1] = {
+		.name = "bcs1",
+		.class = XE_ENGINE_CLASS_COPY,
+		.instance = 1,
+		.domain = XE_FW_RENDER,
+		.mmio_bases = {
+			{ .graphics_ver = 12, .base = XEHPC_BCS1_RING_BASE }
+		},
+	},
+	[XE_HW_ENGINE_BCS2] = {
+		.name = "bcs2",
+		.class = XE_ENGINE_CLASS_COPY,
+		.instance = 2,
+		.domain = XE_FW_RENDER,
+		.mmio_bases = {
+			{ .graphics_ver = 12, .base = XEHPC_BCS2_RING_BASE }
+		},
+	},
+	[XE_HW_ENGINE_BCS3] = {
+		.name = "bcs3",
+		.class = XE_ENGINE_CLASS_COPY,
+		.instance = 3,
+		.domain = XE_FW_RENDER,
+		.mmio_bases = {
+			{ .graphics_ver = 12, .base = XEHPC_BCS3_RING_BASE }
+		},
+	},
+	[XE_HW_ENGINE_BCS4] = {
+		.name = "bcs4",
+		.class = XE_ENGINE_CLASS_COPY,
+		.instance = 4,
+		.domain = XE_FW_RENDER,
+		.mmio_bases = {
+			{ .graphics_ver = 12, .base = XEHPC_BCS4_RING_BASE }
+		},
+	},
+	[XE_HW_ENGINE_BCS5] = {
+		.name = "bcs5",
+		.class = XE_ENGINE_CLASS_COPY,
+		.instance = 5,
+		.domain = XE_FW_RENDER,
+		.mmio_bases = {
+			{ .graphics_ver = 12, .base = XEHPC_BCS5_RING_BASE }
+		},
+	},
+	[XE_HW_ENGINE_BCS6] = {
+		.name = "bcs6",
+		.class = XE_ENGINE_CLASS_COPY,
+		.instance = 6,
+		.domain = XE_FW_RENDER,
+		.mmio_bases = {
+			{ .graphics_ver = 12, .base = XEHPC_BCS6_RING_BASE }
+		},
+	},
+	[XE_HW_ENGINE_BCS7] = {
+		.name = "bcs7",
+		.class = XE_ENGINE_CLASS_COPY,
+		.instance = 7,
+		.domain = XE_FW_RENDER,
+		.mmio_bases = {
+			{ .graphics_ver = 12, .base = XEHPC_BCS7_RING_BASE }
+		},
+	},
+	[XE_HW_ENGINE_BCS8] = {
+		.name = "bcs8",
+		.class = XE_ENGINE_CLASS_COPY,
+		.instance = 8,
+		.domain = XE_FW_RENDER,
+		.mmio_bases = {
+			{ .graphics_ver = 12, .base = XEHPC_BCS8_RING_BASE }
+		},
+	},
+
 	[XE_HW_ENGINE_VCS0] = {
 		.name = "vcs0",
 		.class = XE_ENGINE_CLASS_VIDEO_DECODE,
