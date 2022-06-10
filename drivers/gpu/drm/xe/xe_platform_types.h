@@ -15,6 +15,7 @@ enum xe_platform {
 	XE_DG1,
 	XE_XEHP_SDV,
 	XE_DG2,
+	XE_PVC,
 };
 
 #endif	/* _XE_PLATFORM_INFO_TYPES_H_ */
