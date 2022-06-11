@@ -438,7 +438,7 @@ static const struct intel_device_info adl_s_info = {
 	.has_snoop = 1, \
 	.is_dgfx = 1
 
-static const struct intel_device_info dg1_info __maybe_unused = {
+static const struct intel_device_info dg1_info = {
 	GEN12_FEATURES,
 	DGFX_FEATURES,
 	.graphics_rel = 10,
@@ -482,7 +482,6 @@ static const struct intel_device_info dg1_info __maybe_unused = {
 	.media_ver = 12, \
 	.media_rel = 50
 
-__maybe_unused
 static const struct intel_device_info ats_m_info = {
 	XE_HP_FEATURES,
 	XE_HPM_FEATURES,
@@ -514,7 +513,6 @@ static const struct intel_device_info ats_m_info = {
 	BIT(XE_HW_ENGINE_CCS0)  | BIT(XE_HW_ENGINE_CCS1)  | \
 	BIT(XE_HW_ENGINE_CCS2)  | BIT(XE_HW_ENGINE_CCS3)
 
-__maybe_unused
 static const struct intel_device_info xehp_sdv_info = {
 	XE_HP_FEATURES,
 	XE_HPM_FEATURES,
