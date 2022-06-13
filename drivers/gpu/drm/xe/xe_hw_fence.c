@@ -61,12 +61,11 @@ static void hw_fence_irq_run_cb(struct irq_work *work)
 		list_for_each_entry_safe(fence, next, &irq->pending, irq_link) {
 			struct dma_fence *dma_fence = &fence->dma;
 
-			dma_fence_get(dma_fence);
 			if (dma_fence_is_signaled_locked(dma_fence)) {
 				trace_xe_hw_fence_signal(fence);
 				list_del_init(&fence->irq_link);
+				dma_fence_put(dma_fence);
 			}
-			dma_fence_put(dma_fence);
 		}
 	}
 	spin_unlock(&irq->lock);
@@ -94,6 +93,7 @@ void xe_hw_fence_irq_finish(struct xe_hw_fence_irq *irq)
 		list_for_each_entry_safe(fence, next, &irq->pending, irq_link) {
 			list_del_init(&fence->irq_link);
 			err = dma_fence_signal_locked(&fence->dma);
+			dma_fence_put(&fence->dma);
 			XE_WARN_ON(err);
 		}
 		spin_unlock_irqrestore(&irq->lock, flags);
@@ -162,6 +162,7 @@ static bool xe_hw_fence_enable_signaling(struct dma_fence *dma_fence)
 	struct xe_hw_fence *fence = to_xe_hw_fence(dma_fence);
 	struct xe_hw_fence_irq *irq = xe_hw_fence_irq(fence);
 
+	dma_fence_get(dma_fence);
 	list_add(&fence->irq_link, &irq->pending);
 
 	/* SW completed (no HW IRQ) so kick handler to signal fence */
