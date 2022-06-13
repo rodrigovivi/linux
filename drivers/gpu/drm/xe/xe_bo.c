@@ -303,9 +303,9 @@ static const struct drm_gem_object_funcs xe_gem_object_funcs = {
 	.export = xe_gem_prime_export,
 };
 
-struct xe_bo *xe_bo_create_locked(struct xe_device *xe, struct xe_vm *vm,
-				  size_t size, enum ttm_bo_type type,
-				  uint32_t flags)
+struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct dma_resv *resv,
+				    size_t size, enum ttm_bo_type type,
+				    uint32_t flags)
 {
 	struct xe_bo *bo;
 	struct ttm_operation_ctx ctx = {
@@ -332,19 +332,32 @@ struct xe_bo *xe_bo_create_locked(struct xe_device *xe, struct xe_vm *vm,
 
 	drm_gem_private_object_init(&xe->drm, &bo->ttm.base, size);
 
-	if (vm)
-		xe_vm_assert_held(vm);
-
 	err = xe_bo_placement_for_flags(xe, bo, flags);
 	if (WARN_ON(err))
 		return ERR_PTR(err);
 
 	err = ttm_bo_init_reserved(&xe->ttm, &bo->ttm, size, type,
 				   &bo->placement, SZ_64K >> PAGE_SHIFT,
-				   &ctx, NULL, vm ? &vm->resv : NULL,
-				   xe_ttm_bo_destroy);
+				   &ctx, NULL, resv, xe_ttm_bo_destroy);
 	if (WARN_ON(err))
 		return ERR_PTR(err);
+
+	return bo;
+}
+
+struct xe_bo *xe_bo_create_locked(struct xe_device *xe, struct xe_vm *vm,
+				  size_t size, enum ttm_bo_type type,
+				  uint32_t flags)
+{
+	struct xe_bo *bo;
+	int err;
+
+	if (vm)
+		xe_vm_assert_held(vm);
+	bo = __xe_bo_create_locked(xe, vm ? &vm->resv : NULL, size,
+				   type, flags);
+	if (IS_ERR(bo))
+		return bo;
 
 	if (vm && (flags & XE_BO_CREATE_USER_BIT))
 		xe_vm_get(vm);

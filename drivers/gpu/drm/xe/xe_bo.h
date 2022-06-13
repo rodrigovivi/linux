@@ -67,6 +67,9 @@
 
 #define PTE_READ_ONLY			BIT(0)
 
+struct xe_bo *__xe_bo_create_locked(struct xe_device *xe,
+				    struct dma_resv *resv, size_t size,
+				    enum ttm_bo_type type, uint32_t flags);
 struct xe_bo *xe_bo_create_locked(struct xe_device *xe,
 				  struct xe_vm *vm, size_t size,
 				  enum ttm_bo_type type, uint32_t flags);
@@ -140,6 +143,11 @@ static inline void xe_bo_unlock_no_vm(struct xe_bo *bo)
 int xe_bo_populate(struct xe_bo *bo);
 int xe_bo_pin(struct xe_bo *bo);
 void xe_bo_unpin(struct xe_bo *bo);
+
+static inline bool xe_bo_is_pinned(struct xe_bo *bo)
+{
+	return bo->ttm.pin_count;
+}
 
 static inline void xe_bo_unpin_map_no_vm(struct xe_bo *bo)
 {
