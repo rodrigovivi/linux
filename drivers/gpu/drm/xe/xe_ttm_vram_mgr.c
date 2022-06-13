@@ -10,7 +10,9 @@
 #include <drm/ttm/ttm_placement.h>
 
 #include "xe_bo.h"
+#include "xe_device.h"
 #include "xe_gt.h"
+#include "xe_res_cursor.h"
 #include "xe_ttm_vram_mgr.h"
 
 static inline struct xe_ttm_vram_mgr *
@@ -219,4 +221,92 @@ int xe_ttm_vram_mgr_init(struct xe_gt *gt, struct xe_ttm_vram_mgr *mgr)
 		return err;
 
 	return 0;
+}
+
+int xe_ttm_vram_mgr_alloc_sgt(struct xe_device *xe,
+			      struct ttm_resource *res,
+			      u64 offset, u64 length,
+			      struct device *dev,
+			      enum dma_data_direction dir,
+			      struct sg_table **sgt)
+{
+	struct xe_res_cursor cursor;
+	struct scatterlist *sg;
+	int num_entries = 0;
+	int i, r;
+
+	*sgt = kmalloc(sizeof(**sgt), GFP_KERNEL);
+	if (!*sgt)
+		return -ENOMEM;
+
+	/* Determine the number of DRM_BUDDY blocks to export */
+	xe_res_first(res, offset, length, &cursor);
+	while (cursor.remaining) {
+		num_entries++;
+		xe_res_next(&cursor, cursor.size);
+	}
+
+	r = sg_alloc_table(*sgt, num_entries, GFP_KERNEL);
+	if (r)
+		goto error_free;
+
+	/* Initialize scatterlist nodes of sg_table */
+	for_each_sgtable_sg((*sgt), sg, i)
+		sg->length = 0;
+
+	/*
+	 * Walk down DRM_BUDDY blocks to populate scatterlist nodes
+	 * @note: Use iterator api to get first the DRM_BUDDY block
+	 * and the number of bytes from it. Access the following
+	 * DRM_BUDDY block(s) if more buffer needs to exported
+	 */
+	xe_res_first(res, offset, length, &cursor);
+	for_each_sgtable_sg((*sgt), sg, i) {
+		phys_addr_t phys = cursor.start + to_gt(xe)->mem.vram.io_start;
+		size_t size = cursor.size;
+		dma_addr_t addr;
+
+		addr = dma_map_resource(dev, phys, size, dir,
+					DMA_ATTR_SKIP_CPU_SYNC);
+		r = dma_mapping_error(dev, addr);
+		if (r)
+			goto error_unmap;
+
+		sg_set_page(sg, NULL, size, 0);
+		sg_dma_address(sg) = addr;
+		sg_dma_len(sg) = size;
+
+		xe_res_next(&cursor, cursor.size);
+	}
+
+	return 0;
+
+error_unmap:
+	for_each_sgtable_sg((*sgt), sg, i) {
+		if (!sg->length)
+			continue;
+
+		dma_unmap_resource(dev, sg->dma_address,
+				   sg->length, dir,
+				   DMA_ATTR_SKIP_CPU_SYNC);
+	}
+	sg_free_table(*sgt);
+
+error_free:
+	kfree(*sgt);
+	return r;
+}
+
+void xe_ttm_vram_mgr_free_sgt(struct device *dev, enum dma_data_direction dir,
+			      struct sg_table *sgt)
+{
+	struct scatterlist *sg;
+	int i;
+
+	for_each_sgtable_sg(sgt, sg, i)
+		dma_unmap_resource(dev, sg->dma_address,
+				   sg->length, dir,
+				   DMA_ATTR_SKIP_CPU_SYNC);
+	sg_free_table(sgt);
+	kfree(sgt);
 }
