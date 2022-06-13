@@ -14,6 +14,7 @@
 #include "xe_bo.h"
 #include "xe_device.h"
 #include "xe_dma_buf.h"
+#include "xe_ttm_vram_mgr.h"
 
 MODULE_IMPORT_NS(DMA_BUF);
 
@@ -81,8 +82,12 @@ static struct sg_table *xe_dma_buf_map(struct dma_buf_attachment *attach,
 		break;
 
 	case TTM_PL_VRAM:
-		/* TODO: Implement */
-		return ERR_PTR(-ENODEV);
+		r = xe_ttm_vram_mgr_alloc_sgt(xe_bo_device(bo),
+					      bo->ttm.resource, 0,
+					      bo->ttm.base.size, attach->dev,
+					      dir, &sgt);
+		if (r)
+			return ERR_PTR(r);
 		break;
 	default:
 		return ERR_PTR(-EINVAL);
@@ -105,7 +110,7 @@ static void xe_dma_buf_unmap(struct dma_buf_attachment *attach,
 		sg_free_table(sgt);
 		kfree(sgt);
 	} else {
-		/* TODO: Implement */
+		xe_ttm_vram_mgr_free_sgt(attach->dev, dir, sgt);
 	}
 }
 
