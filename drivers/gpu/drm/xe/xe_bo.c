@@ -14,6 +14,7 @@
 #include <drm/xe_drm.h>
 
 #include "xe_device.h"
+#include "xe_dma_buf.h"
 #include "xe_ggtt.h"
 #include "xe_gt.h"
 #include "xe_migrate.h"
@@ -297,6 +298,7 @@ static void xe_gem_object_free(struct drm_gem_object *obj)
 static const struct drm_gem_object_funcs xe_gem_object_funcs = {
 	.free = xe_gem_object_free,
 	.mmap = drm_gem_ttm_mmap,
+	.export = xe_gem_prime_export,
 };
 
 struct xe_bo *xe_bo_create_locked(struct xe_device *xe, struct xe_vm *vm,
