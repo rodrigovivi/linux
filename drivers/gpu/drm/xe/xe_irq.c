@@ -101,8 +101,10 @@ static void gen11_gt_irq_postinstall(struct xe_device *xe)
 {
 	struct xe_gt *gt = to_gt(xe);
 	uint32_t irqs, dmask, smask;
-	uint32_t compute_mask = COMPUTE_MASK(gt);
-	uint32_t bcs_mask = BCS_MASK(gt);
+	uint32_t ccs_mask = xe_hw_engine_mask_per_class(gt,
+							XE_ENGINE_CLASS_COMPUTE);
+	uint32_t bcs_mask = xe_hw_engine_mask_per_class(gt,
+							XE_ENGINE_CLASS_COPY);
 
 	if (xe_gt_guc_submission_enabled(gt)) {
 		irqs = GT_RENDER_USER_INTERRUPT |
@@ -120,7 +122,7 @@ static void gen11_gt_irq_postinstall(struct xe_device *xe)
 	/* Enable RCS, BCS, VCS and VECS class interrupts. */
 	xe_mmio_write32(gt, GEN11_RENDER_COPY_INTR_ENABLE.reg, dmask);
 	xe_mmio_write32(gt, GEN11_VCS_VECS_INTR_ENABLE.reg, dmask);
-	if (compute_mask)
+	if (ccs_mask)
 		xe_mmio_write32(gt, GEN12_CCS_RSVD_INTR_ENABLE.reg, smask);
 
 	/* Unmask irqs on RCS, BCS, VCS and VECS engines. */
@@ -143,9 +145,9 @@ static void gen11_gt_irq_postinstall(struct xe_device *xe)
 	xe_mmio_write32(gt, GEN11_VECS0_VECS1_INTR_MASK.reg, ~dmask);
 	//if (HAS_ENGINE(gt, VECS2) || HAS_ENGINE(gt, VECS3))
 	//	intel_uncore_write(uncore, GEN12_VECS2_VECS3_INTR_MASK, ~dmask);
-	if (compute_mask & (BIT(0)|BIT(1)))
+	if (ccs_mask & (BIT(0)|BIT(1)))
 		xe_mmio_write32(gt, GEN12_CCS0_CCS1_INTR_MASK.reg, ~dmask);
-	if (compute_mask & (BIT(2)|BIT(3)))
+	if (ccs_mask & (BIT(2)|BIT(3)))
 		xe_mmio_write32(gt,  GEN12_CCS2_CCS3_INTR_MASK.reg, ~dmask);
 
 	/*
@@ -353,13 +355,15 @@ static irqreturn_t dg1_irq_handler(int irq, void *arg)
 void gen11_gt_irq_reset(struct xe_device *xe)
 {
 	struct xe_gt *gt = to_gt(xe);
-	uint32_t compute_mask = COMPUTE_MASK(gt);
-	uint32_t bcs_mask = BCS_MASK(gt);
+	uint32_t ccs_mask = xe_hw_engine_mask_per_class(gt,
+							XE_ENGINE_CLASS_COMPUTE);
+	uint32_t bcs_mask = xe_hw_engine_mask_per_class(gt,
+							XE_ENGINE_CLASS_COPY);
 
 	/* Disable RCS, BCS, VCS and VECS class engines. */
 	xe_mmio_write32(gt, GEN11_RENDER_COPY_INTR_ENABLE.reg,	 0);
 	xe_mmio_write32(gt, GEN11_VCS_VECS_INTR_ENABLE.reg,	 0);
-	if (compute_mask)
+	if (ccs_mask)
 		xe_mmio_write32(gt, GEN12_CCS_RSVD_INTR_ENABLE.reg, 0);
 
 	/* Restore masks irqs on RCS, BCS, VCS and VECS engines. */
@@ -382,9 +386,9 @@ void gen11_gt_irq_reset(struct xe_device *xe)
 	xe_mmio_write32(gt, GEN11_VECS0_VECS1_INTR_MASK.reg,	~0);
 //	if (HAS_ENGINE(gt, VECS2) || HAS_ENGINE(gt, VECS3))
 //		xe_mmio_write32(xe, GEN12_VECS2_VECS3_INTR_MASK.reg, ~0);
-	if (compute_mask & (BIT(0)|BIT(1)))
+	if (ccs_mask & (BIT(0)|BIT(1)))
 		xe_mmio_write32(gt, GEN12_CCS0_CCS1_INTR_MASK.reg, ~0);
-	if (compute_mask & (BIT(2)|BIT(3)))
+	if (ccs_mask & (BIT(2)|BIT(3)))
 		xe_mmio_write32(gt,  GEN12_CCS2_CCS3_INTR_MASK.reg, ~0);
 
 	xe_mmio_write32(gt, GEN11_GPM_WGBOXPERF_INTR_ENABLE.reg, 0);

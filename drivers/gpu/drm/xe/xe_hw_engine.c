@@ -327,7 +327,10 @@ static u32 hw_engine_mmio_read32(struct xe_hw_engine *hwe, u32 reg)
 
 void xe_hw_engine_enable_ring(struct xe_hw_engine *hwe)
 {
-	if (hwe->class == XE_ENGINE_CLASS_COMPUTE && COMPUTE_MASK(hwe->gt) & BIT(0))
+	uint32_t ccs_mask = xe_hw_engine_mask_per_class(hwe->gt,
+							XE_ENGINE_CLASS_COMPUTE);
+
+	if (hwe->class == XE_ENGINE_CLASS_COMPUTE && ccs_mask & BIT(0))
 		xe_mmio_write32(hwe->gt, GEN12_RCU_MODE.reg,
 				_MASKED_BIT_ENABLE(GEN12_RCU_MODE_CCS_ENABLE));
 
@@ -576,4 +579,16 @@ void xe_hw_engine_print_state(struct xe_hw_engine *hwe, struct drm_printer *p)
 		drm_printf(p, "\tGEN12_RCU_MODE: 0x%08x\n",
 			   xe_mmio_read32(hwe->gt, GEN12_RCU_MODE.reg));
 
+}
+
+u32 xe_hw_engine_mask_per_class(struct xe_gt *gt, enum xe_engine_class engine_class)
+{
+	u32 mask = 0;
+	enum xe_hw_engine_id id;
+
+	for (id = 0; id < XE_NUM_HW_ENGINES; ++id) {
+		if (engine_infos[id].class == engine_class && gt->info.engine_mask & BIT(id))
+			mask |= BIT(engine_infos[id].instance);
+	}
+	return mask;
 }
