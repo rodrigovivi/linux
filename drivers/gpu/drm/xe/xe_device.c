@@ -13,6 +13,7 @@
 
 #include "xe_bo.h"
 #include "xe_debugfs.h"
+#include "xe_dma_buf.h"
 #include "xe_drv.h"
 #include "xe_engine.h"
 #include "xe_exec.h"
@@ -115,7 +116,7 @@ static const struct drm_driver driver = {
 
 	.prime_handle_to_fd = drm_gem_prime_handle_to_fd,
 	.prime_fd_to_handle = drm_gem_prime_fd_to_handle,
-//	.gem_prime_import = i915_gem_prime_import,
+	.gem_prime_import = xe_gem_prime_import,
 //
 //	.dumb_create = i915_gem_dumb_create,
 	.dumb_map_offset = drm_gem_ttm_dumb_map_offset,

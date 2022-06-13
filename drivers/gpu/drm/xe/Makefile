@@ -37,6 +37,7 @@ xe-y += xe_bb.o \
 	xe_bo.o \
 	xe_debugfs.o \
 	xe_device.o \
+	xe_dma_buf.o \
 	xe_engine.o \
 	xe_exec.o \
 	xe_execlist.o \
