@@ -15,6 +15,7 @@ int xe_hw_engines_init(struct xe_gt *gt);
 void xe_hw_engine_handle_irq(struct xe_hw_engine *hwe, uint16_t intr_vec);
 void xe_hw_engine_enable_ring(struct xe_hw_engine *hwe);
 void xe_hw_engine_print_state(struct xe_hw_engine *hwe, struct drm_printer *p);
+u32 xe_hw_engine_mask_per_class(struct xe_gt *gt, enum xe_engine_class engine_class);
 
 static inline bool xe_hw_engine_is_valid(struct xe_hw_engine *hwe)
 {
