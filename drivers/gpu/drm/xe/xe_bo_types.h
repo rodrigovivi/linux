@@ -14,6 +14,7 @@
 #include <drm/ttm/ttm_device.h>
 #include <drm/ttm/ttm_placement.h>
 
+struct xe_device;
 struct xe_vm;
 
 #define XE_BO_MAX_PLACEMENTS	3
