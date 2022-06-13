@@ -7,6 +7,8 @@
 
 #include "xe_bo.h"
 
+#include <linux/dma-buf.h>
+
 #include <drm/drm_gem_ttm_helper.h>
 #include <drm/ttm/ttm_device.h>
 #include <drm/ttm/ttm_placement.h>
@@ -440,6 +442,12 @@ int xe_bo_pin(struct xe_bo *bo)
 	if (err)
 		return err;
 
+	/*
+	 * No reason we can't support pinning imported dma-bufs we just don't
+	 * expect to pin an imported dma-buf.
+	 */
+	XE_BUG_ON(bo->ttm.base.import_attach);
+
 	ttm_bo_pin(&bo->ttm);
 
 	return 0;
@@ -447,6 +455,7 @@ int xe_bo_pin(struct xe_bo *bo)
 
 void xe_bo_unpin(struct xe_bo *bo)
 {
+	XE_BUG_ON(bo->ttm.base.import_attach);
 	ttm_bo_unpin(&bo->ttm);
 }
 
