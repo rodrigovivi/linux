@@ -35,7 +35,7 @@ enum pipe {
 	PIPE_D,
 	_PIPE_EDP,
 
-	I915_MAX_PIPES = _PIPE_EDP
+	_MAX_PIPES = _PIPE_EDP
 };
 
 /*
@@ -47,13 +47,13 @@ enum dbuf_slice {
 	DBUF_S2,
 	DBUF_S3,
 	DBUF_S4,
-	I915_MAX_DBUF_SLICES
+	_MAX_DBUF_SLICES
 };
 
 
-#define I915_GTT_PAGE_SIZE_4K	BIT_ULL(12)
-#define I915_GTT_PAGE_SIZE_64K	BIT_ULL(16)
-#define I915_GTT_PAGE_SIZE_2M	BIT_ULL(21)
+#define GTT_PAGE_SIZE_4K	BIT_ULL(12)
+#define GTT_PAGE_SIZE_64K	BIT_ULL(16)
+#define GTT_PAGE_SIZE_2M	BIT_ULL(21)
 
 
 enum intel_region_id {
@@ -92,7 +92,7 @@ enum transcoder {
 	TRANSCODER_DSI_A = TRANSCODER_DSI_0,	/* legacy DSI */
 	TRANSCODER_DSI_C = TRANSCODER_DSI_1,	/* legacy DSI */
 
-	I915_MAX_TRANSCODERS
+	_MAX_TRANSCODERS
 };
 
 typedef u32 intel_engine_mask_t;
@@ -192,9 +192,9 @@ struct intel_device_info {
 	} dbuf;
 
 	/* Register offsets for the various display pipes and transcoders */
-	int pipe_offsets[I915_MAX_TRANSCODERS];
-	int trans_offsets[I915_MAX_TRANSCODERS];
-	int cursor_offsets[I915_MAX_PIPES];
+	int pipe_offsets[_MAX_TRANSCODERS];
+	int trans_offsets[_MAX_TRANSCODERS];
+	int cursor_offsets[_MAX_PIPES];
 
 	struct color_luts {
 		u32 degamma_lut_size;
@@ -267,7 +267,7 @@ struct intel_device_info {
 /* Keep in gen based order, and chronological order within a gen */
 
 #define GEN_DEFAULT_PAGE_SIZES \
-	.page_sizes = I915_GTT_PAGE_SIZE_4K
+	.page_sizes = GTT_PAGE_SIZE_4K
 
 #define GEN_DEFAULT_REGIONS \
 	.memory_regions = REGION_SMEM | REGION_STOLEN_SMEM
@@ -326,8 +326,8 @@ struct intel_device_info {
 	.has_64bit_reloc = 1
 
 #define GEN9_DEFAULT_PAGE_SIZES \
-	.page_sizes = I915_GTT_PAGE_SIZE_4K | \
-		      I915_GTT_PAGE_SIZE_64K
+	.page_sizes = GTT_PAGE_SIZE_4K | \
+		      GTT_PAGE_SIZE_64K
 
 #define GEN9_FEATURES \
 	GEN8_FEATURES, \
@@ -349,9 +349,9 @@ struct intel_device_info {
 	GLK_COLORS
 
 #define GEN11_DEFAULT_PAGE_SIZES \
-	.page_sizes = I915_GTT_PAGE_SIZE_4K | \
-		      I915_GTT_PAGE_SIZE_64K | \
-		      I915_GTT_PAGE_SIZE_2M
+	.page_sizes = GTT_PAGE_SIZE_4K | \
+		      GTT_PAGE_SIZE_64K | \
+		      GTT_PAGE_SIZE_2M
 
 #define GEN11_FEATURES \
 	GEN10_FEATURES, \
@@ -454,9 +454,9 @@ static const struct intel_device_info dg1_info = {
 };
 
 #define XE_HP_PAGE_SIZES \
-	.page_sizes = I915_GTT_PAGE_SIZE_4K | \
-	I915_GTT_PAGE_SIZE_64K | \
-	I915_GTT_PAGE_SIZE_2M
+	.page_sizes = GTT_PAGE_SIZE_4K | \
+	GTT_PAGE_SIZE_64K | \
+	GTT_PAGE_SIZE_2M
 
 #define XE_HP_FEATURES \
 	.graphics_ver = 12, \
