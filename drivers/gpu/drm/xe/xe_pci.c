@@ -423,6 +423,15 @@ static const struct intel_device_info tgl_info = {
 		BIT(XE_HW_ENGINE_VCS2),
 };
 
+static const struct intel_device_info adl_s_info = {
+	GEN12_FEATURES,
+	PLATFORM(XE_ALDERLAKE_S),
+	.platform_engine_mask =
+		BIT(XE_HW_ENGINE_RCS0) | BIT(XE_HW_ENGINE_BCS0) |
+		BIT(XE_HW_ENGINE_VECS0) | BIT(XE_HW_ENGINE_VCS0) |
+		BIT(XE_HW_ENGINE_VCS2),
+};
+
 #define DGFX_FEATURES \
 	.memory_regions = REGION_SMEM | REGION_LMEM | REGION_STOLEN_LMEM, \
 	.has_llc = 0, \
@@ -534,6 +543,7 @@ static const struct pci_device_id pciidlist[] = {
 	INTEL_ATS_M_IDS(&ats_m_info),
 	INTEL_DG2_IDS(&ats_m_info), /* TODO: switch to proper dg2_info */
 	INTEL_XEHPSDV_IDS(&xehp_sdv_info),
+	INTEL_ADLS_IDS(&adl_s_info),
 	{0, 0, 0}
 };
 MODULE_DEVICE_TABLE(pci, pciidlist);
