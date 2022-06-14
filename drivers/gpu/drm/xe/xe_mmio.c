@@ -14,8 +14,8 @@
 
 #include "../i915/i915_reg.h"
 
-#define XEHPSDV_MTCFG_ADDR		_MMIO(0x101800)
-#define TILE_COUNT			REG_GENMASK(15, 8)
+#define XEHP_MTCFG_ADDR		_MMIO(0x101800)
+#define TILE_COUNT		REG_GENMASK(15, 8)
 
 static int xe_set_dma_info(struct xe_device *xe)
 {
@@ -66,8 +66,9 @@ static void xe_mmio_probe_tiles(struct xe_device *xe)
 	if (!xe->info.tile_count)
 		return;
 
-	mtcfg = xe_mmio_read64(gt, XEHPSDV_MTCFG_ADDR.reg);
+	mtcfg = xe_mmio_read64(gt, XEHP_MTCFG_ADDR.reg);
 	xe->info.tile_count = REG_FIELD_GET(TILE_COUNT, mtcfg) + 1;
+
 	drm_dbg(&xe->drm, "tile_count: %d\n", xe->info.tile_count);
 }
 
