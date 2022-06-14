@@ -344,7 +344,8 @@ static const struct intel_device_info dg1_info = {
 	.ppgtt_size = 48, \
 	.ppgtt_type = INTEL_PPGTT_FULL, \
 	.dma_mask_size = 46, \
-	.has_tiles = false
+	.has_tiles = false, \
+	.vm_max_level = 3
 
 #define XE_HPM_FEATURES \
 	.media_ver = 12, \
