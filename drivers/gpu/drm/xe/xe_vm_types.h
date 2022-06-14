@@ -11,6 +11,8 @@
 #include <linux/kref.h>
 #include <linux/mmu_notifier.h>
 
+#include <drm/ttm/ttm_execbuf_util.h>
+
 struct xe_bo;
 struct xe_vm;
 
@@ -46,6 +48,8 @@ struct xe_vma {
 	 * VMA's BO is not tied to a specific VM)
 	 */
 	struct list_head external_vma_link;
+	/** @external_vma_tv: used during exec to lock all external BOs */
+	struct ttm_validate_buffer external_vma_tv;
 
 	/** @userptr: user pointer state */
 	struct {
