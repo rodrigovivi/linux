@@ -12,6 +12,8 @@
 #include "xe_guc_reg.h"
 #include "xe_hw_engine.h"
 #include "xe_mmio.h"
+#include "xe_platform_types.h"
+#include "../i915/gt/intel_gt_regs.h"
 
 static struct xe_guc *
 ads_to_guc(struct xe_guc_ads *ads)
@@ -211,6 +213,37 @@ static u32 engine_enable_mask(struct xe_gt *gt, enum xe_engine_class class)
 	return mask;
 }
 
+static void fill_regset_pvc(struct xe_guc_ads *ads)
+{
+	/* FIXME:
+	 * PVC need that regset for GEN12_RCU_MODE or CCS won't
+	 * work. We currently have 1 Page allocate for this, so
+	 * we add our register now.
+	 * Adding minimal support for now - will need to be
+	 * re-worked once we add full regset list
+	 */
+#define XE_MAX_PVC_REGSET 10
+	struct xe_device *xe = ads_to_xe(ads);
+	struct iosys_map map = IOSYS_MAP_INIT_OFFSET(ads_to_map(ads), guc_ads_regset_offset(ads));
+	struct guc_mmio_reg regset[XE_MAX_PVC_REGSET], *reg;
+	u32 addr_ggtt = xe_bo_ggtt_addr(ads->bo);
+	u32 items = 0;
+
+	reg = &regset[items++];
+	reg->offset = GEN12_RCU_MODE.reg;
+	reg->value = 0x0;
+	reg->flags = 0x3;
+	reg->mask = 0x0;
+
+	XE_BUG_ON(items >= XE_MAX_PVC_REGSET);
+
+	iosys_map_memcpy_to(&map, 0, regset, items*sizeof(struct guc_mmio_reg));
+	addr_ggtt += guc_ads_regset_offset(ads);
+	ads_blob_write(ads, ads.reg_state_list[GUC_COMPUTE_CLASS][0].address, addr_ggtt);
+	ads_blob_write(ads, ads.reg_state_list[GUC_COMPUTE_CLASS][0].count, 1);
+}
+
+
 static void fill_engine_enable_masks(struct xe_gt *gt,
 				     struct iosys_map *info_map)
 {
@@ -338,6 +371,9 @@ void xe_guc_ads_populate(struct xe_guc_ads *ads)
 	guc_mapping_table_init(gt, &info_map);
 	guc_capture_list_init(ads);
 	guc_mmio_reg_state_init(ads);
+
+	if (xe->info.platform == XE_PVC)
+		fill_regset_pvc(ads);
 
 	if (GRAPHICS_VER(xe) >= 12 && !IS_DGFX(xe)) {
 		u32 distdbreg =
