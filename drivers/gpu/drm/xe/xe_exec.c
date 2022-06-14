@@ -17,12 +17,35 @@
 #include "xe_sync.h"
 #include "xe_vm.h"
 
-static int xe_exec_begin(struct xe_engine *e)
+static int xe_exec_begin(struct xe_engine *e, struct ww_acquire_ctx *ww,
+			 struct ttm_validate_buffer *tv_vm,
+			 struct list_head *objs)
 {
+	struct xe_vm *vm = e->vm;
+	struct xe_vma *vma;
+	LIST_HEAD(dups);
 	int err;
 	int i;
 
-	xe_vm_lock(e->vm, NULL);
+	lockdep_assert_held(&vm->lock);
+
+	if (!xe_vm_in_compute_mode(e->vm)) {
+		INIT_LIST_HEAD(objs);
+		list_for_each_entry(vma, &vm->external_vma_list,
+				    external_vma_link) {
+			XE_BUG_ON(vma->external_vma_tv.num_shared != 1);
+			vma->external_vma_tv.bo = &vma->bo->ttm;
+			list_add_tail(&vma->external_vma_tv.head, objs);
+		}
+		tv_vm->num_shared = 1;
+		tv_vm->bo = xe_vm_ttm_bo(vm);;
+		list_add_tail(&tv_vm->head, objs);
+		err = ttm_eu_reserve_buffers(ww, objs, true, &dups);
+		if (err)
+			return err;
+	} else {
+		xe_vm_lock(e->vm, NULL);
+	}
 
 	for (i = 0; i < e->width; ++i) {
 		err = xe_bo_vmap(e->lrc[i].bo);
@@ -37,9 +60,13 @@ err_unlock_vm:
 	return err;
 }
 
-static void xe_exec_end(struct xe_engine *e)
+static void xe_exec_end(struct xe_engine *e, struct ww_acquire_ctx *ww,
+			struct list_head *objs)
 {
-	xe_vm_unlock(e->vm);
+	if (!xe_vm_in_compute_mode(e->vm))
+		ttm_eu_backoff_reservation(ww, objs);
+	else
+		xe_vm_unlock(e->vm);
 }
 
 int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
@@ -56,6 +83,9 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	struct xe_sched_job *job;
 	struct dma_fence *userptr_fence;
 	struct xe_vm *vm;
+	struct ww_acquire_ctx ww;
+	struct list_head objs;
+	struct ttm_validate_buffer tv_vm;
 	int err = 0;
 
 	if (XE_IOCTL_ERR(xe, args->extensions))
@@ -107,7 +137,7 @@ retry:
 	if (err)
 		goto err_unlock_list;
 
-	err = xe_exec_begin(engine);
+	err = xe_exec_begin(engine, &ww, &tv_vm, &objs);
 	if (err)
 		goto err_unlock_list;
 
@@ -122,12 +152,6 @@ retry:
 	if (IS_ERR(job)) {
 		err = PTR_ERR(job);
 		goto err_engine_end;
-	}
-
-	if (xe_vm_has_userptr(vm)) {
-		err = dma_resv_reserve_fences(&vm->resv, 1);
-		if (err)
-			goto err_put_job;
 	}
 
 	userptr_fence = xe_vm_userptr_bind(vm);
@@ -188,7 +212,7 @@ err_put_job:
 	if (err && err != -EAGAIN)
 		xe_sched_job_free(job);
 err_engine_end:
-	xe_exec_end(engine);
+	xe_exec_end(engine, &ww, &objs);
 err_unlock_list:
 	mutex_unlock(&vm->lock);
 	if (err == -EAGAIN)
