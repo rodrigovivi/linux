@@ -733,6 +733,8 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 	if (read_only)
 		vma->pte_flags = PTE_READ_ONLY;
 
+	INIT_LIST_HEAD(&vma->external_vma_link);
+
 	if (bo) {
 		xe_bo_assert_held(bo);
 		vma->bo_offset = bo_offset_or_userptr;
@@ -877,9 +879,12 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 
 	vm->vmas = RB_ROOT;
 
-	INIT_LIST_HEAD(&vm->userptr.list);
 	mutex_init(&vm->lock);
+
+	INIT_LIST_HEAD(&vm->userptr.list);
 	rwlock_init(&vm->userptr.notifier_lock);
+
+	INIT_LIST_HEAD(&vm->external_vma_list);
 
 	INIT_LIST_HEAD(&vm->async_ops.pending);
 	INIT_WORK(&vm->async_ops.work, async_op_work_func);
@@ -2394,8 +2399,22 @@ struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 	}
 
 out_unlock:
-	if (bo)
+	if (bo) {
 		ttm_eu_backoff_reservation(&ww, &objs);
+
+		if (!bo->vm && !IS_ERR(vma) && !xe_vm_in_compute_mode(vm)) {
+			if (VM_BIND_OP(op) == XE_VM_BIND_OP_MAP) {
+				mutex_lock(&vm->lock);
+				list_add_tail(&vma->external_vma_link,
+					      &vm->external_vma_list);
+				mutex_unlock(&vm->lock);
+			} else if (VM_BIND_OP(op) == XE_VM_BIND_OP_MAP) {
+				mutex_lock(&vm->lock);
+				list_del(&vma->external_vma_link);
+				mutex_unlock(&vm->lock);
+			}
+		}
+	}
 
 	return vma;
 }

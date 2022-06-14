@@ -41,6 +41,12 @@ struct xe_vma {
 		struct list_head userptr_link;
 	};
 
+	/**
+	 * @external_vma_link: link into VM's list of external VMAs (i.e. the
+	 * VMA's BO is not tied to a specific VM)
+	 */
+	struct list_head external_vma_link;
+
 	/** @userptr: user pointer state */
 	struct {
 		/** @ptr: user pointer */
@@ -129,6 +135,12 @@ struct xe_vm {
 
 	/** @lock: outer most lock, protects list of user pointers */
 	struct mutex lock;
+
+	/**
+	 * @external_vma_list: list of external VMAs (i.e. the VMA's BO is not
+	 * tied to a specific VM)
+	 */
+	struct list_head external_vma_list;
 
 	/** @async_ops: async VM operations (bind / unbinds) */
 	struct {
