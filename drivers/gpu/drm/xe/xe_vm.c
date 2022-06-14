@@ -733,6 +733,7 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 	if (read_only)
 		vma->pte_flags = PTE_READ_ONLY;
 
+	vma->external_vma_tv.num_shared = 1;
 	INIT_LIST_HEAD(&vma->external_vma_link);
 
 	if (bo) {
@@ -2046,10 +2047,15 @@ static int __vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 	}
 }
 
+struct ttm_buffer_object *xe_vm_ttm_bo(struct xe_vm *vm)
+{
+	return &vm->pt_root->bo->ttm;
+}
+
 static void xe_vm_tv_populate(struct xe_vm *vm, struct ttm_validate_buffer *tv)
 {
 	tv->num_shared = 1;
-	tv->bo = &vm->pt_root->bo->ttm;
+	tv->bo = xe_vm_ttm_bo(vm);
 }
 
 static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
@@ -2113,7 +2119,7 @@ static int lock_vm_bo(struct xe_vm *vm, struct xe_bo *bo,
 {
 	LIST_HEAD(dups);
 
-	tv_vm->bo = &vm->pt_root->bo->ttm;
+	tv_vm->bo = xe_vm_ttm_bo(vm);
 	tv_vm->num_shared = 0;
 	list_add_tail(&tv_vm->head, objs);
 
