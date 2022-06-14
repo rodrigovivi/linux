@@ -189,6 +189,10 @@ err_iomap:
 
 #define GEN12_GUC_TLB_INV_CR                     _MMIO(0xcee8)
 #define   GEN12_GUC_TLB_INV_CR_INVALIDATE        (1 << 0)
+#define PVC_GUC_TLB_INV_DESC0			_MMIO(0xcf7c)
+#define   PVC_GUC_TLB_INV_DESC0_VALID		 (1 << 0)
+#define PVC_GUC_TLB_INV_DESC1			_MMIO(0xcf80)
+#define   PVC_GUC_TLB_INV_DESC1_INVALIDATE	 (1 << 6)
 
 static void xe_ggtt_invalidate(struct xe_gt *gt)
 {
@@ -198,9 +202,19 @@ static void xe_ggtt_invalidate(struct xe_gt *gt)
 	 * therefore flushing WC buffers.  Is that really true here?
 	 */
 	xe_mmio_write32(gt, GFX_FLSH_CNTL_GEN6.reg, GFX_FLSH_CNTL_EN);
-	if (xe_gt_guc_submission_enabled(gt))
-		xe_mmio_write32(gt, GEN12_GUC_TLB_INV_CR.reg,
-				GEN12_GUC_TLB_INV_CR_INVALIDATE);
+	if (xe_gt_guc_submission_enabled(gt)) {
+		struct xe_device *xe = gt_to_xe(gt);
+
+		/* TODO: also use vfunc here */
+		if (xe->info.platform == XE_PVC) {
+			xe_mmio_write32(gt, PVC_GUC_TLB_INV_DESC1.reg,
+					PVC_GUC_TLB_INV_DESC1_INVALIDATE);
+			xe_mmio_write32(gt, PVC_GUC_TLB_INV_DESC0.reg,
+					PVC_GUC_TLB_INV_DESC0_VALID);
+		} else
+			xe_mmio_write32(gt, GEN12_GUC_TLB_INV_CR.reg,
+					GEN12_GUC_TLB_INV_CR_INVALIDATE);
+	}
 }
 
 void xe_ggtt_printk(struct xe_ggtt *ggtt, const char *prefix)
