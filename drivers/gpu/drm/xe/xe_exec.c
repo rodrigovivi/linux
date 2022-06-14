@@ -196,6 +196,26 @@ retry:
 
 	err = xe_vm_userptr_needs_repin(vm);
 
+	/*
+	 * Make implicit sync work across drivers, assuming all external BOs are
+	 * written as we don't pass in a read / write list.
+	 */
+	if (!xe_vm_in_compute_mode(vm) && !err) {
+		struct ttm_validate_buffer *entry;
+		struct ttm_buffer_object *ttm_vm = xe_vm_ttm_bo(vm);;
+
+		list_for_each_entry(entry, &objs, head) {
+			struct ttm_buffer_object *ttm = entry->bo;
+
+			if (ttm == ttm_vm)
+				continue;
+
+			dma_resv_add_fence(ttm->base.resv,
+					   &job->drm.s_fence->finished,
+					   DMA_RESV_USAGE_WRITE);
+		}
+	}
+
 	for (i = 0; i < num_syncs && !err; i++)
 		err = xe_sync_entry_add_deps(&syncs[i], job);
 
