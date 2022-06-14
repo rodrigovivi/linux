@@ -46,7 +46,6 @@ static struct xe_device *uc_fw_to_xe(struct xe_uc_fw *uc_fw)
 	fw_def(ALDERLAKE_S,  0, guc_def(tgl,  70, 0, 2)) \
 	fw_def(PVC,          0, guc_def(pvc,  70, 0, 2)) \
 	fw_def(DG2,          0, guc_def(dg2,  70, 0, 2)) \
-	fw_def(XEHP_SDV,     0, guc_def(xehpsdv, 70, 0, 2)) \
 	fw_def(DG1,          0, guc_def(dg1,  70, 0, 2)) \
 	fw_def(TIGERLAKE,    0, guc_def(tgl,  70, 0, 2))
 
