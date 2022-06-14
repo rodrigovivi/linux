@@ -322,9 +322,6 @@ static u32 hw_engine_mmio_read32(struct xe_hw_engine *hwe, u32 reg)
 	return xe_mmio_read32(hwe->gt, reg + hwe->mmio_base);
 }
 
-#define GEN12_RCU_MODE			_MMIO(0x14800)
-#define   GEN12_RCU_MODE_CCS_ENABLE	REG_BIT(0)
-
 void xe_hw_engine_enable_ring(struct xe_hw_engine *hwe)
 {
 	uint32_t ccs_mask = xe_hw_engine_mask_per_class(hwe->gt,
