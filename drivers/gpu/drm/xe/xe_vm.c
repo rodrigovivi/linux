@@ -584,9 +584,9 @@ static void vma_destroy_work_func(struct work_struct *w)
 	XE_BUG_ON(!vma->userptr.destroyed);
 
 	if (!list_empty(&vma->userptr_link)) {
-		mutex_lock(&vm->userptr.list_lock);
+		mutex_lock(&vm->lock);
 		list_del(&vma->bo_link);
-		mutex_unlock(&vm->userptr.list_lock);
+		mutex_unlock(&vm->lock);
 	}
 
 	kfree(vma->userptr.dma_address);
@@ -648,7 +648,7 @@ int xe_vm_userptr_pin(struct xe_vm *vm)
 	struct xe_vma *vma;
 	int err = 0;
 
-	lockdep_assert_held(&vm->userptr.list_lock);
+	lockdep_assert_held(&vm->lock);
 	if (!xe_vm_has_userptr(vm) || xe_vm_in_compute_mode(vm))
 		return 0;
 
@@ -666,7 +666,7 @@ int xe_vm_userptr_needs_repin(struct xe_vm *vm)
 	struct xe_vma *vma;
 	int err = 0;
 
-	lockdep_assert_held(&vm->userptr.list_lock);
+	lockdep_assert_held(&vm->lock);
 	if (!xe_vm_has_userptr(vm) || xe_vm_in_compute_mode(vm))
 		return 0;
 
@@ -693,7 +693,7 @@ struct dma_fence *xe_vm_userptr_bind(struct xe_vm *vm)
 	struct xe_vma *vma;
 
 	xe_vm_assert_held(vm);
-	lockdep_assert_held(&vm->userptr.list_lock);
+	lockdep_assert_held(&vm->lock);
 	if (!xe_vm_has_userptr(vm) || xe_vm_in_compute_mode(vm))
 		return NULL;
 
@@ -878,7 +878,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 	vm->vmas = RB_ROOT;
 
 	INIT_LIST_HEAD(&vm->userptr.list);
-	mutex_init(&vm->userptr.list_lock);
+	mutex_init(&vm->lock);
 	rwlock_init(&vm->userptr.notifier_lock);
 
 	INIT_LIST_HEAD(&vm->async_ops.pending);
@@ -2383,9 +2383,9 @@ struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 		}
 		xe_vm_unlock(vm);
 
-		mutex_lock(&vm->userptr.list_lock);
+		mutex_lock(&vm->lock);
 		list_add_tail(&vma->userptr_link, &vm->userptr.list);
-		mutex_unlock(&vm->userptr.list_lock);
+		mutex_unlock(&vm->lock);
 
 		break;
 	default:

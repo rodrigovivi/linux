@@ -127,6 +127,9 @@ struct xe_vm {
 #define VM_FLAG_ASYNC_BIND_OPS	BIT(2)
 	unsigned long flags;
 
+	/** @lock: outer most lock, protects list of user pointers */
+	struct mutex lock;
+
 	/** @async_ops: async VM operations (bind / unbinds) */
 	struct {
 		/** @list: list of pending async VM ops */
@@ -161,8 +164,6 @@ struct xe_vm {
 	struct {
 		/** @list: list of VMAs which are user pointers */
 		struct list_head list;
-		/** @list_lock: protects list of user pointers */
-		struct mutex list_lock;
 		/**
 		 * @notifier_lock: protects notifier + pending_rebind
 		 */

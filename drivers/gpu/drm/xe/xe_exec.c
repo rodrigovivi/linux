@@ -102,7 +102,7 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 
 	vm = engine->vm;
 retry:
-	mutex_lock(&vm->userptr.list_lock);
+	mutex_lock(&vm->lock);
 	err = xe_vm_userptr_pin(vm);
 	if (err)
 		goto err_unlock_list;
@@ -190,7 +190,7 @@ err_put_job:
 err_engine_end:
 	xe_exec_end(engine);
 err_unlock_list:
-	mutex_unlock(&vm->userptr.list_lock);
+	mutex_unlock(&vm->lock);
 	if (err == -EAGAIN)
 		goto retry;
 err_syncs:
