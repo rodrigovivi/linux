@@ -369,32 +369,6 @@ static const struct intel_device_info ats_m_info = {
 	.vram_flags = XE_VRAM_FLAGS_NEED64K,
 };
 
-
-#define XEHP_SDV_ENGINES \
-	BIT(XE_HW_ENGINE_BCS0)  | \
-	BIT(XE_HW_ENGINE_VECS0) | BIT(XE_HW_ENGINE_VECS1) | \
-	BIT(XE_HW_ENGINE_VECS2) | BIT(XE_HW_ENGINE_VECS3) | \
-	BIT(XE_HW_ENGINE_VCS0)  | BIT(XE_HW_ENGINE_VCS1)  | \
-	BIT(XE_HW_ENGINE_VCS2)  | BIT(XE_HW_ENGINE_VCS3)  | \
-	BIT(XE_HW_ENGINE_VCS4)  | BIT(XE_HW_ENGINE_VCS5)  | \
-	BIT(XE_HW_ENGINE_VCS6)  | BIT(XE_HW_ENGINE_VCS7)  | \
-	BIT(XE_HW_ENGINE_CCS0)  | BIT(XE_HW_ENGINE_CCS1)  | \
-	BIT(XE_HW_ENGINE_CCS2)  | BIT(XE_HW_ENGINE_CCS3)
-
-static const struct intel_device_info xehp_sdv_info = {
-	XE_HP_FEATURES,
-	XE_HPM_FEATURES,
-	DGFX_FEATURES,
-	PLATFORM(XE_XEHP_SDV),
-	.display = { },
-	.pipe_mask = 0,
-	.platform_engine_mask = XEHP_SDV_ENGINES,
-	.require_force_probe = 1,
-	.vram_flags = XE_VRAM_FLAGS_NEED64K,
-	.has_tiles = true,
-};
-
-#undef GEN
 #undef PLATFORM
 
 /*
@@ -408,7 +382,6 @@ static const struct pci_device_id pciidlist[] = {
 	INTEL_DG1_IDS(&dg1_info),
 	INTEL_ATS_M_IDS(&ats_m_info),
 	INTEL_DG2_IDS(&ats_m_info), /* TODO: switch to proper dg2_info */
-	INTEL_XEHPSDV_IDS(&xehp_sdv_info),
 	INTEL_ADLS_IDS(&adl_s_info),
 	{0, 0, 0}
 };
