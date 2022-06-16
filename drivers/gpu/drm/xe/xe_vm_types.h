@@ -137,8 +137,11 @@ struct xe_vm {
 #define VM_FLAG_ASYNC_BIND_OPS	BIT(2)
 	unsigned long flags;
 
-	/** @lock: outer most lock, protects list of user pointers */
-	struct mutex lock;
+	/**
+	 * @lock: outer most lock, protects objects of anything attached to this
+	 * VM
+	 */
+	struct rw_semaphore lock;
 
 	/**
 	 * @external_vma_list: list of external VMAs (i.e. the VMA's BO is not
