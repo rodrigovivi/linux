@@ -584,9 +584,9 @@ static void vma_destroy_work_func(struct work_struct *w)
 	XE_BUG_ON(!vma->userptr.destroyed);
 
 	if (!list_empty(&vma->userptr_link)) {
-		mutex_lock(&vm->lock);
+		down_write(&vm->lock);
 		list_del(&vma->bo_link);
-		mutex_unlock(&vm->lock);
+		up_write(&vm->lock);
 	}
 
 	kfree(vma->userptr.dma_address);
@@ -880,7 +880,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 
 	vm->vmas = RB_ROOT;
 
-	mutex_init(&vm->lock);
+	init_rwsem(&vm->lock);
 
 	INIT_LIST_HEAD(&vm->userptr.list);
 	rwlock_init(&vm->userptr.notifier_lock);
@@ -2394,9 +2394,9 @@ struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 		}
 		xe_vm_unlock(vm);
 
-		mutex_lock(&vm->lock);
+		down_write(&vm->lock);
 		list_add_tail(&vma->userptr_link, &vm->userptr.list);
-		mutex_unlock(&vm->lock);
+		up_write(&vm->lock);
 
 		break;
 	default:
@@ -2410,14 +2410,14 @@ out_unlock:
 
 		if (!bo->vm && !IS_ERR(vma) && !xe_vm_in_compute_mode(vm)) {
 			if (VM_BIND_OP(op) == XE_VM_BIND_OP_MAP) {
-				mutex_lock(&vm->lock);
+				down_write(&vm->lock);
 				list_add_tail(&vma->external_vma_link,
 					      &vm->external_vma_list);
-				mutex_unlock(&vm->lock);
+				up_write(&vm->lock);
 			} else if (VM_BIND_OP(op) == XE_VM_BIND_OP_MAP) {
-				mutex_lock(&vm->lock);
+				down_write(&vm->lock);
 				list_del(&vma->external_vma_link);
-				mutex_unlock(&vm->lock);
+				up_write(&vm->lock);
 			}
 		}
 	}
