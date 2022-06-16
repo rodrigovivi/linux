@@ -419,7 +419,7 @@ static int vma_userptr_pin_pages(struct xe_vma *vma)
 	XE_BUG_ON(!vma_is_userptr(vma));
 
 retry:
-	if (vma->userptr.destroyed)
+	if (vma->destroyed)
 		return 0;
 
 	notifier_seq = mmu_interval_read_begin(&vma->userptr.notifier);
@@ -548,7 +548,7 @@ retry:
 
 	xe_vm_lock(vm, NULL);
 
-	if (!vma->userptr.destroyed && vma->userptr.dirty) {
+	if (!vma->destroyed && vma->userptr.dirty) {
 		ret = dma_resv_reserve_fences(&vm->resv, 1);
 		if (!ret) {
 			ret = __xe_vm_bind(vm, vma, NULL, NULL, 0, NULL);
@@ -581,7 +581,7 @@ static void vma_destroy_work_func(struct work_struct *w)
 	struct xe_vm *vm = vma->vm;
 
 	XE_BUG_ON(!vma_is_userptr(vma));
-	XE_BUG_ON(!vma->userptr.destroyed);
+	XE_BUG_ON(!vma->destroyed);
 
 	if (!list_empty(&vma->userptr_link)) {
 		down_write(&vm->lock);
@@ -617,7 +617,7 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 	 * Process exiting, userptr being destroyed, or VMA hasn't gone through
 	 * initial bind, regardless nothing to do
 	 */
-	if (current->flags & PF_EXITING || vma->userptr.destroyed ||
+	if (current->flags & PF_EXITING || vma->destroyed ||
 	    !vma->userptr.initial_bind) {
 		write_unlock(&vm->userptr.notifier_lock);
 		return true;
@@ -733,9 +733,6 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 	if (read_only)
 		vma->pte_flags = PTE_READ_ONLY;
 
-	vma->external_vma_tv.num_shared = 1;
-	INIT_LIST_HEAD(&vma->external_vma_link);
-
 	if (bo) {
 		xe_bo_assert_held(bo);
 		vma->bo_offset = bo_offset_or_userptr;
@@ -784,7 +781,6 @@ static void xe_vma_destroy(struct xe_vma *vma)
 		 * Needs to be done outside VM lock as flushing
 		 * userptr.rebind_work requires VM lock
 		 */
-		vma->userptr.destroyed = true;
 		INIT_WORK(&vma->userptr.destroy_work, vma_destroy_work_func);
 		queue_work(system_unbound_wq, &vma->userptr.destroy_work);
 	} else {
@@ -884,8 +880,6 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 
 	INIT_LIST_HEAD(&vm->userptr.list);
 	rwlock_init(&vm->userptr.notifier_lock);
-
-	INIT_LIST_HEAD(&vm->external_vma_list);
 
 	INIT_LIST_HEAD(&vm->async_ops.pending);
 	INIT_WORK(&vm->async_ops.work, async_op_work_func);
@@ -1065,6 +1059,9 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 	if (vm->async_ops.error_capture.addr)
 		vm_async_op_error_capture(vm, -ENODEV, XE_VM_BIND_OP_CLOSE,
 					  0, 0);
+
+	kfree(vm->extobj.bos);
+	vm->extobj.bos = NULL;
 
 	xe_vm_put(vm);
 }
@@ -2307,6 +2304,58 @@ static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_vma *vma,
 	return 0;
 }
 
+static bool bo_has_vm_references(struct xe_bo *bo, struct xe_vm *vm,
+				 struct xe_vma *ignore)
+{
+	struct xe_vma *vma;
+
+	list_for_each_entry(vma, &bo->vmas, bo_link) {
+		if (vma != ignore && vma->vm == vm && !vma->destroyed)
+			return true;
+	}
+
+	return false;
+}
+
+static int vm_insert_extobj(struct xe_vm *vm, struct xe_vma *vma)
+{
+	struct xe_bo **bos, *bo = vma->bo;
+
+	lockdep_assert_held(&vm->lock);
+
+	if (bo_has_vm_references(bo, vm, vma))
+		return 0;
+
+	bos = krealloc(vm->extobj.bos, (vm->extobj.entries + 1) * sizeof(*bos),
+		       GFP_KERNEL);
+	if (!bos)
+		return -ENOMEM;
+
+	vm->extobj.bos = bos;
+	vm->extobj.bos[vm->extobj.entries++] = bo;
+	return 0;
+}
+
+static void vm_remove_extobj(struct xe_vm *vm, struct xe_vma *vma)
+{
+	struct xe_bo *bo = vma->bo;
+	int i;
+
+	lockdep_assert_held(&vm->lock);
+
+	if (bo_has_vm_references(bo, vm, vma))
+		return;
+
+	vm->extobj.entries--;
+	for (i = 0; i < vm->extobj.entries; i++) {
+		if (vm->extobj.bos[i] == bo) {
+			swap(vm->extobj.bos[vm->extobj.entries],
+			     vm->extobj.bos[i]);
+			break;
+		}
+	}
+}
+
 struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 					u64 bo_offset_or_userptr, u64 addr,
 					u64 range, u32 op)
@@ -2371,6 +2420,7 @@ struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 			goto out_unlock;
 		}
 
+		vma->destroyed = true;
 		xe_vm_remove_vma(vm, vma);
 		if (!bo)
 			xe_vm_unlock(vm);
@@ -2408,15 +2458,14 @@ out_unlock:
 	if (bo) {
 		ttm_eu_backoff_reservation(&ww, &objs);
 
-		if (!bo->vm && !IS_ERR(vma) && !xe_vm_in_compute_mode(vm)) {
+		if (!bo->vm && !IS_ERR(vma)) {
 			if (VM_BIND_OP(op) == XE_VM_BIND_OP_MAP) {
 				down_write(&vm->lock);
-				list_add_tail(&vma->external_vma_link,
-					      &vm->external_vma_list);
+				vm_insert_extobj(vm, vma);
 				up_write(&vm->lock);
-			} else if (VM_BIND_OP(op) == XE_VM_BIND_OP_MAP) {
+			} else if (VM_BIND_OP(op) == XE_VM_BIND_OP_UNMAP) {
 				down_write(&vm->lock);
-				list_del(&vma->external_vma_link);
+				vm_remove_extobj(vm, vma);
 				up_write(&vm->lock);
 			}
 		}

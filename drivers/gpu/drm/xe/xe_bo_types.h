@@ -12,6 +12,7 @@
 #include <drm/drm_mm.h>
 #include <drm/ttm/ttm_bo_api.h>
 #include <drm/ttm/ttm_device.h>
+#include <drm/ttm/ttm_execbuf_util.h>
 #include <drm/ttm/ttm_placement.h>
 
 struct xe_device;
@@ -36,6 +37,9 @@ struct xe_bo {
 	struct drm_mm_node ggtt_node;
 
 	struct iosys_map vmap;
+
+	/** @extobj_tv: used during exec to lock all external BOs */
+	struct ttm_validate_buffer extobj_tv;
 };
 
 #endif	/* _XE_BO_TYPES_H_ */

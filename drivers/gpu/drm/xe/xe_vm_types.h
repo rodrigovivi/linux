@@ -11,8 +11,6 @@
 #include <linux/kref.h>
 #include <linux/mmu_notifier.h>
 
-#include <drm/ttm/ttm_execbuf_util.h>
-
 struct xe_bo;
 struct xe_vm;
 
@@ -36,20 +34,15 @@ struct xe_vma {
 	/** @bo_offset: offset into BO if not a userptr, unused for userptr */
 	uint64_t bo_offset;
 
+	/** @destroyed: VMA is destroyed */
+	bool destroyed;
+
 	union {
 		/** @bo_link: link into BO if not a userptr */
 		struct list_head bo_link;
 		/** @userptr_link: link into VM if userptr */
 		struct list_head userptr_link;
 	};
-
-	/**
-	 * @external_vma_link: link into VM's list of external VMAs (i.e. the
-	 * VMA's BO is not tied to a specific VM)
-	 */
-	struct list_head external_vma_link;
-	/** @external_vma_tv: used during exec to lock all external BOs */
-	struct ttm_validate_buffer external_vma_tv;
 
 	/** @userptr: user pointer state */
 	struct {
@@ -71,8 +64,6 @@ struct xe_vma {
 		unsigned long notifier_seq;
 		/** @dirty: user pointer dirty (needs new VM bind) */
 		bool dirty;
-		/** @destroyed: user pointer is destroyed */
-		bool destroyed;
 		/** @initial_bind: user pointer has been bound at least once */
 		bool initial_bind;
 	} userptr;
@@ -143,11 +134,13 @@ struct xe_vm {
 	 */
 	struct rw_semaphore lock;
 
-	/**
-	 * @external_vma_list: list of external VMAs (i.e. the VMA's BO is not
-	 * tied to a specific VM)
-	 */
-	struct list_head external_vma_list;
+	/** @extobj: bookkeeping for external objects */
+	struct {
+		/** @enties: number of external BOs attached this VM */
+		u32 entries;
+		/** @bos: external BOs attached to this VM */
+		struct xe_bo **bos;
+	} extobj;
 
 	/** @async_ops: async VM operations (bind / unbinds) */
 	struct {

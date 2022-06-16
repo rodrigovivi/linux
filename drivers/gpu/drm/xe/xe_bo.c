@@ -328,6 +328,8 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct dma_resv *resv,
 	bo->size = size;
 	bo->flags = flags;
 	bo->ttm.base.funcs = &xe_gem_object_funcs;
+	bo->extobj_tv.num_shared = 1;
+	bo->extobj_tv.bo = &bo->ttm;
 	INIT_LIST_HEAD(&bo->vmas);
 
 	drm_gem_private_object_init(&xe->drm, &bo->ttm.base, size);
