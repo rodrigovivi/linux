@@ -22,7 +22,6 @@ static int xe_exec_begin(struct xe_engine *e, struct ww_acquire_ctx *ww,
 			 struct list_head *objs)
 {
 	struct xe_vm *vm = e->vm;
-	struct xe_vma *vma;
 	LIST_HEAD(dups);
 	int err;
 	int i;
@@ -31,11 +30,13 @@ static int xe_exec_begin(struct xe_engine *e, struct ww_acquire_ctx *ww,
 
 	if (!xe_vm_in_compute_mode(e->vm)) {
 		INIT_LIST_HEAD(objs);
-		list_for_each_entry(vma, &vm->external_vma_list,
-				    external_vma_link) {
-			XE_BUG_ON(vma->external_vma_tv.num_shared != 1);
-			vma->external_vma_tv.bo = &vma->bo->ttm;
-			list_add_tail(&vma->external_vma_tv.head, objs);
+		for (i = 0; i < vm->extobj.entries; ++i) {
+			struct xe_bo *bo = vm->extobj.bos[i];
+
+			XE_BUG_ON(bo->extobj_tv.num_shared != 1);
+			XE_BUG_ON(&bo->ttm != bo->extobj_tv.bo);
+
+			list_add_tail(&bo->extobj_tv.head, objs);
 		}
 		tv_vm->num_shared = 1;
 		tv_vm->bo = xe_vm_ttm_bo(vm);;
