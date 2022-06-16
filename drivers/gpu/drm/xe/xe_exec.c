@@ -17,12 +17,36 @@
 #include "xe_sync.h"
 #include "xe_vm.h"
 
-static int xe_exec_begin(struct xe_engine *e)
+static int xe_exec_begin(struct xe_engine *e, struct ww_acquire_ctx *ww,
+			 struct ttm_validate_buffer *tv_vm,
+			 struct list_head *objs)
 {
+	struct xe_vm *vm = e->vm;
+	LIST_HEAD(dups);
 	int err;
 	int i;
 
-	xe_vm_lock(e->vm, NULL);
+	lockdep_assert_held(&vm->lock);
+
+	if (!xe_vm_in_compute_mode(e->vm)) {
+		INIT_LIST_HEAD(objs);
+		for (i = 0; i < vm->extobj.entries; ++i) {
+			struct xe_bo *bo = vm->extobj.bos[i];
+
+			XE_BUG_ON(bo->extobj_tv.num_shared != 1);
+			XE_BUG_ON(&bo->ttm != bo->extobj_tv.bo);
+
+			list_add_tail(&bo->extobj_tv.head, objs);
+		}
+		tv_vm->num_shared = 1;
+		tv_vm->bo = xe_vm_ttm_bo(vm);;
+		list_add_tail(&tv_vm->head, objs);
+		err = ttm_eu_reserve_buffers(ww, objs, true, &dups);
+		if (err)
+			return err;
+	} else {
+		xe_vm_lock(e->vm, NULL);
+	}
 
 	for (i = 0; i < e->width; ++i) {
 		err = xe_bo_vmap(e->lrc[i].bo);
@@ -37,9 +61,13 @@ err_unlock_vm:
 	return err;
 }
 
-static void xe_exec_end(struct xe_engine *e)
+static void xe_exec_end(struct xe_engine *e, struct ww_acquire_ctx *ww,
+			struct list_head *objs)
 {
-	xe_vm_unlock(e->vm);
+	if (!xe_vm_in_compute_mode(e->vm))
+		ttm_eu_backoff_reservation(ww, objs);
+	else
+		xe_vm_unlock(e->vm);
 }
 
 int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
@@ -56,6 +84,9 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	struct xe_sched_job *job;
 	struct dma_fence *userptr_fence;
 	struct xe_vm *vm;
+	struct ww_acquire_ctx ww;
+	struct list_head objs;
+	struct ttm_validate_buffer tv_vm;
 	int err = 0;
 
 	if (XE_IOCTL_ERR(xe, args->extensions))
@@ -102,12 +133,15 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 
 	vm = engine->vm;
 retry:
-	mutex_lock(&vm->userptr.list_lock);
+	err = down_read_interruptible(&vm->lock);
+	if (err)
+		goto err_syncs;
+
 	err = xe_vm_userptr_pin(vm);
 	if (err)
 		goto err_unlock_list;
 
-	err = xe_exec_begin(engine);
+	err = xe_exec_begin(engine, &ww, &tv_vm, &objs);
 	if (err)
 		goto err_unlock_list;
 
@@ -122,12 +156,6 @@ retry:
 	if (IS_ERR(job)) {
 		err = PTR_ERR(job);
 		goto err_engine_end;
-	}
-
-	if (xe_vm_has_userptr(vm)) {
-		err = dma_resv_reserve_fences(&vm->resv, 1);
-		if (err)
-			goto err_put_job;
 	}
 
 	userptr_fence = xe_vm_userptr_bind(vm);
@@ -172,6 +200,26 @@ retry:
 
 	err = xe_vm_userptr_needs_repin(vm);
 
+	/*
+	 * Make implicit sync work across drivers, assuming all external BOs are
+	 * written as we don't pass in a read / write list.
+	 */
+	if (!xe_vm_in_compute_mode(vm) && !err) {
+		struct ttm_validate_buffer *entry;
+		struct ttm_buffer_object *ttm_vm = xe_vm_ttm_bo(vm);;
+
+		list_for_each_entry(entry, &objs, head) {
+			struct ttm_buffer_object *ttm = entry->bo;
+
+			if (ttm == ttm_vm)
+				continue;
+
+			dma_resv_add_fence(ttm->base.resv,
+					   &job->drm.s_fence->finished,
+					   DMA_RESV_USAGE_WRITE);
+		}
+	}
+
 	for (i = 0; i < num_syncs && !err; i++)
 		err = xe_sync_entry_add_deps(&syncs[i], job);
 
@@ -188,9 +236,9 @@ err_put_job:
 	if (err && err != -EAGAIN)
 		xe_sched_job_free(job);
 err_engine_end:
-	xe_exec_end(engine);
+	xe_exec_end(engine, &ww, &objs);
 err_unlock_list:
-	mutex_unlock(&vm->userptr.list_lock);
+	up_read(&vm->lock);
 	if (err == -EAGAIN)
 		goto retry;
 err_syncs:

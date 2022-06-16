@@ -13,6 +13,8 @@
 struct drm_device;
 struct drm_file;
 
+struct ttm_buffer_object;
+
 struct xe_file;
 struct xe_sync_entry;
 
@@ -73,7 +75,7 @@ int xe_vm_userptr_needs_repin(struct xe_vm *vm);
 struct dma_fence *xe_vm_userptr_bind(struct xe_vm *vm);
 static inline bool xe_vm_has_userptr(struct xe_vm *vm)
 {
-	lockdep_assert_held(&vm->userptr.list_lock);
+	lockdep_assert_held(&vm->lock);
 
 	return !list_empty(&vm->userptr.list);
 }
@@ -94,5 +96,7 @@ static inline int xe_vm_userptr_pending_rebind_read(struct xe_vm *vm)
 extern struct ttm_device_funcs xe_ttm_funcs;
 
 void xe_vm_dump_pgtt(struct xe_vm *vm);
+
+struct ttm_buffer_object *xe_vm_ttm_bo(struct xe_vm *vm);
 
 #endif /* _XE_VM_H_ */

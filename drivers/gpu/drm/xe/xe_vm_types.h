@@ -34,6 +34,9 @@ struct xe_vma {
 	/** @bo_offset: offset into BO if not a userptr, unused for userptr */
 	uint64_t bo_offset;
 
+	/** @destroyed: VMA is destroyed */
+	bool destroyed;
+
 	union {
 		/** @bo_link: link into BO if not a userptr */
 		struct list_head bo_link;
@@ -61,8 +64,6 @@ struct xe_vma {
 		unsigned long notifier_seq;
 		/** @dirty: user pointer dirty (needs new VM bind) */
 		bool dirty;
-		/** @destroyed: user pointer is destroyed */
-		bool destroyed;
 		/** @initial_bind: user pointer has been bound at least once */
 		bool initial_bind;
 	} userptr;
@@ -127,6 +128,20 @@ struct xe_vm {
 #define VM_FLAG_ASYNC_BIND_OPS	BIT(2)
 	unsigned long flags;
 
+	/**
+	 * @lock: outer most lock, protects objects of anything attached to this
+	 * VM
+	 */
+	struct rw_semaphore lock;
+
+	/** @extobj: bookkeeping for external objects */
+	struct {
+		/** @enties: number of external BOs attached this VM */
+		u32 entries;
+		/** @bos: external BOs attached to this VM */
+		struct xe_bo **bos;
+	} extobj;
+
 	/** @async_ops: async VM operations (bind / unbinds) */
 	struct {
 		/** @list: list of pending async VM ops */
@@ -161,8 +176,6 @@ struct xe_vm {
 	struct {
 		/** @list: list of VMAs which are user pointers */
 		struct list_head list;
-		/** @list_lock: protects list of user pointers */
-		struct mutex list_lock;
 		/**
 		 * @notifier_lock: protects notifier + pending_rebind
 		 */
