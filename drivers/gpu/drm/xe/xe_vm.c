@@ -2082,7 +2082,7 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 	 * the PTEs immediately in the unbind code. If doing an async VM unbind,
 	 * no penalty for sleeping here.
 	 */
-	if (VM_BIND_OP(args->op) == XE_VM_BIND_OP_UNMAP) {
+	if (VM_BIND_OP(args->bind.op) == XE_VM_BIND_OP_UNMAP) {
 		int i;
 
 		for (i = 0; i < num_syncs; i++) {
@@ -2092,7 +2092,7 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 		}
 	}
 
-	if (!(VM_BIND_OP(args->op) == XE_VM_BIND_OP_MAP_USERPTR)) {
+	if (!(VM_BIND_OP(args->bind.op) == XE_VM_BIND_OP_MAP_USERPTR)) {
 		LIST_HEAD(objs);
 		LIST_HEAD(dups);
 		struct ttm_validate_buffer tv_bo, tv_vm;
@@ -2109,14 +2109,19 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 
 		err = ttm_eu_reserve_buffers(&ww, &objs, true, &dups);
 		if (!err) {
-			err = __vm_bind_ioctl(vm, vma, e, bo, args->obj_offset,
-					      args->range, args->addr, args->op,
+			err = __vm_bind_ioctl(vm, vma, e, bo, args->bind.obj_offset,
+					      args->bind.range,
+					      args->bind.addr,
+					      args->bind.op,
 					      syncs, num_syncs, fence);
 			ttm_eu_backoff_reservation(&ww, &objs);
 		}
 	} else {
-		err = __vm_bind_ioctl(vm, vma, e, NULL, args->userptr,
-				      args->range, args->addr, args->op,
+		err = __vm_bind_ioctl(vm, vma, e, NULL,
+				      args->bind.userptr,
+				      args->bind.range,
+				      args->bind.addr,
+				      args->bind.op,
 				      syncs, num_syncs, fence);
 	}
 
@@ -2159,14 +2164,15 @@ static void async_op_work_func(struct work_struct *w)
 			down_write(&vm->lock);
 #ifdef TEST_VM_ASYNC_OPS_ERROR
 #define FORCE_ASYNC_OP_ERROR	BIT(31)
-			if (!(op->args.op & FORCE_ASYNC_OP_ERROR)) {
+			if (!(op->args.bind.op & FORCE_ASYNC_OP_ERROR)) {
 				err = vm_bind_ioctl(vm, op->vma, op->engine,
 						    op->bo, &op->args,
 						    op->syncs, op->num_syncs,
 						    op->fence);
 			} else {
 				err = -ENOMEM;
-				op->args.op &= ~FORCE_ASYNC_OP_ERROR;
+				op->args.bind.op &=
+					~FORCE_ASYNC_OP_ERROR;
 			}
 #else
 			err = vm_bind_ioctl(vm, op->vma, op->engine, op->bo,
@@ -2177,7 +2183,8 @@ static void async_op_work_func(struct work_struct *w)
 			if (err) {
 				trace_xe_vma_fail(op->vma);
 				drm_warn(&vm->xe->drm, "Async VM op(%d) failed with %d",
-					 VM_BIND_OP(op->args.op), err);
+					 VM_BIND_OP(op->args.bind.op),
+					 err);
 
 				spin_lock_irq(&vm->async_ops.lock);
 				list_add(&op->link, &vm->async_ops.pending);
@@ -2188,15 +2195,16 @@ static void async_op_work_func(struct work_struct *w)
 
 				if (vm->async_ops.error_capture.addr)
 					vm_async_op_error_capture(vm, err,
-								  op->args.op,
-								  op->args.addr,
-								  op->args.range);
+								  op->args.bind.op,
+								  op->args.bind.addr,
+								  op->args.bind.range);
 				break;
 			}
 		} else {
 			trace_xe_vma_flush(op->vma);
 
-			if (VM_BIND_OP(op->args.op) == XE_VM_BIND_OP_UNMAP) {
+			if (VM_BIND_OP(op->args.bind.op) ==
+			    XE_VM_BIND_OP_UNMAP) {
 				down_write(&vm->lock);
 				xe_vma_destroy(op->vma);
 				up_write(&vm->lock);
@@ -2440,22 +2448,26 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	int err = 0;
 	u32 num_syncs;
 	struct xe_sync_entry *syncs;
-	u64 range = args->range;
-	u64 addr = args->addr;
-	u32 op = args->op;
+	u64 range = args->bind.range;
+	u64 addr = args->bind.addr;
+	u32 op = args->bind.op;
 	bool async = (op & XE_VM_BIND_FLAG_ASYNC);
+
+	/* TODO: Support an array of binds */
+	if (XE_IOCTL_ERR(xe, args->num_binds != 1))
+		return -EINVAL;
 
 	if (XE_IOCTL_ERR(xe, args->extensions) ||
 	    XE_IOCTL_ERR(xe, VM_BIND_OP(op) >
 			 XE_VM_BIND_OP_RESTART) ||
 	    XE_IOCTL_ERR(xe, op & ~SUPPORTED_FLAGS) ||
-	    XE_IOCTL_ERR(xe, !args->obj &&
+	    XE_IOCTL_ERR(xe, !args->bind.obj &&
 			 VM_BIND_OP(op) == XE_VM_BIND_OP_MAP) ||
-	    XE_IOCTL_ERR(xe, args->obj &&
+	    XE_IOCTL_ERR(xe, args->bind.obj &&
 			 VM_BIND_OP(op) == XE_VM_BIND_OP_MAP_USERPTR))
 		return -EINVAL;
 
-	if (XE_IOCTL_ERR(xe, args->obj_offset & ~PAGE_MASK) ||
+	if (XE_IOCTL_ERR(xe, args->bind.obj_offset & ~PAGE_MASK) ||
 	    XE_IOCTL_ERR(xe, addr & ~PAGE_MASK) ||
 	    XE_IOCTL_ERR(xe, range & ~PAGE_MASK) ||
 	    XE_IOCTL_ERR(xe, !range && VM_BIND_OP(op) != XE_VM_BIND_OP_RESTART))
@@ -2516,8 +2528,8 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		goto put_engine;
 	}
 
-	if (args->obj) {
-		gem_obj = drm_gem_object_lookup(file, args->obj);
+	if (args->bind.obj) {
+		gem_obj = drm_gem_object_lookup(file, args->bind.obj);
 		if (XE_IOCTL_ERR(xe, !gem_obj)) {
 			err = -ENOENT;
 			goto put_engine;
@@ -2525,13 +2537,15 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		bo = gem_to_xe_bo(gem_obj);
 
 		if (XE_IOCTL_ERR(xe, range > bo->size) ||
-		    XE_IOCTL_ERR(xe, args->obj_offset > bo->size - range)) {
+		    XE_IOCTL_ERR(xe, args->bind.obj_offset >
+				 bo->size - range)) {
 			err = -EINVAL;
 			goto put_obj;
 		}
 
 		if (bo->flags & XE_BO_INTERNAL_64K) {
-			if (XE_IOCTL_ERR(xe, args->obj_offset & XE_64K_PAGE_MASK) ||
+			if (XE_IOCTL_ERR(xe, args->bind.obj_offset &
+					 XE_64K_PAGE_MASK) ||
 			    XE_IOCTL_ERR(xe, addr & XE_64K_PAGE_MASK) ||
 			    XE_IOCTL_ERR(xe, range & XE_64K_PAGE_MASK)) {
 				err = -EINVAL;
@@ -2557,8 +2571,8 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	err = down_write_killable(&vm->lock);
 	if (err)
 		goto free_syncs;
-	vma = vm_bind_ioctl_lookup_vma(vm, bo, args->obj_offset, addr, range,
-				       op);
+	vma = vm_bind_ioctl_lookup_vma(vm, bo, args->bind.obj_offset,
+				       addr, range, op);
 	if (IS_ERR(vma)) {
 		err = PTR_ERR(vma);
 		goto unlock;

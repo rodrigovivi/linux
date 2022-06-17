@@ -197,7 +197,7 @@ struct drm_xe_device_query {
 	__u64 data;
 
 	/** @reserved: Reserved */
-	__u64 reserved[4];
+	__u64 reserved[2];
 };
 
 struct drm_xe_gem_create {
@@ -238,7 +238,7 @@ struct drm_xe_gem_create {
 	__u32 handle;
 
 	/** @reserved: Reserved */
-	__u64 reserved[4];
+	__u64 reserved[2];
 };
 
 struct drm_xe_gem_mmap_offset {
@@ -255,7 +255,7 @@ struct drm_xe_gem_mmap_offset {
 	__u64 offset;
 
 	/** @reserved: Reserved */
-	__u64 reserved[4];
+	__u64 reserved[2];
 };
 
 /**
@@ -286,7 +286,7 @@ struct drm_xe_ext_vm_set_property {
 	__u64 value;
 
 	/** @reserved: Reserved */
-	__u64 reserved[4];
+	__u64 reserved[2];
 };
 
 struct drm_xe_vm_create {
@@ -305,7 +305,7 @@ struct drm_xe_vm_create {
 	__u32 vm_id;
 
 	/** @reserved: Reserved */
-	__u64 reserved[4];
+	__u64 reserved[2];
 };
 
 struct drm_xe_vm_destroy {
@@ -316,16 +316,10 @@ struct drm_xe_vm_destroy {
 	__u32 pad;
 
 	/** @reserved: Reserved */
-	__u64 reserved[4];
+	__u64 reserved[2];
 };
 
-struct drm_xe_vm_bind {
-	/** @extensions: Pointer to the first extension struct, if any */
-	__u64 extensions;
-
-	/** @vm_id: The ID of the VM to bind to */
-	__u32 vm_id;
-
+struct drm_xe_vm_bind_op {
 	/**
 	 * @obj: GEM object to operate on, MBZ for MAP_USERPTR, MBZ for UNMAP if
 	 * VMA is a userptr
@@ -383,12 +377,36 @@ struct drm_xe_vm_bind {
 	 */
 #define XE_VM_BIND_FLAG_ASYNC		(0x1 << 17)
 
+	/** @reserved: Reserved */
+	__u64 reserved[2];
+};
+
+struct drm_xe_vm_bind {
+	/** @extensions: Pointer to the first extension struct, if any */
+	__u64 extensions;
+
+	/** @vm_id: The ID of the VM to bind to */
+	__u32 vm_id;
+
 	/**
 	 * @engine_id: engine_id, must be of class DRM_XE_ENGINE_CLASS_VM_BIND
 	 * and engine must have same vm_id. If zero, the default VM bind engine
 	 * is used.
 	 */
 	__u32 engine_id;
+
+        /** @num_binds: number of binds in this IOCTL */
+        __u32 num_binds;
+
+        union {
+                /** @bind: used if num_binds == 1 */
+                struct drm_xe_vm_bind_op bind;
+                /**
+                 * @vector_of_binds: userptr to array of struct
+		 * drm_xe_vm_bind_op if num_binds > 1
+                 */
+                __u64 vector_of_binds;
+        };
 
 	/** @num_syncs: amount of syncs to wait on */
 	__u32 num_syncs;
@@ -397,7 +415,7 @@ struct drm_xe_vm_bind {
 	__u64 syncs;
 
 	/** @reserved: Reserved */
-	__u64 reserved[4];
+	__u64 reserved[2];
 };
 
 /** struct drm_xe_ext_engine_set_property - engine set property extension */
@@ -443,7 +461,7 @@ struct drm_xe_engine_set_property {
 	__u64 value;
 
 	/** @reserved: Reserved */
-	__u64 reserved[4];
+	__u64 reserved[2];
 };
 
 struct drm_xe_engine_create {
@@ -476,7 +494,7 @@ struct drm_xe_engine_create {
 	__u64 instances;
 
 	/** @reserved: Reserved */
-	__u64 reserved[4];
+	__u64 reserved[2];
 };
 
 struct drm_xe_engine_destroy {
@@ -487,7 +505,7 @@ struct drm_xe_engine_destroy {
 	__u32 pad;
 
 	/** @reserved: Reserved */
-	__u64 reserved[4];
+	__u64 reserved[2];
 };
 
 struct drm_xe_sync {
@@ -518,7 +536,7 @@ struct drm_xe_sync {
 	__u64 timeline_value;
 
 	/** @reserved: Reserved */
-	__u64 reserved[4];
+	__u64 reserved[2];
 };
 
 struct drm_xe_exec {
@@ -547,7 +565,7 @@ struct drm_xe_exec {
 	__u16 num_batch_buffer;
 
 	/** @reserved: Reserved */
-	__u64 reserved[4];
+	__u64 reserved[2];
 };
 
 struct drm_xe_mmio {
@@ -569,7 +587,7 @@ struct drm_xe_mmio {
 	__u64 value;
 
 	/** @reserved: Reserved */
-	__u64 reserved[4];
+	__u64 reserved[2];
 };
 
 /**
@@ -630,7 +648,7 @@ struct drm_xe_wait_user_fence {
 	__u64 instances;
 
 	/** @reserved: Reserved */
-	__u64 reserved[4];
+	__u64 reserved[2];
 };
 
 #if defined(__cplusplus)
