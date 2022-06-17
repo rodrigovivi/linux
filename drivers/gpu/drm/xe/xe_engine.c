@@ -198,6 +198,7 @@ static void preempt_complete(struct xe_engine *e)
 		return;
 	}
 
+	down_write(&vm->lock);
 	xe_vm_lock(vm, NULL);
 	if (!vm->preempt.num_inflight_ops &&
 	    !xe_vm_userptr_pending_rebind_read(vm)) {
@@ -221,6 +222,7 @@ static void preempt_complete(struct xe_engine *e)
 	if (enable_signaling || err)
 		dma_fence_enable_sw_signaling(pfence);
 	xe_vm_unlock(vm);
+	up_write(&vm->lock);
 }
 
 static const struct xe_preempt_fence_ops preempt_fence_ops = {
@@ -568,6 +570,7 @@ void xe_engine_kill(struct xe_engine *e)
 	if (!(e->flags & ENGINE_FLAG_COMPUTE_MODE))
 	      return;
 
+	down_write(&e->vm->lock);
 	xe_vm_lock(e->vm, NULL);
 	if (e->compute.pfence) {
 		if (!list_empty(&to_preempt_fence(e->compute.pfence)->link)) {
@@ -578,6 +581,7 @@ void xe_engine_kill(struct xe_engine *e)
 		e->compute.pfence = NULL;
 	}
 	xe_vm_unlock(e->vm);
+	up_write(&e->vm->lock);
 }
 
 int xe_engine_destroy_ioctl(struct drm_device *dev, void *data,
