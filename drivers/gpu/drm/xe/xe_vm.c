@@ -507,6 +507,7 @@ static void reinstall_preempt_fences(struct xe_vm *vm)
 {
 	struct xe_preempt_fence *pfence, *next;
 
+	lockdep_assert_held(&vm->lock);
 	xe_vm_assert_held(vm);
 
 	list_for_each_entry_safe(pfence, next,
@@ -546,6 +547,7 @@ retry:
 	ret = vma_userptr_pin_pages(vma);
 	XE_WARN_ON(ret < 0);
 
+	down_read(&vm->lock);
 	xe_vm_lock(vm, NULL);
 
 	if (!vma->destroyed && vma->userptr.dirty) {
@@ -556,6 +558,7 @@ retry:
 				ret = vma_userptr_needs_repin(vma);
 				if (ret == -EAGAIN) {
 					xe_vm_unlock(vm);
+					up_read(&vm->lock);
 					goto retry;
 				}
 				XE_WARN_ON(ret);
@@ -572,6 +575,7 @@ retry:
 		reinstall_preempt_fences(vm);
 
 	xe_vm_unlock(vm);
+	up_read(&vm->lock);
 }
 
 static void vma_destroy_work_func(struct work_struct *w)
@@ -774,6 +778,7 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 
 static void xe_vma_destroy(struct xe_vma *vma)
 {
+	lockdep_assert_held(&vma->vm->lock);
 
 	if (vma_is_userptr(vma)) {
 		/*
@@ -831,7 +836,7 @@ xe_vm_find_overlapping_vma(struct xe_vm *vm, const struct xe_vma *vma)
 	struct rb_node *node;
 
 	XE_BUG_ON(vma->end >= vm->size);
-	xe_vm_assert_held(vm);
+	lockdep_assert_held(&vm->lock);
 
 	node = rb_find(vma, &vm->vmas, xe_vma_cmp_vma_cb);
 
@@ -841,7 +846,7 @@ xe_vm_find_overlapping_vma(struct xe_vm *vm, const struct xe_vma *vma)
 static void xe_vm_insert_vma(struct xe_vm *vm, struct xe_vma *vma)
 {
 	XE_BUG_ON(vma->vm != vm);
-	xe_vm_assert_held(vm);
+	lockdep_assert_held(&vm->lock);
 
 	rb_add(&vma->vm_node, &vm->vmas, xe_vma_less_cb);
 }
@@ -849,7 +854,7 @@ static void xe_vm_insert_vma(struct xe_vm *vm, struct xe_vma *vma)
 static void xe_vm_remove_vma(struct xe_vm *vm, struct xe_vma *vma)
 {
 	XE_BUG_ON(vma->vm != vm);
-	xe_vm_assert_held(vm);
+	lockdep_assert_held(&vm->lock);
 
 	rb_erase(&vma->vm_node, &vm->vmas);
 }
@@ -1003,6 +1008,7 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 		vm->eng = NULL;
 	}
 
+	down_write(&vm->lock);
 	xe_vm_lock(vm, NULL);
 	while (vm->vmas.rb_node) {
 		struct xe_vma *vma = to_xe_vma(vm->vmas.rb_node);
@@ -1034,8 +1040,8 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 	}
 	xe_pt_destroy(vm->pt_root, vm->flags);
 	vm->pt_root = NULL;
-
 	xe_vm_unlock(vm);
+
 	if (contested.rb_node) {
 
 		/*
@@ -1045,13 +1051,9 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 		 */
 		while (contested.rb_node) {
 			struct xe_vma *vma = to_xe_vma(contested.rb_node);
-			struct xe_bo *bo = vma->bo;
 
 			rb_erase(&vma->vm_node, &contested);
-
-			xe_bo_lock_no_vm(bo, NULL);
 			xe_vma_destroy(vma);
-			xe_bo_unlock_no_vm(bo);
 		}
 	}
 
@@ -1061,6 +1063,7 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 
 	kfree(vm->extobj.bos);
 	vm->extobj.bos = NULL;
+	up_write(&vm->lock);
 
 	xe_vm_put(vm);
 }
@@ -1681,11 +1684,13 @@ static void preempt_op_worker(struct work_struct *w)
 
 	XE_BUG_ON(!xe_vm_in_compute_mode(vm));
 
+	down_read(&vm->lock);
 	xe_vm_lock(vm, NULL);
 	if (!--vm->preempt.num_inflight_ops &&
 	    !xe_vm_userptr_pending_rebind_read(vm))
 		reinstall_preempt_fences(vm);
 	xe_vm_unlock(vm);
+	up_read(&vm->lock);
 
 	xe_vm_put(vm);
 	kfree(op);
@@ -1801,8 +1806,16 @@ static int xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma, struct xe_engine *e,
 		      struct xe_bo *bo, struct xe_sync_entry *syncs,
 		      u32 num_syncs, struct async_op_fence *afence)
 {
+	int err;
+
 	xe_vm_assert_held(vm);
 	xe_bo_assert_held(bo);
+
+	if (bo) {
+		err = xe_bo_populate(bo);
+		if (err)
+			return err;
+	}
 
 	return __xe_vm_bind(vm, vma, e, syncs, num_syncs, afence);
 }
@@ -2062,6 +2075,8 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 {
 	int err;
 
+	lockdep_assert_held(&vm->lock);
+
 	/*
 	 * We can't do an unbind until all in syncs are signalled as we destroy
 	 * the PTEs immediately in the unbind code. If doing an async VM unbind,
@@ -2108,26 +2123,6 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 	return err;
 }
 
-static int lock_vm_bo(struct xe_vm *vm, struct xe_bo *bo,
-		      struct ttm_validate_buffer *tv_vm,
-		      struct ttm_validate_buffer *tv_bo,
-		      struct ww_acquire_ctx *ww, struct list_head *objs)
-{
-	LIST_HEAD(dups);
-
-	tv_vm->bo = xe_vm_ttm_bo(vm);
-	tv_vm->num_shared = 0;
-	list_add_tail(&tv_vm->head, objs);
-
-	if (bo && bo->vm != vm) {
-		tv_bo->bo = &bo->ttm;
-		tv_bo->num_shared = 0;
-		list_add(&tv_bo->head, objs);
-	}
-
-	return ttm_eu_reserve_buffers(ww, objs, true, &dups);
-}
-
 struct async_op {
 	struct xe_vma *vma;
 	struct xe_engine *engine;
@@ -2161,6 +2156,7 @@ static void async_op_work_func(struct work_struct *w)
 			break;
 
 		if (!xe_vm_is_closed(vm)) {
+			down_write(&vm->lock);
 #ifdef TEST_VM_ASYNC_OPS_ERROR
 #define FORCE_ASYNC_OP_ERROR	BIT(31)
 			if (!(op->args.op & FORCE_ASYNC_OP_ERROR)) {
@@ -2177,6 +2173,7 @@ static void async_op_work_func(struct work_struct *w)
 					    &op->args, op->syncs, op->num_syncs,
 					    op->fence);
 #endif
+			up_write(&vm->lock);
 			if (err) {
 				trace_xe_vma_fail(op->vma);
 				drm_warn(&vm->xe->drm, "Async VM op(%d) failed with %d",
@@ -2200,17 +2197,9 @@ static void async_op_work_func(struct work_struct *w)
 			trace_xe_vma_flush(op->vma);
 
 			if (VM_BIND_OP(op->args.op) == XE_VM_BIND_OP_UNMAP) {
-				struct ww_acquire_ctx ww;
-				struct ttm_validate_buffer tv_bo, tv_vm;
-				LIST_HEAD(objs);
-
-				if (!lock_vm_bo(vm, op->bo, &tv_vm, &tv_bo, &ww,
-						&objs)) {
-					xe_vma_destroy(op->vma);
-					ttm_eu_backoff_reservation(&ww, &objs);
-				} else {
-					XE_WARN_ON("Failed to lock VM/BO");
-				}
+				down_write(&vm->lock);
+				xe_vma_destroy(op->vma);
+				up_write(&vm->lock);
 			}
 
 			if (!test_bit(DMA_FENCE_FLAG_SIGNALED_BIT,
@@ -2257,8 +2246,6 @@ static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_vma *vma,
 	u64 seqno;
 	int i;
 
-	xe_vm_lock(vm, NULL);
-
 	op = kmalloc(sizeof(*op), GFP_KERNEL);
 	if (!op) {
 		xe_vm_unlock(vm);
@@ -2297,8 +2284,6 @@ static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_vma *vma,
 
 	if (!vm->async_ops.pause)
 		queue_work(system_unbound_wq, &vm->async_ops.work);
-
-	xe_vm_unlock(vm);
 
 	return 0;
 }
@@ -2360,69 +2345,50 @@ struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 					u64 range, u32 op)
 {
 	struct xe_device *xe = vm->xe;
-	struct ww_acquire_ctx ww;
-	struct ttm_validate_buffer tv_bo, tv_vm;
-	LIST_HEAD(objs);
 	struct xe_vma *vma, lookup;
 	int err;
 
+	lockdep_assert_held(&vm->lock);
+
 	lookup.start = addr;
 	lookup.end = addr + range - 1;
-
-	if (bo) {
-		err = lock_vm_bo(vm, bo, &tv_vm, &tv_bo, &ww, &objs);
-		if (err) {
-			vma = ERR_PTR(err);
-			return vma;
-		}
-	}
 
 	switch (VM_BIND_OP(op)) {
 	case XE_VM_BIND_OP_MAP:
 		XE_BUG_ON(!bo);
 
 		vma = xe_vm_find_overlapping_vma(vm, &lookup);
-		if (XE_IOCTL_ERR(xe, vma)) {
-			vma = ERR_PTR(-EBUSY);
-			goto out_unlock;
-		}
+		if (XE_IOCTL_ERR(xe, vma))
+			return ERR_PTR(-EBUSY);
 
-		err = xe_bo_populate(bo);
-		if (err) {
-			vma = ERR_PTR(err);
-			goto out_unlock;
-		}
 
+		err = dma_resv_lock_interruptible(bo->ttm.base.resv, NULL);
+		if (err)
+			return ERR_PTR(err);
 		vma = xe_vma_create(vm, bo, bo_offset_or_userptr, addr,
 				    addr + range - 1,
 				    op & XE_VM_BIND_FLAG_READONLY);
-		if (!vma) {
-			vma = ERR_PTR(-ENOMEM);
-			goto out_unlock;
-		}
+		dma_resv_unlock(bo->ttm.base.resv);
+		if (!vma)
+			return ERR_PTR(-ENOMEM);
 
 		xe_vm_insert_vma(vm, vma);
+		if (!bo->vm)
+			vm_insert_extobj(vm, vma);
 		break;
 	case XE_VM_BIND_OP_UNMAP:
-		if (!bo)
-			xe_vm_lock(vm, NULL);
-
 		vma = xe_vm_find_overlapping_vma(vm, &lookup);
 
 		if (XE_IOCTL_ERR(xe, !vma) ||
 		    XE_IOCTL_ERR(xe, vma->bo != bo) ||
 		    XE_IOCTL_ERR(xe, vma->start != addr) ||
-		    XE_IOCTL_ERR(xe, vma->end != addr + range - 1)) {
-			vma = ERR_PTR(-EINVAL);
-			if (!bo)
-				xe_vm_unlock(vm);
-			goto out_unlock;
-		}
+		    XE_IOCTL_ERR(xe, vma->end != addr + range - 1))
+			return ERR_PTR(-EINVAL);
 
 		vma->destroyed = true;
 		xe_vm_remove_vma(vm, vma);
-		if (!bo)
-			xe_vm_unlock(vm);
+		if (bo && !bo->vm)
+			vm_remove_extobj(vm, vma);
 		break;
 	case XE_VM_BIND_OP_MAP_USERPTR:
 		XE_BUG_ON(bo);
@@ -2434,40 +2400,17 @@ struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 			return ERR_PTR(-ENOMEM);
 
 		err = vma_userptr_pin_pages(vma);
-		xe_vm_lock(vm, NULL);
 		if (err || xe_vm_find_overlapping_vma(vm, &lookup)) {
 			xe_vma_destroy(vma);
 			vma = err ? ERR_PTR(err) : ERR_PTR(-EBUSY);
 		} else {
 			xe_vm_insert_vma(vm, vma);
+			list_add_tail(&vma->userptr_link, &vm->userptr.list);
 		}
-		xe_vm_unlock(vm);
-
-		down_write(&vm->lock);
-		list_add_tail(&vma->userptr_link, &vm->userptr.list);
-		up_write(&vm->lock);
-
 		break;
 	default:
 		XE_BUG_ON("NOT POSSIBLE");
 		vma = ERR_PTR(-EINVAL);
-	}
-
-out_unlock:
-	if (bo) {
-		ttm_eu_backoff_reservation(&ww, &objs);
-
-		if (!bo->vm && !IS_ERR(vma)) {
-			if (VM_BIND_OP(op) == XE_VM_BIND_OP_MAP) {
-				down_write(&vm->lock);
-				vm_insert_extobj(vm, vma);
-				up_write(&vm->lock);
-			} else if (VM_BIND_OP(op) == XE_VM_BIND_OP_UNMAP) {
-				down_write(&vm->lock);
-				vm_remove_extobj(vm, vma);
-				up_write(&vm->lock);
-			}
-		}
 	}
 
 	return vma;
@@ -2611,41 +2554,38 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 			goto free_syncs;
 	}
 
+	err = down_write_killable(&vm->lock);
+	if (err)
+		goto free_syncs;
 	vma = vm_bind_ioctl_lookup_vma(vm, bo, args->obj_offset, addr, range,
 				       op);
 	if (IS_ERR(vma)) {
 		err = PTR_ERR(vma);
-		goto free_syncs;
+		goto unlock;
 	}
 
 	if (async) {
 		err = vm_bind_ioctl_async(vm, vma, e, bo, args, syncs,
 					  num_syncs);
-		if (!err)
+		if (!err) {
+			up_write(&vm->lock);
 			return 0;
+		}
 	} else {
 		err = vm_bind_ioctl(vm, vma, e, bo, args, syncs, num_syncs,
 				    NULL);
 	}
 
 	if (err) {
-		struct ww_acquire_ctx ww;
-		struct ttm_validate_buffer tv_bo, tv_vm;
-		LIST_HEAD(objs);
-
 		switch (VM_BIND_OP(op)) {
 		case XE_VM_BIND_OP_MAP:
 		case XE_VM_BIND_OP_MAP_USERPTR:
-			if (!lock_vm_bo(vm, bo, &tv_vm, &tv_bo, &ww, &objs)) {
-				xe_vm_remove_vma(vm, vma);
-				xe_vma_destroy(vma);
-				ttm_eu_backoff_reservation(&ww, &objs);
-			} else {
-				XE_WARN_ON("Failed to lock VM/BO");
-			}
+			xe_vma_destroy(vma);
 		}
 	}
 
+unlock:
+	up_write(&vm->lock);
 free_syncs:
 	while (num_syncs--)
 		xe_sync_entry_cleanup(&syncs[num_syncs]);
