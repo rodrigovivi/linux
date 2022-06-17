@@ -581,7 +581,6 @@ static void vma_destroy_work_func(struct work_struct *w)
 	struct xe_vm *vm = vma->vm;
 
 	XE_BUG_ON(!vma_is_userptr(vma));
-	XE_BUG_ON(!vma->destroyed);
 
 	if (!list_empty(&vma->userptr_link)) {
 		down_write(&vm->lock);
