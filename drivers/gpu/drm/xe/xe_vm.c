@@ -2069,7 +2069,7 @@ static void xe_vm_tv_populate(struct xe_vm *vm, struct ttm_validate_buffer *tv)
 
 static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 			 struct xe_engine *e, struct xe_bo *bo,
-			 struct drm_xe_vm_bind *args,
+			 struct drm_xe_vm_bind_op *bind_op,
 			 struct xe_sync_entry *syncs, u32 num_syncs,
 			 struct async_op_fence *fence)
 {
@@ -2082,7 +2082,7 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 	 * the PTEs immediately in the unbind code. If doing an async VM unbind,
 	 * no penalty for sleeping here.
 	 */
-	if (VM_BIND_OP(args->bind.op) == XE_VM_BIND_OP_UNMAP) {
+	if (VM_BIND_OP(bind_op->op) == XE_VM_BIND_OP_UNMAP) {
 		int i;
 
 		for (i = 0; i < num_syncs; i++) {
@@ -2092,7 +2092,7 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 		}
 	}
 
-	if (!(VM_BIND_OP(args->bind.op) == XE_VM_BIND_OP_MAP_USERPTR)) {
+	if (!(VM_BIND_OP(bind_op->op) == XE_VM_BIND_OP_MAP_USERPTR)) {
 		LIST_HEAD(objs);
 		LIST_HEAD(dups);
 		struct ttm_validate_buffer tv_bo, tv_vm;
@@ -2109,20 +2109,17 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 
 		err = ttm_eu_reserve_buffers(&ww, &objs, true, &dups);
 		if (!err) {
-			err = __vm_bind_ioctl(vm, vma, e, bo, args->bind.obj_offset,
-					      args->bind.range,
-					      args->bind.addr,
-					      args->bind.op,
-					      syncs, num_syncs, fence);
+			err = __vm_bind_ioctl(vm, vma, e, bo,
+					      bind_op->obj_offset,
+					      bind_op->range, bind_op->addr,
+					      bind_op->op, syncs, num_syncs,
+					      fence);
 			ttm_eu_backoff_reservation(&ww, &objs);
 		}
 	} else {
-		err = __vm_bind_ioctl(vm, vma, e, NULL,
-				      args->bind.userptr,
-				      args->bind.range,
-				      args->bind.addr,
-				      args->bind.op,
-				      syncs, num_syncs, fence);
+		err = __vm_bind_ioctl(vm, vma, e, NULL, bind_op->userptr,
+				      bind_op->range, bind_op->addr,
+				      bind_op->op, syncs, num_syncs, fence);
 	}
 
 	return err;
@@ -2132,7 +2129,7 @@ struct async_op {
 	struct xe_vma *vma;
 	struct xe_engine *engine;
 	struct xe_bo *bo;
-	struct drm_xe_vm_bind args;
+	struct drm_xe_vm_bind_op bind_op;
 	struct xe_sync_entry *syncs;
 	u32 num_syncs;
 	struct list_head link;
@@ -2164,26 +2161,25 @@ static void async_op_work_func(struct work_struct *w)
 			down_write(&vm->lock);
 #ifdef TEST_VM_ASYNC_OPS_ERROR
 #define FORCE_ASYNC_OP_ERROR	BIT(31)
-			if (!(op->args.bind.op & FORCE_ASYNC_OP_ERROR)) {
+			if (!(op->bind_op.op & FORCE_ASYNC_OP_ERROR)) {
 				err = vm_bind_ioctl(vm, op->vma, op->engine,
-						    op->bo, &op->args,
+						    op->bo, &op->bind_op,
 						    op->syncs, op->num_syncs,
 						    op->fence);
 			} else {
 				err = -ENOMEM;
-				op->args.bind.op &=
-					~FORCE_ASYNC_OP_ERROR;
+				op->bind_op.op &= ~FORCE_ASYNC_OP_ERROR;
 			}
 #else
 			err = vm_bind_ioctl(vm, op->vma, op->engine, op->bo,
-					    &op->args, op->syncs, op->num_syncs,
-					    op->fence);
+					    &op->bind_op, op->syncs,
+					    op->num_syncs, op->fence);
 #endif
 			up_write(&vm->lock);
 			if (err) {
 				trace_xe_vma_fail(op->vma);
 				drm_warn(&vm->xe->drm, "Async VM op(%d) failed with %d",
-					 VM_BIND_OP(op->args.bind.op),
+					 VM_BIND_OP(op->bind_op.op),
 					 err);
 
 				spin_lock_irq(&vm->async_ops.lock);
@@ -2195,16 +2191,15 @@ static void async_op_work_func(struct work_struct *w)
 
 				if (vm->async_ops.error_capture.addr)
 					vm_async_op_error_capture(vm, err,
-								  op->args.bind.op,
-								  op->args.bind.addr,
-								  op->args.bind.range);
+								  op->bind_op.op,
+								  op->bind_op.addr,
+								  op->bind_op.range);
 				break;
 			}
 		} else {
 			trace_xe_vma_flush(op->vma);
 
-			if (VM_BIND_OP(op->args.bind.op) ==
-			    XE_VM_BIND_OP_UNMAP) {
+			if (VM_BIND_OP(op->bind_op.op) == XE_VM_BIND_OP_UNMAP) {
 				down_write(&vm->lock);
 				xe_vma_destroy(op->vma);
 				up_write(&vm->lock);
@@ -2246,7 +2241,7 @@ static const struct dma_fence_ops async_op_fence_ops = {
 
 static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_vma *vma,
 			       struct xe_engine *e, struct xe_bo *bo,
-			       struct drm_xe_vm_bind *args,
+			       struct drm_xe_vm_bind_op *bind_op,
 			       struct xe_sync_entry *syncs, u32 num_syncs)
 {
 	struct async_op *op;
@@ -2274,7 +2269,7 @@ static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_vma *vma,
 	op->vma = vma;
 	op->engine = e;
 	op->bo = bo;
-	op->args = *args;
+	op->bind_op = *bind_op;
 	op->syncs = syncs;
 	op->num_syncs = num_syncs;
 	INIT_LIST_HEAD(&op->link);
@@ -2579,15 +2574,15 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	}
 
 	if (async) {
-		err = vm_bind_ioctl_async(vm, vma, e, bo, args, syncs,
+		err = vm_bind_ioctl_async(vm, vma, e, bo, &args->bind, syncs,
 					  num_syncs);
 		if (!err) {
 			up_write(&vm->lock);
 			return 0;
 		}
 	} else {
-		err = vm_bind_ioctl(vm, vma, e, bo, args, syncs, num_syncs,
-				    NULL);
+		err = vm_bind_ioctl(vm, vma, e, bo, &args->bind, syncs,
+				    num_syncs, NULL);
 	}
 
 	if (err) {
