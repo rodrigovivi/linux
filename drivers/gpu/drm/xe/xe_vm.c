@@ -2432,48 +2432,110 @@ struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 #endif
 #define XE_64K_PAGE_MASK 0xffffull
 
+#define MAX_BINDS	512	/* FIXME: Picking random upper limit */
+
+int vm_bind_ioctl_check_args(struct xe_device *xe, struct drm_xe_vm_bind *args,
+			     struct drm_xe_vm_bind_op **bind_ops, bool *async)
+{
+	int err;
+	int i;
+
+	if (XE_IOCTL_ERR(xe, args->extensions) ||
+	    XE_IOCTL_ERR(xe, !args->num_binds) ||
+	    XE_IOCTL_ERR(xe, args->num_binds > MAX_BINDS))
+		return -EINVAL;
+
+	if (args->num_binds > 1) {
+		uint64_t __user *bind_user =
+			u64_to_user_ptr(args->vector_of_binds);
+
+		*bind_ops = kmalloc(sizeof(struct drm_xe_vm_bind_op) *
+				    args->num_binds, GFP_KERNEL);
+		if (!*bind_ops)
+			return -ENOMEM;
+
+		err = __copy_from_user(*bind_ops, bind_user,
+				       sizeof(struct drm_xe_vm_bind_op) *
+				       args->num_binds);
+		if (XE_IOCTL_ERR(xe, err)) {
+			err = -EFAULT;
+			goto free_bind_ops;
+		}
+	} else {
+		*bind_ops = &args->bind;
+	}
+
+	for (i = 0; i < args->num_binds; ++i) {
+		u64 range = (*bind_ops)[i].range;
+		u64 addr = (*bind_ops)[i].addr;
+		u32 op = (*bind_ops)[i].op;
+		u32 obj = (*bind_ops)[i].obj;
+		u64 obj_offset = (*bind_ops)[i].obj_offset;
+
+		if (i == 0) {
+			*async = !!(op & XE_VM_BIND_FLAG_ASYNC);
+		} else if (XE_IOCTL_ERR(xe, !*async) ||
+			   XE_IOCTL_ERR(xe, !(op & XE_VM_BIND_FLAG_ASYNC)) ||
+			   XE_IOCTL_ERR(xe, VM_BIND_OP(op) ==
+					XE_VM_BIND_OP_RESTART)) {
+			err = -EINVAL;
+			goto free_bind_ops;
+		}
+
+		if (XE_IOCTL_ERR(xe, VM_BIND_OP(op) >
+				 XE_VM_BIND_OP_RESTART) ||
+		    XE_IOCTL_ERR(xe, op & ~SUPPORTED_FLAGS) ||
+		    XE_IOCTL_ERR(xe, !obj &&
+				 VM_BIND_OP(op) == XE_VM_BIND_OP_MAP) ||
+		    XE_IOCTL_ERR(xe, obj &&
+				 VM_BIND_OP(op) == XE_VM_BIND_OP_MAP_USERPTR)) {
+			err = -EINVAL;
+			goto free_bind_ops;
+		}
+
+
+		if (XE_IOCTL_ERR(xe, obj_offset & ~PAGE_MASK) ||
+		    XE_IOCTL_ERR(xe, addr & ~PAGE_MASK) ||
+		    XE_IOCTL_ERR(xe, range & ~PAGE_MASK) ||
+		    XE_IOCTL_ERR(xe, !range && VM_BIND_OP(op) !=
+				 XE_VM_BIND_OP_RESTART)) {
+			err = -EINVAL;
+			goto free_bind_ops;
+		}
+	}
+
+	return 0;
+
+free_bind_ops:
+	if (args->num_binds > 1)
+		kfree(*bind_ops);
+	return err;
+}
+
 int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 {
 	struct xe_device *xe = to_xe_device(dev);
 	struct xe_file *xef = to_xe_file(file);
 	struct drm_xe_vm_bind *args = data;
 	struct drm_xe_sync __user *syncs_user;
-	struct drm_gem_object *gem_obj = NULL;
-	struct xe_bo *bo = NULL;
+	struct xe_bo **bos = NULL;
+	struct xe_vma **vmas = NULL;
 	struct xe_vm *vm;
-	struct xe_vma *vma;
 	struct xe_engine *e = NULL;
-	int err = 0;
 	u32 num_syncs;
-	struct xe_sync_entry *syncs;
-	u64 range = args->bind.range;
-	u64 addr = args->bind.addr;
-	u32 op = args->bind.op;
-	bool async = (op & XE_VM_BIND_FLAG_ASYNC);
+	struct xe_sync_entry *syncs = NULL;
+	struct drm_xe_vm_bind_op *bind_ops;
+	bool async;
+	int err;
+	int i, j = 0;
 
-	/* TODO: Support an array of binds */
-	if (XE_IOCTL_ERR(xe, args->num_binds != 1))
-		return -EINVAL;
-
-	if (XE_IOCTL_ERR(xe, args->extensions) ||
-	    XE_IOCTL_ERR(xe, VM_BIND_OP(op) >
-			 XE_VM_BIND_OP_RESTART) ||
-	    XE_IOCTL_ERR(xe, op & ~SUPPORTED_FLAGS) ||
-	    XE_IOCTL_ERR(xe, !args->bind.obj &&
-			 VM_BIND_OP(op) == XE_VM_BIND_OP_MAP) ||
-	    XE_IOCTL_ERR(xe, args->bind.obj &&
-			 VM_BIND_OP(op) == XE_VM_BIND_OP_MAP_USERPTR))
-		return -EINVAL;
-
-	if (XE_IOCTL_ERR(xe, args->bind.obj_offset & ~PAGE_MASK) ||
-	    XE_IOCTL_ERR(xe, addr & ~PAGE_MASK) ||
-	    XE_IOCTL_ERR(xe, range & ~PAGE_MASK) ||
-	    XE_IOCTL_ERR(xe, !range && VM_BIND_OP(op) != XE_VM_BIND_OP_RESTART))
-		return -EINVAL;
+	err = vm_bind_ioctl_check_args(xe, args, &bind_ops, &async);
+	if (err)
+		return err;
 
 	vm = xe_vm_lookup(xef, args->vm_id);
 	if (XE_IOCTL_ERR(xe, !vm))
-		return -ENOENT;
+		goto free_objs;
 
 	if (XE_IOCTL_ERR(xe, xe_vm_is_closed(vm))) {
 		DRM_ERROR("VM closed while we began looking up?\n");
@@ -2493,7 +2555,7 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		}
 	}
 
-	if (VM_BIND_OP(op) == XE_VM_BIND_OP_RESTART) {
+	if (VM_BIND_OP(bind_ops[0].op) == XE_VM_BIND_OP_RESTART) {
 		if (XE_IOCTL_ERR(xe, !(vm->flags & VM_FLAG_ASYNC_BIND_OPS)))
 			err = -ENOTSUPP;
 		if (XE_IOCTL_ERR(xe, !err && args->num_syncs))
@@ -2519,30 +2581,56 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		goto put_engine;
 	}
 
-	if (XE_IOCTL_ERR(xe, !range) ||
-	    XE_IOCTL_ERR(xe, range > vm->size) ||
-	    XE_IOCTL_ERR(xe, addr > vm->size - range)) {
-		err = -EINVAL;
+	for (i = 0; i < args->num_binds; ++i) {
+		u64 range = bind_ops[i].range;
+		u64 addr = bind_ops[i].addr;
+
+		if (XE_IOCTL_ERR(xe, !range) ||
+		    XE_IOCTL_ERR(xe, range > vm->size) ||
+		    XE_IOCTL_ERR(xe, addr > vm->size - range)) {
+			err = -EINVAL;
+			goto put_engine;
+		}
+	}
+
+	bos = kzalloc(sizeof(*bos) * args->num_binds, GFP_KERNEL);
+	if (!bos) {
+		err = -ENOMEM;
 		goto put_engine;
 	}
 
-	if (args->bind.obj) {
-		gem_obj = drm_gem_object_lookup(file, args->bind.obj);
+	vmas = kzalloc(sizeof(*vmas) * args->num_binds, GFP_KERNEL);
+	if (!vmas) {
+		err = -ENOMEM;
+		goto put_engine;
+	}
+
+	for (i = 0; i < args->num_binds; ++i) {
+		struct drm_gem_object *gem_obj;
+		u64 range = bind_ops[i].range;
+		u64 addr = bind_ops[i].addr;
+		u32 obj = bind_ops[i].obj;
+		u64 obj_offset = bind_ops[i].obj_offset;
+
+		if (!obj)
+			continue;
+
+		gem_obj = drm_gem_object_lookup(file, obj);
 		if (XE_IOCTL_ERR(xe, !gem_obj)) {
 			err = -ENOENT;
-			goto put_engine;
+			goto put_obj;
 		}
-		bo = gem_to_xe_bo(gem_obj);
+		bos[i] = gem_to_xe_bo(gem_obj);
 
-		if (XE_IOCTL_ERR(xe, range > bo->size) ||
-		    XE_IOCTL_ERR(xe, args->bind.obj_offset >
-				 bo->size - range)) {
+		if (XE_IOCTL_ERR(xe, range > bos[i]->size) ||
+		    XE_IOCTL_ERR(xe, obj_offset >
+				 bos[i]->size - range)) {
 			err = -EINVAL;
 			goto put_obj;
 		}
 
-		if (bo->flags & XE_BO_INTERNAL_64K) {
-			if (XE_IOCTL_ERR(xe, args->bind.obj_offset &
+		if (bos[i]->flags & XE_BO_INTERNAL_64K) {
+			if (XE_IOCTL_ERR(xe, obj_offset &
 					 XE_64K_PAGE_MASK) ||
 			    XE_IOCTL_ERR(xe, addr & XE_64K_PAGE_MASK) ||
 			    XE_IOCTL_ERR(xe, range & XE_64K_PAGE_MASK)) {
@@ -2552,10 +2640,12 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		}
 	}
 
-	syncs = kcalloc(args->num_syncs, sizeof(*syncs), GFP_KERNEL);
-	if (!syncs) {
-		err = -ENOMEM;
-		goto put_obj;
+	if (args->num_syncs) {
+		syncs = kcalloc(args->num_syncs, sizeof(*syncs), GFP_KERNEL);
+		if (!syncs) {
+			err = -ENOMEM;
+			goto put_obj;
+		}
 	}
 
 	syncs_user = u64_to_user_ptr(args->syncs);
@@ -2569,47 +2659,131 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	err = down_write_killable(&vm->lock);
 	if (err)
 		goto free_syncs;
-	vma = vm_bind_ioctl_lookup_vma(vm, bo, args->bind.obj_offset,
-				       addr, range, op);
-	if (IS_ERR(vma)) {
-		err = PTR_ERR(vma);
-		goto unlock;
-	}
 
-	if (async) {
-		err = vm_bind_ioctl_async(vm, vma, e, bo, &args->bind, syncs,
-					  num_syncs);
-		if (!err) {
-			up_write(&vm->lock);
-			return 0;
+	for (i = 0; i < args->num_binds; ++i) {
+		u64 range = bind_ops[i].range;
+		u64 addr = bind_ops[i].addr;
+		u32 op = bind_ops[i].op;
+		u64 obj_offset = bind_ops[i].obj_offset;
+
+		vmas[i] = vm_bind_ioctl_lookup_vma(vm, bos[i], obj_offset,
+						   addr, range, op);
+		if (IS_ERR(vmas[i])) {
+			err = PTR_ERR(vmas[i]);
+			vmas[i] = NULL;
+			goto destroy_vmas;
 		}
-	} else {
-		err = vm_bind_ioctl(vm, vma, e, bo, &args->bind, syncs,
-				    num_syncs, NULL);
 	}
 
-	if (err) {
+	for (j = 0; j < args->num_binds; ++j) {
+		struct xe_sync_entry *__syncs;
+		u32 __num_syncs = 0;
+		bool first_or_last = j == 0 || j == args->num_binds - 1;
+
+		if (args->num_binds == 1) {
+			__num_syncs = num_syncs;
+			__syncs = syncs;
+		} else if (first_or_last) {
+			bool first = j == 0;
+
+			__syncs = kmalloc(sizeof(*__syncs) * num_syncs,
+					  GFP_KERNEL);
+			if (!__syncs) {
+				err = ENOMEM;
+				break;
+			}
+
+			/* in-syncs on first bind, out-syncs on last bind */
+			for (i = 0; i < num_syncs; ++i) {
+				bool signal = syncs[i].flags &
+					DRM_XE_SYNC_SIGNAL;
+
+				if ((first && !signal) || (!first && signal))
+					__syncs[__num_syncs++] = syncs[i];
+			}
+		} else {
+			__num_syncs = 0;
+			__syncs = NULL;
+		}
+
+		if (async) {
+			bool last = j == args->num_binds - 1;
+
+			/*
+			 * Each pass of async worker drops the ref, take a ref
+			 * here, 1 set of refs taken above
+			 */
+			if (!last) {
+				if (e)
+					xe_engine_get(e);
+				xe_vm_get(vm);
+			}
+
+			err = vm_bind_ioctl_async(vm, vmas[j], e, bos[j],
+						  bind_ops + j, __syncs,
+						  __num_syncs);
+			if (err && !last) {
+				if (e)
+					xe_engine_put(e);
+				xe_vm_put(vm);
+			}
+			if (err)
+				break;
+		} else {
+			XE_BUG_ON(j != 0);	/* Not supported */
+			err = vm_bind_ioctl(vm, vmas[j], e, bos[j],
+					    bind_ops + j, __syncs,
+					    __num_syncs, NULL);
+			break;	/* Needed so cleanup loops work */
+		}
+	}
+
+	/* Most of cleanup owned by the async bind worker */
+	if (async && !err) {
+		up_write(&vm->lock);
+		if (args->num_binds > 1)
+			kfree(syncs);
+		goto free_objs;
+	}
+
+destroy_vmas:
+	for (i = j; err && i < args->num_binds; ++i) {
+		u32 op = bind_ops[i].op;
+
+		if (!vmas[i])
+			break;
+
 		switch (VM_BIND_OP(op)) {
 		case XE_VM_BIND_OP_MAP:
 		case XE_VM_BIND_OP_MAP_USERPTR:
-			xe_vma_destroy(vma);
+			xe_vma_destroy(vmas[i]);
 		}
 	}
-
-unlock:
 	up_write(&vm->lock);
 free_syncs:
-	while (num_syncs--)
+	while (num_syncs--) {
+		if (async && j &&
+		    !(syncs[num_syncs].flags & DRM_XE_SYNC_SIGNAL))
+			continue;	/* Still in async worker */
 		xe_sync_entry_cleanup(&syncs[num_syncs]);
+	}
 
 	kfree(syncs);
 put_obj:
-	drm_gem_object_put(gem_obj);
+	for (i = j; i < args->num_binds; ++i) {
+		if (bos[i])
+			drm_gem_object_put(&bos[i]->ttm.base);
+	}
 put_engine:
 	if (e)
 		xe_engine_put(e);
 put_vm:
 	xe_vm_put(vm);
+free_objs:
+	kfree(bos);
+	kfree(vmas);
+	if (args->num_binds > 1)
+		kfree(bind_ops);
 	return err;
 }
 
