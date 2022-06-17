@@ -2205,8 +2205,8 @@ static void async_op_work_func(struct work_struct *w)
 				up_write(&vm->lock);
 			}
 
-			if (!test_bit(DMA_FENCE_FLAG_SIGNALED_BIT,
-				      &op->fence->fence.flags))
+			if (op->fence && !test_bit(DMA_FENCE_FLAG_SIGNALED_BIT,
+						   &op->fence->fence.flags))
 				dma_fence_signal(&op->fence->fence);
 		}
 
@@ -2218,7 +2218,8 @@ static void async_op_work_func(struct work_struct *w)
 		if (op->engine)
 			xe_engine_put(op->engine);
 		xe_vm_put(vm);
-		dma_fence_put(&op->fence->fence);
+		if (op->fence)
+			dma_fence_put(&op->fence->fence);
 		kfree(op);
 	}
 }
@@ -2251,21 +2252,23 @@ static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_vma *vma,
 
 	op = kmalloc(sizeof(*op), GFP_KERNEL);
 	if (!op) {
-		xe_vm_unlock(vm);
 		return -ENOMEM;
 	}
 
-	op->fence = kmalloc(sizeof(*op->fence), GFP_KERNEL);
-	if (!op->fence) {
-		xe_vm_unlock(vm);
-		kfree(op->fence);
-		return -ENOMEM;
-	}
+	if (num_syncs) {
+		op->fence = kmalloc(sizeof(*op->fence), GFP_KERNEL);
+		if (!op->fence) {
+			kfree(op);
+			return -ENOMEM;
+		}
 
-	seqno = e ? ++e->bind.fence_seqno : ++vm->async_ops.fence.seqno;
-	dma_fence_init(&op->fence->fence, &async_op_fence_ops,
-		       &vm->async_ops.lock, e ? e->bind.fence_ctx :
-		       vm->async_ops.fence.context, seqno);
+		seqno = e ? ++e->bind.fence_seqno : ++vm->async_ops.fence.seqno;
+		dma_fence_init(&op->fence->fence, &async_op_fence_ops,
+			       &vm->async_ops.lock, e ? e->bind.fence_ctx :
+			       vm->async_ops.fence.context, seqno);
+	} else {
+		op->fence = NULL;
+	}
 	op->vma = vma;
 	op->engine = e;
 	op->bo = bo;
@@ -2278,7 +2281,7 @@ static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_vma *vma,
 		installed |= xe_sync_entry_signal(&syncs[i], NULL,
 						  &op->fence->fence);
 
-	if (!installed)
+	if (!installed && op->fence)
 		dma_fence_signal(&op->fence->fence);
 
 	spin_lock_irq(&vm->async_ops.lock);
