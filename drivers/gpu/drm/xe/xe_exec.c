@@ -78,7 +78,7 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	struct drm_xe_sync __user *syncs_user = u64_to_user_ptr(args->syncs);
 	uint64_t __user *addresses_user = u64_to_user_ptr(args->address);
 	struct xe_engine *engine;
-	struct xe_sync_entry *syncs;
+	struct xe_sync_entry *syncs = NULL;
 	uint64_t addresses[XE_HW_ENGINE_MAX_INSTANCE];
 	uint32_t i, num_syncs = 0;
 	struct xe_sched_job *job;
@@ -107,10 +107,12 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		goto err_engine;
 	}
 
-	syncs = kcalloc(args->num_syncs, sizeof(*syncs), GFP_KERNEL);
-	if (!syncs) {
-		err = -ENOMEM;
-		goto err_engine;
+	if (args->num_syncs) {
+		syncs = kcalloc(args->num_syncs, sizeof(*syncs), GFP_KERNEL);
+		if (!syncs) {
+			err = -ENOMEM;
+			goto err_engine;
+		}
 	}
 
 	for (i = 0; i < args->num_syncs; i++) {
