@@ -119,6 +119,8 @@ struct xe_engine {
 		u64 context;
 		/** @seqno: preemption fence seqno */
 		u32 seqno;
+		/** @link: link into VM's list of engines */
+		struct list_head link;
 		/** @lock: preemption fences lock */
 		spinlock_t lock;
 	} compute;
