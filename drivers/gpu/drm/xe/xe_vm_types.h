@@ -198,12 +198,10 @@ struct xe_vm {
 		 * the shared slots
 		 */
 		u32 num_inflight_ops;
-		/**
-		 * @list: list of pending preempt fences, when the number of
-		 * number of inflight ops reaches zero, each fence's engine is
-		 * resumed and inserted into a shared slot
-		 */
-		struct list_head pending_fences;
+		/** @engines: list of engines attached to this VM */
+		struct list_head engines;
+		/** @num_engines: number user engines attached to this VM */
+		int num_engines;
 	} preempt;
 };
 

@@ -8,6 +8,7 @@
 
 #include "xe_engine.h"
 #include "xe_preempt_fence.h"
+#include "xe_vm.h"
 
 static void preempt_fence_work_func(struct work_struct *w)
 {
@@ -18,22 +19,26 @@ static void preempt_fence_work_func(struct work_struct *w)
 	struct dma_fence *sfence = pfence->sfence;
 
 	if (IS_ERR(sfence))
-		goto err_out;
+		dma_fence_set_error(&pfence->base, PTR_ERR(sfence));
+	else
+		dma_fence_wait(sfence, false);
 
-	dma_fence_wait(sfence, false);
 	dma_fence_signal(&pfence->base);
 	dma_fence_end_signalling(cookie);
 
-	pfence->ops->preempt_complete(e);
-	xe_engine_put(e);
+	xe_vm_lock(e->vm, NULL);
+	/*
+	 * Possible race a new preempt fence could be installed before we grab
+	 * this lock, guard against that by checking
+	 * DMA_FENCE_FLAG_SIGNALED_BIT.
+	 */
+	if (e->compute.pfence &&
+	    test_bit(DMA_FENCE_FLAG_SIGNALED_BIT, &e->compute.pfence->flags)) {
+		e->compute.pfence = NULL;
+		dma_fence_put(e->compute.pfence);
+	}
+	xe_vm_unlock(e->vm);
 
-	return;
-
-err_out:
-	dma_fence_set_error(&pfence->base, PTR_ERR(sfence));
-	dma_fence_signal(&pfence->base);
-	dma_fence_end_signalling(cookie);
-	dma_fence_put(&pfence->base);
 	xe_engine_put(e);
 }
 
@@ -68,7 +73,6 @@ static const struct dma_fence_ops preempt_fence_ops = {
 
 struct dma_fence *
 xe_preempt_fence_create(struct xe_engine *e,
-			const struct xe_preempt_fence_ops *ops,
 			u64 context, u32 seqno)
 {
 	struct xe_preempt_fence *pfence;
@@ -79,7 +83,6 @@ xe_preempt_fence_create(struct xe_engine *e,
 
 	INIT_LIST_HEAD(&pfence->link);
 	pfence->engine = xe_engine_get(e);
-	pfence->ops = ops;
 
 	INIT_WORK(&pfence->preempt_work, preempt_fence_work_func);
 	dma_fence_init(&pfence->base, &preempt_fence_ops,

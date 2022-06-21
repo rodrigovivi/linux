@@ -13,18 +13,6 @@
 struct xe_engine;
 
 /**
- * struct xe_preempt_fence_ops - XE preemption fence operations
- */
-struct xe_preempt_fence_ops {
-	/**
-	 * @preempt_complete: preemption complete callback, owns calling
-	 * engine->ops->resume, final put on current preemption fence, and
-	 * installing of new preemption fence
-	 */
-	void (*preempt_complete)(struct xe_engine *e);
-};
-
-/**
  * struct xe_preempt_fence - XE preempt fence
  *
  * A preemption fence which suspends the execution of an xe_engine on the
@@ -41,8 +29,6 @@ struct xe_preempt_fence {
 	struct dma_fence *sfence;
 	/** @preempt_work: work struct which issues preemption */
 	struct work_struct preempt_work;
-	/** @ops: operations for this preemption fence */
-	const struct xe_preempt_fence_ops *ops;
 };
 
 #endif	/* _XE_PREEMPT_FENCE_TYPES_H_ */

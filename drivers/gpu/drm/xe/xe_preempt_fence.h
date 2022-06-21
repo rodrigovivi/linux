@@ -11,7 +11,6 @@
 
 struct dma_fence *
 xe_preempt_fence_create(struct xe_engine *e,
-			const struct xe_preempt_fence_ops *ops,
 			u64 context, u32 seqno);
 
 static inline struct xe_preempt_fence *
