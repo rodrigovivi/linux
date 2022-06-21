@@ -46,6 +46,7 @@ static struct xe_engine *__xe_engine_create(struct xe_device *xe,
 	e->ring_ops = gt->ring_ops[hwe->class];
 	e->ops = gt->engine_ops;
 	INIT_LIST_HEAD(&e->persitent.link);
+	INIT_LIST_HEAD(&e->compute.link);
 
 	/* FIXME: Wire up to configurable default value */
 	e->sched_props.timeslice_us = 1 * 1000;
@@ -181,54 +182,6 @@ static int engine_set_preemption_timeout(struct xe_device *xe,
 	return e->ops->set_preempt_timeout(e, value);
 }
 
-static const struct xe_preempt_fence_ops preempt_fence_ops;
-
-static void preempt_complete(struct xe_engine *e)
-{
-	struct dma_fence *pfence;
-	struct xe_vm *vm = e->vm;
-	int err = 0;
-	bool enable_signaling = false;
-
-	pfence = xe_preempt_fence_create(e, &preempt_fence_ops,
-					 e->compute.context,
-					 ++e->compute.seqno);
-	if (IS_ERR(pfence)) {
-		XE_WARN_ON("Preempt fence allocation failed");
-		return;
-	}
-
-	down_write(&vm->lock);
-	xe_vm_lock(vm, NULL);
-	if (!vm->preempt.num_inflight_ops &&
-	    !xe_vm_userptr_pending_rebind_read(vm)) {
-		err = dma_resv_reserve_fences(&vm->resv, 1);
-		XE_WARN_ON(err);
-		if (!err) {
-			e->ops->resume(e);
-			dma_resv_add_fence(&vm->resv, pfence, DMA_RESV_USAGE_BOOKKEEP);
-		}
-	} else {
-		dma_fence_get(pfence);
-		list_add_tail(&to_preempt_fence(pfence)->link,
-			      &vm->preempt.pending_fences);
-	}
-	if (e->compute.pfence) {
-		dma_fence_put(e->compute.pfence);
-		e->compute.pfence = pfence;
-	} else {
-		enable_signaling = true;
-	}
-	if (enable_signaling || err)
-		dma_fence_enable_sw_signaling(pfence);
-	xe_vm_unlock(vm);
-	up_write(&vm->lock);
-}
-
-static const struct xe_preempt_fence_ops preempt_fence_ops = {
-	.preempt_complete = preempt_complete,
-};
-
 static int engine_set_compute_mode(struct xe_device *xe, struct xe_engine *e,
 				   u64 value, bool create)
 {
@@ -246,6 +199,14 @@ static int engine_set_compute_mode(struct xe_device *xe, struct xe_engine *e,
 		struct dma_fence *pfence;
 		int err;
 
+		/*
+		 * XXX: Installing new preempt fences are tricky if things are
+		 * inflight as all the preempt fences should be suspending /
+		 * resuming in unison, let's try not to support this. Adding a
+		 * warning for now until we get a UMD by in.
+		 */
+		XE_WARN_ON(!RB_EMPTY_ROOT(&vm->vmas));
+
 		if (XE_IOCTL_ERR(xe, !(e->vm->flags & VM_FLAG_COMPUTE_MODE)))
 			return -ENOTSUPP;
 
@@ -257,15 +218,13 @@ static int engine_set_compute_mode(struct xe_device *xe, struct xe_engine *e,
 
 		e->compute.context = dma_fence_context_alloc(1);
 		spin_lock_init(&e->compute.lock);
-		pfence = xe_preempt_fence_create(e, &preempt_fence_ops,
-						 e->compute.context,
+		pfence = xe_preempt_fence_create(e, e->compute.context,
 						 ++e->compute.seqno);
 		if (XE_IOCTL_ERR(xe, IS_ERR(pfence)))
 			return PTR_ERR(pfence);
 
+		down_write(&e->vm->lock);
 		xe_vm_lock(vm, NULL);
-		INIT_LIST_HEAD(&vm->preempt.pending_fences);
-
 		err = dma_resv_reserve_fences(&vm->resv, 1);
 		if (XE_IOCTL_ERR(xe, err)) {
 			dma_fence_put(pfence);
@@ -273,9 +232,12 @@ static int engine_set_compute_mode(struct xe_device *xe, struct xe_engine *e,
 			return err;
 		}
 
+		list_add(&e->compute.link, &vm->preempt.engines);
+		++vm->preempt.num_engines;
 		e->compute.pfence = pfence;
 		dma_resv_add_fence(&vm->resv, pfence, DMA_RESV_USAGE_BOOKKEEP);
 		xe_vm_unlock(vm);
+		up_write(&e->vm->lock);
 
 		e->flags |= ENGINE_FLAG_COMPUTE_MODE;
 		e->flags &= ~ENGINE_FLAG_PERSISTENT;
@@ -571,16 +533,10 @@ void xe_engine_kill(struct xe_engine *e)
 	      return;
 
 	down_write(&e->vm->lock);
-	xe_vm_lock(e->vm, NULL);
-	if (e->compute.pfence) {
-		if (!list_empty(&to_preempt_fence(e->compute.pfence)->link)) {
-			dma_fence_put(e->compute.pfence);
-			list_del(&to_preempt_fence(e->compute.pfence)->link);
-		}
+	list_del(&e->compute.link);
+	--e->vm->preempt.num_engines;
+	if (e->compute.pfence)
 		dma_fence_enable_sw_signaling(e->compute.pfence);
-		e->compute.pfence = NULL;
-	}
-	xe_vm_unlock(e->vm);
 	up_write(&e->vm->lock);
 }
 

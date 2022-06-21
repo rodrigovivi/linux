@@ -80,19 +80,6 @@ static inline bool xe_vm_has_userptr(struct xe_vm *vm)
 	return !list_empty(&vm->userptr.list);
 }
 
-static inline int xe_vm_userptr_pending_rebind_read(struct xe_vm *vm)
-{
-	int val;
-
-	XE_BUG_ON(!xe_vm_in_compute_mode(vm));
-
-	read_lock(&vm->userptr.notifier_lock);
-	val = vm->userptr.pending_rebind;
-	read_unlock(&vm->userptr.notifier_lock);
-
-	return val;
-}
-
 extern struct ttm_device_funcs xe_ttm_funcs;
 
 void xe_vm_dump_pgtt(struct xe_vm *vm);

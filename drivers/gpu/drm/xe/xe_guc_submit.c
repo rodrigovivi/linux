@@ -1556,6 +1556,14 @@ static void guc_engine_print(struct xe_engine *e, struct drm_printer *p)
 	}
 	drm_printf(p, "\tSchedule State: 0x%x\n", atomic_read(&e->guc->state));
 	drm_printf(p, "\tFlags: 0x%lx\n", e->flags);
+	if (e->vm) {
+		drm_printf(p, "\tuserptr.pending_rebind: %d\n",
+			   e->vm->userptr.pending_rebind);
+		drm_printf(p, "\tpreempt.num_inflight_ops: %d\n",
+			   e->vm->preempt.num_inflight_ops);
+		drm_printf(p, "\tpreempt.num_engines: %d\n",
+			   e->vm->preempt.num_engines);
+	}
 	if (xe_engine_is_parallel(e))
 		guc_engine_wq_print(e, p);
 

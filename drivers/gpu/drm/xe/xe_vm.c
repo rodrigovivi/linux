@@ -18,7 +18,7 @@
 #include "xe_engine.h"
 #include "xe_gt.h"
 #include "xe_migrate.h"
-#include "xe_preempt_fence_types.h"
+#include "xe_preempt_fence.h"
 #include "xe_sync.h"
 #include "xe_trace.h"
 
@@ -503,27 +503,48 @@ static int vm_userptr_pending_rebind_decr(struct xe_vm *vm)
 	return val;
 }
 
-static void reinstall_preempt_fences(struct xe_vm *vm)
+static void alloc_preempt_fences(struct xe_vm *vm)
 {
-	struct xe_preempt_fence *pfence, *next;
+	struct xe_engine *e;
 
 	lockdep_assert_held(&vm->lock);
 	xe_vm_assert_held(vm);
 
-	list_for_each_entry_safe(pfence, next,
-				 &vm->preempt.pending_fences, link) {
-		struct xe_engine *e = pfence->engine;
-		int err;
+	list_for_each_entry(e, &vm->preempt.engines, compute.link) {
+		struct dma_fence *pfence;
 
-		err = dma_resv_reserve_fences(&vm->resv, 1);
-		XE_WARN_ON(err);
-		if (!err) {
-			e->ops->resume(e);
-			dma_resv_add_fence(&vm->resv, &pfence->base,
-					   DMA_RESV_USAGE_BOOKKEEP);
+		if (e->compute.pfence &&
+		    test_bit(DMA_FENCE_FLAG_SIGNALED_BIT,
+			     &e->compute.pfence->flags)) {
+			dma_fence_put(e->compute.pfence);
+			e->compute.pfence = NULL;
 		}
-		list_del_init(&pfence->link);
-		dma_fence_put(&pfence->base);
+
+		if (e->compute.pfence)
+			continue;
+
+		pfence = xe_preempt_fence_create(e, e->compute.context,
+						 ++e->compute.seqno);
+		XE_WARN_ON(!pfence);
+		if (!pfence)
+			return;		/* FIXME: Kill VM */
+
+		e->compute.pfence = pfence;
+	}
+}
+
+static void reinstall_preempt_fences(struct xe_vm *vm)
+{
+	struct xe_engine *e;
+
+	lockdep_assert_held(&vm->userptr.notifier_lock);
+	lockdep_assert_held(&vm->lock);
+	xe_vm_assert_held(vm);
+
+	list_for_each_entry(e, &vm->preempt.engines, compute.link) {
+		e->ops->resume(e);
+		dma_resv_add_fence(&vm->resv, e->compute.pfence,
+				   DMA_RESV_USAGE_BOOKKEEP);
 	}
 }
 
@@ -570,9 +591,17 @@ retry:
 		}
 	}
 
-	if (!vm_userptr_pending_rebind_decr(vm) &&
-	    !vm->preempt.num_inflight_ops)
+	alloc_preempt_fences(vm);
+
+	ret = dma_resv_reserve_fences(&vm->resv, vm->preempt.num_engines);
+	XE_WARN_ON(ret);
+	if (ret)
+		return;		/* FIXME: Kill VM */
+
+	write_lock(&vm->userptr.notifier_lock);
+	if (!--vm->userptr.pending_rebind && !vm->preempt.num_inflight_ops)
 		reinstall_preempt_fences(vm);
+	write_unlock(&vm->userptr.notifier_lock);
 
 	xe_vm_unlock(vm);
 	up_read(&vm->lock);
@@ -888,6 +917,8 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 	INIT_LIST_HEAD(&vm->async_ops.pending);
 	INIT_WORK(&vm->async_ops.work, async_op_work_func);
 	spin_lock_init(&vm->async_ops.lock);
+
+	INIT_LIST_HEAD(&vm->preempt.engines);
 
 	xe_vm_lock(vm, NULL);
 
@@ -1681,14 +1712,25 @@ static void preempt_op_worker(struct work_struct *w)
 {
 	struct preempt_op *op = container_of(w, struct preempt_op, worker);
 	struct xe_vm *vm = op->vm;
+	int err;
 
 	XE_BUG_ON(!xe_vm_in_compute_mode(vm));
 
 	down_read(&vm->lock);
 	xe_vm_lock(vm, NULL);
-	if (!--vm->preempt.num_inflight_ops &&
-	    !xe_vm_userptr_pending_rebind_read(vm))
+
+	alloc_preempt_fences(vm);
+
+	err = dma_resv_reserve_fences(&vm->resv, vm->preempt.num_engines);
+	XE_WARN_ON(err);
+	if (err)
+		return;		/* FIXME: Kill VM */
+
+	read_lock(&vm->userptr.notifier_lock);
+	if (!--vm->preempt.num_inflight_ops && !vm->userptr.pending_rebind)
 		reinstall_preempt_fences(vm);
+	read_unlock(&vm->userptr.notifier_lock);
+
 	xe_vm_unlock(vm);
 	up_read(&vm->lock);
 
@@ -1700,7 +1742,6 @@ static void preempt_op_cb(struct dma_fence *fence, struct dma_fence_cb *cb)
 {
 	struct preempt_op *op = container_of(cb, struct preempt_op, cb);
 
-	INIT_WORK(&op->worker, preempt_op_worker);
 	queue_work(system_unbound_wq, &op->worker);
 }
 
@@ -1712,14 +1753,14 @@ static void add_preempt_op_cb(struct xe_vm *vm, struct dma_fence *fence,
 	xe_vm_assert_held(vm);
 
 	op->vm = xe_vm_get(vm);
+	++vm->preempt.num_inflight_ops;
+	INIT_WORK(&op->worker, preempt_op_worker);
+
 	ret = dma_fence_add_callback(fence, &op->cb, preempt_op_cb);
-	if (!ret) {
-		++vm->preempt.num_inflight_ops;
-	} else {
-		xe_vm_put(vm);
-		if (ret != -ENOENT)
-			XE_WARN_ON("fence add callback failed");
-	}
+	if (ret == -ENOENT)
+		queue_work(system_unbound_wq, &op->worker);
+	else
+		XE_WARN_ON(ret);
 }
 
 struct async_op_fence {
