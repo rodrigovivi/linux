@@ -43,6 +43,6 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 			   u32 num_updates,
 			   struct xe_sync_entry *syncs, u32 num_syncs,
 			   xe_migrate_populatefn_t populatefn, void *arg,
-			   bool wait_excl);
+			   bool wait_preempt);
 
 #endif
