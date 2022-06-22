@@ -242,6 +242,11 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 	u64 ggtt_copy_ofs = m->copy_node.start;
 	struct xe_res_cursor src_it;
 	struct ttm_resource *src = bo->ttm.resource;
+	int err;
+
+	err = dma_resv_reserve_fences(bo->ttm.base.resv, 1);
+	if (err)
+		return ERR_PTR(err);
 
 	xe_res_first(src, 0, bo->size, &src_it);
 
@@ -294,6 +299,9 @@ err:
 		xe_bb_free(bb, NULL);
 		return ERR_PTR(err);
 	}
+
+	dma_resv_add_fence(bo->ttm.base.resv, fence,
+			   DMA_RESV_USAGE_KERNEL);
 
 	return fence;
 }
