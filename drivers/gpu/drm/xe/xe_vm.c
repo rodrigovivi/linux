@@ -761,6 +761,8 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 		return vma;
 	}
 
+	INIT_LIST_HEAD(&vma->evict_link);
+
 	vma->vm = vm;
 	vma->start = start;
 	vma->end = end;
@@ -810,6 +812,9 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 static void xe_vma_destroy(struct xe_vma *vma)
 {
 	lockdep_assert_held(&vma->vm->lock);
+
+	if (!list_empty(&vma->evict_link))
+		list_del(&vma->evict_link);
 
 	if (vma_is_userptr(vma)) {
 		/*
@@ -912,6 +917,8 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 	vm->vmas = RB_ROOT;
 
 	init_rwsem(&vm->lock);
+
+	INIT_LIST_HEAD(&vm->evict_list);
 
 	INIT_LIST_HEAD(&vm->userptr.list);
 	rwlock_init(&vm->userptr.notifier_lock);

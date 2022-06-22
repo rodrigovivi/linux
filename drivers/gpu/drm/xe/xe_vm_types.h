@@ -44,6 +44,9 @@ struct xe_vma {
 		struct list_head userptr_link;
 	};
 
+	/** @evict_link: link into VM if this VMA has been evicted */
+	struct list_head evict_link;
+
 	/** @userptr: user pointer state */
 	struct {
 		/** @ptr: user pointer */
@@ -131,6 +134,9 @@ struct xe_vm {
 	 * VM
 	 */
 	struct rw_semaphore lock;
+
+	/** @evict_list: list of VMAs that have been evicted */
+	struct list_head evict_list;
 
 	/** @extobj: bookkeeping for external objects */
 	struct {
