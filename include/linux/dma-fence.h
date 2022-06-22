@@ -93,6 +93,7 @@ struct dma_fence {
 	unsigned long flags;
 	struct kref refcount;
 	int error;
+	u8 usage;
 };
 
 enum dma_fence_flag_bits {

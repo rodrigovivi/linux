@@ -235,7 +235,8 @@ static int engine_set_compute_mode(struct xe_device *xe, struct xe_engine *e,
 		list_add(&e->compute.link, &vm->preempt.engines);
 		++vm->preempt.num_engines;
 		e->compute.pfence = pfence;
-		dma_resv_add_fence(&vm->resv, pfence, DMA_RESV_USAGE_BOOKKEEP);
+		dma_resv_add_fence(&vm->resv, pfence,
+				   DMA_RESV_USAGE_PREEMPT_FENCE);
 		xe_vm_unlock(vm);
 		up_write(&e->vm->lock);
 
