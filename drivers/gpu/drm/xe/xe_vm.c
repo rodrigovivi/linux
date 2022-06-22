@@ -1203,8 +1203,7 @@ static void
 __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 		       u32 *removed_parent_pte,
 		       u64 start, u64 end,
-		       u32 *num_entries, struct xe_vm_pgtable_update *entries,
-		       bool evict)
+		       u32 *num_entries, struct xe_vm_pgtable_update *entries)
 {
 	u32 my_removed_pte = 0;
 	struct xe_vm_pgtable_update *entry;
@@ -1212,18 +1211,7 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 	u32 last_ofs = xe_pt_idx(end - 1, pt->level);
 	u32 num_live;
 
-	/*
-	 * When evicting, we don't hold vma->resv, so we can not make any
-	 * assumptions about pt->num_live, as others may be mapped into it.
-	 *
-	 * We only know that the object lock protects against altering page tables
-	 * that it's mapped into, so we can do a read-only walk for all PT's that
-	 * the object is bound to.
-	 */
-	if (!evict)
-		num_live = pt->num_live;
-	else
-		num_live = GEN8_PDES;
+	num_live = pt->num_live;
 
 	if (!pt->level) {
 		my_removed_pte = last_ofs - start_ofs + 1;
@@ -1231,8 +1219,6 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 			start_ofs = start_ofs / 16;
 			last_ofs = last_ofs / 16;
 			my_removed_pte = last_ofs - start_ofs + 1;
-			if (evict)
-				num_live = 32;
 		}
 		vm_dbg(&vma->vm->xe->drm,
 		       "\t%u: De-Populating entry [%u..%u +%u) [%llx...%llx)\n",
@@ -1269,7 +1255,7 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 					       pt_dir->entries[start_ofs++],
 					       &rem,
 					       start, start_end,
-					       num_entries, entries, false);
+					       num_entries, entries);
 			start = cur = start_end;
 			if (rem)
 				my_removed_pte++;
@@ -1282,7 +1268,7 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 			       xe_pt_next_start(cur, pt->level), end, cur_end);
 			__xe_pt_prepare_unbind(vma, pt_dir->entries[start_ofs++],
 					       &rem, cur, cur_end, num_entries,
-					       entries, false);
+					       entries);
 			if (rem) {
 				if (!my_removed_pte)
 					first_ofs = start_ofs;
@@ -1302,7 +1288,7 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 
 			__xe_pt_prepare_unbind(vma, pt_dir->entries[last_ofs],
 					       &rem, cur, end, num_entries,
-					       entries, false);
+					       entries);
 			if (rem) {
 				if (!my_removed_pte)
 					first_ofs = last_ofs;
@@ -1340,19 +1326,19 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 static void
 xe_pt_prepare_unbind(struct xe_vma *vma,
 		     struct xe_vm_pgtable_update *entries,
-		     u32 *num_entries, bool evict)
+		     u32 *num_entries)
 {
 	*num_entries = 0;
 	__xe_pt_prepare_unbind(vma, vma->vm->pt_root, NULL,
 			       vma->start, vma->end + 1,
-			       num_entries, entries, evict);
+			       num_entries, entries);
 	XE_BUG_ON(!*num_entries);
 }
 
 static struct dma_fence *
 xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 		 struct xe_sync_entry *syncs, u32 num_syncs,
-		 bool evict, bool kernel_op)
+		 bool kernel_op)
 {
 	struct xe_vm_pgtable_update entries[XE_VM_MAX_LEVEL * 2 + 1];
 	struct xe_vm *vm = vma->vm;
@@ -1362,13 +1348,10 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 	u32 i;
 
 	xe_bo_assert_held(vma->bo);
-	if (!evict)
-		xe_vm_assert_held(vm);
+	xe_vm_assert_held(vm);
 	trace_xe_vma_unbind(vma);
 
-	XE_WARN_ON(vma->evicted && evict);
-
-	xe_pt_prepare_unbind(vma, entries, &num_entries, evict);
+	xe_pt_prepare_unbind(vma, entries, &num_entries);
 	XE_BUG_ON(num_entries > ARRAY_SIZE(entries));
 
 	vm_dbg(&vm->xe->drm, "%u entries to update\n", num_entries);
@@ -1394,25 +1377,22 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 	 * lower level, because it needs to be more conservative.
 	 */
 	fence = xe_migrate_update_pgtables(gt->migrate,
-					   vm, e ? e : evict ? NULL : vm->eng,
+					   vm, e ? e : vm->eng,
 					   entries, num_entries,
 					   syncs, num_syncs,
 					   xe_migrate_clear_pgtable_callback,
 					   vma, kernel_op &&
 					   xe_vm_in_compute_mode(vm));
 	if (!IS_ERR(fence)) {
-		if (!evict) {
-			/* add shared fence now for pagetable delayed destroy */
-			dma_resv_add_fence(&vm->resv, fence,
-					   DMA_RESV_USAGE_BOOKKEEP);
+		/* add shared fence now for pagetable delayed destroy */
+		dma_resv_add_fence(&vm->resv, fence,
+				   DMA_RESV_USAGE_BOOKKEEP);
 
-			/* This fence will be installed by caller when doing eviction */
-			if (!vma_is_userptr(vma) && !vma->bo->vm)
-				dma_resv_add_fence(vma->bo->ttm.base.resv, fence,
-						   DMA_RESV_USAGE_BOOKKEEP);
-			xe_pt_commit_unbind(vma, entries, num_entries);
-		}
-		vma->evicted = evict;
+		/* This fence will be installed by caller when doing eviction */
+		if (!vma_is_userptr(vma) && !vma->bo->vm)
+			dma_resv_add_fence(vma->bo->ttm.base.resv, fence,
+					   DMA_RESV_USAGE_BOOKKEEP);
+		xe_pt_commit_unbind(vma, entries, num_entries);
 	}
 
 	return fence;
@@ -1918,7 +1898,7 @@ static int xe_vm_unbind(struct xe_vm *vm, struct xe_vma *vma,
 			return -ENOMEM;
 	}
 
-	fence = xe_vm_unbind_vma(vma, e, syncs, num_syncs, false, !!op);
+	fence = xe_vm_unbind_vma(vma, e, syncs, num_syncs, !!op);
 	if (IS_ERR(fence)) {
 		kfree(op);
 		return PTR_ERR(fence);
