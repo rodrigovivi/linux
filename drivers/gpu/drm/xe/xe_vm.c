@@ -258,7 +258,7 @@ static uint64_t xe_pt_prev_end(uint64_t end, unsigned int level)
 }
 
 static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
-				  u64 start, u64 end)
+				  u64 start, u64 end, bool rebind)
 {
 	u32 start_ofs = xe_pt_idx(start, pt->level);
 	u32 last_ofs = xe_pt_idx(end - 1, pt->level);
@@ -304,7 +304,8 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 			}
 
 			err = xe_pt_populate_for_vma(vma, pt_dir->entries[i],
-						     cur, min(next_start, end));
+						     cur, min(next_start, end),
+						     rebind);
 			if (err)
 				return err;
 
@@ -312,7 +313,7 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 		}
 	} else {
 		/* newly added entries only, evict didn't decrease num_live */
-		if (!vma->evicted)
+		if (!rebind)
 			pt->num_live += last_ofs + 1 - start_ofs;
 	}
 
@@ -551,7 +552,8 @@ static void reinstall_preempt_fences(struct xe_vm *vm)
 struct async_op_fence;
 static int __xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma,
 			struct xe_engine *e, struct xe_sync_entry *syncs,
-			u32 num_syncs, struct async_op_fence *afence);
+			u32 num_syncs, struct async_op_fence *afence,
+			bool rebind);
 
 static void vma_rebind_work_func(struct work_struct *w)
 {
@@ -574,7 +576,7 @@ retry:
 	if (!vma->destroyed && vma->userptr.dirty) {
 		ret = dma_resv_reserve_fences(&vm->resv, 1);
 		if (!ret) {
-			ret = __xe_vm_bind(vm, vma, NULL, NULL, 0, NULL);
+			ret = __xe_vm_bind(vm, vma, NULL, NULL, 0, NULL, true);
 			if (!ret) {
 				ret = vma_userptr_needs_repin(vma);
 				if (ret == -EAGAIN) {
@@ -717,7 +719,7 @@ out_unlock:
 static struct dma_fence *
 xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 	       struct xe_sync_entry *syncs, u32 num_syncs,
-	       bool kernel_op);
+	       bool rebind);
 
 struct dma_fence *xe_vm_userptr_bind(struct xe_vm *vm)
 {
@@ -1433,7 +1435,9 @@ static void xe_pt_abort_bind(struct xe_vma *vma, struct xe_vm_pgtable_update *en
 	}
 }
 
-static void xe_pt_commit_bind(struct xe_vma *vma, struct xe_vm_pgtable_update *entries, u32 num_entries)
+static void xe_pt_commit_bind(struct xe_vma *vma,
+			      struct xe_vm_pgtable_update *entries,
+			      u32 num_entries, bool rebind)
 {
 	u32 i, j;
 
@@ -1441,7 +1445,7 @@ static void xe_pt_commit_bind(struct xe_vma *vma, struct xe_vm_pgtable_update *e
 		struct xe_pt *pt = entries[i].pt;
 		struct xe_pt_dir *pt_dir;
 
-		if (!vma->evicted)
+		if (!rebind)
 			pt->num_live += entries[i].qwords;
 
 		if (!pt->level)
@@ -1464,7 +1468,8 @@ static void xe_pt_commit_bind(struct xe_vma *vma, struct xe_vm_pgtable_update *e
 static int
 __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 		     u64 start, u64 end,
-		     u32 *num_entries, struct xe_vm_pgtable_update *entries)
+		     u32 *num_entries, struct xe_vm_pgtable_update *entries,
+		     bool rebind)
 {
 	struct xe_device *xe = vma->vm->xe;
 	u32 my_added_pte = 0;
@@ -1517,7 +1522,8 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 			err = __xe_pt_prepare_bind(vma,
 						   pt_dir->entries[start_ofs++],
 						   start, start_end,
-						   num_entries, entries);
+						   num_entries, entries,
+						   rebind);
 			if (err)
 				return err;
 
@@ -1548,7 +1554,8 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 			}
 			pte[i] = entry;
 
-			err = xe_pt_populate_for_vma(vma, entry, cur, cur_end);
+			err = xe_pt_populate_for_vma(vma, entry, cur, cur_end,
+						     rebind);
 			if (err) {
 				xe_pt_destroy(entry, vma->vm->flags);
 				goto unwind;
@@ -1565,7 +1572,10 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 			vm_dbg(&xe->drm, "\t%u: Descending to last subentry %u level %u [%llx...%llx)\n",
 			       pt->level, last_ofs, pt->level - 1, cur, end);
 
-			err = __xe_pt_prepare_bind(vma, pt_dir->entries[last_ofs], cur, end, num_entries, entries);
+			err = __xe_pt_prepare_bind(vma,
+						   pt_dir->entries[last_ofs],
+						   cur, end, num_entries,
+						   entries, rebind);
 			if (err)
 				goto unwind;
 		}
@@ -1603,7 +1613,8 @@ done:
 
 static int
 xe_pt_prepare_bind(struct xe_vma *vma,
-		   struct xe_vm_pgtable_update *entries, u32 *num_entries)
+		   struct xe_vm_pgtable_update *entries, u32 *num_entries,
+		   bool rebind)
 {
 	int err;
 
@@ -1611,7 +1622,8 @@ xe_pt_prepare_bind(struct xe_vma *vma,
 	       vma->start, vma->end);
 
 	*num_entries = 0;
-	err = __xe_pt_prepare_bind(vma, vma->vm->pt_root, vma->start, vma->end + 1, num_entries, entries);
+	err = __xe_pt_prepare_bind(vma, vma->vm->pt_root, vma->start, vma->end +
+				   1, num_entries, entries, rebind);
 	if (!err)
 		BUG_ON(!*num_entries);
 	else /* abort! */
@@ -1623,7 +1635,7 @@ xe_pt_prepare_bind(struct xe_vma *vma,
 static struct dma_fence *
 xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 	       struct xe_sync_entry *syncs, u32 num_syncs,
-	       bool kernel_op)
+	       bool rebind)
 {
 	struct xe_vm_pgtable_update entries[XE_VM_MAX_LEVEL * 2 + 1];
 	struct xe_vm *vm = vma->vm;
@@ -1636,7 +1648,7 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 	xe_vm_assert_held(vm);
 	trace_xe_vma_bind(vma);
 
-	err = xe_pt_prepare_bind(vma, entries, &num_entries);
+	err = xe_pt_prepare_bind(vma, entries, &num_entries, rebind);
 	if (err)
 		goto err;
 	XE_BUG_ON(num_entries > ARRAY_SIZE(entries));
@@ -1662,8 +1674,7 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 					   entries, num_entries,
 					   syncs, num_syncs,
 					   xe_vm_populate_pgtable, vma,
-					   kernel_op &&
-					   xe_vm_in_compute_mode(vm));
+					   rebind && xe_vm_in_compute_mode(vm));
 	if (!IS_ERR(fence)) {
 		/* add shared fence now for pagetable delayed destroy */
 		dma_resv_add_fence(&vm->resv, fence, DMA_RESV_USAGE_BOOKKEEP);
@@ -1671,10 +1682,9 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 		if (!vma_is_userptr(vma) && !vma->bo->vm)
 			dma_resv_add_fence(vma->bo->ttm.base.resv, fence,
 					   DMA_RESV_USAGE_BOOKKEEP);
-		xe_pt_commit_bind(vma, entries, num_entries);
+		xe_pt_commit_bind(vma, entries, num_entries, rebind);
 
 		/* This vma is live (again?) now */
-		vma->evicted = false;
 		vma->userptr.dirty = false;
 		vma->userptr.initial_bind = true;
 	} else {
@@ -1784,7 +1794,8 @@ static void add_async_op_fence_cb(struct xe_vm *vm,
 
 static int __xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma,
 			struct xe_engine *e, struct xe_sync_entry *syncs,
-			u32 num_syncs, struct async_op_fence *afence)
+			u32 num_syncs, struct async_op_fence *afence,
+			bool rebind)
 {
 	struct dma_fence *fence;
 	struct preempt_op *op = NULL;
@@ -1799,18 +1810,14 @@ static int __xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma,
 	 * fences will create new preempt fences and either resume their engines
 	 * scheduling + insert the new fences into the VM shared slots or defers
 	 * this until all operations that triggered the fence are complete.
-	 *
-	 * FIXME: Being really lazy and assuming if not using async VM un/bind
-	 * that this was kernel initiated. This has a added benifit of being
-	 * able to stress preempt fences from user space.
 	 */
-	if (xe_vm_in_compute_mode(vm) && !afence) {
+	if (xe_vm_in_compute_mode(vm) && rebind) {
 		op = kmalloc(sizeof(*op), GFP_KERNEL);
 		if (!op)
 			return -ENOMEM;
 	}
 
-	fence = xe_vm_bind_vma(vma, e, syncs, num_syncs, !!op);
+	fence = xe_vm_bind_vma(vma, e, syncs, num_syncs, rebind);
 	if (IS_ERR(fence)) {
 		err = PTR_ERR(fence);
 		goto err_free_op;
@@ -1843,7 +1850,7 @@ static int xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma, struct xe_engine *e,
 			return err;
 	}
 
-	return __xe_vm_bind(vm, vma, e, syncs, num_syncs, afence);
+	return __xe_vm_bind(vm, vma, e, syncs, num_syncs, afence, false);
 }
 
 static int xe_vm_bind_userptr(struct xe_vm *vm, struct xe_vma *vma,
@@ -1855,7 +1862,7 @@ static int xe_vm_bind_userptr(struct xe_vm *vm, struct xe_vma *vma,
 	xe_vm_lock(vm, NULL);
 	err = dma_resv_reserve_fences(&vm->resv, 1);
 	if (!err)
-		err = __xe_vm_bind(vm, vma, e, syncs, num_syncs, afence);
+		err = __xe_vm_bind(vm, vma, e, syncs, num_syncs, afence, false);
 	xe_vm_unlock(vm);
 	if (err)
 		return err;
