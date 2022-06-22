@@ -411,6 +411,7 @@ unmap:
 struct dma_fence *
 xe_migrate_update_pgtables(struct xe_migrate *m,
 			   struct xe_vm *vm,
+			   struct xe_bo *bo,
 			   struct xe_engine *eng,
 			   struct xe_vm_pgtable_update *updates,
 			   u32 num_updates,
@@ -514,6 +515,19 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 		goto err_bb;
 	}
 
+	/* Wait on BO move */
+	if (bo) {
+		err = drm_sched_job_add_dependencies_resv(&job->drm,
+							  bo->ttm.base.resv,
+							  DMA_RESV_USAGE_KERNEL);
+		if (err)
+			goto err_job;
+	}
+
+	/*
+	 * FIXME: We almost certainly can delete this as either the move or
+	 * userptr invalidation should trigger the preempt fences.
+	 */
 	if (wait_preempt) {
 		err = drm_sched_job_add_dependencies_resv(&job->drm, &vm->resv,
 							  DMA_RESV_USAGE_PREEMPT_FENCE);

@@ -1378,7 +1378,7 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 	 * lower level, because it needs to be more conservative.
 	 */
 	fence = xe_migrate_update_pgtables(gt->migrate,
-					   vm, e ? e : vm->eng,
+					   vm, NULL, e ? e : vm->eng,
 					   entries, num_entries,
 					   syncs, num_syncs,
 					   xe_migrate_clear_pgtable_callback,
@@ -1670,7 +1670,8 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 	}
 
 	fence = xe_migrate_update_pgtables(gt->migrate,
-					   vm, e ? e: vm->eng,
+					   vm, rebind ? vma->bo : NULL,
+					   e ? e: vm->eng,
 					   entries, num_entries,
 					   syncs, num_syncs,
 					   xe_vm_populate_pgtable, vma,
