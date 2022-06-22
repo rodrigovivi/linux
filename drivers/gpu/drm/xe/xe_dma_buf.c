@@ -63,6 +63,11 @@ static struct sg_table *xe_dma_buf_map(struct dma_buf_attachment *attach,
 			.no_wait_gpu = false,
 		};
 
+		if (bo->vm) {
+			ctx.allow_res_evict = true;
+			ctx.resv = &bo->vm->resv;
+		}
+
 		r = ttm_bo_validate(&bo->ttm, &bo->placement, &ctx);
 		if (r)
 			return ERR_PTR(r);
