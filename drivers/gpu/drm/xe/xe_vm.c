@@ -1864,7 +1864,16 @@ static int xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma, struct xe_engine *e,
 	xe_bo_assert_held(bo);
 
 	if (bo) {
+		struct ttm_operation_ctx ctx = {
+			.interruptible = true,
+			.no_wait_gpu = false,
+		};
+
 		err = xe_bo_populate(bo);
+		if (err)
+			return err;
+
+		err = ttm_bo_validate(&bo->ttm, &bo->placement, &ctx);
 		if (err)
 			return err;
 	}
