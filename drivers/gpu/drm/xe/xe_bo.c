@@ -168,8 +168,6 @@ static int xe_move_blit(struct xe_bo *bo, bool evict, struct ttm_resource *new_m
 	struct dma_fence *fence;
 	int ret;
 
-	/* TODO: add VM unbind worker here */
-
 	fence = xe_migrate_copy(gt->migrate, bo, old_mem, new_mem);
 	if (IS_ERR(fence))
 		return PTR_ERR(fence);
@@ -185,9 +183,10 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 		      struct ttm_place *hop)
 {
 	struct xe_bo *bo = ttm_to_xe_bo(ttm_bo);
+	struct xe_vma *vma;
 	struct ttm_resource *old_mem = bo->ttm.resource;
 	struct xe_gt *gt;
-	int r;
+	int ret;
 
 	xe_bo_vunmap(bo);
 
@@ -216,16 +215,19 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 	/* TODO: Determine GT based on (new,old)_mem->mem_type's VRAM on multitile */
 	gt = to_gt(ttm_to_xe_device(ttm_bo->bdev));
 
-	if (gt->migrate)
-		r = xe_move_blit(bo, evict, new_mem, old_mem, gt, ctx);
-	else
-		r = ttm_bo_move_memcpy(&bo->ttm, ctx, new_mem);
+	XE_BUG_ON(bo->ttm.pin_count);
+	XE_BUG_ON(!gt->migrate);
 
-	if (r)
-		return r;
+	ret = xe_move_blit(bo, evict, new_mem, old_mem, gt, ctx);
+	if (ret)
+		return ret;
 
-	DRM_ERROR("Moving not supported yet: Missing rebind\n");
-	return -ENODEV;
+	list_for_each_entry(vma, &bo->vmas, bo_link) {
+		XE_WARN_ON(xe_vm_in_compute_mode(vma->vm));
+
+		if (list_empty(&vma->evict_link))
+			list_add_tail(&vma->evict_link, &vma->vm->evict_list);
+	}
 
 out:
 	return 0;
