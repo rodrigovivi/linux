@@ -82,7 +82,7 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	uint64_t addresses[XE_HW_ENGINE_MAX_INSTANCE];
 	uint32_t i, num_syncs = 0;
 	struct xe_sched_job *job;
-	struct dma_fence *userptr_fence;
+	struct dma_fence *rebind_fence;
 	struct xe_vm *vm;
 	struct ww_acquire_ctx ww;
 	struct list_head objs;
@@ -160,29 +160,33 @@ retry:
 		goto err_engine_end;
 	}
 
-	userptr_fence = xe_vm_userptr_bind(vm);
-	if (IS_ERR(userptr_fence)) {
-		err = PTR_ERR(userptr_fence);
+	/*
+	 * Rebind any invalidated userptr or evicted BOs in the VM, non-compute
+	 * VM mode only.
+	 */
+	rebind_fence = xe_vm_rebind(vm);
+	if (IS_ERR(rebind_fence)) {
+		err = PTR_ERR(rebind_fence);
 		goto err_put_job;
 	}
 
 	/*
-	 * We store the userptr fence in the VM so subsequent execs don't get
-	 * scheduled before the binding of userptrs is complete.
+	 * We store the rebind_fence in the VM so subsequent execs don't get
+	 * scheduled before the rebinds of userptrs / evicted BOs is complete.
 	 */
-	if (userptr_fence) {
-		dma_fence_put(vm->userptr.fence);
-		vm->userptr.fence = userptr_fence;
+	if (rebind_fence) {
+		dma_fence_put(vm->rebind_fence);
+		vm->rebind_fence = rebind_fence;
 	}
-	if (vm->userptr.fence) {
+	if (vm->rebind_fence) {
 		if (test_bit(DMA_FENCE_FLAG_SIGNALED_BIT,
-			     &vm->userptr.fence->flags)) {
-			dma_fence_put(vm->userptr.fence);
-			vm->userptr.fence = NULL;
+			     &vm->rebind_fence->flags)) {
+			dma_fence_put(vm->rebind_fence);
+			vm->rebind_fence = NULL;
 		} else {
-			dma_fence_get(vm->userptr.fence);
+			dma_fence_get(vm->rebind_fence);
 			err = drm_sched_job_add_dependency(&job->drm,
-							   vm->userptr.fence);
+							   vm->rebind_fence);
 			if (err)
 				goto err_put_job;
 		}
@@ -202,7 +206,13 @@ retry:
 
 	err = xe_vm_userptr_needs_repin(vm);
 
-	/* Wait on kernel moves */
+	/*
+	 * Wait on kernel moves
+	 *
+	 * XXX: This likely isn't needed as rebinds should wait on these and we
+	 * wait on the rebind fence. Leaving for now to be extra paranoid but
+	 * once we are confident in the flow, this likely can be pulled out.
+	 */
 	if (!xe_vm_in_compute_mode(vm) && !err) {
 		err = drm_sched_job_add_dependencies_resv(&job->drm,
 							  &vm->resv,

@@ -721,18 +721,29 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 	       struct xe_sync_entry *syncs, u32 num_syncs,
 	       bool rebind);
 
-struct dma_fence *xe_vm_userptr_bind(struct xe_vm *vm)
+struct dma_fence *xe_vm_rebind(struct xe_vm *vm)
 {
 	struct dma_fence *fence = NULL;
-	struct xe_vma *vma;
+	struct xe_vma *vma, *next;
 
 	xe_vm_assert_held(vm);
 	lockdep_assert_held(&vm->lock);
-	if (!xe_vm_has_userptr(vm) || xe_vm_in_compute_mode(vm))
+	if (xe_vm_in_compute_mode(vm))
 		return NULL;
 
 	list_for_each_entry(vma, &vm->userptr.list, userptr_link) {
 		if (vma->userptr.dirty && vma->userptr.initial_bind) {
+			dma_fence_put(fence);
+			trace_xe_vma_userptr_rebind_exec(vma);
+			fence = xe_vm_bind_vma(vma, NULL, NULL, 0, true);
+		}
+		if (IS_ERR(fence))
+			return fence;
+	}
+
+	list_for_each_entry_safe(vma, next, &vm->evict_list, evict_link) {
+		list_del_init(&vma->evict_link);
+		if (vma->userptr.initial_bind) {
 			dma_fence_put(fence);
 			trace_xe_vma_userptr_rebind_exec(vma);
 			fence = xe_vm_bind_vma(vma, NULL, NULL, 0, true);
@@ -1121,7 +1132,7 @@ void xe_vm_free(struct kref *ref)
 	XE_WARN_ON(vm->pt_root);
 
 	trace_xe_vm_free(vm);
-	dma_fence_put(vm->userptr.fence);
+	dma_fence_put(vm->rebind_fence);
 	dma_resv_fini(&vm->resv);
 	kfree(vm);
 }
