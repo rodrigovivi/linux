@@ -22,13 +22,19 @@ static int xe_exec_begin(struct xe_engine *e, struct ww_acquire_ctx *ww,
 			 struct list_head *objs)
 {
 	struct xe_vm *vm = e->vm;
-	LIST_HEAD(dups);
 	int err;
 	int i;
 
 	lockdep_assert_held(&vm->lock);
 
 	if (!xe_vm_in_compute_mode(e->vm)) {
+		struct ttm_operation_ctx ctx = {
+			.interruptible = true,
+			.no_wait_gpu = false,
+		};
+		struct xe_vma *vma;
+		LIST_HEAD(dups);
+
 		INIT_LIST_HEAD(objs);
 		for (i = 0; i < vm->extobj.entries; ++i) {
 			struct xe_bo *bo = vm->extobj.bos[i];
@@ -44,6 +50,26 @@ static int xe_exec_begin(struct xe_engine *e, struct ww_acquire_ctx *ww,
 		err = ttm_eu_reserve_buffers(ww, objs, true, &dups);
 		if (err)
 			return err;
+
+		/*
+		 * Validate and BOs that have been evicted (i.e. make sure the
+		 * BOs have valid placements possibly moving an evicted BO back
+		 * to a location where the GPU can access it).
+		 *
+		 * This list can grow during the loop as ttm_bo_validate can
+		 * trigger an eviction within this VM. This is safe as newly
+		 * evicted VMAs are added at the end of the list and the loop
+		 * checks for newly added entries each iteration.
+		 */
+		list_for_each_entry(vma, &vm->evict_list, evict_link) {
+			err = ttm_bo_validate(&vma->bo->ttm,
+					      &vma->bo->placement,
+					      &ctx);
+			if (err) {
+				ttm_eu_backoff_reservation(ww, objs);
+				return err;
+			}
+		}
 	} else {
 		xe_vm_lock(e->vm, NULL);
 	}
