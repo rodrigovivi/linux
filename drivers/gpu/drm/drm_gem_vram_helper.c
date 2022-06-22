@@ -227,6 +227,7 @@ struct drm_gem_vram_object *drm_gem_vram_create(struct drm_device *dev,
 	 * to release gbo->bo.base and kfree gbo.
 	 */
 	ret = ttm_bo_init_validate(bdev, &gbo->bo, ttm_bo_type_device,
+				   DMA_RESV_USAGE_BOOKKEEP,
 				   &gbo->placement, pg_align, false, NULL, NULL,
 				   ttm_buffer_object_destroy);
 	if (ret)
