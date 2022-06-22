@@ -1029,6 +1029,8 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 {
 	struct rb_root contested = RB_ROOT;
 
+	XE_BUG_ON(vm->preempt.num_engines);
+
 	vm->size = 0;
 	smp_mb();
 	flush_async_ops(vm);
@@ -2068,11 +2070,18 @@ int xe_vm_destroy_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, args->pad))
 		return -EINVAL;
 
-	mutex_lock(&xef->vm.lock);
-	vm = xa_erase(&xef->vm.xa, args->vm_id);
-	mutex_unlock(&xef->vm.lock);
+	vm = xe_vm_lookup(xef, args->vm_id);
 	if (XE_IOCTL_ERR(xe, !vm))
 		return -ENOENT;
+	xe_vm_put(vm);
+
+	/* FIXME: Extend this check to non-compute mode VMs */
+	if (XE_IOCTL_ERR(xe, vm->preempt.num_engines))
+		return -EBUSY;
+
+	mutex_lock(&xef->vm.lock);
+	xa_erase(&xef->vm.xa, args->vm_id);
+	mutex_unlock(&xef->vm.lock);
 
 	xe_vm_close_and_put(vm);
 
