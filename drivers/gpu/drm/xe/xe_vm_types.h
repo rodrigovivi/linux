@@ -138,6 +138,9 @@ struct xe_vm {
 	/** @evict_list: list of VMAs that have been evicted */
 	struct list_head evict_list;
 
+	/** @rebind_fence: rebind fence from execbuf */
+	struct dma_fence *rebind_fence;
+
 	/** @extobj: bookkeeping for external objects */
 	struct {
 		/** @enties: number of external BOs attached this VM */
@@ -189,8 +192,6 @@ struct xe_vm {
 		 * preempt fences are installed on this VM
 		 */
 		u32 pending_rebind;
-		/** @fence: userptr fence for a rebind from execbuf */
-		struct dma_fence *fence;
 	} userptr;
 
 	/** @preempt: preempt state */
