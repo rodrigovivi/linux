@@ -119,6 +119,7 @@ struct ttm_buffer_object {
 
 	struct ttm_device *bdev;
 	enum ttm_bo_type type;
+	enum dma_resv_usage wait_usage;
 	uint32_t page_alignment;
 	void (*destroy) (struct ttm_buffer_object *);
 
@@ -318,12 +319,14 @@ bool ttm_bo_eviction_valuable(struct ttm_buffer_object *bo,
 			      const struct ttm_place *place);
 
 int ttm_bo_init_reserved(struct ttm_device *bdev, struct ttm_buffer_object *bo,
-			 enum ttm_bo_type type, struct ttm_placement *placement,
+			 enum ttm_bo_type type, enum dma_resv_usage wait_usage,
+			 struct ttm_placement *placement,
 			 uint32_t alignment, struct ttm_operation_ctx *ctx,
 			 struct sg_table *sg, struct dma_resv *resv,
 			 void (*destroy) (struct ttm_buffer_object *));
 int ttm_bo_init_validate(struct ttm_device *bdev, struct ttm_buffer_object *bo,
-			 enum ttm_bo_type type, struct ttm_placement *placement,
+			 enum ttm_bo_type type, enum dma_resv_usage wait_usage,
+			 struct ttm_placement *placement,
 			 uint32_t alignment, bool interruptible,
 			 struct sg_table *sg, struct dma_resv *resv,
 			 void (*destroy) (struct ttm_buffer_object *));

@@ -338,7 +338,8 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct dma_resv *resv,
 	if (WARN_ON(err))
 		return ERR_PTR(err);
 
-	err = ttm_bo_init_reserved(&xe->ttm, &bo->ttm, size, type,
+	err = ttm_bo_init_reserved(&xe->ttm, &bo->ttm, type,
+				   DMA_RESV_USAGE_READ,
 				   &bo->placement, SZ_64K >> PAGE_SHIFT,
 				   &ctx, NULL, resv, xe_ttm_bo_destroy);
 	if (WARN_ON(err))

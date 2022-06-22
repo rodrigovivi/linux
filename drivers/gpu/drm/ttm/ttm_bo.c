@@ -217,7 +217,7 @@ static void ttm_bo_flush_all_fences(struct ttm_buffer_object *bo)
 	struct dma_resv_iter cursor;
 	struct dma_fence *fence;
 
-	dma_resv_iter_begin(&cursor, resv, DMA_RESV_USAGE_BOOKKEEP);
+	dma_resv_iter_begin(&cursor, resv, bo->wait_usage);
 	dma_resv_for_each_fence_unlocked(&cursor, fence) {
 		if (!fence->ops->signaled)
 			dma_fence_enable_sw_signaling(fence);
@@ -246,7 +246,7 @@ static int ttm_bo_cleanup_refs(struct ttm_buffer_object *bo,
 	struct dma_resv *resv = &bo->base._resv;
 	int ret;
 
-	if (dma_resv_test_signaled(resv, DMA_RESV_USAGE_BOOKKEEP))
+	if (dma_resv_test_signaled(resv, bo->wait_usage))
 		ret = 0;
 	else
 		ret = -EBUSY;
@@ -258,7 +258,7 @@ static int ttm_bo_cleanup_refs(struct ttm_buffer_object *bo,
 			dma_resv_unlock(bo->base.resv);
 		spin_unlock(&bo->bdev->lru_lock);
 
-		lret = dma_resv_wait_timeout(resv, DMA_RESV_USAGE_BOOKKEEP,
+		lret = dma_resv_wait_timeout(resv, bo->wait_usage,
 					     interruptible,
 					     30 * HZ);
 
@@ -363,7 +363,7 @@ static void ttm_bo_release(struct kref *kref)
 			 * fences block for the BO to become idle
 			 */
 			dma_resv_wait_timeout(bo->base.resv,
-					      DMA_RESV_USAGE_BOOKKEEP, false,
+					      bo->wait_usage, false,
 					      30 * HZ);
 		}
 
@@ -374,7 +374,7 @@ static void ttm_bo_release(struct kref *kref)
 		ttm_mem_io_free(bdev, bo->resource);
 	}
 
-	if (!dma_resv_test_signaled(bo->base.resv, DMA_RESV_USAGE_BOOKKEEP) ||
+	if (!dma_resv_test_signaled(bo->base.resv, bo->wait_usage) ||
 	    !dma_resv_trylock(bo->base.resv)) {
 		/* The BO is not idle, resurrect it for delayed destroy */
 		ttm_bo_flush_all_fences(bo);
@@ -927,6 +927,7 @@ EXPORT_SYMBOL(ttm_bo_validate);
  * @bdev: Pointer to a ttm_device struct.
  * @bo: Pointer to a ttm_buffer_object to be initialized.
  * @type: Requested type of buffer object.
+ * @wait_usage: wait on dma-resv usage type.
  * @placement: Initial placement for buffer object.
  * @alignment: Data alignment in pages.
  * @ctx: TTM operation context for memory allocation.
@@ -955,7 +956,8 @@ EXPORT_SYMBOL(ttm_bo_validate);
  * -ERESTARTSYS: Interrupted by signal while sleeping waiting for resources.
  */
 int ttm_bo_init_reserved(struct ttm_device *bdev, struct ttm_buffer_object *bo,
-			 enum ttm_bo_type type, struct ttm_placement *placement,
+			 enum ttm_bo_type type, enum dma_resv_usage wait_usage,
+			 struct ttm_placement *placement,
 			 uint32_t alignment, struct ttm_operation_ctx *ctx,
 			 struct sg_table *sg, struct dma_resv *resv,
 			 void (*destroy) (struct ttm_buffer_object *))
@@ -967,6 +969,7 @@ int ttm_bo_init_reserved(struct ttm_device *bdev, struct ttm_buffer_object *bo,
 	INIT_LIST_HEAD(&bo->ddestroy);
 	bo->bdev = bdev;
 	bo->type = type;
+	bo->wait_usage = wait_usage;
 	bo->page_alignment = alignment;
 	bo->destroy = destroy;
 	bo->pin_count = 0;
@@ -1025,6 +1028,7 @@ EXPORT_SYMBOL(ttm_bo_init_reserved);
  * @bdev: Pointer to a ttm_device struct.
  * @bo: Pointer to a ttm_buffer_object to be initialized.
  * @type: Requested type of buffer object.
+ * @wait_usage: wait on dma-resv usage type.
  * @placement: Initial placement for buffer object.
  * @alignment: Data alignment in pages.
  * @interruptible: If needing to sleep to wait for GPU resources,
@@ -1056,7 +1060,8 @@ EXPORT_SYMBOL(ttm_bo_init_reserved);
  * -ERESTARTSYS: Interrupted by signal while sleeping waiting for resources.
  */
 int ttm_bo_init_validate(struct ttm_device *bdev, struct ttm_buffer_object *bo,
-			 enum ttm_bo_type type, struct ttm_placement *placement,
+			 enum ttm_bo_type type, enum dma_resv_usage wait_usage,
+			 struct ttm_placement *placement,
 			 uint32_t alignment, bool interruptible,
 			 struct sg_table *sg, struct dma_resv *resv,
 			 void (*destroy) (struct ttm_buffer_object *))
@@ -1064,8 +1069,8 @@ int ttm_bo_init_validate(struct ttm_device *bdev, struct ttm_buffer_object *bo,
 	struct ttm_operation_ctx ctx = { interruptible, false };
 	int ret;
 
-	ret = ttm_bo_init_reserved(bdev, bo, type, placement, alignment, &ctx,
-				   sg, resv, destroy);
+	ret = ttm_bo_init_reserved(bdev, bo, type, wait_usage, placement,
+				   alignment, &ctx, sg, resv, destroy);
 	if (ret)
 		return ret;
 
@@ -1095,13 +1100,13 @@ int ttm_bo_wait(struct ttm_buffer_object *bo,
 	long timeout = 15 * HZ;
 
 	if (no_wait) {
-		if (dma_resv_test_signaled(bo->base.resv, DMA_RESV_USAGE_BOOKKEEP))
+		if (dma_resv_test_signaled(bo->base.resv, bo->wait_usage))
 			return 0;
 		else
 			return -EBUSY;
 	}
 
-	timeout = dma_resv_wait_timeout(bo->base.resv, DMA_RESV_USAGE_BOOKKEEP,
+	timeout = dma_resv_wait_timeout(bo->base.resv, bo->wait_usage,
 					interruptible, timeout);
 	if (timeout < 0)
 		return timeout;

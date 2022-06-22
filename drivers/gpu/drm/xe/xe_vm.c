@@ -1398,12 +1398,13 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 	if (!IS_ERR(fence)) {
 		if (!evict) {
 			/* add shared fence now for pagetable delayed destroy */
-			dma_resv_add_fence(&vm->resv, fence, DMA_RESV_USAGE_BOOKKEEP);
+			dma_resv_add_fence(&vm->resv, fence,
+					   DMA_RESV_USAGE_READ);
 
 			/* This fence will be installed by caller when doing eviction */
 			if (!vma_is_userptr(vma) && !vma->bo->vm)
 				dma_resv_add_fence(vma->bo->ttm.base.resv, fence,
-						   DMA_RESV_USAGE_BOOKKEEP);
+						   DMA_RESV_USAGE_READ);
 			xe_pt_commit_unbind(vma, entries, num_entries);
 		}
 		vma->evicted = evict;
@@ -1682,10 +1683,11 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 					   xe_vm_in_compute_mode(vm));
 	if (!IS_ERR(fence)) {
 		/* add shared fence now for pagetable delayed destroy */
-		dma_resv_add_fence(&vm->resv, fence, DMA_RESV_USAGE_BOOKKEEP);
+		dma_resv_add_fence(&vm->resv, fence, DMA_RESV_USAGE_READ);
 
 		if (!vma_is_userptr(vma) && !vma->bo->vm)
-			dma_resv_add_fence(vma->bo->ttm.base.resv, fence,  DMA_RESV_USAGE_BOOKKEEP);
+			dma_resv_add_fence(vma->bo->ttm.base.resv, fence,
+					   DMA_RESV_USAGE_READ);
 		xe_pt_commit_bind(vma, entries, num_entries);
 
 		/* This vma is live (again?) now */
@@ -1884,7 +1886,8 @@ static int xe_vm_bind_userptr(struct xe_vm *vm, struct xe_vma *vma,
 		struct dma_resv_iter cursor;
 		struct dma_fence *fence;
 
-		dma_resv_iter_begin(&cursor, &vm->resv, DMA_RESV_USAGE_BOOKKEEP);
+		dma_resv_iter_begin(&cursor, &vm->resv,
+				    DMA_RESV_USAGE_BOOKKEEP);
 		dma_resv_for_each_fence_unlocked(&cursor, fence)
 			dma_fence_enable_sw_signaling(fence);
 		dma_resv_iter_end(&cursor);
