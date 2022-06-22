@@ -1912,6 +1912,11 @@ static int xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma, struct xe_engine *e,
 		if (err)
 			return err;
 
+		if (bo->vm) {
+			ctx.allow_res_evict = true;
+			ctx.resv = &vm->resv;
+		}
+
 		err = ttm_bo_validate(&bo->ttm, &bo->placement, &ctx);
 		if (err)
 			return err;

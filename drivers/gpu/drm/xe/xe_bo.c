@@ -316,6 +316,11 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct dma_resv *resv,
 	};
 	int err;
 
+	if (resv) {
+		ctx.allow_res_evict = true;
+		ctx.resv = resv;
+	}
+
 	bo = kzalloc(sizeof(*bo), GFP_KERNEL);
 	if (!bo)
 		return ERR_PTR(-ENOMEM);
@@ -446,6 +451,11 @@ int xe_bo_populate(struct xe_bo *bo)
 	};
 
 	xe_bo_assert_held(bo);
+
+	if (bo->vm) {
+		ctx.allow_res_evict = true;
+		ctx.resv = &bo->vm->resv;
+	}
 
 	/* only populate non-VRAM */
 	if (bo->ttm.resource->mem_type == TTM_PL_VRAM)

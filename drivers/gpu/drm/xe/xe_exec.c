@@ -62,6 +62,14 @@ static int xe_exec_begin(struct xe_engine *e, struct ww_acquire_ctx *ww,
 		 * checks for newly added entries each iteration.
 		 */
 		list_for_each_entry(vma, &vm->evict_list, evict_link) {
+			if (vma->bo->vm) {
+				ctx.allow_res_evict = true;
+				ctx.resv = &vm->resv;
+			} else {
+				ctx.allow_res_evict = false;
+				ctx.resv = NULL;
+			}
+
 			err = ttm_bo_validate(&vma->bo->ttm,
 					      &vma->bo->placement,
 					      &ctx);
