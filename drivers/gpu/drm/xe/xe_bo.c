@@ -229,6 +229,9 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 			list_add_tail(&vma->evict_link, &vma->vm->evict_list);
 	}
 
+	if (ttm_bo->base.dma_buf)
+		dma_buf_move_notify(ttm_bo->base.dma_buf);
+
 out:
 	return 0;
 

@@ -15,6 +15,7 @@
 #include "xe_device.h"
 #include "xe_dma_buf.h"
 #include "xe_ttm_vram_mgr.h"
+#include "xe_vm.h"
 
 MODULE_IMPORT_NS(DMA_BUF);
 
@@ -180,6 +181,26 @@ error:
 	return ERR_PTR(ret);
 }
 
+static void
+xe_dma_buf_move_notify(struct dma_buf_attachment *attach)
+{
+	struct drm_gem_object *obj = attach->importer_priv;
+	struct xe_bo *bo = gem_to_xe_bo(obj);
+	struct xe_vma *vma;
+
+	list_for_each_entry(vma, &bo->vmas, bo_link) {
+		XE_WARN_ON(xe_vm_in_compute_mode(vma->vm));
+
+		if (list_empty(&vma->evict_link))
+			list_add_tail(&vma->evict_link, &vma->vm->evict_list);
+	}
+}
+
+static const struct dma_buf_attach_ops xe_dma_buf_attach_ops = {
+	.allow_peer2peer = true,
+	.move_notify = xe_dma_buf_move_notify
+};
+
 struct drm_gem_object *xe_gem_prime_import(struct drm_device *dev,
 					   struct dma_buf *dma_buf)
 {
@@ -202,8 +223,8 @@ struct drm_gem_object *xe_gem_prime_import(struct drm_device *dev,
 	if (IS_ERR(obj))
 		return obj;
 
-	/* TODO: Dynamic attach, will fixup once eviction working */
-	attach = dma_buf_attach(dma_buf, dev->dev);
+	attach = dma_buf_dynamic_attach(dma_buf, dev->dev,
+					&xe_dma_buf_attach_ops, obj);
 	if (IS_ERR(attach))
 		return ERR_CAST(attach);
 
