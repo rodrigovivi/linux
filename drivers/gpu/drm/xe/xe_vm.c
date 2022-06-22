@@ -1337,8 +1337,7 @@ xe_pt_prepare_unbind(struct xe_vma *vma,
 
 static struct dma_fence *
 xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
-		 struct xe_sync_entry *syncs, u32 num_syncs,
-		 bool kernel_op)
+		 struct xe_sync_entry *syncs, u32 num_syncs)
 {
 	struct xe_vm_pgtable_update entries[XE_VM_MAX_LEVEL * 2 + 1];
 	struct xe_vm *vm = vma->vm;
@@ -1381,8 +1380,7 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 					   entries, num_entries,
 					   syncs, num_syncs,
 					   xe_migrate_clear_pgtable_callback,
-					   vma, kernel_op &&
-					   xe_vm_in_compute_mode(vm));
+					   vma, false);
 	if (!IS_ERR(fence)) {
 		/* add shared fence now for pagetable delayed destroy */
 		dma_resv_add_fence(&vm->resv, fence,
@@ -1887,26 +1885,15 @@ static int xe_vm_unbind(struct xe_vm *vm, struct xe_vma *vma,
 			struct async_op_fence *afence)
 {
 	struct dma_fence *fence;
-	struct preempt_op *op = NULL;
 
 	xe_vm_assert_held(vm);
 	xe_bo_assert_held(bo);
 
-	if (xe_vm_in_compute_mode(vm) && !afence) {
-		op = kmalloc(sizeof(*op), GFP_KERNEL);
-		if (!op)
-			return -ENOMEM;
-	}
-
-	fence = xe_vm_unbind_vma(vma, e, syncs, num_syncs, !!op);
-	if (IS_ERR(fence)) {
-		kfree(op);
+	fence = xe_vm_unbind_vma(vma, e, syncs, num_syncs);
+	if (IS_ERR(fence))
 		return PTR_ERR(fence);
-	}
 	if (afence)
 		add_async_op_fence_cb(vm, fence, afence);
-	if (op)
-		add_preempt_op_cb(vm, fence, op);
 
 	xe_vma_destroy(vma);
 	dma_fence_put(fence);
