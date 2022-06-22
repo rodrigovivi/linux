@@ -544,7 +544,7 @@ static void reinstall_preempt_fences(struct xe_vm *vm)
 	list_for_each_entry(e, &vm->preempt.engines, compute.link) {
 		e->ops->resume(e);
 		dma_resv_add_fence(&vm->resv, e->compute.pfence,
-				   DMA_RESV_USAGE_BOOKKEEP);
+				   DMA_RESV_USAGE_PREEMPT_FENCE);
 	}
 }
 
@@ -659,7 +659,7 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 		vm_userptr_pending_rebind_incr(vm);
 	write_unlock(&vm->userptr.notifier_lock);
 
-	err = dma_resv_wait_timeout(&vm->resv, DMA_RESV_USAGE_BOOKKEEP,
+	err = dma_resv_wait_timeout(&vm->resv, DMA_RESV_USAGE_PREEMPT_FENCE,
 				    false, MAX_SCHEDULE_TIMEOUT);
 	XE_WARN_ON(err <= 0);
 
@@ -1399,12 +1399,12 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 		if (!evict) {
 			/* add shared fence now for pagetable delayed destroy */
 			dma_resv_add_fence(&vm->resv, fence,
-					   DMA_RESV_USAGE_READ);
+					   DMA_RESV_USAGE_BOOKKEEP);
 
 			/* This fence will be installed by caller when doing eviction */
 			if (!vma_is_userptr(vma) && !vma->bo->vm)
 				dma_resv_add_fence(vma->bo->ttm.base.resv, fence,
-						   DMA_RESV_USAGE_READ);
+						   DMA_RESV_USAGE_BOOKKEEP);
 			xe_pt_commit_unbind(vma, entries, num_entries);
 		}
 		vma->evicted = evict;
@@ -1683,11 +1683,11 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 					   xe_vm_in_compute_mode(vm));
 	if (!IS_ERR(fence)) {
 		/* add shared fence now for pagetable delayed destroy */
-		dma_resv_add_fence(&vm->resv, fence, DMA_RESV_USAGE_READ);
+		dma_resv_add_fence(&vm->resv, fence, DMA_RESV_USAGE_BOOKKEEP);
 
 		if (!vma_is_userptr(vma) && !vma->bo->vm)
 			dma_resv_add_fence(vma->bo->ttm.base.resv, fence,
-					   DMA_RESV_USAGE_READ);
+					   DMA_RESV_USAGE_BOOKKEEP);
 		xe_pt_commit_bind(vma, entries, num_entries);
 
 		/* This vma is live (again?) now */
@@ -1887,7 +1887,7 @@ static int xe_vm_bind_userptr(struct xe_vm *vm, struct xe_vma *vma,
 		struct dma_fence *fence;
 
 		dma_resv_iter_begin(&cursor, &vm->resv,
-				    DMA_RESV_USAGE_BOOKKEEP);
+				    DMA_RESV_USAGE_PREEMPT_FENCE);
 		dma_resv_for_each_fence_unlocked(&cursor, fence)
 			dma_fence_enable_sw_signaling(fence);
 		dma_resv_iter_end(&cursor);

@@ -296,7 +296,8 @@ int dma_resv(void)
 	int r;
 
 	spin_lock_init(&fence_lock);
-	for (usage = DMA_RESV_USAGE_KERNEL; usage <= DMA_RESV_USAGE_BOOKKEEP;
+	for (usage = DMA_RESV_USAGE_KERNEL; usage <=
+	     DMA_RESV_USAGE_PREEMPT_FENCE;
 	     ++usage) {
 		r = subtests(tests, (void *)(unsigned long)usage);
 		if (r)
