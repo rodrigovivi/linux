@@ -202,6 +202,20 @@ retry:
 
 	err = xe_vm_userptr_needs_repin(vm);
 
+	/* Wait on kernel moves */
+	if (!xe_vm_in_compute_mode(vm) && !err) {
+		err = drm_sched_job_add_dependencies_resv(&job->drm,
+							  &vm->resv,
+							  DMA_RESV_USAGE_KERNEL);
+		for (i = 0; !err && i < vm->extobj.entries; ++i) {
+			struct xe_bo *bo = vm->extobj.bos[i];
+
+			err = drm_sched_job_add_dependencies_resv(&job->drm,
+								  bo->ttm.base.resv,
+								  DMA_RESV_USAGE_KERNEL);
+		}
+	}
+
 	/*
 	 * Make implicit sync work across drivers, assuming all external BOs are
 	 * written as we don't pass in a read / write list.
