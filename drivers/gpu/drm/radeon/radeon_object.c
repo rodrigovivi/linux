@@ -203,6 +203,7 @@ int radeon_bo_create(struct radeon_device *rdev,
 	/* Kernel allocation are uninterruptible */
 	down_read(&rdev->pm.mclk_lock);
 	r = ttm_bo_init(&rdev->mman.bdev, &bo->tbo, size, type,
+			DMA_RESV_USAGE_BOOKKEEP,
 			&bo->placement, page_align, !kernel, sg, resv,
 			&radeon_ttm_bo_destroy);
 	up_read(&rdev->pm.mclk_lock);

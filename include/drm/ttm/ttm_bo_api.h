@@ -119,6 +119,7 @@ struct ttm_buffer_object {
 
 	struct ttm_device *bdev;
 	enum ttm_bo_type type;
+	enum dma_resv_usage wait_usage;
 	uint32_t page_alignment;
 	void (*destroy) (struct ttm_buffer_object *);
 
@@ -324,6 +325,7 @@ bool ttm_bo_eviction_valuable(struct ttm_buffer_object *bo,
  * @bo: Pointer to a ttm_buffer_object to be initialized.
  * @size: Requested size of buffer object.
  * @type: Requested type of buffer object.
+ * @wait_usage: wait on dma-resv usage type.
  * @placement: Initial placement for buffer object.
  * @page_alignment: Data alignment in pages.
  * @ctx: TTM operation context for memory allocation.
@@ -355,6 +357,7 @@ bool ttm_bo_eviction_valuable(struct ttm_buffer_object *bo,
 int ttm_bo_init_reserved(struct ttm_device *bdev,
 			 struct ttm_buffer_object *bo,
 			 size_t size, enum ttm_bo_type type,
+			 enum dma_resv_usage wait_usage,
 			 struct ttm_placement *placement,
 			 uint32_t page_alignment,
 			 struct ttm_operation_ctx *ctx,
@@ -368,6 +371,7 @@ int ttm_bo_init_reserved(struct ttm_device *bdev,
  * @bo: Pointer to a ttm_buffer_object to be initialized.
  * @size: Requested size of buffer object.
  * @type: Requested type of buffer object.
+ * @wait_usage: wait on dma-resv usage type.
  * @placement: Initial placement for buffer object.
  * @page_alignment: Data alignment in pages.
  * @interruptible: If needing to sleep to wait for GPU resources,
@@ -400,6 +404,7 @@ int ttm_bo_init_reserved(struct ttm_device *bdev,
  */
 int ttm_bo_init(struct ttm_device *bdev, struct ttm_buffer_object *bo,
 		size_t size, enum ttm_bo_type type,
+		enum dma_resv_usage wait_usage,
 		struct ttm_placement *placement,
 		uint32_t page_alignment, bool interrubtible,
 		struct sg_table *sg, struct dma_resv *resv,

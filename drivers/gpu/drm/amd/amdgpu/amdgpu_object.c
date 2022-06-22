@@ -591,7 +591,8 @@ int amdgpu_bo_create(struct amdgpu_device *adev,
 		bp->destroy = &amdgpu_bo_destroy;
 
 	r = ttm_bo_init_reserved(&adev->mman.bdev, &bo->tbo, size, bp->type,
-				 &bo->placement, page_align, &ctx,  NULL,
+				 DMA_RESV_USAGE_BOOKKEEP, &bo->placement,
+				 page_align, &ctx,  NULL,
 				 bp->resv, bp->destroy);
 	if (unlikely(r != 0))
 		return r;

@@ -308,6 +308,7 @@ nouveau_bo_init(struct nouveau_bo *nvbo, u64 size, int align, u32 domain,
 	INIT_LIST_HEAD(&nvbo->io_reserve_lru);
 
 	ret = ttm_bo_init(nvbo->bo.bdev, &nvbo->bo, size, type,
+			  DMA_RESV_USAGE_BOOKKEEP,
 			  &nvbo->placement, align >> PAGE_SHIFT, false, sg,
 			  robj, nouveau_bo_del_ttm);
 	if (ret) {
