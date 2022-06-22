@@ -469,6 +469,12 @@ int xe_bo_pin(struct xe_bo *bo)
 
 	ttm_bo_pin(&bo->ttm);
 
+	/*
+	 * FIXME: If we always use the reserve / unreserve functions for locking
+	 * we do not need this.
+	 */
+	ttm_bo_move_to_lru_tail_unlocked(&bo->ttm);
+
 	return 0;
 }
 
