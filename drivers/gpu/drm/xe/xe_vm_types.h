@@ -67,8 +67,6 @@ struct xe_vma {
 		/** @initial_bind: user pointer has been bound at least once */
 		bool initial_bind;
 	} userptr;
-
-	bool evicted;
 };
 
 struct xe_device;
