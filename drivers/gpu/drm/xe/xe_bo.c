@@ -458,6 +458,9 @@ int xe_bo_pin(struct xe_bo *bo)
 	if (err)
 		return err;
 
+	/* We currently don't expect user BO to be pinned */
+	XE_BUG_ON(bo->flags & XE_BO_CREATE_USER_BIT);
+
 	/*
 	 * No reason we can't support pinning imported dma-bufs we just don't
 	 * expect to pin an imported dma-buf.
