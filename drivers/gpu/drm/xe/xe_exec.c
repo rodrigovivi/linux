@@ -160,6 +160,26 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	}
 
 	vm = engine->vm;
+
+	/*
+	 * We can't install a job into the VM dma-resv shared slot before an
+	 * async VM bind passed in as a fence without the risk of deadlocking as
+	 * the bind can trigger an eviction which in turn depends on anything in
+	 * the VM dma-resv shared slots. Not an ideal solution, but we wait for
+	 * all dependent async VM binds to start (install correct fences into
+	 * dma-resv slots) before moving forward.
+	 */
+	if (!xe_vm_in_compute_mode(vm) && vm->flags & VM_FLAG_ASYNC_BIND_OPS) {
+		for (i = 0; i < args->num_syncs; i++) {
+			struct dma_fence *fence = syncs[i].fence;
+			if (fence) {
+				err = xe_vm_async_fence_wait_start(fence);
+				if (err)
+					goto err_syncs;
+			}
+		}
+	}
+
 retry:
 	err = down_read_interruptible(&vm->lock);
 	if (err)

@@ -80,6 +80,8 @@ static inline bool xe_vm_has_userptr(struct xe_vm *vm)
 	return !list_empty(&vm->userptr.list);
 }
 
+int xe_vm_async_fence_wait_start(struct dma_fence *fence);
+
 extern struct ttm_device_funcs xe_ttm_funcs;
 
 void xe_vm_dump_pgtt(struct xe_vm *vm);
