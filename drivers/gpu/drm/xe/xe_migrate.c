@@ -194,7 +194,9 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 		}
 
 		if (!fence) {
-			err = drm_sched_job_add_implicit_dependencies(&job->drm, &bo->ttm.base, true);
+			err = drm_sched_job_add_dependencies_resv(&job->drm,
+								  bo->ttm.base.resv,
+								  DMA_RESV_USAGE_PREEMPT_FENCE);
 			if (err)
 				goto err_job;
 		}
