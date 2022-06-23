@@ -358,7 +358,7 @@ xe_migrate_update_pgtables_cpu(struct xe_migrate *m,
 			       struct xe_vm_pgtable_update *updates, u32 num_updates,
 			       struct xe_sync_entry *syncs, u32 num_syncs,
 			       xe_migrate_populatefn_t populatefn,
-			       void *arg, bool wait_preempt)
+			       void *arg)
 {
 	int err = 0;
 	u32 i, j;
@@ -416,8 +416,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 			   struct xe_vm_pgtable_update *updates,
 			   u32 num_updates,
 			   struct xe_sync_entry *syncs, u32 num_syncs,
-			   xe_migrate_populatefn_t populatefn, void *arg,
-			   bool wait_preempt)
+			   xe_migrate_populatefn_t populatefn, void *arg)
 {
 	struct xe_gt *gt = m->gt;
 	struct xe_sched_job *job;
@@ -431,7 +430,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	if (IS_DGFX(vm->xe)) {
 		fence = xe_migrate_update_pgtables_cpu(m, vm, eng, updates, num_updates,
 						       syncs, num_syncs, populatefn,
-						       arg, wait_preempt);
+						       arg);
 		if (IS_ERR(fence))
 			return fence;
 
@@ -520,17 +519,6 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 		err = drm_sched_job_add_dependencies_resv(&job->drm,
 							  bo->ttm.base.resv,
 							  DMA_RESV_USAGE_KERNEL);
-		if (err)
-			goto err_job;
-	}
-
-	/*
-	 * FIXME: We almost certainly can delete this as either the move or
-	 * userptr invalidation should trigger the preempt fences.
-	 */
-	if (wait_preempt) {
-		err = drm_sched_job_add_dependencies_resv(&job->drm, &vm->resv,
-							  DMA_RESV_USAGE_PREEMPT_FENCE);
 		if (err)
 			goto err_job;
 	}
