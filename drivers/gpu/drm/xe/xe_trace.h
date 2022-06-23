@@ -292,6 +292,11 @@ DEFINE_EVENT(xe_vma, xe_vma_userptr_rebind_exec,
 	     TP_ARGS(vma)
 );
 
+DEFINE_EVENT(xe_vma, xe_vma_rebind_exec,
+	     TP_PROTO(struct xe_vma *vma),
+	     TP_ARGS(vma)
+);
+
 DEFINE_EVENT(xe_vma, xe_vma_userptr_invalidate,
 	     TP_PROTO(struct xe_vma *vma),
 	     TP_ARGS(vma)

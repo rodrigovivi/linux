@@ -745,7 +745,7 @@ struct dma_fence *xe_vm_rebind(struct xe_vm *vm)
 		list_del_init(&vma->evict_link);
 		if (vma->userptr.initial_bind) {
 			dma_fence_put(fence);
-			trace_xe_vma_userptr_rebind_exec(vma);
+			trace_xe_vma_rebind_exec(vma);
 			fence = xe_vm_bind_vma(vma, NULL, NULL, 0, true);
 		}
 		if (IS_ERR(fence))
