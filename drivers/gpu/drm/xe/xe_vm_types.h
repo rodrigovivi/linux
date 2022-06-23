@@ -59,8 +59,6 @@ struct xe_vma {
 		 * @dma_address: DMA address for each of page of this user pointer
 		 */
 		dma_addr_t *dma_address;
-		/** @rebind_work: worker to rebind this VMA / BO */
-		struct work_struct rebind_work;
 		/** @destroy_work: worker to destroy this BO */
 		struct work_struct destroy_work;
 		/** @notifier_seq: notifier sequence number */
@@ -184,29 +182,31 @@ struct xe_vm {
 		/** @list: list of VMAs which are user pointers */
 		struct list_head list;
 		/**
-		 * @notifier_lock: protects notifier + pending_rebind
+		 * @notifier_lock: protects notifier
 		 */
 		rwlock_t notifier_lock;
-		/**
-		 * @pending_rebind: number of pending userptr rebinds, used when
-		 * preempt fences are installed on this VM
-		 */
-		u32 pending_rebind;
 	} userptr;
 
 	/** @preempt: preempt state */
 	struct {
-		/**
-		 * @num_inflight_ops: number pendings ops (e.g. inflight
-		 * un/binds) before the pending preempt fences can call resume
-		 * on their respective engines and be inserted back into
-		 * the shared slots
-		 */
-		u32 num_inflight_ops;
 		/** @engines: list of engines attached to this VM */
 		struct list_head engines;
 		/** @num_engines: number user engines attached to this VM */
 		int num_engines;
+		/**
+		 * @rebind_work: worker to rebind invalidated userptrs / evicted
+		 * BOs
+		 */
+		struct work_struct rebind_work;
+		/**
+		 * @resume_wq: resume wait queue which delays the resume until
+		 * new preempt fences are installed
+		 */
+		wait_queue_head_t resume_wq;
+		/**
+		 * @resume_go: tells resume waiter if they are safe to resume
+		 */
+		int resume_go;
 	} preempt;
 };
 

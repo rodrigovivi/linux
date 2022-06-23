@@ -82,6 +82,8 @@ struct xe_bo *xe_bo_create_from_data(struct xe_device *xe, const void *data,
 				     size_t size, enum ttm_bo_type type,
 				     uint32_t flags);
 
+void xe_bo_trigger_rebind(struct xe_bo *bo);
+
 static inline struct xe_bo *ttm_to_xe_bo(const struct ttm_buffer_object *bo)
 {
 	return container_of(bo, struct xe_bo, ttm);
