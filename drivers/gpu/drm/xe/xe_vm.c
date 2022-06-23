@@ -1781,6 +1781,24 @@ struct async_op_fence {
 	struct dma_fence fence;
 	struct dma_fence_cb cb;
 	struct xe_vm *vm;
+	wait_queue_head_t wq;
+	bool started;
+};
+
+static const char *async_op_fence_get_driver_name(struct dma_fence *dma_fence)
+{
+	return "xe";
+}
+
+static const char *
+async_op_fence_get_timeline_name(struct dma_fence *dma_fence)
+{
+	return "async_op_fence";
+}
+
+static const struct dma_fence_ops async_op_fence_ops = {
+	.get_driver_name = async_op_fence_get_driver_name,
+	.get_timeline_name = async_op_fence_get_timeline_name,
 };
 
 static void async_op_fence_cb(struct dma_fence *fence, struct dma_fence_cb *cb)
@@ -1799,6 +1817,12 @@ static void add_async_op_fence_cb(struct xe_vm *vm,
 {
 	int ret;
 
+	if (!xe_vm_in_compute_mode(vm)) {
+		afence->started = true;
+		smp_wmb();
+		wake_up_all(&afence->wq);
+	}
+
 	afence->vm = xe_vm_get(vm);
 	dma_fence_get(&afence->fence);
 	ret = dma_fence_add_callback(fence, &afence->cb, async_op_fence_cb);
@@ -1809,6 +1833,21 @@ static void add_async_op_fence_cb(struct xe_vm *vm,
 		dma_fence_put(&afence->fence);
 	}
 	XE_WARN_ON(ret && ret != -ENOENT);
+}
+
+int xe_vm_async_fence_wait_start(struct dma_fence *fence)
+{
+	if (fence->ops == &async_op_fence_ops) {
+		struct async_op_fence *afence =
+			container_of(fence, struct async_op_fence, fence);
+
+		XE_BUG_ON(xe_vm_in_compute_mode(afence->vm));
+
+		smp_rmb();
+		return wait_event_interruptible(afence->wq, afence->started);
+	}
+
+	return 0;
 }
 
 static int __xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma,
@@ -2264,8 +2303,14 @@ static void async_op_work_func(struct work_struct *w)
 			}
 
 			if (op->fence && !test_bit(DMA_FENCE_FLAG_SIGNALED_BIT,
-						   &op->fence->fence.flags))
+						   &op->fence->fence.flags)) {
+				if (!xe_vm_in_compute_mode(vm)) {
+					op->fence->started = true;
+					smp_wmb();
+					wake_up_all(&op->fence->wq);
+				}
 				dma_fence_signal(&op->fence->fence);
+			}
 		}
 
 		while (op->num_syncs--)
@@ -2281,22 +2326,6 @@ static void async_op_work_func(struct work_struct *w)
 		kfree(op);
 	}
 }
-
-static const char *async_op_fence_get_driver_name(struct dma_fence *dma_fence)
-{
-	return "xe";
-}
-
-static const char *
-async_op_fence_get_timeline_name(struct dma_fence *dma_fence)
-{
-	return "async_op_fence";
-}
-
-static const struct dma_fence_ops async_op_fence_ops = {
-	.get_driver_name = async_op_fence_get_driver_name,
-	.get_timeline_name = async_op_fence_get_timeline_name,
-};
 
 static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_vma *vma,
 			       struct xe_engine *e, struct xe_bo *bo,
@@ -2324,6 +2353,12 @@ static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_vma *vma,
 		dma_fence_init(&op->fence->fence, &async_op_fence_ops,
 			       &vm->async_ops.lock, e ? e->bind.fence_ctx :
 			       vm->async_ops.fence.context, seqno);
+
+		if (!xe_vm_in_compute_mode(vm)) {
+			op->fence->vm = vm;
+			op->fence->started = false;
+			init_waitqueue_head(&op->fence->wq);
+		}
 	} else {
 		op->fence = NULL;
 	}
