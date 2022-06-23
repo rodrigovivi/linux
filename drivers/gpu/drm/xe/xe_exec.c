@@ -260,41 +260,36 @@ retry:
 
 	err = xe_vm_userptr_needs_repin(vm);
 
-	/*
-	 * Wait on kernel moves
-	 *
-	 * XXX: This likely isn't needed as rebinds should wait on these and we
-	 * wait on the rebind fence. Leaving for now to be extra paranoid but
-	 * once we are confident in the flow, this likely can be pulled out.
-	 */
 	if (!xe_vm_in_compute_mode(vm) && !err) {
+		/*
+		 * Wait on kernel moves, same below waiting external BOs kernel
+		 * slot
+		 *
+		 * XXX: This likely isn't needed as rebinds should wait on these and we
+		 * wait on the rebind fence. Leaving for now to be extra paranoid but
+		 * once we are confident in the flow, this likely can be pulled out.
+		 */
 		err = drm_sched_job_add_dependencies_resv(&job->drm,
 							  &vm->resv,
 							  DMA_RESV_USAGE_KERNEL);
+
 		for (i = 0; !err && i < vm->extobj.entries; ++i) {
 			struct xe_bo *bo = vm->extobj.bos[i];
 
+			/*
+			 * Wait on kernel moves, same as above waiting on VMs
+			 * kernel slot.
+			 */
 			err = drm_sched_job_add_dependencies_resv(&job->drm,
 								  bo->ttm.base.resv,
 								  DMA_RESV_USAGE_KERNEL);
-		}
-	}
 
-	/*
-	 * Make implicit sync work across drivers, assuming all external BOs are
-	 * written as we don't pass in a read / write list.
-	 */
-	if (!xe_vm_in_compute_mode(vm) && !err) {
-		struct ttm_validate_buffer *entry;
-		struct ttm_buffer_object *ttm_vm = xe_vm_ttm_bo(vm);;
-
-		list_for_each_entry(entry, &objs, head) {
-			struct ttm_buffer_object *ttm = entry->bo;
-
-			if (ttm == ttm_vm)
-				continue;
-
-			dma_resv_add_fence(ttm->base.resv,
+			/*
+			 * Make implicit sync work across drivers, assuming all
+			 * external BOs are written as we don't pass in a read /
+			 * write list.
+			 */
+			dma_resv_add_fence(bo->ttm.base.resv,
 					   &job->drm.s_fence->finished,
 					   DMA_RESV_USAGE_WRITE);
 		}
