@@ -1688,7 +1688,7 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 	}
 
 	fence = xe_migrate_update_pgtables(gt->migrate,
-					   vm, rebind ? vma->bo : NULL,
+					   vm, vma->bo,
 					   e ? e: vm->eng,
 					   entries, num_entries,
 					   syncs, num_syncs,
