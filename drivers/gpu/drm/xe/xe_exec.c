@@ -79,8 +79,6 @@
  * Create job                                                             |
  * Rebind invalidated userptrs + evicted BOs (non-compute-mode)           |
  * Add rebind fence dependency to job                                     |
- * Wait on VM dma-resv kernel slot (non-compute mode)                     |
- * Wait on external BOs dma-resv kernel slots (non-compute mode)          |
  * Add job VM dma-resv bookkeeing slot (non-compute mode)                 |
  * Add job to external BOs dma-resv write slots (non-compute mode)        |
  * Check if any userptrs invalidated since pin ------ Drop locks ---------|
@@ -325,47 +323,26 @@ retry:
 
 	xe_sched_job_arm(job);
 
-	if (!xe_vm_in_compute_mode(vm))
+	if (!xe_vm_in_compute_mode(vm)) {
+		/* Block userptr invalidations / BO eviction */
 		dma_resv_add_fence(&vm->resv,
 				   &job->drm.s_fence->finished,
 				   DMA_RESV_USAGE_BOOKKEEP);
 
-	err = xe_vm_userptr_needs_repin(vm);
-
-	if (!xe_vm_in_compute_mode(vm) && !err) {
 		/*
-		 * Wait on kernel moves, same below waiting external BOs kernel
-		 * slot
-		 *
-		 * XXX: This likely isn't needed as rebinds should wait on these and we
-		 * wait on the rebind fence. Leaving for now to be extra paranoid but
-		 * once we are confident in the flow, this likely can be pulled out.
+		 * Make implicit sync work across drivers, assuming all external
+		 * BOs are written as we don't pass in a read / write list.
 		 */
-		err = drm_sched_job_add_dependencies_resv(&job->drm,
-							  &vm->resv,
-							  DMA_RESV_USAGE_KERNEL);
-
-		for (i = 0; !err && i < vm->extobj.entries; ++i) {
+		for (i = 0; i < vm->extobj.entries; ++i) {
 			struct xe_bo *bo = vm->extobj.bos[i];
 
-			/*
-			 * Wait on kernel moves, same as above waiting on VMs
-			 * kernel slot.
-			 */
-			err = drm_sched_job_add_dependencies_resv(&job->drm,
-								  bo->ttm.base.resv,
-								  DMA_RESV_USAGE_KERNEL);
-
-			/*
-			 * Make implicit sync work across drivers, assuming all
-			 * external BOs are written as we don't pass in a read /
-			 * write list.
-			 */
 			dma_resv_add_fence(bo->ttm.base.resv,
 					   &job->drm.s_fence->finished,
 					   DMA_RESV_USAGE_WRITE);
 		}
 	}
+
+	err = xe_vm_userptr_needs_repin(vm);
 
 	for (i = 0; i < num_syncs && !err; i++)
 		err = xe_sync_entry_add_deps(&syncs[i], job);
