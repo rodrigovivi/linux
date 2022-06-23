@@ -1400,7 +1400,7 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 					   entries, num_entries,
 					   syncs, num_syncs,
 					   xe_migrate_clear_pgtable_callback,
-					   vma, false);
+					   vma);
 	if (!IS_ERR(fence)) {
 		/* add shared fence now for pagetable delayed destroy */
 		dma_resv_add_fence(&vm->resv, fence,
@@ -1692,8 +1692,7 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 					   e ? e: vm->eng,
 					   entries, num_entries,
 					   syncs, num_syncs,
-					   xe_vm_populate_pgtable, vma,
-					   rebind && xe_vm_in_compute_mode(vm));
+					   xe_vm_populate_pgtable, vma);
 	if (!IS_ERR(fence)) {
 		/* add shared fence now for pagetable delayed destroy */
 		dma_resv_add_fence(&vm->resv, fence, DMA_RESV_USAGE_BOOKKEEP);
