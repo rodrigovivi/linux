@@ -249,7 +249,7 @@ retry:
 	if (err)
 		goto err_syncs;
 
-	err = xe_vm_userptr_pin(vm);
+	err = xe_vm_userptr_pin(vm, false);
 	if (err)
 		goto err_unlock_list;
 
@@ -274,7 +274,7 @@ retry:
 	 * Rebind any invalidated userptr or evicted BOs in the VM, non-compute
 	 * VM mode only.
 	 */
-	rebind_fence = xe_vm_rebind(vm);
+	rebind_fence = xe_vm_rebind(vm, false);
 	if (IS_ERR(rebind_fence)) {
 		err = PTR_ERR(rebind_fence);
 		goto err_put_job;
@@ -328,7 +328,7 @@ retry:
 		}
 	}
 
-	err = xe_vm_userptr_needs_repin(vm);
+	err = xe_vm_userptr_needs_repin(vm, false);
 
 	for (i = 0; i < num_syncs && !err; i++)
 		err = xe_sync_entry_add_deps(&syncs[i], job);

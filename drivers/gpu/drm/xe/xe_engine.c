@@ -14,7 +14,6 @@
 #include "xe_gt.h"
 #include "xe_lrc.h"
 #include "xe_macros.h"
-#include "xe_preempt_fence.h"
 #include "xe_trace.h"
 #include "xe_vm.h"
 
@@ -196,7 +195,6 @@ static int engine_set_compute_mode(struct xe_device *xe, struct xe_engine *e,
 
 	if (value) {
 		struct xe_vm *vm = e->vm;
-		struct dma_fence *pfence;
 		int err;
 
 		/*
@@ -218,27 +216,10 @@ static int engine_set_compute_mode(struct xe_device *xe, struct xe_engine *e,
 
 		e->compute.context = dma_fence_context_alloc(1);
 		spin_lock_init(&e->compute.lock);
-		pfence = xe_preempt_fence_create(e, e->compute.context,
-						 ++e->compute.seqno);
-		if (XE_IOCTL_ERR(xe, IS_ERR(pfence)))
-			return PTR_ERR(pfence);
 
-		down_write(&e->vm->lock);
-		xe_vm_lock(vm, NULL);
-		err = dma_resv_reserve_fences(&vm->resv, 1);
-		if (XE_IOCTL_ERR(xe, err)) {
-			dma_fence_put(pfence);
-			xe_vm_unlock(vm);
+		err = xe_vm_add_compute_engine(vm, e);
+		if (XE_IOCTL_ERR(xe, err))
 			return err;
-		}
-
-		list_add(&e->compute.link, &vm->preempt.engines);
-		++vm->preempt.num_engines;
-		e->compute.pfence = pfence;
-		dma_resv_add_fence(&vm->resv, pfence,
-				   DMA_RESV_USAGE_PREEMPT_FENCE);
-		xe_vm_unlock(vm);
-		up_write(&e->vm->lock);
 
 		e->flags |= ENGINE_FLAG_COMPUTE_MODE;
 		e->flags &= ~ENGINE_FLAG_PERSISTENT;

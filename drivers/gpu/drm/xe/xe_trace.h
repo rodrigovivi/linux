@@ -50,6 +50,11 @@ DEFINE_EVENT(xe_engine, xe_engine_create,
 	     TP_ARGS(e)
 );
 
+DEFINE_EVENT(xe_engine, xe_engine_supress_resume,
+	     TP_PROTO(struct xe_engine *e),
+	     TP_ARGS(e)
+);
+
 DEFINE_EVENT(xe_engine, xe_engine_submit,
 	     TP_PROTO(struct xe_engine *e),
 	     TP_ARGS(e)
@@ -292,12 +297,32 @@ DEFINE_EVENT(xe_vma, xe_vma_userptr_rebind_exec,
 	     TP_ARGS(vma)
 );
 
+DEFINE_EVENT(xe_vma, xe_vma_rebind_worker,
+	     TP_PROTO(struct xe_vma *vma),
+	     TP_ARGS(vma)
+);
+
 DEFINE_EVENT(xe_vma, xe_vma_rebind_exec,
 	     TP_PROTO(struct xe_vma *vma),
 	     TP_ARGS(vma)
 );
 
 DEFINE_EVENT(xe_vma, xe_vma_userptr_invalidate,
+	     TP_PROTO(struct xe_vma *vma),
+	     TP_ARGS(vma)
+);
+
+DEFINE_EVENT(xe_vma, xe_vma_evict,
+	     TP_PROTO(struct xe_vma *vma),
+	     TP_ARGS(vma)
+);
+
+DEFINE_EVENT(xe_vma, xe_vma_userptr_pin_set_dirty,
+	     TP_PROTO(struct xe_vma *vma),
+	     TP_ARGS(vma)
+);
+
+DEFINE_EVENT(xe_vma, xe_vma_userptr_invalidate_complete,
 	     TP_PROTO(struct xe_vma *vma),
 	     TP_ARGS(vma)
 );
@@ -328,6 +353,21 @@ DEFINE_EVENT(xe_vm, xe_vm_free,
 );
 
 DEFINE_EVENT(xe_vm, xe_vm_restart,
+	     TP_PROTO(struct xe_vm *vm),
+	     TP_ARGS(vm)
+);
+
+DEFINE_EVENT(xe_vm, xe_vm_rebind_worker_enter,
+	     TP_PROTO(struct xe_vm *vm),
+	     TP_ARGS(vm)
+);
+
+DEFINE_EVENT(xe_vm, xe_vm_rebind_worker_retry,
+	     TP_PROTO(struct xe_vm *vm),
+	     TP_ARGS(vm)
+);
+
+DEFINE_EVENT(xe_vm, xe_vm_rebind_worker_exit,
 	     TP_PROTO(struct xe_vm *vm),
 	     TP_ARGS(vm)
 );

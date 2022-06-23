@@ -21,6 +21,7 @@
 #include "xe_gt.h"
 #include "xe_migrate.h"
 #include "xe_res_cursor.h"
+#include "xe_trace.h"
 #include "xe_vm.h"
 
 static const struct ttm_place sys_placement_flags = {
@@ -177,13 +178,35 @@ static int xe_move_blit(struct xe_bo *bo, bool evict, struct ttm_resource *new_m
 	return ret;
 }
 
+void xe_bo_trigger_rebind(struct xe_bo *bo)
+{
+	struct dma_resv_iter cursor;
+	struct dma_fence *fence;
+	struct xe_vma *vma;
+
+	dma_resv_iter_begin(&cursor, bo->ttm.base.resv,
+			    DMA_RESV_USAGE_PREEMPT_FENCE);
+	dma_resv_for_each_fence_unlocked(&cursor, fence)
+		dma_fence_enable_sw_signaling(fence);
+	dma_resv_iter_end(&cursor);
+
+	list_for_each_entry(vma, &bo->vmas, bo_link) {
+		trace_xe_vma_evict(vma);
+
+		if (list_empty(&vma->evict_link))
+			list_add_tail(&vma->evict_link, &vma->vm->evict_list);
+		if (xe_vm_in_compute_mode(vma->vm))
+			queue_work(system_unbound_wq,
+				   &vma->vm->preempt.rebind_work);
+	}
+}
+
 static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 		      struct ttm_operation_ctx *ctx,
 		      struct ttm_resource *new_mem,
 		      struct ttm_place *hop)
 {
 	struct xe_bo *bo = ttm_to_xe_bo(ttm_bo);
-	struct xe_vma *vma;
 	struct ttm_resource *old_mem = bo->ttm.resource;
 	struct xe_gt *gt;
 	int ret;
@@ -222,13 +245,7 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 	if (ret)
 		return ret;
 
-	list_for_each_entry(vma, &bo->vmas, bo_link) {
-		XE_WARN_ON(xe_vm_in_compute_mode(vma->vm));
-
-		if (list_empty(&vma->evict_link))
-			list_add_tail(&vma->evict_link, &vma->vm->evict_list);
-	}
-
+	xe_bo_trigger_rebind(bo);
 	if (ttm_bo->base.dma_buf)
 		dma_buf_move_notify(ttm_bo->base.dma_buf);
 

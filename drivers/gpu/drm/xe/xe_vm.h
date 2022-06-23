@@ -15,6 +15,7 @@ struct drm_file;
 
 struct ttm_buffer_object;
 
+struct xe_engine;
 struct xe_file;
 struct xe_sync_entry;
 
@@ -69,10 +70,11 @@ static inline bool xe_vm_in_compute_mode(struct xe_vm *vm)
 {
 	return vm->flags & VM_FLAG_COMPUTE_MODE;
 }
+int xe_vm_add_compute_engine(struct xe_vm *vm, struct xe_engine *e);
 
-int xe_vm_userptr_pin(struct xe_vm *vm);
-int xe_vm_userptr_needs_repin(struct xe_vm *vm);
-struct dma_fence *xe_vm_rebind(struct xe_vm *vm);
+int xe_vm_userptr_pin(struct xe_vm *vm, bool rebind_worker);
+int xe_vm_userptr_needs_repin(struct xe_vm *vm, bool rebind_worker);
+struct dma_fence *xe_vm_rebind(struct xe_vm *vm, bool rebind_worker);
 static inline bool xe_vm_has_userptr(struct xe_vm *vm)
 {
 	lockdep_assert_held(&vm->lock);
