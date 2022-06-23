@@ -499,6 +499,21 @@ void xe_bo_unpin(struct xe_bo *bo)
 	ttm_bo_unpin(&bo->ttm);
 }
 
+int xe_bo_validate(struct xe_bo *bo)
+{
+	struct ttm_operation_ctx ctx = {
+		.interruptible = true,
+		.no_wait_gpu = false,
+	};
+
+	if (bo->vm) {
+		ctx.allow_res_evict = true;
+		ctx.resv = &bo->vm->resv;
+	}
+
+	return ttm_bo_validate(&bo->ttm, &bo->placement, &ctx);
+}
+
 bool xe_bo_is_xe_bo(struct ttm_buffer_object *bo)
 {
 	if (bo->destroy == &xe_ttm_bo_destroy)

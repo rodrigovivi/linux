@@ -59,17 +59,7 @@ static struct sg_table *xe_dma_buf_map(struct dma_buf_attachment *attach,
 	long r;
 
 	if (!xe_bo_is_pinned(bo)) {
-		struct ttm_operation_ctx ctx = {
-			.interruptible = true,
-			.no_wait_gpu = false,
-		};
-
-		if (bo->vm) {
-			ctx.allow_res_evict = true;
-			ctx.resv = &bo->vm->resv;
-		}
-
-		r = ttm_bo_validate(&bo->ttm, &bo->placement, &ctx);
+		r = xe_bo_validate(bo);
 		if (r)
 			return ERR_PTR(r);
 	}
