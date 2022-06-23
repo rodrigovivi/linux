@@ -476,6 +476,7 @@ out:
 	if (!(ret < 0)) {
 		vma->userptr.notifier_seq = notifier_seq;
 		vma->userptr.dirty = true;
+		trace_xe_vma_userptr_pin_set_dirty(vma);
 		if (vma_userptr_needs_repin(vma) == -EAGAIN)
 			goto retry;
 	}
@@ -483,70 +484,277 @@ out:
 	return ret < 0 ? ret : 0;
 }
 
-static void vm_userptr_pending_rebind_incr(struct xe_vm *vm)
-{
-	XE_BUG_ON(!xe_vm_in_compute_mode(vm));
-	lockdep_assert_held(&vm->userptr.notifier_lock);
-
-	++vm->userptr.pending_rebind;
-}
-
-static int vm_userptr_pending_rebind_decr(struct xe_vm *vm)
-{
-	int val;
-
-	XE_BUG_ON(!xe_vm_in_compute_mode(vm));
-
-	write_lock(&vm->userptr.notifier_lock);
-	val = --vm->userptr.pending_rebind;
-	write_unlock(&vm->userptr.notifier_lock);
-
-	return val;
-}
-
-static void alloc_preempt_fences(struct xe_vm *vm)
+static int alloc_preempt_fences(struct xe_vm *vm)
 {
 	struct xe_engine *e;
+	bool wait = false;
+	long timeout;
 
 	lockdep_assert_held(&vm->lock);
 	xe_vm_assert_held(vm);
 
+	/*
+	 * We test for a corner case where the rebind worker is queue'd twice
+	 * in a row but the first run of the worker fixes all the page tables.
+	 * If any of pfences are NULL or is signaling is enabled on pfence we
+	 * know that their are page tables which need fixing.
+	 */
+	list_for_each_entry(e, &vm->preempt.engines, compute.link) {
+		if (!e->compute.pfence || (e->compute.pfence &&
+		    test_bit(DMA_FENCE_FLAG_ENABLE_SIGNAL_BIT,
+			     &e->compute.pfence->flags))) {
+			wait = true;
+			break;
+		}
+	}
+
+	if (!wait)
+		return 1;	/* nothing to do */
+
 	list_for_each_entry(e, &vm->preempt.engines, compute.link) {
 		struct dma_fence *pfence;
 
-		if (e->compute.pfence &&
-		    test_bit(DMA_FENCE_FLAG_SIGNALED_BIT,
-			     &e->compute.pfence->flags)) {
+		if (e->compute.pfence) {
+			timeout = dma_fence_wait(e->compute.pfence, false);
+			if (timeout < 0)
+				return -ETIME;
 			dma_fence_put(e->compute.pfence);
 			e->compute.pfence = NULL;
 		}
-
-		if (e->compute.pfence)
-			continue;
 
 		pfence = xe_preempt_fence_create(e, e->compute.context,
 						 ++e->compute.seqno);
 		XE_WARN_ON(!pfence);
 		if (!pfence)
-			return;		/* FIXME: Kill VM */
+			return -ENOMEM;
 
 		e->compute.pfence = pfence;
 	}
+
+	return 0;
+}
+
+static int add_preempt_fences(struct xe_vm *vm, struct xe_bo *bo)
+{
+	struct xe_engine *e;
+	int err;
+
+	err = dma_resv_lock_interruptible(bo->ttm.base.resv, NULL);
+	if (err)
+		return err;
+
+	err = dma_resv_reserve_fences(bo->ttm.base.resv,
+				      vm->preempt.num_engines);
+	if (err)
+		goto out_unlock;
+
+	list_for_each_entry(e, &vm->preempt.engines, compute.link)
+		if (e->compute.pfence) {
+			dma_resv_add_fence(bo->ttm.base.resv,
+					   e->compute.pfence,
+					   DMA_RESV_USAGE_PREEMPT_FENCE);
+		}
+out_unlock:
+	dma_resv_unlock(bo->ttm.base.resv);
+	return err;
 }
 
 static void reinstall_preempt_fences(struct xe_vm *vm)
 {
 	struct xe_engine *e;
+	int i;
 
-	lockdep_assert_held(&vm->userptr.notifier_lock);
 	lockdep_assert_held(&vm->lock);
 	xe_vm_assert_held(vm);
 
 	list_for_each_entry(e, &vm->preempt.engines, compute.link) {
 		e->ops->resume(e);
+
 		dma_resv_add_fence(&vm->resv, e->compute.pfence,
 				   DMA_RESV_USAGE_PREEMPT_FENCE);
+
+		for (i = 0; i < vm->extobj.entries; ++i) {
+			struct xe_bo *bo = vm->extobj.bos[i];
+
+			dma_resv_add_fence(bo->ttm.base.resv, e->compute.pfence,
+					   DMA_RESV_USAGE_PREEMPT_FENCE);
+		}
 	}
+}
+
+int xe_vm_add_compute_engine(struct xe_vm *vm, struct xe_engine *e)
+{
+	struct ttm_validate_buffer tv_vm;
+	struct ttm_validate_buffer *tv_bos = NULL;
+	struct ww_acquire_ctx ww;
+	struct list_head objs, dups;
+	struct dma_fence *pfence;
+	int i;
+	int err;
+
+	XE_BUG_ON(!xe_vm_in_compute_mode(vm));
+
+	down_read(&vm->lock);
+
+	tv_bos = kmalloc(sizeof(*tv_bos) * vm->extobj.entries,
+			 GFP_KERNEL);
+	if (!tv_bos) {
+		err = -ENOMEM;
+		goto out_unlock;
+	}
+
+	INIT_LIST_HEAD(&objs);
+	INIT_LIST_HEAD(&dups);
+
+	for (i = 0; i < vm->extobj.entries; ++i) {
+		struct xe_bo *bo = vm->extobj.bos[i];
+
+		tv_bos[i].num_shared = 1;
+		tv_bos[i].bo = &bo->ttm;
+
+		list_add_tail(&tv_bos[i].head, &objs);
+	}
+	tv_vm.num_shared = 1;
+	tv_vm.bo = xe_vm_ttm_bo(vm);;
+	list_add_tail(&tv_vm.head, &objs);
+
+	err = ttm_eu_reserve_buffers(&ww, &objs, false, &dups);
+	if (err)
+		goto out_unlock_outer;
+
+	pfence = xe_preempt_fence_create(e, e->compute.context,
+					 ++e->compute.seqno);
+	if (!pfence) {
+		err = -ENOMEM;
+		goto out_unlock;
+	}
+
+	list_add(&e->compute.link, &vm->preempt.engines);
+	++vm->preempt.num_engines;
+	e->compute.pfence = pfence;
+
+	dma_resv_add_fence(&vm->resv, pfence,
+			   DMA_RESV_USAGE_PREEMPT_FENCE);
+
+	for (i = 0; i < vm->extobj.entries; ++i) {
+		struct xe_bo *bo = vm->extobj.bos[i];
+
+		dma_resv_add_fence(bo->ttm.base.resv, pfence,
+				   DMA_RESV_USAGE_PREEMPT_FENCE);
+	}
+
+out_unlock:
+	ttm_eu_backoff_reservation(&ww, &objs);
+out_unlock_outer:
+	up_read(&vm->lock);
+	kfree(tv_bos);
+
+	return err;
+}
+
+static void preempt_rebind_work_func(struct work_struct *w)
+{
+	struct xe_vm *vm = container_of(w, struct xe_vm, preempt.rebind_work);
+	struct xe_vma *vma;
+	struct ttm_validate_buffer tv_vm;
+	struct ttm_validate_buffer *tv_bos = NULL;
+	struct ww_acquire_ctx ww;
+	struct list_head objs, dups;
+	struct dma_fence *rebind_fence;
+	int i, err;
+	long wait;
+
+	XE_BUG_ON(!xe_vm_in_compute_mode(vm));
+	trace_xe_vm_rebind_worker_enter(vm);
+
+retry:
+	if (xe_vm_is_closed(vm)) {
+		trace_xe_vm_rebind_worker_exit(vm);
+		return;
+	}
+
+	down_read(&vm->lock);
+
+	err = xe_vm_userptr_pin(vm, true);
+	if (err)
+		goto out_unlock_outer;
+
+	if (!tv_bos) {
+		tv_bos = kmalloc(sizeof(*tv_bos) * vm->extobj.entries,
+				 GFP_KERNEL);
+		if (!tv_bos)
+			goto out_unlock_outer;
+	}
+
+	INIT_LIST_HEAD(&objs);
+	INIT_LIST_HEAD(&dups);
+
+	for (i = 0; i < vm->extobj.entries; ++i) {
+		struct xe_bo *bo = vm->extobj.bos[i];
+
+		tv_bos[i].num_shared = vm->preempt.num_engines;
+		tv_bos[i].bo = &bo->ttm;
+
+		list_add_tail(&tv_bos[i].head, &objs);
+	}
+	tv_vm.num_shared = vm->preempt.num_engines;
+	tv_vm.bo = xe_vm_ttm_bo(vm);;
+	list_add_tail(&tv_vm.head, &objs);
+
+	err = ttm_eu_reserve_buffers(&ww, &objs, false, &dups);
+	if (err)
+		goto out_unlock_outer;
+
+	err = alloc_preempt_fences(vm);
+	if (err)
+		goto out_unlock;
+	vm->preempt.resume_go = 0;
+
+	list_for_each_entry(vma, &vm->evict_list, evict_link) {
+		err = xe_bo_validate(vma->bo);
+		if (err)
+			goto out_unlock;
+	}
+
+	rebind_fence = xe_vm_rebind(vm, true);
+	if (IS_ERR(rebind_fence)) {
+		err = PTR_ERR(rebind_fence);
+		goto out_unlock;
+	}
+
+	if (rebind_fence) {
+		dma_fence_wait(rebind_fence, false);
+		dma_fence_put(rebind_fence);
+	}
+
+	reinstall_preempt_fences(vm);
+	err = xe_vm_userptr_needs_repin(vm, true);
+
+	vm->preempt.resume_go = err == -EAGAIN ? -1 : 1;
+	smp_mb();
+	wake_up_all(&vm->preempt.resume_wq);
+
+out_unlock:
+	ttm_eu_backoff_reservation(&ww, &objs);
+out_unlock_outer:
+	up_read(&vm->lock);
+
+	if (err == -EAGAIN) {
+		wait = dma_resv_wait_timeout(&vm->resv,
+					     DMA_RESV_USAGE_PREEMPT_FENCE,
+					     false, MAX_SCHEDULE_TIMEOUT);
+		if (wait <= 0) {
+			err = -ETIME;
+			goto free;
+		}
+		trace_xe_vm_rebind_worker_retry(vm);
+		goto retry;
+	}
+
+free:
+	kfree(tv_bos);
+	XE_WARN_ON(err < 0);	/* TODO: Kill VM or put in error state */
+	trace_xe_vm_rebind_worker_exit(vm);
 }
 
 struct async_op_fence;
@@ -554,60 +762,6 @@ static int __xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma,
 			struct xe_engine *e, struct xe_sync_entry *syncs,
 			u32 num_syncs, struct async_op_fence *afence,
 			bool rebind);
-
-static void vma_rebind_work_func(struct work_struct *w)
-{
-	struct xe_vma *vma =
-		container_of(w, struct xe_vma, userptr.rebind_work);
-	struct xe_vm *vm = vma->vm;
-	int ret;
-
-	XE_BUG_ON(!vma_is_userptr(vma));
-
-	trace_xe_vma_userptr_rebind_worker(vma);
-
-retry:
-	ret = vma_userptr_pin_pages(vma);
-	XE_WARN_ON(ret < 0);
-
-	down_read(&vm->lock);
-	xe_vm_lock(vm, NULL);
-
-	if (!vma->destroyed && vma->userptr.dirty) {
-		ret = dma_resv_reserve_fences(&vm->resv, 1);
-		if (!ret) {
-			ret = __xe_vm_bind(vm, vma, NULL, NULL, 0, NULL, true);
-			if (!ret) {
-				ret = vma_userptr_needs_repin(vma);
-				if (ret == -EAGAIN) {
-					xe_vm_unlock(vm);
-					up_read(&vm->lock);
-					goto retry;
-				}
-				XE_WARN_ON(ret);
-			} else {
-				XE_WARN_ON("xe_vm_bind_vma failed");
-			}
-		} else {
-			XE_WARN_ON(ret);
-		}
-	}
-
-	alloc_preempt_fences(vm);
-
-	ret = dma_resv_reserve_fences(&vm->resv, vm->preempt.num_engines);
-	XE_WARN_ON(ret);
-	if (ret)
-		return;		/* FIXME: Kill VM */
-
-	write_lock(&vm->userptr.notifier_lock);
-	if (!--vm->userptr.pending_rebind && !vm->preempt.num_inflight_ops)
-		reinstall_preempt_fences(vm);
-	write_unlock(&vm->userptr.notifier_lock);
-
-	xe_vm_unlock(vm);
-	up_read(&vm->lock);
-}
 
 static void vma_destroy_work_func(struct work_struct *w)
 {
@@ -625,7 +779,6 @@ static void vma_destroy_work_func(struct work_struct *w)
 
 	kfree(vma->userptr.dma_address);
 	mmu_interval_notifier_remove(&vma->userptr.notifier);
-	flush_work(&vma->userptr.rebind_work);
 	xe_vm_put(vm);
 	kfree(vma);
 }
@@ -636,6 +789,8 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 {
 	struct xe_vma *vma = container_of(mni, struct xe_vma, userptr.notifier);
 	struct xe_vm *vm = vma->vm;
+	struct dma_resv_iter cursor;
+	struct dma_fence *fence;
 	long err;
 
 	XE_BUG_ON(!vma_is_userptr(vma));
@@ -657,18 +812,23 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 		return true;
 	}
 
-	if (xe_vm_in_compute_mode(vm))
-		vm_userptr_pending_rebind_incr(vm);
 	write_unlock(&vm->userptr.notifier_lock);
+
+	/* Preempt fences turn into schedule disables, pipeline these */
+	dma_resv_iter_begin(&cursor, &vm->resv, DMA_RESV_USAGE_PREEMPT_FENCE);
+	dma_resv_for_each_fence_unlocked(&cursor, fence)
+		dma_fence_enable_sw_signaling(fence);
+	dma_resv_iter_end(&cursor);
 
 	err = dma_resv_wait_timeout(&vm->resv, DMA_RESV_USAGE_PREEMPT_FENCE,
 				    false, MAX_SCHEDULE_TIMEOUT);
 	XE_WARN_ON(err <= 0);
 
-	/* If this VM has preemption fences installed, rebind the VMA */
+	trace_xe_vma_userptr_invalidate_complete(vma);
+
+	/* If this VM in compute mode, rebind the VMA */
 	if (xe_vm_in_compute_mode(vm))
-		if (!queue_work(system_unbound_wq, &vma->userptr.rebind_work))
-			vm_userptr_pending_rebind_decr(vm);
+		queue_work(system_unbound_wq, &vm->preempt.rebind_work);
 
 	return true;
 }
@@ -677,13 +837,14 @@ static const struct mmu_interval_notifier_ops vma_userptr_notifier_ops = {
 	.invalidate = vma_userptr_invalidate,
 };
 
-int xe_vm_userptr_pin(struct xe_vm *vm)
+int xe_vm_userptr_pin(struct xe_vm *vm, bool rebind_worker)
 {
 	struct xe_vma *vma;
 	int err = 0;
 
 	lockdep_assert_held(&vm->lock);
-	if (!xe_vm_has_userptr(vm) || xe_vm_in_compute_mode(vm))
+	if (!xe_vm_has_userptr(vm) ||
+	    (xe_vm_in_compute_mode(vm) && !rebind_worker))
 		return 0;
 
 	list_for_each_entry(vma, &vm->userptr.list, userptr_link) {
@@ -695,13 +856,14 @@ int xe_vm_userptr_pin(struct xe_vm *vm)
 	return 0;
 }
 
-int xe_vm_userptr_needs_repin(struct xe_vm *vm)
+int xe_vm_userptr_needs_repin(struct xe_vm *vm, bool rebind_worker)
 {
 	struct xe_vma *vma;
 	int err = 0;
 
 	lockdep_assert_held(&vm->lock);
-	if (!xe_vm_has_userptr(vm) || xe_vm_in_compute_mode(vm))
+	if (!xe_vm_has_userptr(vm) ||
+	    (xe_vm_in_compute_mode(vm) && !rebind_worker))
 		return 0;
 
 	read_lock(&vm->userptr.notifier_lock);
@@ -721,20 +883,23 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 	       struct xe_sync_entry *syncs, u32 num_syncs,
 	       bool rebind);
 
-struct dma_fence *xe_vm_rebind(struct xe_vm *vm)
+struct dma_fence *xe_vm_rebind(struct xe_vm *vm, bool rebind_worker)
 {
 	struct dma_fence *fence = NULL;
 	struct xe_vma *vma, *next;
 
 	xe_vm_assert_held(vm);
 	lockdep_assert_held(&vm->lock);
-	if (xe_vm_in_compute_mode(vm))
+	if (xe_vm_in_compute_mode(vm) && !rebind_worker)
 		return NULL;
 
 	list_for_each_entry(vma, &vm->userptr.list, userptr_link) {
 		if (vma->userptr.dirty && vma->userptr.initial_bind) {
 			dma_fence_put(fence);
-			trace_xe_vma_userptr_rebind_exec(vma);
+			if (rebind_worker)
+				trace_xe_vma_userptr_rebind_worker(vma);
+			else
+				trace_xe_vma_userptr_rebind_exec(vma);
 			fence = xe_vm_bind_vma(vma, NULL, NULL, 0, true);
 		}
 		if (IS_ERR(fence))
@@ -745,7 +910,10 @@ struct dma_fence *xe_vm_rebind(struct xe_vm *vm)
 		list_del_init(&vma->evict_link);
 		if (vma->userptr.initial_bind) {
 			dma_fence_put(fence);
-			trace_xe_vma_rebind_exec(vma);
+			if (rebind_worker)
+				trace_xe_vma_rebind_worker(vma);
+			else
+				trace_xe_vma_rebind_exec(vma);
 			fence = xe_vm_bind_vma(vma, NULL, NULL, 0, true);
 		}
 		if (IS_ERR(fence))
@@ -812,7 +980,6 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 			return vma;
 		}
 
-		INIT_WORK(&vma->userptr.rebind_work, vma_rebind_work_func);
 		vma->userptr.notifier_seq = LONG_MAX;
 		xe_vm_get(vm);
 	}
@@ -828,10 +995,7 @@ static void xe_vma_destroy(struct xe_vma *vma)
 		list_del(&vma->evict_link);
 
 	if (vma_is_userptr(vma)) {
-		/*
-		 * Needs to be done outside VM lock as flushing
-		 * userptr.rebind_work requires VM lock
-		 */
+		/* FIXME: Probably don't need a worker here anymore */
 		INIT_WORK(&vma->userptr.destroy_work, vma_destroy_work_func);
 		queue_work(system_unbound_wq, &vma->userptr.destroy_work);
 	} else {
@@ -939,6 +1103,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 	spin_lock_init(&vm->async_ops.lock);
 
 	INIT_LIST_HEAD(&vm->preempt.engines);
+	init_waitqueue_head(&vm->preempt.resume_wq);
 
 	xe_vm_lock(vm, NULL);
 
@@ -976,8 +1141,10 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 		}
 	}
 
-	if (flags & DRM_XE_VM_CREATE_COMPUTE_MODE)
+	if (flags & DRM_XE_VM_CREATE_COMPUTE_MODE) {
+		INIT_WORK(&vm->preempt.rebind_work, preempt_rebind_work_func);
 		vm->flags |= VM_FLAG_COMPUTE_MODE;
+	}
 
 	if (flags & DRM_XE_VM_CREATE_ASYNC_BIND_OPS) {
 		vm->async_ops.fence.context = dma_fence_context_alloc(1);
@@ -1056,6 +1223,8 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 	vm->size = 0;
 	smp_mb();
 	flush_async_ops(vm);
+	if (xe_vm_in_compute_mode(vm))
+		flush_work(&vm->preempt.rebind_work);
 
 	if (vm->eng) {
 		xe_engine_kill(vm->eng);
@@ -1715,67 +1884,6 @@ err:
 	return ERR_PTR(err);
 }
 
-struct preempt_op {
-	struct xe_vm *vm;
-	struct dma_fence_cb cb;
-	struct work_struct worker;
-};
-
-static void preempt_op_worker(struct work_struct *w)
-{
-	struct preempt_op *op = container_of(w, struct preempt_op, worker);
-	struct xe_vm *vm = op->vm;
-	int err;
-
-	XE_BUG_ON(!xe_vm_in_compute_mode(vm));
-
-	down_read(&vm->lock);
-	xe_vm_lock(vm, NULL);
-
-	alloc_preempt_fences(vm);
-
-	err = dma_resv_reserve_fences(&vm->resv, vm->preempt.num_engines);
-	XE_WARN_ON(err);
-	if (err)
-		return;		/* FIXME: Kill VM */
-
-	read_lock(&vm->userptr.notifier_lock);
-	if (!--vm->preempt.num_inflight_ops && !vm->userptr.pending_rebind)
-		reinstall_preempt_fences(vm);
-	read_unlock(&vm->userptr.notifier_lock);
-
-	xe_vm_unlock(vm);
-	up_read(&vm->lock);
-
-	xe_vm_put(vm);
-	kfree(op);
-}
-
-static void preempt_op_cb(struct dma_fence *fence, struct dma_fence_cb *cb)
-{
-	struct preempt_op *op = container_of(cb, struct preempt_op, cb);
-
-	queue_work(system_unbound_wq, &op->worker);
-}
-
-static void add_preempt_op_cb(struct xe_vm *vm, struct dma_fence *fence,
-			      struct preempt_op *op)
-{
-	int ret;
-
-	xe_vm_assert_held(vm);
-
-	op->vm = xe_vm_get(vm);
-	++vm->preempt.num_inflight_ops;
-	INIT_WORK(&op->worker, preempt_op_worker);
-
-	ret = dma_fence_add_callback(fence, &op->cb, preempt_op_cb);
-	if (ret == -ENOENT)
-		queue_work(system_unbound_wq, &op->worker);
-	else
-		XE_WARN_ON(ret);
-}
-
 struct async_op_fence {
 	struct dma_fence fence;
 	struct dma_fence_cb cb;
@@ -1855,41 +1963,17 @@ static int __xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma,
 			bool rebind)
 {
 	struct dma_fence *fence;
-	struct preempt_op *op = NULL;
-	int err;
 
 	xe_vm_assert_held(vm);
 
-	/*
-	 * If preempt is enabled (a compute engine uses this VM), on every VM
-	 * kernel initiated un/bind we trigger all preempt fences (in shared
-	 * slots of this VM) by waiting on the excl slot of this VM. The preempt
-	 * fences will create new preempt fences and either resume their engines
-	 * scheduling + insert the new fences into the VM shared slots or defers
-	 * this until all operations that triggered the fence are complete.
-	 */
-	if (xe_vm_in_compute_mode(vm) && rebind) {
-		op = kmalloc(sizeof(*op), GFP_KERNEL);
-		if (!op)
-			return -ENOMEM;
-	}
-
 	fence = xe_vm_bind_vma(vma, e, syncs, num_syncs, rebind);
-	if (IS_ERR(fence)) {
-		err = PTR_ERR(fence);
-		goto err_free_op;
-	}
+	if (IS_ERR(fence))
+		return PTR_ERR(fence);
 	if (afence)
 		add_async_op_fence_cb(vm, fence, afence);
-	if (op)
-		add_preempt_op_cb(vm, fence, op);
 
 	dma_fence_put(fence);
 	return 0;
-
-err_free_op:
-	kfree(op);
-	return err;
 }
 
 static int xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma, struct xe_engine *e,
@@ -2466,8 +2550,12 @@ struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 			return ERR_PTR(-ENOMEM);
 
 		xe_vm_insert_vma(vm, vma);
-		if (!bo->vm)
+		if (!bo->vm) {
 			vm_insert_extobj(vm, vma);
+			err = add_preempt_fences(vm, bo);
+			if (err)
+				return ERR_PTR(err);
+		}
 		break;
 	case XE_VM_BIND_OP_UNMAP:
 		vma = xe_vm_find_overlapping_vma(vm, &lookup);

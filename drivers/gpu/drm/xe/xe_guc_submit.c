@@ -904,7 +904,8 @@ static void __guc_engine_process_msg_suspend(struct drm_sched_msg *msg)
 	struct xe_engine *e = msg->private_data;
 	struct xe_guc *guc = engine_to_guc(e);
 
-	if (guc_engine_allowed_to_change_state(e) && !engine_suspended(e)) {
+	if (guc_engine_allowed_to_change_state(e) && !engine_suspended(e) &&
+	    engine_enabled(e)) {
 		MAKE_SCHED_CONTEXT_ACTION(e, DISABLE);
 
 		set_engine_suspended(e);
@@ -924,19 +925,29 @@ static void __guc_engine_process_msg_resume(struct drm_sched_msg *msg)
 {
 	struct xe_engine *e = msg->private_data;
 	struct xe_guc *guc = engine_to_guc(e);
+	struct xe_vm *vm = e->vm;
 
 	XE_BUG_ON(!engine_suspended(e));
 
-	clear_engine_suspended(e);
-	if (guc_engine_allowed_to_change_state(e)) {
+	wait_event(vm->preempt.resume_wq, vm->preempt.resume_go ||
+		   atomic_read(&guc->submission_state.stopped));
+
+	if (vm->preempt.resume_go < 0)
+		trace_xe_engine_supress_resume(e);
+
+	if (vm->preempt.resume_go > 0 &&
+	    guc_engine_allowed_to_change_state(e)) {
 		MAKE_SCHED_CONTEXT_ACTION(e, ENABLE);
 
+		clear_engine_suspended(e);
 		set_engine_pending_enable(e);
 		set_engine_enabled(e);
 		trace_xe_engine_scheduling_enable(e);
 
 		xe_guc_ct_send(&guc->ct, action, ARRAY_SIZE(action),
 			       G2H_LEN_DW_SCHED_CONTEXT_MODE_SET, 1);
+	} else if (vm->preempt.resume_go > 0) {
+		clear_engine_suspended(e);
 	}
 }
 
@@ -1232,6 +1243,8 @@ static void guc_engine_stop(struct xe_guc *guc, struct xe_engine *e)
 		set_engine_suspended(e);
 		suspend_fence_signal(e);
 	}
+	if (e->vm)
+		wake_up_all(&e->vm->preempt.resume_wq);
 	atomic_and(ENGINE_STATE_DESTROYED | ENGINE_STATE_SUSPENDED,
 		   &e->guc->state);
 	trace_xe_engine_stop(e);
@@ -1556,14 +1569,6 @@ static void guc_engine_print(struct xe_engine *e, struct drm_printer *p)
 	}
 	drm_printf(p, "\tSchedule State: 0x%x\n", atomic_read(&e->guc->state));
 	drm_printf(p, "\tFlags: 0x%lx\n", e->flags);
-	if (e->vm) {
-		drm_printf(p, "\tuserptr.pending_rebind: %d\n",
-			   e->vm->userptr.pending_rebind);
-		drm_printf(p, "\tpreempt.num_inflight_ops: %d\n",
-			   e->vm->preempt.num_inflight_ops);
-		drm_printf(p, "\tpreempt.num_engines: %d\n",
-			   e->vm->preempt.num_engines);
-	}
 	if (xe_engine_is_parallel(e))
 		guc_engine_wq_print(e, p);
 

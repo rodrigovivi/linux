@@ -176,14 +176,8 @@ xe_dma_buf_move_notify(struct dma_buf_attachment *attach)
 {
 	struct drm_gem_object *obj = attach->importer_priv;
 	struct xe_bo *bo = gem_to_xe_bo(obj);
-	struct xe_vma *vma;
 
-	list_for_each_entry(vma, &bo->vmas, bo_link) {
-		XE_WARN_ON(xe_vm_in_compute_mode(vma->vm));
-
-		if (list_empty(&vma->evict_link))
-			list_add_tail(&vma->evict_link, &vma->vm->evict_list);
-	}
+	xe_bo_trigger_rebind(bo);
 }
 
 static const struct dma_buf_attach_ops xe_dma_buf_attach_ops = {
