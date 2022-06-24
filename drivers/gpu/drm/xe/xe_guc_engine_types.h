@@ -40,6 +40,8 @@ struct xe_guc_engine {
 	 * @suspend_fence: suspend fence, only non-NULL when suspend in flight
 	 */
 	struct dma_fence *suspend_fence;
+	/** @resume_time: time of last resume */
+	uint64_t resume_time;
 	/** @state: GuC specific state for this xe_engine */
 	atomic_t state;
 	/** @wqi_head: work queue item tail */
