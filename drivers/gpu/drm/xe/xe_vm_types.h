@@ -189,6 +189,11 @@ struct xe_vm {
 
 	/** @preempt: preempt state */
 	struct {
+		/**
+		 * @min_run_period_ms: The minimum run period before preempting
+		 * an engine again
+		 */
+		s64 min_run_period_ms;
 		/** @engines: list of engines attached to this VM */
 		struct list_head engines;
 		/** @num_engines: number user engines attached to this VM */

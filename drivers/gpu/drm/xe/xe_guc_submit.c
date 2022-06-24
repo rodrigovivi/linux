@@ -25,6 +25,7 @@
 #include "xe_ring_ops_types.h"
 #include "xe_sched_job.h"
 #include "xe_trace.h"
+#include "xe_vm.h"
 
 #include "../i915/gt/intel_lrc_reg.h"
 
@@ -592,6 +593,7 @@ static void wq_item_append(struct xe_engine *e)
 	parallel_write(map, wq_desc.tail, e->guc->wqi_tail);
 }
 
+#define RESUME_PENDING	~0x0ull
 static void submit_engine(struct xe_engine *e)
 {
 	struct xe_guc *guc = engine_to_guc(e);
@@ -621,6 +623,7 @@ static void submit_engine(struct xe_engine *e)
 		if (xe_engine_is_parallel(e))
 			extra_submit = true;
 
+		e->guc->resume_time = RESUME_PENDING;
 		set_engine_pending_enable(e);
 		set_engine_enabled(e);
 		trace_xe_engine_scheduling_enable(e);
@@ -906,15 +909,27 @@ static void __guc_engine_process_msg_suspend(struct drm_sched_msg *msg)
 
 	if (guc_engine_allowed_to_change_state(e) && !engine_suspended(e) &&
 	    engine_enabled(e)) {
-		MAKE_SCHED_CONTEXT_ACTION(e, DISABLE);
+		wait_event(guc->ct.wq, e->guc->resume_time != RESUME_PENDING ||
+			   atomic_read(&guc->submission_state.stopped));
 
-		set_engine_suspended(e);
-		clear_engine_enabled(e);
-		set_engine_pending_disable(e);
-		trace_xe_engine_scheduling_disable(e);
+		if (!atomic_read(&guc->submission_state.stopped)) {
+			MAKE_SCHED_CONTEXT_ACTION(e, DISABLE);
+			s64 since_resume_ms = ktime_ms_delta(ktime_get(),
+							     e->guc->resume_time);
+			s64 wait_ms = e->vm->preempt.min_run_period_ms -
+				since_resume_ms;
 
-		xe_guc_ct_send(&guc->ct, action, ARRAY_SIZE(action),
-			       G2H_LEN_DW_SCHED_CONTEXT_MODE_SET, 1);
+			if (wait_ms > 0 && e->guc->resume_time)
+				msleep(wait_ms);
+
+			set_engine_suspended(e);
+			clear_engine_enabled(e);
+			set_engine_pending_disable(e);
+			trace_xe_engine_scheduling_disable(e);
+
+			xe_guc_ct_send(&guc->ct, action, ARRAY_SIZE(action),
+				       G2H_LEN_DW_SCHED_CONTEXT_MODE_SET, 1);
+		}
 	} else if (e->guc->suspend_fence) {
 		set_engine_suspended(e);
 		suspend_fence_signal(e);
@@ -939,6 +954,7 @@ static void __guc_engine_process_msg_resume(struct drm_sched_msg *msg)
 	    guc_engine_allowed_to_change_state(e)) {
 		MAKE_SCHED_CONTEXT_ACTION(e, ENABLE);
 
+		e->guc->resume_time = RESUME_PENDING;
 		clear_engine_suspended(e);
 		set_engine_pending_enable(e);
 		set_engine_enabled(e);
@@ -1247,6 +1263,7 @@ static void guc_engine_stop(struct xe_guc *guc, struct xe_engine *e)
 		wake_up_all(&e->vm->preempt.resume_wq);
 	atomic_and(ENGINE_STATE_DESTROYED | ENGINE_STATE_SUSPENDED,
 		   &e->guc->state);
+	e->guc->resume_time = 0;
 	trace_xe_engine_stop(e);
 
 	/*
@@ -1407,6 +1424,7 @@ int xe_guc_sched_done_handler(struct xe_guc *guc, u32 *msg, u32 len)
 	trace_xe_engine_scheduling_done(e);
 
 	if (engine_pending_enable(e)) {
+		e->guc->resume_time = ktime_get();
 		clear_engine_pending_enable(e);
 		smp_wmb();
 		wake_up_all(&guc->ct.wq);
