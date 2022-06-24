@@ -1104,6 +1104,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 
 	INIT_LIST_HEAD(&vm->preempt.engines);
 	init_waitqueue_head(&vm->preempt.resume_wq);
+	vm->preempt.min_run_period_ms = 10;	/* FIXME: Wire up to uAPI */
 
 	xe_vm_lock(vm, NULL);
 
