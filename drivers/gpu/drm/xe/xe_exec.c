@@ -135,7 +135,9 @@ static int xe_exec_begin(struct xe_engine *e, struct ww_acquire_ctx *ww,
 			}
 		}
 	} else {
-		xe_vm_lock(e->vm, NULL);
+		err = xe_vm_lock(vm, ww, 0, true);
+		if (err)
+			return err;
 	}
 
 	for (i = 0; i < e->width; ++i) {
@@ -147,7 +149,10 @@ static int xe_exec_begin(struct xe_engine *e, struct ww_acquire_ctx *ww,
 	return 0;
 
 err_unlock_vm:
-	xe_vm_unlock(e->vm);
+	if (!xe_vm_in_compute_mode(e->vm))
+		ttm_eu_backoff_reservation(ww, objs);
+	else
+		xe_vm_unlock(vm, ww);
 	return err;
 }
 
@@ -157,7 +162,7 @@ static void xe_exec_end(struct xe_engine *e, struct ww_acquire_ctx *ww,
 	if (!xe_vm_in_compute_mode(e->vm))
 		ttm_eu_backoff_reservation(ww, objs);
 	else
-		xe_vm_unlock(e->vm);
+		xe_vm_unlock(e->vm, ww);
 }
 
 int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)

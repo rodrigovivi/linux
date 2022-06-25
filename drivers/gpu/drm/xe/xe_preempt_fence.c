@@ -17,6 +17,7 @@ static void preempt_fence_work_func(struct work_struct *w)
 		container_of(w, typeof(*pfence), preempt_work);
 	struct xe_engine *e = pfence->engine;
 	struct dma_fence *sfence = pfence->sfence;
+	struct ww_acquire_ctx ww;
 
 	if (IS_ERR(sfence))
 		dma_fence_set_error(&pfence->base, PTR_ERR(sfence));
@@ -26,7 +27,7 @@ static void preempt_fence_work_func(struct work_struct *w)
 	dma_fence_signal(&pfence->base);
 	dma_fence_end_signalling(cookie);
 
-	xe_vm_lock(e->vm, NULL);
+	xe_vm_lock(e->vm, &ww, 0, false);
 	/*
 	 * Possible race a new preempt fence could be installed before we grab
 	 * this lock, guard against that by checking
@@ -37,7 +38,7 @@ static void preempt_fence_work_func(struct work_struct *w)
 		e->compute.pfence = NULL;
 		dma_fence_put(e->compute.pfence);
 	}
-	xe_vm_unlock(e->vm);
+	xe_vm_unlock(e->vm, &ww);
 
 	xe_engine_put(e);
 }

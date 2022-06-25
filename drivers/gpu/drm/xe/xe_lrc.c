@@ -926,15 +926,17 @@ err_unlock_put_bo:
 
 void xe_lrc_finish(struct xe_lrc *lrc)
 {
+	struct ww_acquire_ctx ww;
+
 	xe_hw_fence_ctx_finish(&lrc->fence_ctx);
 	if (lrc->flags & XE_LRC_PINNED) {
 		if (lrc->bo->vm)
-			xe_vm_lock(lrc->bo->vm, NULL);
+			xe_vm_lock(lrc->bo->vm, &ww, 0, false);
 		else
 			xe_bo_lock_no_vm(lrc->bo, NULL);
 		xe_bo_unpin(lrc->bo);
 		if (lrc->bo->vm)
-			xe_vm_unlock(lrc->bo->vm);
+			xe_vm_unlock(lrc->bo->vm, &ww);
 		else
 			xe_bo_unlock_no_vm(lrc->bo);
 	}

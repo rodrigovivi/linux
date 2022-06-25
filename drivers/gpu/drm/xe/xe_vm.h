@@ -37,15 +37,10 @@ static inline void xe_vm_put(struct xe_vm *vm)
 	kref_put(&vm->refcount, xe_vm_free);
 }
 
-static inline void xe_vm_lock(struct xe_vm *vm, struct ww_acquire_ctx *ctx)
-{
-	dma_resv_lock(&vm->resv, ctx);
-}
+int xe_vm_lock(struct xe_vm *vm, struct ww_acquire_ctx *ww,
+	       int num_resv, bool intr);
 
-static inline void xe_vm_unlock(struct xe_vm *vm)
-{
-	dma_resv_unlock(&vm->resv);
-}
+void xe_vm_unlock(struct xe_vm *vm, struct ww_acquire_ctx *ww);
 
 static inline bool xe_vm_is_closed(struct xe_vm *vm)
 {
