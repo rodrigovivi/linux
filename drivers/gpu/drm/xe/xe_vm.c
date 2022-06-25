@@ -537,16 +537,12 @@ static int alloc_preempt_fences(struct xe_vm *vm)
 static int add_preempt_fences(struct xe_vm *vm, struct xe_bo *bo)
 {
 	struct xe_engine *e;
+	struct ww_acquire_ctx ww;
 	int err;
 
-	err = dma_resv_lock_interruptible(bo->ttm.base.resv, NULL);
+	err = xe_bo_lock(bo, &ww, vm->preempt.num_engines, true);
 	if (err)
 		return err;
-
-	err = dma_resv_reserve_fences(bo->ttm.base.resv,
-				      vm->preempt.num_engines);
-	if (err)
-		goto out_unlock;
 
 	list_for_each_entry(e, &vm->preempt.engines, compute.link)
 		if (e->compute.pfence) {
@@ -554,9 +550,9 @@ static int add_preempt_fences(struct xe_vm *vm, struct xe_bo *bo)
 					   e->compute.pfence,
 					   DMA_RESV_USAGE_PREEMPT_FENCE);
 		}
-out_unlock:
-	dma_resv_unlock(bo->ttm.base.resv);
-	return err;
+
+	xe_bo_unlock(bo, &ww);
+	return 0;
 }
 
 static void reinstall_preempt_fences(struct xe_vm *vm)
@@ -618,7 +614,7 @@ int xe_vm_add_compute_engine(struct xe_vm *vm, struct xe_engine *e)
 	tv_vm.bo = xe_vm_ttm_bo(vm);;
 	list_add_tail(&tv_vm.head, &objs);
 
-	err = ttm_eu_reserve_buffers(&ww, &objs, false, &dups);
+	err = ttm_eu_reserve_buffers(&ww, &objs, true, &dups);
 	if (err)
 		goto out_unlock_outer;
 
@@ -1106,7 +1102,9 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 	init_waitqueue_head(&vm->preempt.resume_wq);
 	vm->preempt.min_run_period_ms = 10;	/* FIXME: Wire up to uAPI */
 
-	xe_vm_lock(vm, NULL);
+	err = dma_resv_lock_interruptible(&vm->resv, NULL);
+	if (err)
+		goto err_put;
 
 	if (IS_DGFX(xe) && xe->info.vram_flags & XE_VRAM_FLAGS_NEED64K)
 		vm->flags |= VM_FLAGS_64K;
@@ -1164,7 +1162,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 	}
 	vm->eng = eng;
 
-	xe_vm_unlock(vm);
+	dma_resv_unlock(&vm->resv);
 	trace_xe_vm_create(vm);
 
 	return vm;
@@ -1177,7 +1175,8 @@ err_scratch_pt:
 err_destroy_root:
 	xe_pt_destroy(vm->pt_root, vm->flags);
 err_unlock:
-	xe_vm_unlock(vm);
+	dma_resv_unlock(&vm->resv);
+err_put:
 	kfree(vma);
 	dma_resv_fini(&vm->resv);
 	kfree(vm);
@@ -1218,6 +1217,7 @@ static void vm_async_op_error_capture(struct xe_vm *vm, int err,
 void xe_vm_close_and_put(struct xe_vm *vm)
 {
 	struct rb_root contested = RB_ROOT;
+	struct ww_acquire_ctx ww;
 
 	XE_BUG_ON(vm->preempt.num_engines);
 
@@ -1234,7 +1234,7 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 	}
 
 	down_write(&vm->lock);
-	xe_vm_lock(vm, NULL);
+	xe_vm_lock(vm, &ww, 0, false);
 	while (vm->vmas.rb_node) {
 		struct xe_vma *vma = to_xe_vma(vm->vmas.rb_node);
 
@@ -1264,9 +1264,7 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 		for (i = 0; i < vm->pt_root->level; i++)
 			xe_pt_destroy(vm->scratch_pt[i], vm->flags);
 	}
-	xe_pt_destroy(vm->pt_root, vm->flags);
-	vm->pt_root = NULL;
-	xe_vm_unlock(vm);
+	xe_vm_unlock(vm, &ww);
 
 	if (contested.rb_node) {
 
@@ -1297,9 +1295,20 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 void xe_vm_free(struct kref *ref)
 {
 	struct xe_vm *vm = container_of(ref, struct xe_vm, refcount);
+	struct ww_acquire_ctx ww;
 
 	/* xe_vm_close_and_put was not called? */
-	XE_WARN_ON(vm->pt_root);
+	XE_WARN_ON(vm->size);
+
+	/*
+	 * XXX: We delay destroying the PT root until the VM if freed as PT root
+	 * is needed for xe_vm_lock to work. If we remove that dependency this
+	 * can be moved to xe_vm_close_and_put.
+	 */
+	xe_vm_lock(vm, &ww, 0, false);
+	xe_pt_destroy(vm->pt_root, vm->flags);
+	vm->pt_root = NULL;
+	xe_vm_unlock(vm, &ww);
 
 	trace_xe_vm_free(vm);
 	dma_fence_put(vm->rebind_fence);
@@ -2003,13 +2012,14 @@ static int xe_vm_bind_userptr(struct xe_vm *vm, struct xe_vma *vma,
 			      struct xe_engine *e, struct xe_sync_entry *syncs,
 			      u32 num_syncs, struct async_op_fence *afence)
 {
+	struct ww_acquire_ctx ww;
 	int err;
 
-	xe_vm_lock(vm, NULL);
-	err = dma_resv_reserve_fences(&vm->resv, 1);
-	if (!err)
+	err = xe_vm_lock(vm, &ww, 1, true);
+	if (!err) {
 		err = __xe_vm_bind(vm, vma, e, syncs, num_syncs, afence, false);
-	xe_vm_unlock(vm);
+		xe_vm_unlock(vm, &ww);
+	}
 	if (err)
 		return err;
 
@@ -2523,6 +2533,7 @@ struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 					u64 range, u32 op)
 {
 	struct xe_device *xe = vm->xe;
+	struct ww_acquire_ctx ww;
 	struct xe_vma *vma, lookup;
 	int err;
 
@@ -2540,13 +2551,13 @@ struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 			return ERR_PTR(-EBUSY);
 
 
-		err = dma_resv_lock_interruptible(bo->ttm.base.resv, NULL);
+		err = xe_bo_lock(bo, &ww, 0, true);
 		if (err)
 			return ERR_PTR(err);
 		vma = xe_vma_create(vm, bo, bo_offset_or_userptr, addr,
 				    addr + range - 1,
 				    op & XE_VM_BIND_FLAG_READONLY);
-		dma_resv_unlock(bo->ttm.base.resv);
+		xe_bo_unlock(bo, &ww);
 		if (!vma)
 			return ERR_PTR(-ENOMEM);
 
@@ -3020,4 +3031,30 @@ void xe_vm_dump_pgtt(struct xe_vm *vm)
 
 	drm_info(&vm->xe->drm, "dump_pgtt desc=0x%llx bo(%p)\n", desc, vm->pt_root->bo);
 	dump_pgtt_lvl(vm, pt, vm->xe->info.vm_max_level, 0);
+}
+
+/*
+ * XXX: Using the TTM wrappers for now, likely can call into dma-resv code
+ * directly to optimize. Also this likely should be an inline function.
+ */
+int xe_vm_lock(struct xe_vm *vm, struct ww_acquire_ctx *ww,
+	       int num_resv, bool intr)
+{
+	struct ttm_validate_buffer tv_vm;
+	LIST_HEAD(objs);
+	LIST_HEAD(dups);
+
+	XE_BUG_ON(!ww);
+
+	tv_vm.num_shared = num_resv;
+	tv_vm.bo = xe_vm_ttm_bo(vm);;
+	list_add_tail(&tv_vm.head, &objs);
+
+	return ttm_eu_reserve_buffers(ww, &objs, intr, &dups);
+}
+
+void xe_vm_unlock(struct xe_vm *vm, struct ww_acquire_ctx *ww)
+{
+	dma_resv_unlock(&vm->resv);
+	ww_acquire_fini(ww);
 }

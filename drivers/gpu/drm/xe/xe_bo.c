@@ -602,6 +602,7 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 	struct xe_device *xe = to_xe_device(dev);
 	struct xe_file *xef = to_xe_file(file);
 	struct drm_xe_gem_create *args = data;
+	struct ww_acquire_ctx ww;
 	struct xe_vm *vm = NULL;
 	struct xe_bo *bo;
 	unsigned bo_flags = XE_BO_CREATE_USER_BIT;
@@ -636,7 +637,11 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 		vm = xe_vm_lookup(xef, args->vm_id);
 		if (XE_IOCTL_ERR(xe, !vm))
 			return -ENOENT;
-		xe_vm_lock(vm, NULL);
+		err = xe_vm_lock(vm, &ww, 0, true);
+		if (err) {
+			xe_vm_put(vm);
+			return err;
+		}
 	}
 
 	if (args->flags & DRM_XE_GEM_CREATE_SYSTEM)
@@ -646,7 +651,7 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 
 	bo = xe_bo_create(xe, vm, args->size, ttm_bo_type_device, bo_flags);
 	if (vm) {
-		xe_vm_unlock(vm);
+		xe_vm_unlock(vm, &ww);
 		xe_vm_put(vm);
 	}
 
@@ -690,4 +695,26 @@ int xe_gem_mmap_offset_ioctl(struct drm_device *dev, void *data,
 
 	drm_gem_object_put(gem_obj);
 	return 0;
+}
+
+int xe_bo_lock(struct xe_bo *bo, struct ww_acquire_ctx *ww,
+	       int num_resv, bool intr)
+{
+	struct ttm_validate_buffer tv_bo;
+	LIST_HEAD(objs);
+	LIST_HEAD(dups);
+
+	XE_BUG_ON(!ww);
+
+	tv_bo.num_shared = num_resv;
+	tv_bo.bo = &bo->ttm;;
+	list_add_tail(&tv_bo.head, &objs);
+
+	return ttm_eu_reserve_buffers(ww, &objs, intr, &dups);
+}
+
+void xe_bo_unlock(struct xe_bo *bo, struct ww_acquire_ctx *ww)
+{
+	dma_resv_unlock(bo->ttm.base.resv);
+	ww_acquire_fini(ww);
 }
