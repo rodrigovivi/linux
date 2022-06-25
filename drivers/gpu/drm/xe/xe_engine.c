@@ -83,13 +83,18 @@ struct xe_engine *xe_engine_create(struct xe_device *xe, struct xe_vm *vm,
 				   u32 logical_mask, u16 width,
 				   struct xe_hw_engine *hwe, u32 flags)
 {
+	struct ww_acquire_ctx ww;
 	struct xe_engine *e;
+	int err;
 
-	if (vm)
-		xe_vm_lock(vm, NULL);
+	if (vm) {
+		err = xe_vm_lock(vm, &ww, 0, true);
+		if (err)
+			return ERR_PTR(err);
+	}
 	e = __xe_engine_create(xe, vm, logical_mask, width, hwe, flags);
 	if (vm)
-		xe_vm_unlock(vm);
+		xe_vm_unlock(vm, &ww);
 
 	return e;
 }
