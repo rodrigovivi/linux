@@ -162,22 +162,6 @@ static int xe_ttm_io_mem_reserve(struct ttm_device *bdev,
 	return 0;
 }
 
-static int xe_move_blit(struct xe_bo *bo, bool evict, struct ttm_resource *new_mem,
-			struct ttm_resource *old_mem, struct xe_gt *gt,
-			struct ttm_operation_ctx *ctx)
-{
-	struct dma_fence *fence;
-	int ret;
-
-	fence = xe_migrate_copy(gt->migrate, bo, old_mem, new_mem);
-	if (IS_ERR(fence))
-		return PTR_ERR(fence);
-
-	ret = ttm_bo_move_accel_cleanup(&bo->ttm, fence, evict, true, new_mem);
-	dma_fence_put(fence);
-	return ret;
-}
-
 void xe_bo_trigger_rebind(struct xe_bo *bo)
 {
 	struct dma_resv_iter cursor;
@@ -209,7 +193,8 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 	struct xe_bo *bo = ttm_to_xe_bo(ttm_bo);
 	struct ttm_resource *old_mem = bo->ttm.resource;
 	struct xe_gt *gt;
-	int ret;
+	struct dma_fence *fence;
+	int ret = 0;
 
 	xe_bo_vunmap(bo);
 
@@ -241,16 +226,19 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 	XE_BUG_ON(bo->ttm.pin_count);
 	XE_BUG_ON(!gt->migrate);
 
-	ret = xe_move_blit(bo, evict, new_mem, old_mem, gt, ctx);
-	if (ret)
-		return ret;
+	fence = xe_migrate_copy(gt->migrate, bo, old_mem, new_mem);
+	if (IS_ERR(fence))
+		return PTR_ERR(fence);
 
 	xe_bo_trigger_rebind(bo);
 	if (ttm_bo->base.dma_buf)
 		dma_buf_move_notify(ttm_bo->base.dma_buf);
 
+	ret = ttm_bo_move_accel_cleanup(&bo->ttm, fence, evict, true, new_mem);
+	dma_fence_put(fence);
+
 out:
-	return 0;
+	return ret;
 
 }
 
