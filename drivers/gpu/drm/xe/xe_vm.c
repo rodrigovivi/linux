@@ -884,11 +884,11 @@ struct dma_fence *xe_vm_rebind(struct xe_vm *vm, bool rebind_worker)
 	struct dma_fence *fence = NULL;
 	struct xe_vma *vma, *next;
 
-	xe_vm_assert_held(vm);
 	lockdep_assert_held(&vm->lock);
 	if (xe_vm_in_compute_mode(vm) && !rebind_worker)
 		return NULL;
 
+	xe_vm_assert_held(vm);
 	list_for_each_entry(vma, &vm->userptr.list, userptr_link) {
 		if (vma->userptr.dirty && vma->userptr.initial_bind) {
 			dma_fence_put(fence);
