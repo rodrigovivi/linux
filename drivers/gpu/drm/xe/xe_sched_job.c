@@ -17,6 +17,7 @@
 #include "xe_lrc.h"
 #include "xe_macros.h"
 #include "xe_trace.h"
+#include "xe_vm.h"
 
 static struct kmem_cache *xe_sched_job_slab;
 static struct kmem_cache *xe_sched_job_parallel_slab;
@@ -71,7 +72,11 @@ struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
 	int err;
 	int i, j;
 
-	xe_engine_assert_held(e);
+	if (e->vm) {
+		lockdep_assert_held(&e->vm->lock);
+		if (!xe_vm_in_compute_mode(e->vm))
+			xe_vm_assert_held(e->vm);
+	}
 
 	job = job_alloc(xe_engine_is_parallel(e));
 	if (!job)
