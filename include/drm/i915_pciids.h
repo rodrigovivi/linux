@@ -733,4 +733,11 @@
 	INTEL_ATS_M150_IDS(info), \
 	INTEL_ATS_M75_IDS(info)
 
+/* PVC */
+#define INTEL_PVC_XT_IDS(info) \
+	INTEL_VGA_DEVICE(0x0BD5, info)
+
+#define INTEL_PVC_IDS(info) \
+	INTEL_PVC_XT_IDS(info)
+
 #endif /* _I915_PCIIDS_H */
