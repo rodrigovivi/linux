@@ -12,12 +12,21 @@
 #include "xe_guc_reg.h"
 #include "xe_guc_submit.h"
 #include "xe_gt.h"
+#include "xe_platform_types.h"
 #include "xe_uc_fw.h"
 #include "xe_wopcm.h"
 #include "xe_mmio.h"
 #include "xe_force_wake.h"
 #include "i915_reg_defs.h"
 #include "../i915/gt/intel_gt_regs.h"
+
+/* TODO: move to common file */
+#define GUC_WA_GAM_CREDITS		(1 << 10)
+#define GUC_WA_RENDER_RST_RC6_EXIT	(1 << 19)
+#define GUC_PVC_MOCS_INDEX_MASK		REG_GENMASK(25, 24)
+#define PVC_MOCS_UC_INDEX		1
+#define PVC_GUC_MOCS_INDEX(index)	REG_FIELD_PREP(GUC_PVC_MOCS_INDEX_MASK,\
+						       index)
 
 static struct xe_gt *
 guc_to_gt(struct xe_guc *guc)
@@ -132,6 +141,9 @@ static u32 guc_ctl_wa_flags(struct xe_guc *guc)
 	if (GRAPHICS_VER(xe) >= 11 &&
 	    GRAPHICS_VERx100(xe) < 1250)
 		flags |= GUC_WA_POLLCS;
+
+	if (xe->info.platform == XE_PVC)
+		flags |= GUC_WA_GAM_CREDITS;
 
 	return flags;
 }
@@ -260,6 +272,9 @@ static void guc_prepare_xfer(struct xe_guc *guc)
 	if (GRAPHICS_VERx100(xe) < 1250)
 		shim_flags |= GUC_DISABLE_SRAM_INIT_TO_ZEROES |
 				GUC_ENABLE_MIA_CACHING;
+
+	if (xe->info.platform == XE_PVC)
+		shim_flags |= PVC_GUC_MOCS_INDEX(PVC_MOCS_UC_INDEX);
 
 	/* Must program this register before loading the ucode with DMA */
 	xe_mmio_write32(gt, GUC_SHIM_CONTROL.reg, shim_flags);

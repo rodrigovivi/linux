@@ -370,6 +370,35 @@ static const struct intel_device_info ats_m_info = {
 	.vram_flags = XE_VRAM_FLAGS_NEED64K,
 };
 
+#define PVC_ENGINES \
+	BIT(XE_HW_ENGINE_BCS0) | BIT(XE_HW_ENGINE_BCS1) | \
+	BIT(XE_HW_ENGINE_BCS2) | BIT(XE_HW_ENGINE_BCS3) | \
+	BIT(XE_HW_ENGINE_BCS4) | BIT(XE_HW_ENGINE_BCS5) | \
+	BIT(XE_HW_ENGINE_BCS6) | BIT(XE_HW_ENGINE_BCS7) | \
+	BIT(XE_HW_ENGINE_BCS8) | \
+	BIT(XE_HW_ENGINE_VCS0) | BIT(XE_HW_ENGINE_VCS1) | \
+	BIT(XE_HW_ENGINE_VCS2) | \
+	BIT(XE_HW_ENGINE_CCS0) | BIT(XE_HW_ENGINE_CCS1) | \
+	BIT(XE_HW_ENGINE_CCS2) | BIT(XE_HW_ENGINE_CCS3)
+
+static const struct intel_device_info pvc_info = {
+	XE_HP_FEATURES,
+	XE_HPM_FEATURES,
+	DGFX_FEATURES,
+	PLATFORM(XE_PVC),
+	.display = { 0 },
+	.graphics_rel = 60,
+	.media_rel = 60,
+	.pipe_mask = 0,
+	.platform_engine_mask = PVC_ENGINES,
+	.require_force_probe = 1,
+	.is_dgfx = 1,
+	.vram_flags = XE_VRAM_FLAGS_NEED64K,
+	.dma_mask_size = 52,
+	.has_tiles = true,
+	.vm_max_level = 4,
+};
+
 #undef PLATFORM
 
 /*
@@ -384,6 +413,7 @@ static const struct pci_device_id pciidlist[] = {
 	INTEL_ATS_M_IDS(&ats_m_info),
 	INTEL_DG2_IDS(&ats_m_info), /* TODO: switch to proper dg2_info */
 	INTEL_ADLS_IDS(&adl_s_info),
+	INTEL_PVC_IDS(&pvc_info),
 	{0, 0, 0}
 };
 MODULE_DEVICE_TABLE(pci, pciidlist);
