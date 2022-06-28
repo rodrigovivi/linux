@@ -824,7 +824,7 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 
 	/* If this VM in compute mode, rebind the VMA */
 	if (xe_vm_in_compute_mode(vm))
-		queue_work(system_unbound_wq, &vm->preempt.rebind_work);
+		queue_work(to_gt(vm->xe)->ordered_wq, &vm->preempt.rebind_work);
 
 	return true;
 }
