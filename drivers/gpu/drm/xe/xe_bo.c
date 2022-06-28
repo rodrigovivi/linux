@@ -180,7 +180,7 @@ void xe_bo_trigger_rebind(struct xe_bo *bo)
 		if (list_empty(&vma->evict_link))
 			list_add_tail(&vma->evict_link, &vma->vm->evict_list);
 		if (xe_vm_in_compute_mode(vma->vm))
-			queue_work(system_unbound_wq,
+			queue_work(to_gt(vma->vm->xe)->ordered_wq,
 				   &vma->vm->preempt.rebind_work);
 	}
 }
