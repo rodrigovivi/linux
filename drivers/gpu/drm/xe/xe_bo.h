@@ -150,7 +150,7 @@ static inline void xe_bo_unlock_no_vm(struct xe_bo *bo)
 int xe_bo_populate(struct xe_bo *bo);
 int xe_bo_pin(struct xe_bo *bo);
 void xe_bo_unpin(struct xe_bo *bo);
-int xe_bo_validate(struct xe_bo *bo);
+int xe_bo_validate(struct xe_bo *bo, struct xe_vm *vm);
 
 static inline bool xe_bo_is_pinned(struct xe_bo *bo)
 {

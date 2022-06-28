@@ -128,7 +128,7 @@ static int xe_exec_begin(struct xe_engine *e, struct ww_acquire_ctx *ww,
 		 * checks for newly added entries each iteration.
 		 */
 		list_for_each_entry(vma, &vm->evict_list, evict_link) {
-			err = xe_bo_validate(vma->bo);
+			err = xe_bo_validate(vma->bo, vm);
 			if (err) {
 				ttm_eu_backoff_reservation(ww, objs);
 				return err;
