@@ -59,7 +59,7 @@ static struct sg_table *xe_dma_buf_map(struct dma_buf_attachment *attach,
 	long r;
 
 	if (!xe_bo_is_pinned(bo)) {
-		r = xe_bo_validate(bo);
+		r = xe_bo_validate(bo, NULL);
 		if (r)
 			return ERR_PTR(r);
 	}

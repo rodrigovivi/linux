@@ -504,16 +504,19 @@ void xe_bo_unpin(struct xe_bo *bo)
 	ttm_bo_unpin(&bo->ttm);
 }
 
-int xe_bo_validate(struct xe_bo *bo)
+int xe_bo_validate(struct xe_bo *bo, struct xe_vm *vm)
 {
 	struct ttm_operation_ctx ctx = {
 		.interruptible = true,
 		.no_wait_gpu = false,
 	};
 
-	if (bo->vm) {
+	if (vm) {
+		lockdep_assert_held(&vm->lock);
+		xe_vm_assert_held(vm);
+
 		ctx.allow_res_evict = true;
-		ctx.resv = &bo->vm->resv;
+		ctx.resv = &vm->resv;
 	}
 
 	return ttm_bo_validate(&bo->ttm, &bo->placement, &ctx);
