@@ -707,7 +707,7 @@ retry:
 	vm->preempt.resume_go = 0;
 
 	list_for_each_entry(vma, &vm->evict_list, evict_link) {
-		err = xe_bo_validate(vma->bo);
+		err = xe_bo_validate(vma->bo, vm);
 		if (err)
 			goto out_unlock;
 	}
@@ -1996,7 +1996,7 @@ static int xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma, struct xe_engine *e,
 	xe_bo_assert_held(bo);
 
 	if (bo) {
-		err = xe_bo_validate(bo);
+		err = xe_bo_validate(bo, vm);
 		if (err)
 			return err;
 
