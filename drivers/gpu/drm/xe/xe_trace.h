@@ -230,7 +230,7 @@ DECLARE_EVENT_CLASS(xe_hw_fence,
 			   __entry->seqno = fence->dma.seqno;
 			   ),
 
-		    TP_printk("ctx=0x%016llx, seqno=0x%08x", __entry->ctx,
+		    TP_printk("ctx=0x%016llx, seqno=%u", __entry->ctx,
 			      __entry->seqno)
 );
 
