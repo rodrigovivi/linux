@@ -1884,6 +1884,14 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 		/* This vma is live (again?) now */
 		vma->userptr.dirty = false;
 		vma->userptr.initial_bind = true;
+
+		/*
+		 * FIXME: workaround for xe_evict.evict-mixed-many-threads-small
+		 * failure, likely related to xe_exec_threads.threads-rebind
+		 * failure. Details in issue #39
+		 */
+		if (rebind && !xe_vm_in_compute_mode(vm))
+			dma_fence_wait(fence, false);
 	} else {
 		xe_pt_abort_bind(vma, entries, num_entries);
 	}
@@ -2264,9 +2272,9 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 	lockdep_assert_held(&vm->lock);
 
 	/*
-	 * We can't do an unbind until all in syncs are signalled as we destroy
-	 * the PTEs immediately in the unbind code. If doing an async VM unbind,
-	 * no penalty for sleeping here.
+	 * FIXME: workaround for xe_exec_threads.threads-rebind failure, likely
+	 * related to xe_evict.evict-mixed-many-threads-small failure. Details
+	 * in issue #39
 	 */
 	if (VM_BIND_OP(bind_op->op) == XE_VM_BIND_OP_UNMAP) {
 		int i;
