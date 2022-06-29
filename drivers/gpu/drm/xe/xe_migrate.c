@@ -354,6 +354,7 @@ static void write_pgtable(struct xe_bb *bb, u64 ggtt_ofs,
 static struct dma_fence *
 xe_migrate_update_pgtables_cpu(struct xe_migrate *m,
 			       struct xe_vm *vm,
+			       struct xe_bo *bo,
 			       struct xe_engine *eng,
 			       struct xe_vm_pgtable_update *updates, u32 num_updates,
 			       struct xe_sync_entry *syncs, u32 num_syncs,
@@ -370,6 +371,16 @@ xe_migrate_update_pgtables_cpu(struct xe_migrate *m,
 		err = xe_sync_entry_wait(&syncs[i]);
 		if (err)
 			return ERR_PTR(err);
+	}
+
+	if (bo) {
+		long wait;
+
+		wait = dma_resv_wait_timeout(bo->ttm.base.resv,
+					     DMA_RESV_USAGE_KERNEL,
+					     true, MAX_SCHEDULE_TIMEOUT);
+		if (wait <= 0)
+			return ERR_PTR(-ETIME);
 	}
 
 	for (i = 0; i < num_updates; i++) {
@@ -428,8 +439,9 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	int err = 0;
 
 	if (vm->xe->info.platform == XE_DG2) {
-		fence = xe_migrate_update_pgtables_cpu(m, vm, eng, updates, num_updates,
-						       syncs, num_syncs, populatefn,
+		fence = xe_migrate_update_pgtables_cpu(m, vm, bo, eng, updates,
+						       num_updates, syncs,
+						       num_syncs, populatefn,
 						       arg);
 		if (IS_ERR(fence))
 			return fence;
