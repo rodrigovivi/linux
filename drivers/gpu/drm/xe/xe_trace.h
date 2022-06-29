@@ -152,6 +152,11 @@ DECLARE_EVENT_CLASS(xe_sched_job,
 			      __entry->error)
 );
 
+DEFINE_EVENT(xe_sched_job, xe_sched_job_create,
+	     TP_PROTO(struct xe_sched_job *job),
+	     TP_ARGS(job)
+);
+
 DEFINE_EVENT(xe_sched_job, xe_sched_job_exec,
 	     TP_PROTO(struct xe_sched_job *job),
 	     TP_ARGS(job)
