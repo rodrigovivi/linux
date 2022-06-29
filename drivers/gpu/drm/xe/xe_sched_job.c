@@ -131,6 +131,7 @@ struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
 	for (i = 0; i < e->width; ++i)
 		job->batch_addr[i] = batch_addr[i];
 
+	trace_xe_sched_job_create(job);
 	return job;
 
 err_fences:
