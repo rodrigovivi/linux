@@ -30,6 +30,8 @@ static void invalidate_tlb(struct xe_sched_job *job, u32 *dw, u32 *pi)
 	u32 i = *pi;
 
 	if (job->engine->class != XE_ENGINE_CLASS_RENDER) {
+		dw[i++] = MI_ARB_CHECK | BIT(8) | BIT(0);
+
 		dw[i] = MI_FLUSH_DW + 1;
 		if (job->engine->class == XE_ENGINE_CLASS_VIDEO_DECODE)
 			dw[i] |= MI_INVALIDATE_BSD;
@@ -39,6 +41,8 @@ static void invalidate_tlb(struct xe_sched_job *job, u32 *dw, u32 *pi)
 		dw[i++] = LRC_PPHWSP_SCRATCH_ADDR | MI_FLUSH_DW_USE_GTT;
 		dw[i++] = 0;
 		dw[i++] = ~0U;
+
+		dw[i++] = MI_ARB_CHECK | BIT(8);
 	} else {
 		u32 flags = PIPE_CONTROL_CS_STALL |
 			PIPE_CONTROL_COMMAND_CACHE_INVALIDATE |
