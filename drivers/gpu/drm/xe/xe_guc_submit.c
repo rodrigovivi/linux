@@ -1511,6 +1511,30 @@ int xe_guc_engine_reset_handler(struct xe_guc *guc, u32 *msg, u32 len)
 	return 0;
 }
 
+int xe_guc_engine_memory_cat_error_handler(struct xe_guc *guc, u32 *msg,
+					   u32 len)
+{
+	struct xe_device *xe = guc_to_xe(guc);
+	struct xe_engine *e;
+	u32 guc_id = msg[0];
+
+	if (unlikely(len < 1)) {
+		drm_err(&xe->drm, "Invalid length %u", len);
+		return -EPROTO;
+	}
+
+	e = g2h_engine_lookup(guc, guc_id);
+	if (unlikely(!e))
+		return -EPROTO;
+
+	drm_warn(&xe->drm, "Engine memory cat error: guc_id=%d", guc_id);
+	trace_xe_engine_memory_cat_error(e);
+
+	/* TODO: Trigger ban of engine? */
+
+	return 0;
+}
+
 int xe_guc_engine_reset_failure_handler(struct xe_guc *guc, u32 *msg, u32 len)
 {
 	struct xe_device *xe = guc_to_xe(guc);

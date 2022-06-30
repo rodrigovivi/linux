@@ -20,6 +20,8 @@ int xe_guc_submit_start(struct xe_guc *guc);
 int xe_guc_sched_done_handler(struct xe_guc *guc, u32 *msg, u32 len);
 int xe_guc_deregister_done_handler(struct xe_guc *guc, u32 *msg, u32 len);
 int xe_guc_engine_reset_handler(struct xe_guc *guc, u32 *msg, u32 len);
+int xe_guc_engine_memory_cat_error_handler(struct xe_guc *guc, u32 *msg,
+					   u32 len);
 int xe_guc_engine_reset_failure_handler(struct xe_guc *guc, u32 *msg, u32 len);
 
 #endif /* _XE_GUC_SUBMIT_H_ */

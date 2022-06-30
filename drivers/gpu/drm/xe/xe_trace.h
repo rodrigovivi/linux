@@ -115,6 +115,11 @@ DEFINE_EVENT(xe_engine, xe_engine_reset,
 	     TP_ARGS(e)
 );
 
+DEFINE_EVENT(xe_engine, xe_engine_memory_cat_error,
+	     TP_PROTO(struct xe_engine *e),
+	     TP_ARGS(e)
+);
+
 DEFINE_EVENT(xe_engine, xe_engine_stop,
 	     TP_PROTO(struct xe_engine *e),
 	     TP_ARGS(e)

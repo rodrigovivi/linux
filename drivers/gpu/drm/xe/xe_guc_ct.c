@@ -844,6 +844,10 @@ static int process_g2h_msg(struct xe_guc_ct *ct, u32 *msg, u32 len)
 	case XE_GUC_ACTION_NOTIFY_FLUSH_LOG_BUFFER_TO_FILE:
 		/* FIXME: Handle this */
 		break;
+	case XE_GUC_ACTION_NOTIFY_MEMORY_CAT_ERROR:
+		ret = xe_guc_engine_memory_cat_error_handler(guc, payload,
+							     adj_len);
+		break;
 	default:
 		drm_err(&xe->drm, "unexpected action 0x%04x\n", action);
 	}
