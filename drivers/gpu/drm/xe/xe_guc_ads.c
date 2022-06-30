@@ -223,7 +223,6 @@ static void fill_regset_pvc(struct xe_guc_ads *ads)
 	 * re-worked once we add full regset list
 	 */
 #define XE_MAX_PVC_REGSET 10
-	struct xe_device *xe = ads_to_xe(ads);
 	struct iosys_map map = IOSYS_MAP_INIT_OFFSET(ads_to_map(ads), guc_ads_regset_offset(ads));
 	struct guc_mmio_reg regset[XE_MAX_PVC_REGSET], *reg;
 	u32 addr_ggtt = xe_bo_ggtt_addr(ads->bo);
