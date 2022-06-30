@@ -135,6 +135,8 @@ DECLARE_EVENT_CLASS(xe_sched_job,
 			     __field(u32, guc_state)
 			     __field(u32, flags)
 			     __field(int, error)
+			     __field(u64, fence)
+			     __field(u64, batch_addr)
 			     ),
 
 		    TP_fast_assign(
@@ -144,12 +146,14 @@ DECLARE_EVENT_CLASS(xe_sched_job,
 			   atomic_read(&job->engine->guc->state);
 			   __entry->flags = job->engine->flags;
 			   __entry->error = job->fence->error;
+			   __entry->fence = (u64)job->fence;
+			   __entry->batch_addr = (u64)job->batch_addr[0];
 			   ),
 
-		    TP_printk("seqno=%u, guc_id=%d, guc_state=0x%x, flags=0x%x, error=%d",
-			      __entry->seqno, __entry->guc_id,
-			      __entry->guc_state, __entry->flags,
-			      __entry->error)
+		    TP_printk("fence=0x%016llx, seqno=%u, guc_id=%d, batch_addr=0x%012llx, guc_state=0x%x, flags=0x%x, error=%d",
+			      __entry->fence, __entry->seqno, __entry->guc_id,
+			      __entry->batch_addr, __entry->guc_state,
+			      __entry->flags, __entry->error)
 );
 
 DEFINE_EVENT(xe_sched_job, xe_sched_job_create,
@@ -223,15 +227,17 @@ DECLARE_EVENT_CLASS(xe_hw_fence,
 		    TP_STRUCT__entry(
 			     __field(u64, ctx)
 			     __field(u32, seqno)
+			     __field(u64, fence)
 			     ),
 
 		    TP_fast_assign(
 			   __entry->ctx = fence->dma.context;
 			   __entry->seqno = fence->dma.seqno;
+			   __entry->fence = (u64)fence;
 			   ),
 
-		    TP_printk("ctx=0x%016llx, seqno=%u", __entry->ctx,
-			      __entry->seqno)
+		    TP_printk("ctx=0x%016llx, fence=0x%016llx, seqno=%u",
+			      __entry->ctx, __entry->fence, __entry->seqno)
 );
 
 DEFINE_EVENT(xe_hw_fence, xe_hw_fence_create,
@@ -240,6 +246,11 @@ DEFINE_EVENT(xe_hw_fence, xe_hw_fence_create,
 );
 
 DEFINE_EVENT(xe_hw_fence, xe_hw_fence_signal,
+	     TP_PROTO(struct xe_hw_fence *fence),
+	     TP_ARGS(fence)
+);
+
+DEFINE_EVENT(xe_hw_fence, xe_hw_fence_try_signal,
 	     TP_PROTO(struct xe_hw_fence *fence),
 	     TP_ARGS(fence)
 );
@@ -267,7 +278,7 @@ DECLARE_EVENT_CLASS(xe_vma,
 			   __entry->ptr = (u64)vma->userptr.ptr;
 			   ),
 
-		    TP_printk("vma=0x%016llx, start=0x%016llx, end=0x%016llx, ptr=0x%016llx,",
+		    TP_printk("vma=0x%016llx, start=0x%012llx, end=0x%012llx, ptr=0x%012llx,",
 			      __entry->vma, __entry->start, __entry->end,
 			      __entry->ptr)
 )
