@@ -230,6 +230,7 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 	if (IS_ERR(fence))
 		return PTR_ERR(fence);
 
+	trace_printk("new_mem->mem_type=%d\n", new_mem->mem_type);
 	xe_bo_trigger_rebind(bo);
 	if (ttm_bo->base.dma_buf)
 		dma_buf_move_notify(ttm_bo->base.dma_buf);
