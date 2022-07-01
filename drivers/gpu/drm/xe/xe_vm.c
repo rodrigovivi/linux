@@ -2132,14 +2132,13 @@ static int xe_vm_bind_userptr(struct xe_vm *vm, struct xe_vma *vma,
 }
 
 static int xe_vm_unbind(struct xe_vm *vm, struct xe_vma *vma,
-			struct xe_engine *e, struct xe_bo *bo,
-			struct xe_sync_entry *syncs, u32 num_syncs,
-			struct async_op_fence *afence)
+			struct xe_engine *e, struct xe_sync_entry *syncs,
+			u32 num_syncs, struct async_op_fence *afence)
 {
 	struct dma_fence *fence;
 
 	xe_vm_assert_held(vm);
-	xe_bo_assert_held(bo);
+	xe_bo_assert_held(vma->bo);
 
 	fence = xe_vm_unbind_vma(vma, e, syncs, num_syncs);
 	if (IS_ERR(fence))
@@ -2330,7 +2329,7 @@ static int __vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 	case XE_VM_BIND_OP_MAP:
 		return xe_vm_bind(vm, vma, e, bo, syncs, num_syncs, afence);
 	case XE_VM_BIND_OP_UNMAP:
-		return xe_vm_unbind(vm, vma, e, bo, syncs, num_syncs, afence);
+		return xe_vm_unbind(vm, vma, e, syncs, num_syncs, afence);
 	case XE_VM_BIND_OP_MAP_USERPTR:
 		return xe_vm_bind_userptr(vm, vma, e, syncs, num_syncs, afence);
 	default:
@@ -2384,8 +2383,8 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 		xe_vm_tv_populate(vm, &tv_vm);
 		list_add_tail(&tv_vm.head, &objs);
 
-		if (bo) {
-			tv_bo.bo = &bo->ttm;
+		if (vma->bo) {
+			tv_bo.bo = &vma->bo->ttm;
 			tv_bo.num_shared = 1;
 			list_add(&tv_bo.head, &objs);
 		}
@@ -2670,14 +2669,13 @@ struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 		vma = xe_vm_find_overlapping_vma(vm, &lookup);
 
 		if (XE_IOCTL_ERR(xe, !vma) ||
-		    XE_IOCTL_ERR(xe, vma->bo != bo) ||
 		    XE_IOCTL_ERR(xe, vma->start != addr) ||
 		    XE_IOCTL_ERR(xe, vma->end != addr + range - 1))
 			return ERR_PTR(-EINVAL);
 
 		vma->destroyed = true;
 		xe_vm_remove_vma(vm, vma);
-		if (bo && !bo->vm)
+		if (vma->bo && !vma->bo->vm)
 			vm_remove_extobj(vm, vma);
 		break;
 	case XE_VM_BIND_OP_MAP_USERPTR:
@@ -2772,11 +2770,12 @@ int vm_bind_ioctl_check_args(struct xe_device *xe, struct drm_xe_vm_bind *args,
 		    XE_IOCTL_ERR(xe, !obj &&
 				 VM_BIND_OP(op) == XE_VM_BIND_OP_MAP) ||
 		    XE_IOCTL_ERR(xe, obj &&
-				 VM_BIND_OP(op) == XE_VM_BIND_OP_MAP_USERPTR)) {
+				 VM_BIND_OP(op) == XE_VM_BIND_OP_MAP_USERPTR) ||
+		    XE_IOCTL_ERR(xe, obj &&
+				 VM_BIND_OP(op) == XE_VM_BIND_OP_UNMAP)) {
 			err = -EINVAL;
 			goto free_bind_ops;
 		}
-
 
 		if (XE_IOCTL_ERR(xe, obj_offset & ~PAGE_MASK) ||
 		    XE_IOCTL_ERR(xe, addr & ~PAGE_MASK) ||
