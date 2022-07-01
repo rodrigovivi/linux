@@ -2624,11 +2624,43 @@ static void vm_remove_extobj(struct xe_vm *vm, struct xe_vma *vma)
 	}
 }
 
+int __vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
+			       u64 addr, u64 range, u32 op)
+{
+	struct xe_device *xe = vm->xe;
+	struct xe_vma *vma, lookup;
+
+	lockdep_assert_held(&vm->lock);
+
+	lookup.start = addr;
+	lookup.end = addr + range - 1;
+
+	switch (VM_BIND_OP(op)) {
+	case XE_VM_BIND_OP_MAP:
+	case XE_VM_BIND_OP_MAP_USERPTR:
+		vma = xe_vm_find_overlapping_vma(vm, &lookup);
+		if (XE_IOCTL_ERR(xe, vma))
+			return -EBUSY;
+		break;
+	case XE_VM_BIND_OP_UNMAP:
+		vma = xe_vm_find_overlapping_vma(vm, &lookup);
+		if (XE_IOCTL_ERR(xe, !vma) ||
+		    XE_IOCTL_ERR(xe, vma->start != addr) ||
+		    XE_IOCTL_ERR(xe, vma->end != addr + range - 1))
+			return -EINVAL;
+		break;
+	default:
+		XE_BUG_ON("NOT POSSIBLE");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 					u64 bo_offset_or_userptr, u64 addr,
 					u64 range, u32 op)
 {
-	struct xe_device *xe = vm->xe;
 	struct ww_acquire_ctx ww;
 	struct xe_vma *vma, lookup;
 	int err;
@@ -2641,11 +2673,6 @@ struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 	switch (VM_BIND_OP(op)) {
 	case XE_VM_BIND_OP_MAP:
 		XE_BUG_ON(!bo);
-
-		vma = xe_vm_find_overlapping_vma(vm, &lookup);
-		if (XE_IOCTL_ERR(xe, vma))
-			return ERR_PTR(-EBUSY);
-
 
 		err = xe_bo_lock(bo, &ww, 0, true);
 		if (err)
@@ -2667,12 +2694,7 @@ struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 		break;
 	case XE_VM_BIND_OP_UNMAP:
 		vma = xe_vm_find_overlapping_vma(vm, &lookup);
-
-		if (XE_IOCTL_ERR(xe, !vma) ||
-		    XE_IOCTL_ERR(xe, vma->start != addr) ||
-		    XE_IOCTL_ERR(xe, vma->end != addr + range - 1))
-			return ERR_PTR(-EINVAL);
-
+		XE_BUG_ON(!vma);
 		vma->destroyed = true;
 		xe_vm_remove_vma(vm, vma);
 		if (vma->bo && !vma->bo->vm)
@@ -2688,9 +2710,9 @@ struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 			return ERR_PTR(-ENOMEM);
 
 		err = vma_userptr_pin_pages(vma);
-		if (err || xe_vm_find_overlapping_vma(vm, &lookup)) {
+		if (err) {
 			xe_vma_destroy(vma);
-			vma = err ? ERR_PTR(err) : ERR_PTR(-EBUSY);
+			return ERR_PTR(err);
 		} else {
 			xe_vm_insert_vma(vm, vma);
 			list_add_tail(&vma->userptr_link, &vm->userptr.list);
@@ -2942,6 +2964,17 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	err = down_write_killable(&vm->lock);
 	if (err)
 		goto free_syncs;
+
+	/* Do some error checing first to make the unwind easier */
+	for (i = 0; i < args->num_binds; ++i) {
+		u64 range = bind_ops[i].range;
+		u64 addr = bind_ops[i].addr;
+		u32 op = bind_ops[i].op;
+
+		err = __vm_bind_ioctl_lookup_vma(vm, bos[i], addr, range, op);
+		if (err)
+			goto free_syncs;
+	}
 
 	for (i = 0; i < args->num_binds; ++i) {
 		u64 range = bind_ops[i].range;
