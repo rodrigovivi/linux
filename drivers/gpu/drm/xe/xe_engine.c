@@ -14,6 +14,7 @@
 #include "xe_gt.h"
 #include "xe_lrc.h"
 #include "xe_macros.h"
+#include "xe_migrate.h"
 #include "xe_trace.h"
 #include "xe_vm.h"
 
@@ -210,7 +211,7 @@ static int engine_set_compute_mode(struct xe_device *xe, struct xe_engine *e,
 		 */
 		XE_WARN_ON(!RB_EMPTY_ROOT(&vm->vmas));
 
-		if (XE_IOCTL_ERR(xe, !(e->vm->flags & VM_FLAG_COMPUTE_MODE)))
+		if (XE_IOCTL_ERR(xe, !(e->vm->flags & XE_VM_FLAG_COMPUTE_MODE)))
 			return -ENOTSUPP;
 
 		if (XE_IOCTL_ERR(xe, e->width != 1))
@@ -436,7 +437,7 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 	struct drm_xe_engine_class_instance __user *user_eci =
 		u64_to_user_ptr(args->instances);
 	struct xe_hw_engine *hwe;
-	struct xe_vm *vm;
+	struct xe_vm *vm, *migrate_vm = NULL;
 	struct xe_engine *e;
 	u32 logical_mask;
 	u32 id;
@@ -475,9 +476,14 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, !vm))
 		return -ENOENT;
 
-	e = xe_engine_create(xe, bind_engine ? NULL : vm, logical_mask,
+	if (bind_engine)
+		migrate_vm = xe_migrate_get_vm(to_gt(xe)->migrate);
+
+	e = xe_engine_create(xe, migrate_vm ?: vm, logical_mask,
 			     args->width, hwe, ENGINE_FLAG_PERSISTENT |
 			     (bind_engine ? ENGINE_FLAG_VM : 0));
+	if (migrate_vm)
+		xe_vm_put(migrate_vm);
 	xe_vm_put(vm);
 	if (IS_ERR(e))
 		return PTR_ERR(e);
@@ -488,7 +494,7 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 			goto put_engine;
 	}
 
-	if (XE_IOCTL_ERR(xe, e->vm && !!(e->vm->flags & VM_FLAG_COMPUTE_MODE) !=
+	if (XE_IOCTL_ERR(xe, e->vm && !!(e->vm->flags & XE_VM_FLAG_COMPUTE_MODE) !=
 			 !!(e->flags & ENGINE_FLAG_COMPUTE_MODE))) {
 		err = -ENOTSUPP;
 		goto put_engine;

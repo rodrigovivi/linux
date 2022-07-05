@@ -14,6 +14,12 @@
 struct xe_bo;
 struct xe_vm;
 
+enum xe_cache_level {
+	XE_CACHE_NONE,
+	XE_CACHE_WT,
+	XE_CACHE_WB,
+};
+
 struct xe_vma {
 	struct rb_node vm_node;
 	/** @vm: VM which this VMA belongs to */
@@ -71,7 +77,13 @@ struct xe_vma {
 };
 
 struct xe_device;
-struct xe_pt;
+
+struct xe_pt {
+	struct xe_bo *bo;
+	unsigned int level;
+	unsigned int num_live;
+	bool rebind;
+};
 
 #define xe_vm_assert_held(vm) dma_resv_assert_held(&(vm)->resv)
 #define XE_VM_MAX_LEVEL 4
@@ -102,7 +114,6 @@ struct xe_vm_pgtable_update {
 	u32 flags;
 };
 
-
 struct xe_vm {
 	struct xe_device *xe;
 
@@ -122,9 +133,11 @@ struct xe_vm {
 	struct xe_pt *scratch_pt[XE_VM_MAX_LEVEL];
 
 	/** @flags: flags for this VM, statically setup a creation time */
-#define VM_FLAGS_64K		BIT(0)
-#define VM_FLAG_COMPUTE_MODE	BIT(1)
-#define VM_FLAG_ASYNC_BIND_OPS	BIT(2)
+#define XE_VM_FLAGS_64K			BIT(0)
+#define XE_VM_FLAG_COMPUTE_MODE		BIT(1)
+#define XE_VM_FLAG_ASYNC_BIND_OPS	BIT(2)
+#define XE_VM_FLAG_MIGRATION		BIT(3)
+#define XE_VM_FLAG_SCRATCH_PAGE		BIT(4)
 	unsigned long flags;
 
 	/**

@@ -12,6 +12,7 @@
 
 struct drm_device;
 struct drm_file;
+struct ttm_bo_kmap_obj;
 
 struct ttm_buffer_object;
 
@@ -63,7 +64,7 @@ void xe_vm_close_and_put(struct xe_vm *vm);
 
 static inline bool xe_vm_in_compute_mode(struct xe_vm *vm)
 {
-	return vm->flags & VM_FLAG_COMPUTE_MODE;
+	return vm->flags & XE_VM_FLAG_COMPUTE_MODE;
 }
 int xe_vm_add_compute_engine(struct xe_vm *vm, struct xe_engine *e);
 
@@ -78,6 +79,13 @@ static inline bool xe_vm_has_userptr(struct xe_vm *vm)
 }
 
 int xe_vm_async_fence_wait_start(struct dma_fence *fence);
+
+void __xe_pt_write(struct ttm_bo_kmap_obj *map, unsigned int idx, uint64_t data);
+u64 gen8_pde_encode(struct xe_bo *bo, u64 bo_offset,
+		    const enum xe_cache_level level);
+u64 gen8_pte_encode(struct xe_vma *vma, struct xe_bo *bo,
+		    u64 offset, enum xe_cache_level cache,
+		    u32 flags, u32 pt_level);
 
 extern struct ttm_device_funcs xe_ttm_funcs;
 

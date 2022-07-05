@@ -35,6 +35,8 @@ typedef void (*xe_migrate_populatefn_t)(void *pos, u32 ofs, u32 num_qwords,
 					struct xe_vm_pgtable_update *update,
 					void *arg);
 
+struct xe_vm *xe_migrate_get_vm(struct xe_migrate *m);
+
 struct dma_fence *
 xe_migrate_update_pgtables(struct xe_migrate *m,
 			   struct xe_vm *vm,

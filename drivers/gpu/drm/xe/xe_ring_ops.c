@@ -10,6 +10,7 @@
 #include "xe_macros.h"
 #include "xe_ring_ops.h"
 #include "xe_sched_job.h"
+#include "xe_vm_types.h"
 
 #include "../i915/i915_reg.h"
 #include "../i915/gt/intel_gpu_commands.h"
@@ -116,6 +117,44 @@ static void __emit_job_gen12(struct xe_sched_job *job, struct xe_lrc *lrc,
 
 	dw[i++] = MI_USER_INTERRUPT;
 	dw[i++] = MI_ARB_ON_OFF | MI_ARB_ENABLE;
+	dw[i++] = MI_ARB_CHECK;
+
+	XE_BUG_ON(i > MAX_JOB_SIZE_DW);
+
+	xe_lrc_write_ring(lrc, dw, i * sizeof(*dw));
+}
+
+static void emit_migration_job_gen12(struct xe_sched_job *job,
+				     struct xe_lrc *lrc, u32 seqno)
+{
+	u32 dw[MAX_JOB_SIZE_DW], i = 0;
+	u64 batch_addr;
+
+	dw[i++] = MI_STORE_DATA_IMM | BIT(22) /* GGTT */ | 2;
+	dw[i++] = xe_lrc_start_seqno_ggtt_addr(lrc);
+	dw[i++] = 0;
+	dw[i++] = seqno;
+
+	batch_addr = job->batch_addr[0];
+	dw[i++] = MI_BATCH_BUFFER_START_GEN8 | BIT(8);
+	dw[i++] = lower_32_bits(batch_addr);
+	dw[i++] = upper_32_bits(batch_addr);
+
+	invalidate_tlb(job, dw, &i);
+
+	batch_addr = job->batch_addr[1];
+	dw[i++] = MI_BATCH_BUFFER_START_GEN8 | BIT(8);
+	dw[i++] = lower_32_bits(batch_addr);
+	dw[i++] = upper_32_bits(batch_addr);
+
+	dw[i++] = (MI_FLUSH_DW | MI_INVALIDATE_TLB | MI_FLUSH_DW_OP_STOREDW) + 1;
+	dw[i++] = xe_lrc_seqno_ggtt_addr(lrc) | MI_FLUSH_DW_USE_GTT;
+	dw[i++] = 0;
+	dw[i++] = seqno; /* value */
+
+	dw[i++] = MI_USER_INTERRUPT;
+	dw[i++] = MI_ARB_ON_OFF | MI_ARB_ENABLE;
+	dw[i++] = MI_ARB_CHECK;
 
 	XE_BUG_ON(i > MAX_JOB_SIZE_DW);
 
@@ -125,6 +164,11 @@ static void __emit_job_gen12(struct xe_sched_job *job, struct xe_lrc *lrc,
 static void emit_job_gen12(struct xe_sched_job *job)
 {
 	int i;
+
+	if (job->engine->vm && job->engine->vm->flags & XE_VM_FLAG_MIGRATION) {
+		emit_migration_job_gen12(job, job->engine->lrc, xe_sched_job_seqno(job));
+		return;
+	}
 
 	/* FIXME: Not doing parallel handshake for now */
 	for (i = 0; i < job->engine->width; ++i)
