@@ -209,6 +209,18 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 		goto out;
 	}
 
+	if (old_mem->mem_type == TTM_PL_TT &&
+	    new_mem->mem_type == TTM_PL_SYSTEM) {
+		ret = dma_resv_wait_timeout(bo->ttm.base.resv,
+					    DMA_RESV_USAGE_PREEMPT_FENCE, true,
+					    MAX_SCHEDULE_TIMEOUT);
+		if (ret)
+			goto out;
+		ttm_resource_free(ttm_bo, &ttm_bo->resource);
+		ttm_bo_assign_mem(ttm_bo, new_mem);
+		goto rebind;
+	}
+
 	if (((old_mem->mem_type == TTM_PL_SYSTEM &&
 	      new_mem->mem_type == TTM_PL_VRAM) ||
 	     (old_mem->mem_type == TTM_PL_VRAM &&
@@ -230,13 +242,14 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 	if (IS_ERR(fence))
 		return PTR_ERR(fence);
 
+	ret = ttm_bo_move_accel_cleanup(&bo->ttm, fence, evict, true, new_mem);
+	dma_fence_put(fence);
+
+rebind:
 	trace_printk("new_mem->mem_type=%d\n", new_mem->mem_type);
 	xe_bo_trigger_rebind(bo);
 	if (ttm_bo->base.dma_buf)
 		dma_buf_move_notify(ttm_bo->base.dma_buf);
-
-	ret = ttm_bo_move_accel_cleanup(&bo->ttm, fence, evict, true, new_mem);
-	dma_fence_put(fence);
 
 out:
 	return ret;
