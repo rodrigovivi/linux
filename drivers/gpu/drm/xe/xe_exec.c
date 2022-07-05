@@ -219,7 +219,8 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	 * all dependent async VM binds to start (install correct fences into
 	 * dma-resv slots) before moving forward.
 	 */
-	if (!xe_vm_in_compute_mode(vm) && vm->flags & VM_FLAG_ASYNC_BIND_OPS) {
+	if (!xe_vm_in_compute_mode(vm) &&
+	    vm->flags & XE_VM_FLAG_ASYNC_BIND_OPS) {
 		for (i = 0; i < args->num_syncs; i++) {
 			struct dma_fence *fence = syncs[i].fence;
 			if (fence) {
