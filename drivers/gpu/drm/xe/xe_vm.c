@@ -23,12 +23,6 @@
 #include "xe_sync.h"
 #include "xe_trace.h"
 
-enum xe_cache_level {
-	XE_CACHE_NONE,
-	XE_CACHE_WT,
-	XE_CACHE_WB,
-};
-
 #define TEST_VM_ASYNC_OPS_ERROR
 
 
@@ -42,10 +36,24 @@ static inline void vm_dbg(const struct drm_device *dev,
 
 #endif
 
-static uint64_t gen8_pde_encode(struct xe_bo *bo, uint64_t bo_offset,
-				const enum xe_cache_level level)
+struct xe_pt_dir {
+	struct xe_pt pt;
+	struct xe_pt *entries[GEN8_PDES];
+};
+
+struct xe_pt_0 {
+	struct xe_pt pt;
+};
+
+static struct xe_pt_dir *as_xe_pt_dir(struct xe_pt *pt)
 {
-	uint64_t pde;
+	return container_of(pt, struct xe_pt_dir, pt);
+}
+
+u64 gen8_pde_encode(struct xe_bo *bo, u64 bo_offset,
+		    const enum xe_cache_level level)
+{
+	u64 pde;
 	bool is_lmem;
 
 	pde = xe_bo_addr(bo, bo_offset, GEN8_PAGE_SIZE, &is_lmem);
@@ -78,9 +86,9 @@ static dma_addr_t vma_addr(struct xe_vma *vma, uint64_t offset,
 	}
 }
 
-static u64 gen8_pte_encode(struct xe_vma *vma, struct xe_bo *bo,
-			   u64 offset, enum xe_cache_level cache,
-			   u32 flags, u32 pt_level)
+u64 gen8_pte_encode(struct xe_vma *vma, struct xe_bo *bo,
+		    u64 offset, enum xe_cache_level cache,
+		    u32 flags, u32 pt_level)
 {
 	u64 pte;
 	bool is_lmem;
@@ -120,26 +128,6 @@ static u64 gen8_pte_encode(struct xe_vma *vma, struct xe_bo *bo,
 	return pte;
 }
 
-struct xe_pt {
-	struct xe_bo *bo;
-	unsigned int level;
-	unsigned int num_live;
-};
-
-struct xe_pt_dir {
-	struct xe_pt pt;
-	struct xe_pt *entries[GEN8_PDES];
-};
-
-struct xe_pt_0 {
-	struct xe_pt pt;
-};
-
-static struct xe_pt_dir *as_xe_pt_dir(struct xe_pt *pt)
-{
-	return container_of(pt, struct xe_pt_dir, pt);
-}
-
 static uint64_t __xe_vm_empty_pte(struct xe_vm *vm, unsigned int level)
 {
 	if (!vm->scratch_bo)
@@ -158,8 +146,7 @@ static int __xe_pt_kmap(struct xe_pt *pt, struct ttm_bo_kmap_obj *map)
 	return ttm_bo_kmap(&pt->bo->ttm, 0, pt->bo->size / PAGE_SIZE, map);
 }
 
-static void __xe_pt_write(struct ttm_bo_kmap_obj *map,
-			  unsigned int idx, uint64_t data)
+void __xe_pt_write(struct ttm_bo_kmap_obj *map, unsigned int idx, uint64_t data)
 {
 	bool is_iomem;
 	uint64_t *map_u64;
@@ -191,7 +178,7 @@ static struct xe_pt *xe_pt_create(struct xe_vm *vm, unsigned int level)
 	size_t size;
 	int err;
 
-	size = level ? sizeof(struct xe_pt_dir) : sizeof(struct xe_pt_0);
+	size = level ? sizeof(struct xe_pt_dir) : sizeof(struct xe_pt);
 	pt = kzalloc(size, GFP_KERNEL);
 	if (!pt)
 		return ERR_PTR(-ENOMEM);
@@ -228,7 +215,7 @@ static int xe_pt_populate_empty(struct xe_vm *vm, struct xe_pt *pt)
 	if (err)
 		return err;
 
-	if (vm->flags & VM_FLAGS_64K && pt->level == 1) {
+	if (vm->flags & XE_VM_FLAGS_64K && pt->level == 1) {
 		numpte = 32;
 		if (vm->scratch_bo)
 			flags = GEN12_PDE_64K;
@@ -401,7 +388,7 @@ static void xe_pt_destroy(struct xe_pt *pt, uint32_t flags)
 	ttm_bo_unpin(&pt->bo->ttm);
 	xe_bo_put(pt->bo);
 
-	if (pt->level == 0 && flags & VM_FLAGS_64K)
+	if (pt->level == 0 && flags & XE_VM_FLAGS_64K)
 		numpdes = 32;
 
 	if (pt->level > 0 && pt->num_live) {
@@ -1112,7 +1099,6 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 	struct xe_vm *vm;
 	struct xe_vma *vma;
 	int err, i = 0;
-	struct xe_engine *eng;
 
 	vm = kzalloc(sizeof(*vm), GFP_KERNEL);
 	if (!vm)
@@ -1125,6 +1111,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 	vm->size = 1ull << xe_pt_shift(xe->info.vm_max_level + 1);
 
 	vm->vmas = RB_ROOT;
+	vm->flags = flags;
 
 	init_rwsem(&vm->lock);
 
@@ -1146,7 +1133,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 		goto err_put;
 
 	if (IS_DGFX(xe) && xe->info.vram_flags & XE_VRAM_FLAGS_NEED64K)
-		vm->flags |= VM_FLAGS_64K;
+		vm->flags |= XE_VM_FLAGS_64K;
 
 	vm->pt_root = xe_pt_create(vm, xe->info.vm_max_level);
 	if (IS_ERR(vm->pt_root)) {
@@ -1154,7 +1141,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 		goto err_unlock;
 	}
 
-	if (flags & DRM_XE_VM_CREATE_SCRATCH_PAGE) {
+	if (flags & XE_VM_FLAG_SCRATCH_PAGE) {
 		vm->scratch_bo = xe_bo_create(xe, vm, SZ_4K,
 					      ttm_bo_type_kernel,
 					      XE_BO_CREATE_VRAM_IF_DGFX(xe) |
@@ -1171,6 +1158,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 				err = PTR_ERR(vm->scratch_pt[i]);
 				goto err_scratch_pt;
 			}
+
 			err = xe_pt_populate_empty(vm, vm->scratch_pt[i]);
 			if (err) {
 				xe_pt_destroy(vm->scratch_pt[i], vm->flags);
@@ -1181,12 +1169,12 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 
 	if (flags & DRM_XE_VM_CREATE_COMPUTE_MODE) {
 		INIT_WORK(&vm->preempt.rebind_work, preempt_rebind_work_func);
-		vm->flags |= VM_FLAG_COMPUTE_MODE;
+		vm->flags |= XE_VM_FLAG_COMPUTE_MODE;
 	}
 
 	if (flags & DRM_XE_VM_CREATE_ASYNC_BIND_OPS) {
 		vm->async_ops.fence.context = dma_fence_context_alloc(1);
-		vm->flags |= VM_FLAG_ASYNC_BIND_OPS;
+		vm->flags |= XE_VM_FLAG_ASYNC_BIND_OPS;
 	}
 
 	/* Fill pt_root after allocating scratch tables */
@@ -1194,14 +1182,25 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 	if (err)
 		goto err_scratch_pt;
 
-	eng = xe_engine_create_class(xe, NULL, XE_ENGINE_CLASS_COPY, ENGINE_FLAG_VM);
-	if (IS_ERR(eng)) {
-		err = PTR_ERR(eng);
-		goto err_scratch_pt;
-	}
-	vm->eng = eng;
-
 	dma_resv_unlock(&vm->resv);
+
+	/* Kernel migration VM shouldn't have a circular loop.. */
+	if (!(flags & XE_VM_FLAG_MIGRATION)) {
+		struct xe_vm *migrate_vm =
+			xe_migrate_get_vm(to_gt(xe)->migrate);
+		struct xe_engine *eng;
+
+		eng = xe_engine_create_class(xe, migrate_vm,
+					     XE_ENGINE_CLASS_COPY,
+					     ENGINE_FLAG_VM);
+		xe_vm_put(migrate_vm);
+		if (IS_ERR(eng)) {
+			xe_vm_close_and_put(vm);
+			return ERR_CAST(eng);
+		}
+		vm->eng = eng;
+	}
+
 	trace_xe_vm_create(vm);
 
 	return vm;
@@ -2132,7 +2131,7 @@ static int vm_set_error_capture_address(struct xe_device *xe, struct xe_vm *vm,
 	if (XE_IOCTL_ERR(xe, !value))
 		return -EINVAL;
 
-	if (XE_IOCTL_ERR(xe, !(vm->flags & VM_FLAG_ASYNC_BIND_OPS)))
+	if (XE_IOCTL_ERR(xe, !(vm->flags & XE_VM_FLAG_ASYNC_BIND_OPS)))
 		return -ENOTSUPP;
 
 	if (XE_IOCTL_ERR(xe, vm->async_ops.error_capture.addr))
@@ -2221,11 +2220,19 @@ int xe_vm_create_ioctl(struct drm_device *dev, void *data,
 	struct xe_vm *vm;
 	u32 id;
 	int err;
+	u32 flags = 0;
 
 	if (XE_IOCTL_ERR(xe, args->flags & ~ALL_DRM_XE_VM_CREATE_FLAGS))
 		return -EINVAL;
 
-	vm = xe_vm_create(xe, args->flags);
+	if (args->flags & DRM_XE_VM_CREATE_SCRATCH_PAGE)
+		flags |= XE_VM_FLAG_SCRATCH_PAGE;
+	if (args->flags & DRM_XE_VM_CREATE_COMPUTE_MODE)
+		flags |= XE_VM_FLAG_COMPUTE_MODE;
+	if (args->flags & DRM_XE_VM_CREATE_ASYNC_BIND_OPS)
+		flags |= XE_VM_FLAG_ASYNC_BIND_OPS;
+
+	vm = xe_vm_create(xe, flags);
 	if (IS_ERR(vm))
 		return PTR_ERR(vm);
 
@@ -2806,7 +2813,7 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	}
 
 	if (VM_BIND_OP(bind_ops[0].op) == XE_VM_BIND_OP_RESTART) {
-		if (XE_IOCTL_ERR(xe, !(vm->flags & VM_FLAG_ASYNC_BIND_OPS)))
+		if (XE_IOCTL_ERR(xe, !(vm->flags & XE_VM_FLAG_ASYNC_BIND_OPS)))
 			err = -ENOTSUPP;
 		if (XE_IOCTL_ERR(xe, !err && args->num_syncs))
 			err = EINVAL;
@@ -2826,7 +2833,7 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	}
 
 	if (XE_IOCTL_ERR(xe, !vm->async_ops.pause &&
-			 async != !!(vm->flags & VM_FLAG_ASYNC_BIND_OPS))) {
+			 async != !!(vm->flags & XE_VM_FLAG_ASYNC_BIND_OPS))) {
 		err = -ENOTSUPP;
 		goto put_engine;
 	}

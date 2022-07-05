@@ -60,7 +60,10 @@ static struct xe_sched_job *job_alloc(bool parallel)
 
 static void job_free(struct xe_sched_job *job)
 {
-	kmem_cache_free(xe_engine_is_parallel(job->engine) ?
+	struct xe_engine *e = job->engine;
+	bool is_migration = e->vm && (e->vm->flags & XE_VM_FLAG_MIGRATION);
+
+	kmem_cache_free(xe_engine_is_parallel(job->engine) || is_migration ?
 			xe_sched_job_parallel_slab : xe_sched_job_slab, job);
 }
 
@@ -69,24 +72,27 @@ struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
 {
 	struct xe_sched_job *job;
 	struct dma_fence **fences;
+	bool is_migration = e->vm && (e->vm->flags & XE_VM_FLAG_MIGRATION);
 	int err;
 	int i, j;
+	u32 width;
 
-	if (e->vm) {
+	/* Migration and kernel engines have their own locking */
+	if (!(e->flags & (ENGINE_FLAG_KERNEL | ENGINE_FLAG_VM))) {
 		lockdep_assert_held(&e->vm->lock);
 		if (!xe_vm_in_compute_mode(e->vm))
 			xe_vm_assert_held(e->vm);
 	}
 
-	job = job_alloc(xe_engine_is_parallel(e));
+	job = job_alloc(xe_engine_is_parallel(e) || is_migration);
 	if (!job)
 		return ERR_PTR(-ENOMEM);
+
+	job->engine = e;
 
 	err = drm_sched_job_init(&job->drm, e->entity, NULL);
 	if (err)
 		goto err_free;
-
-	job->engine = e;
 
 	if (!xe_engine_is_parallel(e)) {
 		job->fence = xe_lrc_create_seqno_fence(e->lrc);
@@ -128,7 +134,11 @@ struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
 		job->fence = &cf->base;
 	}
 
-	for (i = 0; i < e->width; ++i)
+	width = e->width;
+	if (is_migration)
+		width = 2;
+
+	for (i = 0; i < width; ++i)
 		job->batch_addr[i] = batch_addr[i];
 
 	trace_xe_sched_job_create(job);
