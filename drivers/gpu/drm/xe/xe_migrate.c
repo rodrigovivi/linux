@@ -438,7 +438,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	u64 ggtt_ofs;
 	int err = 0;
 
-	if (vm->xe->info.platform == XE_DG2) {
+	if (gt_to_xe(gt)->info.platform == XE_DG2) {
 		fence = xe_migrate_update_pgtables_cpu(m, vm, bo, eng, updates,
 						       num_updates, syncs,
 						       num_syncs, populatefn,
