@@ -185,7 +185,7 @@ static struct xe_pt *xe_pt_create(struct xe_vm *vm, unsigned int level)
 	size = level ? sizeof(struct xe_pt_dir) : sizeof(struct xe_pt_0);
 	pt = kzalloc(size, GFP_KERNEL);
 	if (!pt)
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 
 	bo = xe_bo_create(vm->xe, vm, SZ_4K, ttm_bo_type_kernel,
 			  XE_BO_CREATE_VRAM_IF_DGFX(vm->xe) |
