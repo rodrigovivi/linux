@@ -19,6 +19,7 @@
 #include "xe_gt.h"
 #include "xe_migrate.h"
 #include "xe_preempt_fence.h"
+#include "xe_res_cursor.h"
 #include "xe_sync.h"
 #include "xe_trace.h"
 
@@ -77,11 +78,11 @@ static dma_addr_t vma_addr(struct xe_vma *vma, uint64_t offset,
 	}
 }
 
-static uint64_t gen8_pte_encode(struct xe_vma *vma, struct xe_bo *bo,
-				uint64_t offset, enum xe_cache_level level,
-				uint32_t flags)
+static u64 gen8_pte_encode(struct xe_vma *vma, struct xe_bo *bo,
+			   u64 offset, enum xe_cache_level cache,
+			   u32 flags, u32 pt_level)
 {
-	uint64_t pte;
+	u64 pte;
 	bool is_lmem;
 
 	if (vma)
@@ -96,7 +97,7 @@ static uint64_t gen8_pte_encode(struct xe_vma *vma, struct xe_bo *bo,
 	if (is_lmem)
 		pte |= GEN12_PPGTT_PTE_LM;
 
-	switch (level) {
+	switch (cache) {
 	case XE_CACHE_NONE:
 		pte |= PPAT_UNCACHED;
 		break;
@@ -107,6 +108,14 @@ static uint64_t gen8_pte_encode(struct xe_vma *vma, struct xe_bo *bo,
 		pte |= PPAT_CACHED;
 		break;
 	}
+
+	if (pt_level == 1)
+		pte |= GEN8_PDE_PS_2M;
+	else if (pt_level == 2)
+		pte |= GEN8_PDPE_PS_1G;
+
+	/* XXX: Does hw support 1 GiB pages? */
+	XE_BUG_ON(pt_level > 2);
 
 	return pte;
 }
@@ -137,7 +146,7 @@ static uint64_t __xe_vm_empty_pte(struct xe_vm *vm, unsigned int level)
 		return 0;
 
 	if (level == 0)
-		return gen8_pte_encode(NULL, vm->scratch_bo, 0, XE_CACHE_WB, 0);
+		return gen8_pte_encode(NULL, vm->scratch_bo, 0, XE_CACHE_WB, 0, level);
 	else
 		return gen8_pde_encode(vm->scratch_pt[level - 1]->bo, 0,
 				       XE_CACHE_WB);
@@ -257,6 +266,31 @@ static uint64_t xe_pt_prev_end(uint64_t end, unsigned int level)
 	return ALIGN_DOWN(end - 1, pt_range);
 }
 
+static bool xe_pte_hugepage_possible(struct xe_vma *vma, u32 level, u64 start, u64 end)
+{
+	u64 pagesize = 1ull << xe_pt_shift(level);
+	u64 bo_ofs = vma->bo_offset + (start - vma->start);
+	struct xe_res_cursor cur;
+
+	XE_BUG_ON(!level);
+	XE_BUG_ON(end - start > pagesize);
+
+	if (level > 2)
+		return false;
+
+	if (start + pagesize != end)
+		return false;
+
+	if (vma->bo->ttm.resource->mem_type != TTM_PL_VRAM)
+		return false;
+
+	xe_res_first(vma->bo->ttm.resource, bo_ofs, pagesize, &cur);
+	if (cur.size < pagesize)
+		return false;
+
+	return true;
+}
+
 static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 				  u64 start, u64 end, bool rebind)
 {
@@ -264,12 +298,14 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 	u32 last_ofs = xe_pt_idx(end - 1, pt->level);
 	struct ttm_bo_kmap_obj map;
 	struct xe_vm *vm = vma->vm;
+	struct xe_pt_dir *pt_dir = NULL;
 	bool init = !pt->num_live;
 	u32 i;
 	int err;
 	u32 page_size = GEN8_PAGE_SIZE;
 	u32 numpdes = GEN8_PDES;
 	u32 flags = 0;
+	u64 bo_offset = vma->bo_offset + (start - vma->start);
 
 	if (vma->bo && vma->bo->flags & XE_BO_INTERNAL_64K) {
 		page_size = SZ_64K;
@@ -286,28 +322,35 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 	       start_ofs, last_ofs, flags);
 
 	if (pt->level) {
-		struct xe_pt_dir *pt_dir = as_xe_pt_dir(pt);
 		u64 cur = start;
+
+		pt_dir = as_xe_pt_dir(pt);
 
 		for (i = start_ofs; i <= last_ofs; i++) {
 			u64 next_start = xe_pt_next_start(cur, pt->level);
+			struct xe_pt *pte = NULL;
+			u64 cur_end = min(next_start, end);
 
-			if (!pt_dir->entries[i]) {
-				struct xe_pt *pte =
-					xe_pt_create(vm, pt->level - 1);
+			XE_WARN_ON(pt_dir->entries[i]);
 
-				if (IS_ERR(pte))
-					return PTR_ERR(pte);
+			if (!xe_pte_hugepage_possible(vma, pt->level, cur,
+						      cur_end))
+				pte = xe_pt_create(vm, pt->level - 1);
 
-				pt_dir->entries[i] = pte;
-				pt_dir->pt.num_live++;
+			if (IS_ERR(pte))
+				return PTR_ERR(pte);
+
+			if (pte) {
+				err = xe_pt_populate_for_vma(vma, pte,
+							     cur, cur_end,
+							     rebind);
+				if (err)
+					return err;
 			}
 
-			err = xe_pt_populate_for_vma(vma, pt_dir->entries[i],
-						     cur, min(next_start, end),
-						     rebind);
-			if (err)
-				return err;
+			pt_dir->entries[i] = pte;
+			if (!rebind)
+				pt_dir->pt.num_live++;
 
 			cur = next_start;
 		}
@@ -332,21 +375,17 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 			__xe_pt_write(&map, i, empty);
 	}
 
-	if (pt->level) {
-		struct xe_pt_dir *pt_dir = as_xe_pt_dir(pt);
+	for (i = start_ofs; i <= last_ofs; i++, bo_offset += page_size) {
+		u64 entry;
 
-		for (i = start_ofs; i <= last_ofs; i++)
-			__xe_pt_write(&map, i, gen8_pde_encode(pt_dir->entries[i]->bo,
-							       0, XE_CACHE_WB) | flags);
-	} else {
-		u64 bo_offset = vma->bo_offset + (start - vma->start);
+		if (pt_dir && pt_dir->entries[i])
+			entry = gen8_pde_encode(pt_dir->entries[i]->bo,
+						0, XE_CACHE_WB) | flags;
+		else
+			entry = gen8_pte_encode(vma, vma->bo, bo_offset,
+						XE_CACHE_WB, vma->pte_flags, pt->level);
 
-		for (i = start_ofs; i <= last_ofs; i++,
-		     bo_offset += page_size)
-			__xe_pt_write(&map, i, gen8_pte_encode(vma, vma->bo,
-							       bo_offset,
-							       XE_CACHE_WB,
-							       vma->pte_flags));
+		__xe_pt_write(&map, i, entry);
 	}
 
 	ttm_bo_kunmap(&map);
@@ -1406,9 +1445,17 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 {
 	u32 my_removed_pte = 0;
 	struct xe_vm_pgtable_update *entry;
-	u32 start_ofs = xe_pt_idx(start, pt->level);
-	u32 last_ofs = xe_pt_idx(end - 1, pt->level);
+	u32 start_ofs, last_ofs;
 	u32 num_live;
+
+	if (!pt) {
+		/* hugepage entry, skipped */
+		(*removed_parent_pte)++;
+		return;
+	}
+
+	start_ofs = xe_pt_idx(start, pt->level);
+	last_ofs = xe_pt_idx(end - 1, pt->level);
 
 	num_live = pt->num_live;
 
@@ -1614,7 +1661,8 @@ xe_vm_populate_pgtable(void *data, u32 qword_ofs, u32 num_qwords,
 						 update->target_vma->bo,
 						 bo_offset,
 						 XE_CACHE_WB,
-						 update->target_vma->pte_flags);
+						 update->target_vma->pte_flags,
+						 update->pt->level);
 	}
 }
 
@@ -1744,18 +1792,25 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 			       pt->level, i + 1, my_added_pte,
 			       start_ofs + i, pt->level - 1, cur, cur_end, flags);
 
-			entry = xe_pt_create(vma->vm, pt->level - 1);
-			if (IS_ERR(entry)) {
-				err = PTR_ERR(entry);
-				goto unwind;
+			if (xe_pte_hugepage_possible(vma, pt->level, cur, cur_end)) {
+				/* We will directly a PTE to object */
+				entry = NULL;
+			} else {
+				entry = xe_pt_create(vma->vm, pt->level - 1);
+				if (IS_ERR(entry)) {
+					err = PTR_ERR(entry);
+					goto unwind;
+				}
 			}
 			pte[i] = entry;
 
-			err = xe_pt_populate_for_vma(vma, entry, cur, cur_end,
-						     rebind);
-			if (err) {
-				xe_pt_destroy(entry, vma->vm->flags);
-				goto unwind;
+			if (entry) {
+				err = xe_pt_populate_for_vma(vma, entry, cur,
+							     cur_end, rebind);
+				if (err) {
+					xe_pt_destroy(entry, vma->vm->flags);
+					goto unwind;
+				}
 			}
 
 			cur = cur_end;
