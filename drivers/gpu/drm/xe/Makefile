@@ -61,6 +61,7 @@ xe-y += xe_bb.o \
 	xe_mmio.o \
 	xe_module.o \
 	xe_pci.o \
+	xe_pm.o \
 	xe_preempt_fence.o \
 	xe_query.o \
 	xe_ring_ops.o \

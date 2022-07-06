@@ -11,6 +11,7 @@
 
 #include <drm/drm_managed.h>
 
+#include "xe_device.h"
 #include "xe_bo.h"
 #include "xe_gt.h"
 #include "xe_mmio.h"

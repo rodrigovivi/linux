@@ -140,3 +140,41 @@ int xe_uc_start(struct xe_uc *uc)
 
 	return xe_guc_start(&uc->guc);
 }
+
+int xe_uc_suspend(struct xe_uc *uc)
+{
+	int ret;
+
+	/* GuC submission not enabled, nothing to do */
+	if (!xe_gt_guc_submission_enabled(uc_to_gt(uc)))
+		return 0;
+
+	ret = xe_uc_reset_prepare(uc);
+	if (ret)
+		return ret;
+
+	ret = xe_uc_stop(uc);
+	if (ret)
+		return ret;
+
+	return xe_guc_suspend(&uc->guc);
+}
+
+int xe_uc_resume(struct xe_uc *uc)
+{
+	int ret;
+
+	/* GuC submission not enabled, nothing to do */
+	if (!xe_gt_guc_submission_enabled(uc_to_gt(uc)))
+		return 0;
+
+	ret = xe_wopcm_init(&uc->wopcm);
+	if (ret)
+		return ret;
+
+	ret = xe_uc_init_hw(uc);
+	if (ret)
+		return ret;
+
+	return xe_uc_start(uc);
+}
