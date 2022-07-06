@@ -474,6 +474,24 @@ int xe_guc_enable_communication(struct xe_guc *guc)
 	return 0;
 }
 
+int xe_guc_suspend(struct xe_guc *guc)
+{
+	int ret;
+	u32 action[] = {
+		XE_GUC_ACTION_CLIENT_SOFT_RESET,
+	};
+
+	ret = xe_guc_send_mmio(guc, action, ARRAY_SIZE(action));
+	if (ret) {
+		drm_err(&guc_to_xe(guc)->drm,
+			"GuC suspend: CLIENT_SOFT_RESET fail: %d!\n", ret);
+		return ret;
+	}
+
+	xe_guc_sanitize(guc);
+	return 0;
+}
+
 void xe_guc_notify(struct xe_guc *guc)
 {
 	struct xe_gt *gt = guc_to_gt(guc);

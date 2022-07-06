@@ -17,6 +17,7 @@
 #include "xe_drv.h"
 #include "xe_device.h"
 #include "xe_macros.h"
+#include "xe_pm.h"
 
 #include "../i915/i915_reg.h"
 
@@ -499,13 +500,60 @@ static void xe_pci_shutdown(struct pci_dev *pdev)
 	xe_device_shutdown(pdev_to_xe_device(pdev));
 }
 
+#ifdef CONFIG_PM_SLEEP
+static int xe_pci_suspend(struct device *dev)
+{
+	struct pci_dev *pdev = to_pci_dev(dev);
+	int err;
+
+	err = xe_pm_suspend(pdev_to_xe_device(pdev));
+	if (err)
+		return err;
+
+	pci_save_state(pdev);
+	pci_disable_device(pdev);
+
+	err = pci_set_power_state(pdev, PCI_D3hot);
+	if (err)
+		return err;
+
+	return 0;
+}
+
+static int xe_pci_resume(struct device *dev)
+{
+	struct pci_dev *pdev = to_pci_dev(dev);
+	int err;
+
+	err = pci_set_power_state(pdev, PCI_D0);
+	if (err)
+		return err;
+
+	pci_restore_state(pdev);
+
+	err = pci_enable_device(pdev);
+	if (err)
+		return err;
+
+	pci_set_master(pdev);
+
+	err = xe_pm_resume(pdev_to_xe_device(pdev));
+	if (err)
+		return err;
+
+	return 0;
+}
+#endif
+
+static SIMPLE_DEV_PM_OPS(xe_pm_ops, xe_pci_suspend, xe_pci_resume);
+
 static struct pci_driver i915_pci_driver = {
 	.name = DRIVER_NAME,
 	.id_table = pciidlist,
 	.probe = xe_pci_probe,
 	.remove = xe_pci_remove,
 	.shutdown = xe_pci_shutdown,
-//	.driver.pm = &xe_pm_ops,
+	.driver.pm = &xe_pm_ops,
 };
 
 int xe_register_pci_driver(void)

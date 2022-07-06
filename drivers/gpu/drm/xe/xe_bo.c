@@ -385,6 +385,7 @@ struct xe_bo *xe_bo_create_locked(struct xe_device *xe, struct xe_vm *vm,
 				  size_t size, enum ttm_bo_type type,
 				  uint32_t flags)
 {
+	struct xe_ggtt *ggtt = to_gt(xe)->mem.ggtt;
 	struct xe_bo *bo;
 	int err;
 
@@ -400,7 +401,7 @@ struct xe_bo *xe_bo_create_locked(struct xe_device *xe, struct xe_vm *vm,
 	bo->vm = vm;
 
 	if (flags & XE_BO_CREATE_GGTT_BIT) {
-		err = xe_ggtt_insert_bo(to_gt(xe)->mem.ggtt, bo);
+		err = xe_ggtt_insert_bo(ggtt, bo);
 		if (err)
 			goto err_unlock_put_bo;
 	}
