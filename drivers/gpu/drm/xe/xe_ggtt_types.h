@@ -24,6 +24,11 @@ struct xe_ggtt {
 	uint64_t __iomem *gsm;
 
 	struct drm_mm mm;
+
+	struct {
+		spinlock_t lock;
+		struct list_head list;
+	} bos;
 };
 
 #endif	/* _XE_GGTT_TYPES_H_ */

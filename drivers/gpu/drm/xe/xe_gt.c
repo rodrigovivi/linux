@@ -303,6 +303,68 @@ void xe_gt_reset_async(struct xe_gt *gt)
 	queue_work(gt->ordered_wq, &gt->reset.worker);
 }
 
+int xe_gt_suspend(struct xe_gt *gt)
+{
+	struct xe_device *xe = gt_to_xe(gt);
+	int err;
+
+	/* For now suspend/resume is only allowed with GuC */
+	if (!xe_gt_guc_submission_enabled(gt))
+		return -ENODEV;
+
+	err = xe_force_wake_get(gt->mmio.fw, XE_FORCEWAKE_ALL);
+	if (err)
+		goto err_msg;
+
+	err = xe_uc_suspend(&gt->uc);
+	if (err)
+		goto err_fw;
+
+	XE_WARN_ON(xe_force_wake_put(gt->mmio.fw, XE_FORCEWAKE_ALL));
+	drm_info(&xe->drm, "GT suspended\n");
+
+	return 0;
+
+err_fw:
+	XE_WARN_ON(xe_force_wake_put(gt->mmio.fw, XE_FORCEWAKE_ALL));
+err_msg:
+	drm_err(&xe->drm, "GT suspend failed: %d\n", err);
+
+	return err;
+}
+
+int xe_gt_resume(struct xe_gt *gt)
+{
+	struct xe_device *xe = gt_to_xe(gt);
+	int err;
+
+	err = xe_force_wake_get(gt->mmio.fw, XE_FORCEWAKE_ALL);
+	if (err)
+		goto err_msg;
+
+	err = xe_ggtt_resume(gt->mem.ggtt);
+	if (err)
+		goto err_fw;
+
+	tgl_setup_private_ppat(gt);
+
+	err = xe_uc_resume(&gt->uc);
+	if (err)
+		goto err_fw;
+
+	XE_WARN_ON(xe_force_wake_put(gt->mmio.fw, XE_FORCEWAKE_ALL));
+	drm_info(&xe->drm, "GT resumed\n");
+
+	return 0;
+
+err_fw:
+	XE_WARN_ON(xe_force_wake_put(gt->mmio.fw, XE_FORCEWAKE_ALL));
+err_msg:
+	drm_err(&xe->drm, "GT resume failed: %d\n", err);
+
+	return err;
+}
+
 struct xe_hw_engine *xe_gt_hw_engine(struct xe_gt *gt,
 				     enum xe_engine_class class,
 				     uint16_t instance, bool logical)

@@ -38,6 +38,7 @@ struct xe_bo {
 	struct ttm_placement placement;
 	/** @ggtt_node: GGTT node if this BO is mapped in the GGTT */
 	struct drm_mm_node ggtt_node;
+	struct list_head ggtt_list;
 	/** @vmap: iosys map of this buffer */
 	struct iosys_map vmap;
 	/** @extobj_tv: used during exec to lock all external BOs */

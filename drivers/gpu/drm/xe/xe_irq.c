@@ -421,7 +421,7 @@ static void dg1_irq_reset(struct xe_device *xe)
 	GEN3_IRQ_RESET(xe, GEN8_PCU_);
 }
 
-static void xe_irq_reset(struct xe_device *xe)
+void xe_irq_reset(struct xe_device *xe)
 {
 	if (GRAPHICS_VERx100(xe) >= 1210) {
 		dg1_irq_reset(xe);
@@ -432,7 +432,7 @@ static void xe_irq_reset(struct xe_device *xe)
 	}
 }
 
-static void xe_irq_postinstall(struct xe_device *xe)
+void xe_irq_postinstall(struct xe_device *xe)
 {
 	if (GRAPHICS_VERx100(xe) >= 1210) {
 		dg1_irq_postinstall(xe);
@@ -505,4 +505,21 @@ int xe_irq_install(struct xe_device *xe)
 void xe_irq_shutdown(struct xe_device *xe)
 {
 	irq_uninstall(&xe->drm, xe);
+}
+
+void xe_irq_suspend(struct xe_device *xe)
+{
+	spin_lock(&xe->irq.lock);
+	xe->irq.enabled = false;
+	xe_irq_reset(xe);
+	spin_unlock(&xe->irq.lock);
+}
+
+void xe_irq_resume(struct xe_device *xe)
+{
+	spin_lock(&xe->irq.lock);
+	xe->irq.enabled = true;
+	xe_irq_reset(xe);
+	xe_irq_postinstall(xe);
+	spin_unlock(&xe->irq.lock);
 }

@@ -302,8 +302,10 @@ static void xe_ttm_bo_destroy(struct ttm_buffer_object *ttm_bo)
 
 	WARN_ON(!list_empty(&bo->vmas));
 
-	if (bo->ggtt_node.size)
+	if (bo->ggtt_node.size) {
 		xe_ggtt_remove_bo(to_gt(xe_bo_device(bo))->mem.ggtt, bo);
+		list_del_init(&bo->ggtt_list);
+	}
 
 	if (bo->vm && (bo->flags & XE_BO_CREATE_USER_BIT))
 		xe_vm_put(bo->vm);
@@ -385,6 +387,7 @@ struct xe_bo *xe_bo_create_locked(struct xe_device *xe, struct xe_vm *vm,
 				  size_t size, enum ttm_bo_type type,
 				  uint32_t flags)
 {
+	struct xe_ggtt *ggtt = to_gt(xe)->mem.ggtt;
 	struct xe_bo *bo;
 	int err;
 
@@ -400,7 +403,8 @@ struct xe_bo *xe_bo_create_locked(struct xe_device *xe, struct xe_vm *vm,
 	bo->vm = vm;
 
 	if (flags & XE_BO_CREATE_GGTT_BIT) {
-		err = xe_ggtt_insert_bo(to_gt(xe)->mem.ggtt, bo);
+		xe_ggtt_add_bo_to_list(ggtt, bo);
+		err = xe_ggtt_insert_bo(ggtt, bo);
 		if (err)
 			goto err_unlock_put_bo;
 	}

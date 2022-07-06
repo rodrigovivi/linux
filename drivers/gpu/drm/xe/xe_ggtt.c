@@ -11,6 +11,7 @@
 
 #include <drm/drm_managed.h>
 
+#include "xe_device.h"
 #include "xe_bo.h"
 #include "xe_gt.h"
 #include "xe_mmio.h"
@@ -74,6 +75,12 @@ static void ggtt_fini(struct drm_device *drm, void *arg)
 
 	xe_bo_unpin_map_no_vm(ggtt->scratch);
 
+	if (!list_empty(&ggtt->bos.list)) {
+		spin_lock(&ggtt->bos.lock);
+		list_del_init(&ggtt->bos.list);
+		spin_unlock(&ggtt->bos.lock);
+	}
+
 	iounmap(ggtt->gsm);
 }
 
@@ -86,6 +93,39 @@ static void ggtt_fini(struct drm_device *drm, void *arg)
 #define XEHP_TILE_LMEM_BASE_MASK	REG_GENMASK(7, 1)
 #define XEHP_TILE_LMEM_RANGE_MASK	REG_GENMASK(14, 8)
 
+int xe_ggtt_resume(struct xe_ggtt *ggtt)
+{
+	struct xe_bo *bo;
+	int err;
+
+	/* Assuming for now that we lost all the GGTT's PTE uppon resume */
+	xe_ggtt_clear(ggtt, 0, ggtt->size - 1);
+
+	err = xe_bo_pin(ggtt->scratch);
+	if (err)
+		return err;
+	xe_bo_unlock_no_vm(ggtt->scratch);
+
+	spin_lock(&ggtt->bos.lock);
+	list_for_each_entry(bo, &ggtt->bos.list, ggtt_list) {
+		xe_ggtt_remove_bo(to_gt(xe_bo_device(bo))->mem.ggtt, bo);
+
+		err = xe_bo_pin(bo);
+		if (err)
+			goto list_unlock;
+
+		err = xe_bo_vmap(bo);
+		if (err)
+			goto list_unlock;
+
+		xe_ggtt_insert_bo(ggtt, bo);
+	}
+
+list_unlock:
+	spin_unlock(&ggtt->bos.lock);
+	return err;
+}
+
 int xe_ggtt_init(struct xe_gt *gt, struct xe_ggtt *ggtt)
 {
 	struct xe_device *xe = gt_to_xe(gt);
@@ -95,6 +135,9 @@ int xe_ggtt_init(struct xe_gt *gt, struct xe_ggtt *ggtt)
 	int err;
 
 	ggtt->gt = gt;
+
+	INIT_LIST_HEAD(&ggtt->bos.list);
+	spin_lock_init(&ggtt->bos.lock);
 
 	gsm_size = probe_gsm_size(pdev);
 	if (gsm_size == 0) {
@@ -303,4 +346,12 @@ void xe_ggtt_remove_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 	XE_BUG_ON(bo->ggtt_node.size != bo->size);
 
 	xe_ggtt_remove_node(ggtt, &bo->ggtt_node);
+}
+
+void xe_ggtt_add_bo_to_list(struct xe_ggtt *ggtt, struct xe_bo *bo)
+{
+	spin_lock(&ggtt->bos.lock);
+	INIT_LIST_HEAD(&bo->ggtt_list);
+	list_add_tail(&bo->ggtt_list, &ggtt->bos.list);
+	spin_unlock(&ggtt->bos.lock);
 }
