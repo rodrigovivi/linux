@@ -1320,8 +1320,7 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 	}
 
 	if (vm->async_ops.error_capture.addr)
-		vm_async_op_error_capture(vm, -ENODEV, XE_VM_BIND_OP_CLOSE,
-					  0, 0);
+		wake_up_all(&vm->async_ops.error_capture.wq);
 
 	kfree(vm->extobj.bos);
 	vm->extobj.bos = NULL;
