@@ -211,11 +211,14 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 
 	if (old_mem->mem_type == TTM_PL_TT &&
 	    new_mem->mem_type == TTM_PL_SYSTEM) {
-		ret = dma_resv_wait_timeout(bo->ttm.base.resv,
-					    DMA_RESV_USAGE_PREEMPT_FENCE, true,
-					    MAX_SCHEDULE_TIMEOUT);
-		if (ret)
+		long timeout = dma_resv_wait_timeout(bo->ttm.base.resv,
+						     DMA_RESV_USAGE_PREEMPT_FENCE,
+						     true,
+						     MAX_SCHEDULE_TIMEOUT);
+		if (timeout <= 0) {
+			ret = -ETIME;
 			goto out;
+		}
 		ttm_resource_free(ttm_bo, &ttm_bo->resource);
 		ttm_bo_assign_mem(ttm_bo, new_mem);
 		goto rebind;
