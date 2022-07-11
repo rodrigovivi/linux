@@ -704,6 +704,22 @@ retry:
 
 	down_read(&vm->lock);
 
+	if (vm->async_ops.error)
+		goto out_unlock_outer;
+
+	/*
+	 * Extreme corner where we exit a VM error state with a munmap style VM
+	 * unbind inflight which requires a rebind. In this case the rebind
+	 * needs to install some fences into the dma-resv slots. The worker to
+	 * do this queued, let that worker make progress by dropping vm->lock
+	 * and trying this again.
+	 */
+	if (vm->async_ops.munmap_rebind_inflight) {
+		up_read(&vm->lock);
+		flush_work(&vm->async_ops.work);
+		goto retry;
+	}
+
 	err = xe_vm_userptr_pin(vm, true);
 	if (err)
 		goto out_unlock_outer;
@@ -2509,9 +2525,6 @@ again:
 			 * the dma-resv slots need to be programmed in a batch
 			 * relative to execs / the rebind worker. The vm->lock
 			 * ensure this.
-			 *
-			 * XXX: If we encounter an error mid-batch we are likely
-			 * broken for compute mode VMs.
 			 */
 			if (!err && ((first && VM_BIND_OP(op->bind_op.op) ==
 				      XE_VM_BIND_OP_UNMAP) ||
@@ -3247,6 +3260,11 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 			up_write(&vm->lock);
 
 			queue_work(system_unbound_wq, &vm->async_ops.work);
+
+			/* Rebinds may have been blocked, give worker a kick */
+			if (xe_vm_in_compute_mode(vm))
+				queue_work(to_gt(vm->xe)->ordered_wq,
+					   &vm->preempt.rebind_work);
 		}
 
 		if (e)
