@@ -157,6 +157,10 @@ int xe_wait_user_fence_ioctl(struct drm_device *dev, void *data,
 	else
 		add_wait_queue(&xe->ufence_wq, &w_wait);
 	for (;;) {
+		if (vm && xe_vm_is_closed(vm)) {
+			err = -ENODEV;
+			break;
+		}
 		err = do_compare(addr, args->value, args->mask, args->op);
 		if (err <= 0)
 			break;

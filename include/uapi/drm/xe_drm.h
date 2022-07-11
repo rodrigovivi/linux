@@ -265,7 +265,6 @@ struct drm_xe_vm_bind_op_error_capture {
 	/** @error: errno that occured */
 	__s32 error;
 	/** @op: operation that encounter an error */
-#define XE_VM_BIND_OP_CLOSE	0xffffffff
 	__u32 op;
 	/** @addr: address of bind op */
 	__u64 addr;
