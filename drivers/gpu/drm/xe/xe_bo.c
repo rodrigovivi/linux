@@ -241,6 +241,7 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 	XE_BUG_ON(bo->ttm.pin_count);
 	XE_BUG_ON(!gt->migrate);
 
+	trace_xe_bo_move(bo);
 	fence = xe_migrate_copy(gt->migrate, bo, old_mem, new_mem);
 	if (IS_ERR(fence))
 		return PTR_ERR(fence);
