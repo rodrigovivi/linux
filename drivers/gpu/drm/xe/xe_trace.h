@@ -12,10 +12,36 @@
 #include <linux/types.h>
 #include <linux/tracepoint.h>
 
+#include "xe_bo_types.h"
 #include "xe_engine_types.h"
 #include "xe_guc_engine_types.h"
 #include "xe_sched_job.h"
 #include "xe_vm_types.h"
+
+DECLARE_EVENT_CLASS(xe_bo,
+		    TP_PROTO(struct xe_bo *bo),
+		    TP_ARGS(bo),
+
+		    TP_STRUCT__entry(
+			     __field(size_t, size)
+			     __field(uint32_t, flags)
+			     __field(u64, vm)
+			     ),
+
+		    TP_fast_assign(
+			   __entry->size = bo->size;
+			   __entry->flags = bo->flags;
+			   __entry->vm = (u64)bo->vm;
+			   ),
+
+		    TP_printk("size=%ld, flags=0x%02x, vm=0x%016llx",
+			      __entry->size, __entry->flags, __entry->vm)
+);
+
+DEFINE_EVENT(xe_bo, xe_bo_move,
+	     TP_PROTO(struct xe_bo *bo),
+	     TP_ARGS(bo)
+);
 
 DECLARE_EVENT_CLASS(xe_engine,
 		    TP_PROTO(struct xe_engine *e),
