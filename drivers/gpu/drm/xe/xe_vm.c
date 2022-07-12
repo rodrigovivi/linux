@@ -275,6 +275,9 @@ static bool xe_pte_hugepage_possible(struct xe_vma *vma, u32 level, u64 start, u
 	if (cur.size < pagesize)
 		return false;
 
+	if (cur.start & (pagesize - 1))
+		return false;
+
 	return true;
 }
 
@@ -289,7 +292,7 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 	bool init = !pt->num_live;
 	u32 i;
 	int err;
-	u32 page_size = GEN8_PAGE_SIZE;
+	u32 page_size = 1 << xe_pt_shift(pt->level);
 	u32 numpdes = GEN8_PDES;
 	u32 flags = 0;
 	u64 bo_offset = vma->bo_offset + (start - vma->start);
@@ -1645,12 +1648,15 @@ static void
 xe_vm_populate_pgtable(void *data, u32 qword_ofs, u32 num_qwords,
 		       struct xe_vm_pgtable_update *update, void *arg)
 {
-	u32 page_size = (update->flags & GEN12_PDE_64K) ? SZ_64K : GEN8_PAGE_SIZE;
+	u32 page_size = 1 << xe_pt_shift(update->pt->level);
 	u64 bo_offset = update->target_offset +
 		page_size * (qword_ofs - update->ofs);
 	struct xe_pt **ptes = update->pt_entries;
 	u64 *ptr = data;
 	u32 i;
+
+	if (update->pt->level == 0 && update->flags & GEN12_PDE_64K)
+		page_size = SZ_64K;
 
 	for (i = 0; i < num_qwords; i++, bo_offset += page_size) {
 		if (ptes && ptes[i])
