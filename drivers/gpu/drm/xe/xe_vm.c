@@ -1408,8 +1408,10 @@ static void
 xe_pt_commit_unbind(struct xe_vma *vma,
 		    struct xe_vm_pgtable_update *entries, u32 num_entries)
 {
-	while (num_entries--) {
-		struct xe_vm_pgtable_update *entry = &entries[num_entries];
+	u32 j;
+
+	for (j = 0; j < num_entries; ++j) {
+		struct xe_vm_pgtable_update *entry = &entries[j];
 		struct xe_pt *pt = entry->pt;
 
 		pt->num_live -= entry->qwords;
