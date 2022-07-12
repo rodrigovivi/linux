@@ -1649,14 +1649,15 @@ xe_vm_populate_pgtable(void *data, u32 qword_ofs, u32 num_qwords,
 		       struct xe_vm_pgtable_update *update, void *arg)
 {
 	u32 page_size = 1 << xe_pt_shift(update->pt->level);
-	u64 bo_offset = update->target_offset +
-		page_size * (qword_ofs - update->ofs);
+	u64 bo_offset;
 	struct xe_pt **ptes = update->pt_entries;
 	u64 *ptr = data;
 	u32 i;
 
 	if (update->pt->level == 0 && update->flags & GEN12_PDE_64K)
 		page_size = SZ_64K;
+	bo_offset = update->target_offset +
+		page_size * (qword_ofs - update->ofs);
 
 	for (i = 0; i < num_qwords; i++, bo_offset += page_size) {
 		if (ptes && ptes[i])
