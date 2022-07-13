@@ -281,6 +281,11 @@ static bool xe_pte_hugepage_possible(struct xe_vma *vma, u32 level, u64 start, u
 	return true;
 }
 
+static bool vma_uses_64k_pages(struct xe_vma *vma)
+{
+	return vma->bo && vma->bo->flags & XE_BO_INTERNAL_64K;
+}
+
 static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 				  u64 start, u64 end, bool rebind)
 {
@@ -297,7 +302,7 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 	u32 flags = 0;
 	u64 bo_offset = vma->bo_offset + (start - vma->start);
 
-	if (vma->bo && vma->bo->flags & XE_BO_INTERNAL_64K) {
+	if (vma_uses_64k_pages(vma)) {
 		if (page_size < SZ_64K)
 			page_size = SZ_64K;
 		if (pt->level == 1)
@@ -1465,7 +1470,7 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 
 	if (!pt->level) {
 		my_removed_pte = last_ofs - start_ofs + 1;
-		if (vma->bo && vma->bo->flags & XE_BO_INTERNAL_64K) {
+		if (vma_uses_64k_pages(vma)) {
 			start_ofs = start_ofs / 16;
 			last_ofs = last_ofs / 16;
 			my_removed_pte = last_ofs - start_ofs + 1;
@@ -1611,7 +1616,7 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 		u64 start;
 		u64 len;
 
-		if (entry->pt->level == 0 && vma->bo->flags & XE_BO_INTERNAL_64K) {
+		if (entry->pt->level == 0 && vma_uses_64k_pages(vma)) {
 			page_size = SZ_64K;
 			entry->flags |= GEN12_PDE_64K;
 		}
@@ -1746,7 +1751,7 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 	BUG_ON(!my_added_pte);
 
 	if (!pt->level) {
-		if (vma->bo && vma->bo->flags & XE_BO_INTERNAL_64K) {
+		if (vma_uses_64k_pages(vma)) {
 			start_ofs = start_ofs / 16;
 			last_ofs = last_ofs / 16;
 			my_added_pte = last_ofs + 1 - start_ofs;
@@ -1800,7 +1805,7 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 			u64 cur_end =
 				min(xe_pt_next_start(cur, pt->level), end);
 
-			if (vma->bo && vma->bo->flags & XE_BO_INTERNAL_64K && pt->level == 1)
+			if (vma_uses_64k_pages(vma) && pt->level == 1)
 				flags = GEN12_PDE_64K;
 
 			vm_dbg(&xe->drm, "\t%u: Populating %u/%u subentry %u level %u [%llx...%llx) f: 0x%x\n",
@@ -1928,7 +1933,7 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 		u64 len;
 		u64 end;
 
-		if (entry->pt->level == 0 && vma->bo->flags & XE_BO_INTERNAL_64K) {
+		if (entry->pt->level == 0 && vma_uses_64k_pages(vma)) {
 			page_size = SZ_64K;
 			entry->flags |= GEN12_PDE_64K;
 		}
