@@ -253,7 +253,8 @@ static void xe_migrate_res_sizes(struct ttm_resource *res,
 				 struct xe_res_cursor *cur,
 				 u64 *L0, u64 *L1)
 {
-	if (res->mem_type != TTM_PL_VRAM) {
+	if (res->mem_type != TTM_PL_VRAM ||
+	    (cur->start & (SZ_2M - 1))) {
 		*L1 = 0;
 		*L0 = cur->remaining;
 	} else {
@@ -298,7 +299,7 @@ static u32 pte_update_size(struct xe_migrate *m,
 		*L0_ofs = xe_migrate_vm_addr(pt_ofs, 0);
 
 		/* MI_STORE_DATA_IMM */
-		cmds = 3 * DIV_ROUND_UP(size / L0_size, 0x1ff);
+		cmds += 3 * DIV_ROUND_UP(size / L0_size, 0x1ff);
 
 		/* PDE qwords */
 		cmds += size / xe_migrate_pagesize(m) * 2;
@@ -421,7 +422,8 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 	xe_res_first(dst, 0, bo->size, &dst_it);
 
 	while (size) {
-		u32 batch_size = 8;
+		u32 batch_size = 8 + 512;	/* FIXME: 512 is hack to fix
+						   eviction bug, issue #52 */
 		struct xe_sched_job *job;
 		struct xe_bb *bb;
 		u32 num_src_pts;
