@@ -298,7 +298,8 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 	u64 bo_offset = vma->bo_offset + (start - vma->start);
 
 	if (vma->bo && vma->bo->flags & XE_BO_INTERNAL_64K) {
-		page_size = SZ_64K;
+		if (page_size < SZ_64K)
+			page_size = SZ_64K;
 		if (pt->level == 1)
 			flags = GEN12_PDE_64K;
 		else if (pt->level == 0) {
@@ -1603,10 +1604,17 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 	vm_dbg(&vm->xe->drm, "%u entries to update\n", num_entries);
 	for (i = 0; i < num_entries; i++) {
 		struct xe_vm_pgtable_update *entry = &entries[i];
-
-		u64 start = vma->start + entry->target_offset - vma->bo_offset;
-		u64 len = (u64)entry->qwords << xe_pt_shift(entry->pt->level);
+		u32 page_size = 1 << xe_pt_shift(entry->pt->level);
 		u64 end;
+		u64 start;
+		u64 len;
+
+		if (entry->pt->level == 0 && vma->bo->flags & XE_BO_INTERNAL_64K) {
+			page_size = SZ_64K;
+			entry->flags |= GEN12_PDE_64K;
+		}
+		start = vma->start + entry->target_offset - vma->bo_offset;
+		len = (u64)entry->qwords << page_size;
 
 		start = xe_pt_prev_end(start + 1, entry->pt->level);
 		end = start + len;
@@ -1913,10 +1921,17 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 	vm_dbg(&vm->xe->drm, "%u entries to update\n", num_entries);
 	for (i = 0; i < num_entries; i++) {
 		struct xe_vm_pgtable_update *entry = &entries[i];
-
-		u64 start = vma->start + entry->target_offset - vma->bo_offset;
-		u64 len = (u64)entry->qwords << xe_pt_shift(entry->pt->level);
+		u32 page_size = xe_pt_shift(entry->pt->level);
+		u64 start;
+		u64 len;
 		u64 end;
+
+		if (entry->pt->level == 0 && vma->bo->flags & XE_BO_INTERNAL_64K) {
+			page_size = SZ_64K;
+			entry->flags |= GEN12_PDE_64K;
+		}
+		start = vma->start + entry->target_offset - vma->bo_offset;
+		len = (u64)entry->qwords << page_size;
 
 		start = xe_pt_prev_end(start + 1, entry->pt->level);
 		end = start + len;
