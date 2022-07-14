@@ -460,8 +460,8 @@ static int ttm_bo_bounce_temp_buffer(struct ttm_buffer_object *bo,
 	return 0;
 }
 
-static int ttm_bo_evict(struct ttm_buffer_object *bo,
-			struct ttm_operation_ctx *ctx)
+int ttm_bo_evict(struct ttm_buffer_object *bo,
+		 struct ttm_operation_ctx *ctx)
 {
 	struct ttm_device *bdev = bo->bdev;
 	struct ttm_resource *evict_mem;
@@ -514,6 +514,7 @@ bounce:
 out:
 	return ret;
 }
+EXPORT_SYMBOL(ttm_bo_evict);
 
 bool ttm_bo_eviction_valuable(struct ttm_buffer_object *bo,
 			      const struct ttm_place *place)

@@ -162,6 +162,10 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 	mutex_init(&xe->persitent_engines.lock);
 	INIT_LIST_HEAD(&xe->persitent_engines.list);
 
+	spin_lock_init(&xe->pinned.lock);
+	INIT_LIST_HEAD(&xe->pinned.present);
+	INIT_LIST_HEAD(&xe->pinned.evicted);
+
 	return xe;
 
 err_put:

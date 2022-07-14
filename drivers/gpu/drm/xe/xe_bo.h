@@ -19,6 +19,7 @@
 	(IS_DGFX(xe) ? XE_BO_CREATE_VRAM_BIT : XE_BO_CREATE_SYSTEM_BIT)
 #define XE_BO_CREATE_GGTT_BIT		BIT(4)
 #define XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT BIT(5)
+#define XE_BO_CREATE_PINNED_BIT		BIT(6)
 /* this one is trigger internally only */
 #define XE_BO_INTERNAL_64K		BIT(31)
 
