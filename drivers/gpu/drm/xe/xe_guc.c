@@ -662,6 +662,11 @@ int xe_guc_reset_prepare(struct xe_guc *guc)
 	return xe_guc_submit_reset_prepare(guc);
 }
 
+void xe_guc_reset_wait(struct xe_guc *guc)
+{
+	xe_guc_submit_reset_wait(guc);
+}
+
 int xe_guc_stop(struct xe_guc *guc)
 {
 	int ret;
