@@ -47,6 +47,13 @@ static int xe_bo_placement_for_flags(struct xe_device *xe, struct xe_bo *bo,
 		XE_BUG_ON(!to_gt(xe)->mem.vram.size);
 		places[c++] = (struct ttm_place) {
 			.mem_type = TTM_PL_VRAM,
+			/*
+			 * For eviction / restore on suspend / resume objects
+			 * pinned in VRAM must be contiguous
+			 */
+			.flags = bo_flags & (XE_BO_CREATE_PINNED_BIT |
+					     XE_BO_CREATE_GGTT_BIT) ?
+				TTM_PL_FLAG_CONTIGUOUS : 0,
 		};
 	}
 
@@ -190,27 +197,26 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 		      struct ttm_place *hop)
 {
 	struct xe_bo *bo = ttm_to_xe_bo(ttm_bo);
-	struct ttm_resource *old_mem = bo->ttm.resource;
+	struct ttm_resource *old_mem = ttm_bo->resource;
 	struct xe_gt *gt;
 	struct dma_fence *fence;
 	int ret = 0;
-
-	xe_bo_vunmap(bo);
+	bool nounmap = false;
 
 	if (old_mem->mem_type == TTM_PL_SYSTEM && !ttm_bo->ttm) {
-		ttm_bo_move_null(&bo->ttm, new_mem);
+		ttm_bo_move_null(ttm_bo, new_mem);
 		goto out;
 	}
 
 	if (old_mem->mem_type == TTM_PL_SYSTEM &&
 	    (new_mem->mem_type == TTM_PL_TT)) {
-		ttm_bo_move_null(&bo->ttm, new_mem);
+		ttm_bo_move_null(ttm_bo, new_mem);
 		goto out;
 	}
 
 	if (old_mem->mem_type == TTM_PL_TT &&
 	    new_mem->mem_type == TTM_PL_SYSTEM) {
-		long timeout = dma_resv_wait_timeout(bo->ttm.base.resv,
+		long timeout = dma_resv_wait_timeout(ttm_bo->base.resv,
 						     DMA_RESV_USAGE_PREEMPT_FENCE,
 						     true,
 						     MAX_SCHEDULE_TIMEOUT);
@@ -218,8 +224,7 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 			ret = -ETIME;
 			goto out;
 		}
-		ttm_resource_free(ttm_bo, &ttm_bo->resource);
-		ttm_bo_assign_mem(ttm_bo, new_mem);
+		ttm_bo_move_null(ttm_bo, new_mem);
 		goto rebind;
 	}
 
@@ -231,30 +236,64 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 		hop->lpfn = 0;
 		hop->mem_type = TTM_PL_TT;
 		hop->flags = TTM_PL_FLAG_TEMPORARY;
-		return -EMULTIHOP;
+		ret = -EMULTIHOP;
+		goto out;
 	}
 
 	/* TODO: Determine GT based on (new,old)_mem->mem_type's VRAM on multitile */
 	gt = to_gt(ttm_to_xe_device(ttm_bo->bdev));
 
-	XE_BUG_ON(bo->ttm.pin_count);
 	XE_BUG_ON(!gt->migrate);
 
 	trace_xe_bo_move(bo);
-	fence = xe_migrate_copy(gt->migrate, bo, old_mem, new_mem);
-	if (IS_ERR(fence))
-		return PTR_ERR(fence);
 
-	ret = ttm_bo_move_accel_cleanup(&bo->ttm, fence, evict, true, new_mem);
-	dma_fence_put(fence);
+	if (xe_bo_is_pinned(bo)) {
+		/*
+		 * Memory that is pinned should only be moved on suspend /
+		 * resume, some of the pinned memory is required for the device
+		 * to resume / use the GPU to move other evicted memory (user
+		 * memory) around. This likely could be optimized a bit futher
+		 * where we find the minimum set of pinned memory required for
+		 * resume but for simplity doing a memcpy for all pinned memory.
+		 */
+		ret = xe_bo_vmap(bo);
+		if (!ret) {
+			ret = ttm_bo_move_memcpy(ttm_bo, ctx, new_mem);
+
+			/* Create a new VMAP once kernel BO back in VRAM */
+			if (!ret && new_mem->mem_type == TTM_PL_VRAM) {
+				void *new_addr = gt->mem.vram.mapping +
+					(new_mem->start << PAGE_SHIFT);
+
+				XE_BUG_ON(new_mem->start !=
+					  bo->placements->fpfn);
+
+				iosys_map_set_vaddr_iomem(&bo->vmap, new_addr);
+				nounmap = true;
+			}
+		}
+	} else {
+		fence = xe_migrate_copy(gt->migrate, bo, old_mem, new_mem);
+		if (IS_ERR(fence)) {
+			ret = PTR_ERR(fence);
+			goto out;
+		}
+		ret = ttm_bo_move_accel_cleanup(ttm_bo, fence, evict, true,
+						new_mem);
+		dma_fence_put(fence);
+	}
 
 rebind:
 	trace_printk("new_mem->mem_type=%d\n", new_mem->mem_type);
-	xe_bo_trigger_rebind(bo);
-	if (ttm_bo->base.dma_buf)
-		dma_buf_move_notify(ttm_bo->base.dma_buf);
+	if (!xe_bo_is_pinned(bo)) {
+		xe_bo_trigger_rebind(bo);
+		if (ttm_bo->base.dma_buf)
+			dma_buf_move_notify(ttm_bo->base.dma_buf);
+	}
 
 out:
+	if (!nounmap)
+		xe_bo_vunmap(bo);
 	return ret;
 
 }
@@ -492,18 +531,49 @@ int xe_bo_populate(struct xe_bo *bo)
 
 int xe_bo_pin(struct xe_bo *bo)
 {
-	int err = xe_bo_populate(bo);
-	if (err)
-		return err;
+	struct xe_device *xe = xe_bo_device(bo);
+	int err;
 
 	/* We currently don't expect user BO to be pinned */
 	XE_BUG_ON(bo->flags & XE_BO_CREATE_USER_BIT);
+
+	/* Pinned object must be in GGTT or have pinned flag */
+	XE_BUG_ON(!(bo->flags & (XE_BO_CREATE_PINNED_BIT |
+				 XE_BO_CREATE_GGTT_BIT)));
 
 	/*
 	 * No reason we can't support pinning imported dma-bufs we just don't
 	 * expect to pin an imported dma-buf.
 	 */
 	XE_BUG_ON(bo->ttm.base.import_attach);
+
+	/* We only expect at most 1 pin */
+	XE_BUG_ON(xe_bo_is_pinned(bo));
+
+	err = xe_bo_populate(bo);
+	if (err)
+		return err;
+
+	/*
+	 * For pinned objects in on DGFX, we expect these objects to be in
+	 * contiguous VRAM memory. Required eviction / restore during suspend /
+	 * resume (force restore to same physical address).
+	 */
+	if (IS_DGFX(xe)) {
+		struct ttm_place *place = &(bo->placements[0]);
+		bool lmem;
+
+		XE_BUG_ON(!(place->flags & TTM_PL_FLAG_CONTIGUOUS));
+		XE_BUG_ON(place->mem_type != TTM_PL_VRAM);
+
+		place->fpfn = xe_bo_addr(bo, 0, PAGE_SIZE, &lmem) >> PAGE_SHIFT;
+		place->lpfn = place->fpfn + (bo->size >> PAGE_SHIFT);
+
+		spin_lock(&xe->pinned.lock);
+		INIT_LIST_HEAD(&bo->pinned_link);
+		list_add_tail(&bo->pinned_link, &xe->pinned.present);
+		spin_unlock(&xe->pinned.lock);
+	}
 
 	ttm_bo_pin(&bo->ttm);
 
@@ -518,7 +588,20 @@ int xe_bo_pin(struct xe_bo *bo)
 
 void xe_bo_unpin(struct xe_bo *bo)
 {
+	struct xe_device *xe = xe_bo_device(bo);
+
 	XE_BUG_ON(bo->ttm.base.import_attach);
+	XE_BUG_ON(!xe_bo_is_pinned(bo));
+
+	if (IS_DGFX(xe)) {
+		XE_BUG_ON(list_empty(&bo->pinned_link));
+
+		spin_lock(&xe->pinned.lock);
+		list_del(&bo->pinned_link);
+		spin_unlock(&xe->pinned.lock);
+	}
+
+	__xe_bo_vunmap(bo);	/* FIXME: W/A for blow up in ttm_bo_vunmap */
 	ttm_bo_unpin(&bo->ttm);
 }
 
@@ -586,11 +669,13 @@ int xe_bo_vmap(struct xe_bo *bo)
 
 static void __xe_bo_vunmap(struct xe_bo *bo)
 {
-	if (iosys_map_is_null(&bo->vmap))
+	/* FIXME: W/A for blow up in ttm_bo_vunmap */
+	if (xe_bo_is_pinned(bo) && IS_DGFX(xe_bo_device(bo))) {
+		iosys_map_clear(&bo->vmap);
 		return;
+	}
 
 	ttm_bo_vunmap(&bo->ttm, &bo->vmap);
-	iosys_map_clear(&bo->vmap);
 }
 
 void xe_bo_vunmap(struct xe_bo *bo)

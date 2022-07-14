@@ -79,6 +79,16 @@ struct xe_device {
 		struct list_head list;
 	} persitent_engines;
 
+	/** @pinned: pinned BO state */
+	struct {
+		/** @lock: protected pinned BO list state */
+		spinlock_t lock;
+		/** @evicted: pinned BO that are present */
+		struct list_head present;
+		/** @evicted: pinned BO that have been evicted */
+		struct list_head evicted;
+	} pinned;
+
 	/** @ufence_wq: user fence wait queue */
 	wait_queue_head_t ufence_wq;
 
