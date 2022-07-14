@@ -27,6 +27,7 @@ void xe_guc_irq_handler(struct xe_guc *guc, const u16 iir);
 void xe_guc_sanitize(struct xe_guc *guc);
 void xe_guc_print_info(struct xe_guc *guc, struct drm_printer *p);
 int xe_guc_reset_prepare(struct xe_guc *guc);
+void xe_guc_reset_wait(struct xe_guc *guc);
 int xe_guc_stop(struct xe_guc *guc);
 int xe_guc_start(struct xe_guc *guc);
 
