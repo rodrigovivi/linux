@@ -141,6 +141,18 @@ int xe_uc_start(struct xe_uc *uc)
 	return xe_guc_start(&uc->guc);
 }
 
+static void uc_reset_wait(struct xe_uc *uc)
+{
+       int ret;
+
+again:
+       xe_guc_reset_wait(&uc->guc);
+
+       ret = xe_uc_reset_prepare(uc);
+       if (ret)
+               goto again;
+}
+
 int xe_uc_suspend(struct xe_uc *uc)
 {
 	int ret;
@@ -149,9 +161,7 @@ int xe_uc_suspend(struct xe_uc *uc)
 	if (!xe_gt_guc_submission_enabled(uc_to_gt(uc)))
 		return 0;
 
-	ret = xe_uc_reset_prepare(uc);
-	if (ret)
-		return ret;
+	uc_reset_wait(uc);
 
 	ret = xe_uc_stop(uc);
 	if (ret)

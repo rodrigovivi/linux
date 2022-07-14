@@ -1308,6 +1308,11 @@ int xe_guc_submit_reset_prepare(struct xe_guc *guc)
 	return ret;
 }
 
+void xe_guc_submit_reset_wait(struct xe_guc *guc)
+{
+	wait_event(guc->ct.wq, !atomic_read(&guc->submission_state.stopped));
+}
+
 int xe_guc_submit_stop(struct xe_guc *guc)
 {
 	struct xe_engine *e;
@@ -1361,6 +1366,8 @@ int xe_guc_submit_start(struct xe_guc *guc)
 	xa_for_each(&guc->submission_state.engine_lookup, index, e)
 		guc_engine_start(e);
 	mutex_unlock(&guc->submission_state.lock);
+
+	wake_up_all(&guc->ct.wq);
 
 	return 0;
 }
