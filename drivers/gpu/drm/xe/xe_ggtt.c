@@ -139,7 +139,8 @@ int xe_ggtt_init(struct xe_gt *gt, struct xe_ggtt *ggtt)
 
 	ggtt->scratch = xe_bo_create_locked(xe, NULL, GEN8_PAGE_SIZE,
 					    ttm_bo_type_kernel,
-					    XE_BO_CREATE_VRAM_IF_DGFX(xe));
+					    XE_BO_CREATE_VRAM_IF_DGFX(xe) |
+					    XE_BO_CREATE_PINNED_BIT);
 	if (IS_ERR(ggtt->scratch)) {
 		err = PTR_ERR(ggtt->scratch);
 		goto err_iomap;
@@ -236,20 +237,34 @@ void xe_ggtt_printk(struct xe_ggtt *ggtt, const char *prefix)
 	}
 }
 
-int xe_ggtt_insert_special_node(struct xe_ggtt *ggtt, struct drm_mm_node *node, u32 size, u32 align)
+int xe_ggtt_insert_special_node(struct xe_ggtt *ggtt, struct drm_mm_node *node,
+				u32 size, u32 align)
 {
 	int ret;
 
 	mutex_lock(&ggtt->lock);
-	ret = drm_mm_insert_node_generic(&ggtt->mm, node, size, align, 0, DRM_MM_INSERT_HIGH);
+	ret = drm_mm_insert_node_generic(&ggtt->mm, node, size, align, 0,
+					 DRM_MM_INSERT_HIGH);
 	mutex_unlock(&ggtt->lock);
 
 	return ret;
 }
 
+void xe_ggtt_map_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
+{
+	uint64_t start = bo->ggtt_node.start;
+	uint64_t offset, pte;
+
+	for (offset = 0; offset < bo->size; offset += GEN8_PAGE_SIZE) {
+		pte = gen8_pte_encode(bo, offset);
+		xe_ggtt_set_pte(ggtt, start + offset, pte);
+	}
+
+	xe_ggtt_invalidate(ggtt->gt);
+}
+
 int xe_ggtt_insert_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 {
-	uint64_t offset, pte;
 	int err;
 
 	if (XE_WARN_ON(bo->ggtt_node.size)) {
@@ -263,19 +278,9 @@ int xe_ggtt_insert_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 		return err;
 
 	mutex_lock(&ggtt->lock);
-
 	err = drm_mm_insert_node(&ggtt->mm, &bo->ggtt_node, bo->size);
-	if (!err) {
-		uint64_t start = bo->ggtt_node.start;
-
-		for (offset = 0; offset < bo->size; offset += GEN8_PAGE_SIZE) {
-			pte = gen8_pte_encode(bo, offset);
-			xe_ggtt_set_pte(ggtt, start + offset, pte);
-		}
-	}
-
-	xe_ggtt_invalidate(ggtt->gt);
-
+	if (!err)
+		xe_ggtt_map_bo(ggtt, bo);
 	mutex_unlock(&ggtt->lock);
 
 	return 0;

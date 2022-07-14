@@ -364,6 +364,7 @@ void xe_guc_ads_populate(struct xe_guc_ads *ads)
 
 	XE_BUG_ON(!ads->bo);
 
+	iosys_map_memset(ads_to_map(ads), 0, 0, guc_ads_size(ads));
 	guc_policies_init(ads);
 	fill_engine_enable_masks(gt, &info_map);
 	guc_prep_golden_context(ads);

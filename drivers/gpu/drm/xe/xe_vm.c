@@ -170,7 +170,8 @@ static struct xe_pt *xe_pt_create(struct xe_vm *vm, unsigned int level)
 
 	bo = xe_bo_create(vm->xe, vm, SZ_4K, ttm_bo_type_kernel,
 			  XE_BO_CREATE_VRAM_IF_DGFX(vm->xe) |
-			  XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT);
+			  XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT |
+			  XE_BO_CREATE_PINNED_BIT);
 	if (IS_ERR(bo)) {
 		err = PTR_ERR(bo);
 		goto err_kfree;
@@ -379,7 +380,7 @@ static void xe_pt_destroy(struct xe_pt *pt, uint32_t flags)
 	int numpdes = GEN8_PDES;
 
 	XE_BUG_ON(!list_empty(&pt->bo->vmas));
-	ttm_bo_unpin(&pt->bo->ttm);
+	xe_bo_unpin(pt->bo);
 	xe_bo_put(pt->bo);
 
 	if (pt->level == 0 && flags & XE_VM_FLAGS_64K)
@@ -1165,7 +1166,8 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
 		vm->scratch_bo = xe_bo_create(xe, vm, SZ_4K,
 					      ttm_bo_type_kernel,
 					      XE_BO_CREATE_VRAM_IF_DGFX(xe) |
-					      XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT);
+					      XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT |
+					      XE_BO_CREATE_PINNED_BIT);
 		if (IS_ERR(vm->scratch_bo)) {
 			err = PTR_ERR(vm->scratch_bo);
 			goto err_destroy_root;

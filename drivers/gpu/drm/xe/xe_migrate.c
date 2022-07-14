@@ -95,7 +95,8 @@ static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 
 	bo = xe_bo_create_pin_map(vm->xe, vm, num_entries * GEN8_PAGE_SIZE,
 				  ttm_bo_type_kernel,
-				  XE_BO_CREATE_VRAM_IF_DGFX(vm->xe));
+				  XE_BO_CREATE_VRAM_IF_DGFX(vm->xe) |
+				  XE_BO_CREATE_PINNED_BIT);
 	if (IS_ERR(bo))
 		return PTR_ERR(bo);
 
@@ -1008,7 +1009,8 @@ static void test_copy(struct xe_migrate *m, struct xe_bo *bo)
 
 	struct xe_bo *sysmem = xe_bo_create_pin_map(xe, m->eng->vm, bo->size,
 						    ttm_bo_type_kernel,
-						    XE_BO_CREATE_SYSTEM_BIT);
+						    XE_BO_CREATE_SYSTEM_BIT |
+						    XE_BO_CREATE_PINNED_BIT);
 	if (IS_ERR(sysmem)) {
 		drm_err(&xe->drm, "Failed to allocate sysmem bo for %s: %li\n", str, PTR_ERR(sysmem));
 		return;
@@ -1075,7 +1077,8 @@ static void test_addressing_2mb(struct xe_migrate *m)
 
 	bo = xe_bo_create_pin_map(xe, m->eng->vm, size,
 				  ttm_bo_type_kernel,
-				  XE_BO_CREATE_VRAM_BIT);
+				  XE_BO_CREATE_VRAM_BIT |
+				  XE_BO_CREATE_PINNED_BIT);
 
 	if (IS_ERR(bo)) {
 		drm_err(&xe->drm, "Failed to create a fake bo for testing pagetables: %li\n", PTR_ERR(bo));
@@ -1177,7 +1180,8 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 	}
 
 	big = xe_bo_create_pin_map(xe, m->eng->vm, SZ_4M, ttm_bo_type_kernel,
-				      XE_BO_CREATE_VRAM_IF_DGFX(xe));
+				      XE_BO_CREATE_VRAM_IF_DGFX(xe) |
+				      XE_BO_CREATE_PINNED_BIT);
 	if (IS_ERR(big)) {
 		drm_err(&xe->drm, "Failed to allocate bo: %li\n", PTR_ERR(big));
 		goto vunmap;
@@ -1188,7 +1192,8 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 
 	pt = xe_bo_create_pin_map(xe, m->eng->vm, GEN8_PAGE_SIZE, ttm_bo_type_kernel,
 				  XE_BO_CREATE_VRAM_IF_DGFX(xe) |
-				  XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT);
+				  XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT |
+				  XE_BO_CREATE_PINNED_BIT);
 	if (IS_ERR(pt)) {
 		drm_err(&xe->drm, "Failed to allocate fake pt: %li\n", PTR_ERR(pt));
 		goto free_big;
@@ -1198,7 +1203,8 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 		goto free_pt;
 
 	tiny = xe_bo_create_pin_map(xe, m->eng->vm, 2 * xe_migrate_pagesize(m), ttm_bo_type_kernel,
-				  XE_BO_CREATE_VRAM_IF_DGFX(xe));
+				  XE_BO_CREATE_VRAM_IF_DGFX(xe) |
+				  XE_BO_CREATE_PINNED_BIT);
 	if (IS_ERR(tiny)) {
 		drm_err(&xe->drm, "Failed to allocate fake pt: %li\n", PTR_ERR(pt));
 		goto free_pt;
