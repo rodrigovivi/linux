@@ -359,6 +359,11 @@ err_msg:
 	return err;
 }
 
+void xe_gt_migrate_wait(struct xe_gt *gt)
+{
+	xe_migrate_wait(gt->migrate);
+}
+
 struct xe_hw_engine *xe_gt_hw_engine(struct xe_gt *gt,
 				     enum xe_engine_class class,
 				     uint16_t instance, bool logical)

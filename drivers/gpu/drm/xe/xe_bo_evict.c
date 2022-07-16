@@ -25,17 +25,19 @@ int xe_bo_evict_all(struct xe_device *xe)
 	if (!IS_DGFX(xe))
 		return 0;
 
+	/* User memory */
 	man = ttm_manager_type(bdev, TTM_PL_VRAM);
 	ret = ttm_resource_manager_evict_all(bdev, man);
 	if (ret)
 		return ret;
 
 	/*
-	 * TODO: Likely need to block here on every migrate engine VM dma-resv
-	 * slot as we can't start moving that memory until all jobs on the
-	 * migrate engine are complete.
+	 * Wait for all user BO to be evicted as those evictions depend on the
+	 * memory moved below.
 	 */
+	xe_gt_migrate_wait(to_gt(xe));
 
+	/* Kernel memory */
 	spin_lock(&xe->pinned.lock);
 	list_for_each_entry_safe(bo, next, &xe->pinned.present, pinned_link) {
 		spin_unlock(&xe->pinned.lock);
