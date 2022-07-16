@@ -28,6 +28,7 @@ struct xe_migrate {
 	struct mutex job_mutex;
 	struct xe_bo *pt_bo;
 	u64 batch_base_ofs;
+	struct dma_fence *fence;
 
 	struct drm_suballoc_manager vm_update_sa;
 };
@@ -46,6 +47,7 @@ static void xe_migrate_fini(struct drm_device *dev, void *arg)
 	xe_bo_unpin(m->pt_bo);
 	xe_vm_unlock(m->eng->vm, &ww);
 
+	dma_fence_put(m->fence);
 	xe_bo_put(m->pt_bo);
 	drm_suballoc_manager_fini(&m->vm_update_sa);
 	mutex_destroy(&m->job_mutex);
@@ -531,6 +533,9 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 		fence = dma_fence_get(&job->drm.s_fence->finished);
 		xe_sched_job_push(job);
 
+		dma_fence_put(m->fence);
+		m->fence = dma_fence_get(fence);
+
 		mutex_unlock(&m->job_mutex);
 
 		xe_bb_free(bb, fence);
@@ -658,6 +663,10 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		xe_sched_job_arm(job);
 		fence = dma_fence_get(&job->drm.s_fence->finished);
 		xe_sched_job_push(job);
+
+		dma_fence_put(m->fence);
+		m->fence = dma_fence_get(fence);
+
 		mutex_unlock(&m->job_mutex);
 
 		xe_bb_free(bb, fence);
@@ -937,6 +946,12 @@ err_bb:
 err:
 	drm_suballoc_free(sa_bo, NULL, 0);
 	return ERR_PTR(err);
+}
+
+void xe_migrate_wait(struct xe_migrate *m)
+{
+	if (m->fence)
+		dma_fence_wait(m->fence, false);
 }
 
 static bool sanity_fence_failed(struct xe_device *xe, struct dma_fence *fence, const char *str)
