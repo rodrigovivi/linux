@@ -10,8 +10,8 @@
 #include <linux/vga_switcheroo.h>
 
 #include <drm/drm_drv.h>
-#include <drm/i915_pciids.h>
 #include <drm/drm_color_mgmt.h>
+#include <drm/xe_pciids.h>
 
 #include "xe_drv.h"
 #include "xe_device.h"
@@ -401,6 +401,11 @@ static const struct intel_device_info pvc_info = {
 
 #undef PLATFORM
 
+#define INTEL_VGA_DEVICE(id, info) {			\
+	PCI_DEVICE(PCI_VENDOR_ID_INTEL, id),		\
+	PCI_BASE_CLASS_DISPLAY << 16, 0xff << 16,	\
+	(unsigned long) info }
+
 /*
  * Make sure any device matches here are from most specific to most
  * general.  For example, since the Quanta match is based on the subsystem
@@ -408,15 +413,17 @@ static const struct intel_device_info pvc_info = {
  * PCI ID matches, otherwise we'll use the wrong info struct above.
  */
 static const struct pci_device_id pciidlist[] = {
-	INTEL_TGL_12_GT2_IDS(&tgl_info),
-	INTEL_DG1_IDS(&dg1_info),
-	INTEL_ATS_M_IDS(&ats_m_info),
-	INTEL_DG2_IDS(&ats_m_info), /* TODO: switch to proper dg2_info */
-	INTEL_ADLS_IDS(&adl_s_info),
-	INTEL_PVC_IDS(&pvc_info),
-	{0, 0, 0}
+	XE_TGL_GT2_IDS(INTEL_VGA_DEVICE, &tgl_info),
+	XE_DG1_IDS(INTEL_VGA_DEVICE, &dg1_info),
+	XE_ATS_M_IDS(INTEL_VGA_DEVICE, &ats_m_info),
+	XE_DG2_IDS(INTEL_VGA_DEVICE, &ats_m_info), /* TODO: switch to proper dg2_info */
+	XE_ADLS_IDS(INTEL_VGA_DEVICE, &adl_s_info),
+	XE_PVC_IDS(INTEL_VGA_DEVICE, &pvc_info),
+	{ }
 };
 MODULE_DEVICE_TABLE(pci, pciidlist);
+
+#undef INTEL_VGA_DEVICE
 
 static void xe_pci_remove(struct pci_dev *pdev)
 {
