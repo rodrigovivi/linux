@@ -308,7 +308,7 @@ struct drm_xe_vm_create {
 };
 
 struct drm_xe_vm_destroy {
-	/** @vm_id: Returned VM ID */
+	/** @vm_id: VM ID */
 	__u32 vm_id;
 
 	/** @pad: MBZ */
@@ -345,8 +345,8 @@ struct drm_xe_vm_bind_op {
 	__u32 op;
 
 #define XE_VM_BIND_OP_MAP		0x0
-#define XE_VM_BIND_OP_UNMAP		0X1
-#define XE_VM_BIND_OP_MAP_USERPTR	0X2
+#define XE_VM_BIND_OP_UNMAP		0x1
+#define XE_VM_BIND_OP_MAP_USERPTR	0x2
 #define XE_VM_BIND_OP_RESTART		0x3
 
 #define XE_VM_BIND_FLAG_READONLY	(0x1 << 16)
@@ -438,7 +438,7 @@ struct drm_xe_engine_set_property {
 	/** @extensions: Pointer to the first extension struct, if any */
 	__u64 extensions;
 
-	/** @engine_id: Returned engine ID */
+	/** @engine_id: Engine ID */
 	__u32 engine_id;
 
 	/** @property: property to set */
@@ -497,7 +497,7 @@ struct drm_xe_engine_create {
 };
 
 struct drm_xe_engine_destroy {
-	/** @vm_id: Returned VM ID */
+	/** @vm_id: VM ID */
 	__u32 engine_id;
 
 	/** @pad: MBZ */
