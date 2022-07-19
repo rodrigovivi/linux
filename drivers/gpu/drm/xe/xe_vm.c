@@ -2454,16 +2454,21 @@ static struct async_op *next_async_op(struct xe_vm *vm)
 					struct async_op, link);
 }
 
+static void vm_set_async_error(struct xe_vm *vm, int err)
+{
+	lockdep_assert_held(&vm->lock);
+	vm->async_ops.error = err;
+}
+
 static void async_op_work_func(struct work_struct *w)
 {
 	struct xe_vm *vm = container_of(w, struct xe_vm, async_ops.work);
-	bool munmap_rebind = false;
 
 	for (;;) {
 		struct async_op *op;
 		int err;
 
-		if (vm->async_ops.pause && !xe_vm_is_closed(vm))
+		if (vm->async_ops.error && !xe_vm_is_closed(vm))
 			break;
 
 		spin_lock_irq(&vm->async_ops.lock);
@@ -2506,16 +2511,18 @@ again:
 			 * ensure this.
 			 *
 			 * XXX: If we encounter an error mid-batch we are likely
-			 * broken. Workable problem but something to keep in
-			 * mind.
+			 * broken for compute mode VMs.
 			 */
 			if (!err && ((first && VM_BIND_OP(op->bind_op.op) ==
-				      XE_VM_BIND_OP_UNMAP) || munmap_rebind)) {
+				      XE_VM_BIND_OP_UNMAP) ||
+				     vm->async_ops.munmap_rebind_inflight)) {
 				if (last) {
 					op->vma->last_munmap_rebind = false;
-					munmap_rebind = false;
+					vm->async_ops.munmap_rebind_inflight =
+						false;
 				} else {
-					munmap_rebind = true;
+					vm->async_ops.munmap_rebind_inflight =
+						true;
 
 					async_op_cleanup(vm, op);
 
@@ -2528,7 +2535,6 @@ again:
 					goto again;
 				}
 			}
-			up_write(&vm->lock);
 			if (err) {
 				trace_xe_vma_fail(op->vma);
 				drm_warn(&vm->xe->drm, "Async VM op(%d) failed with %d",
@@ -2539,8 +2545,8 @@ again:
 				list_add(&op->link, &vm->async_ops.pending);
 				spin_unlock_irq(&vm->async_ops.lock);
 
-				vm->async_ops.pause = true;
-				smp_mb();
+				vm_set_async_error(vm, err);
+				up_write(&vm->lock);
 
 				if (vm->async_ops.error_capture.addr)
 					vm_async_op_error_capture(vm, err,
@@ -2549,6 +2555,7 @@ again:
 								  op->bind_op.range);
 				break;
 			}
+			up_write(&vm->lock);
 		} else {
 			trace_xe_vma_flush(op->vma);
 
@@ -2629,7 +2636,7 @@ static int __vm_bind_ioctl_async(struct xe_vm *vm, struct xe_vma *vma,
 	list_add_tail(&op->link, &vm->async_ops.pending);
 	spin_unlock_irq(&vm->async_ops.lock);
 
-	if (!vm->async_ops.pause)
+	if (!vm->async_ops.error)
 		queue_work(system_unbound_wq, &vm->async_ops.work);
 
 	return 0;
@@ -3230,12 +3237,15 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 			err = -ENOTSUPP;
 		if (XE_IOCTL_ERR(xe, !err && args->num_syncs))
 			err = EINVAL;
-		if (XE_IOCTL_ERR(xe, !err && !vm->async_ops.pause))
+		if (XE_IOCTL_ERR(xe, !err && !vm->async_ops.error))
 			err = -EPROTO;
 
 		if (!err) {
+			down_write(&vm->lock);
 			trace_xe_vm_restart(vm);
-			vm->async_ops.pause = false;
+			vm_set_async_error(vm, 0);
+			up_write(&vm->lock);
+
 			queue_work(system_unbound_wq, &vm->async_ops.work);
 		}
 
@@ -3245,7 +3255,7 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		return err;
 	}
 
-	if (XE_IOCTL_ERR(xe, !vm->async_ops.pause &&
+	if (XE_IOCTL_ERR(xe, !vm->async_ops.error &&
 			 async != !!(vm->flags & XE_VM_FLAG_ASYNC_BIND_OPS))) {
 		err = -ENOTSUPP;
 		goto put_engine;
