@@ -38,6 +38,8 @@ struct xe_device {
 		bool is_dgfx;
 		/** @platform: XE platform enum */
 		enum xe_platform platform;
+		/** @subplatform: XE subplatform enum */
+		enum xe_subplatform subplatform;
 		/** @devid: device ID */
 		u16 devid;
 		/** @revid: device revision */
