@@ -145,6 +145,12 @@ typedef u32 intel_engine_mask_t;
 	func(overlay_needs_physical); \
 	func(supports_tv);
 
+struct xe_subplatform_info {
+	enum xe_subplatform subplatform;
+	const char *name;
+	const u16 *pciidlist;
+};
+
 struct intel_device_info {
 	u8 graphics_ver;
 	u8 graphics_rel;
@@ -155,6 +161,7 @@ struct intel_device_info {
 
 	enum xe_platform platform;
 	const char *platform_name;
+	const struct xe_subplatform_info *subplatforms;
 
 	u8 dma_mask_size; /* available DMA address bits */
 
@@ -207,8 +214,11 @@ struct intel_device_info {
 	u8 vm_max_level;
 };
 
-#define PLATFORM(x) .platform = (x), \
-		    .platform_name = #x
+#define PLATFORM(x)		\
+	.platform = (x),	\
+	.platform_name = #x
+
+#define NOP(x)	x
 
 /* Keep in gen based order, and chronological order within a gen */
 
@@ -351,6 +361,10 @@ static const struct intel_device_info dg1_info = {
 	.media_ver = 12, \
 	.media_rel = 50
 
+static const u16 dg2_g10_ids[] = { XE_DG2_G10_IDS(NOP), 0 };
+static const u16 dg2_g11_ids[] = { XE_DG2_G11_IDS(NOP), 0 };
+static const u16 dg2_g12_ids[] = { XE_DG2_G12_IDS(NOP), 0 };
+
 static const struct intel_device_info ats_m_info = {
 	XE_HP_FEATURES,
 	XE_HPM_FEATURES,
@@ -360,6 +374,12 @@ static const struct intel_device_info ats_m_info = {
 	.graphics_rel = 55,
 	.media_rel = 55,
 	PLATFORM(XE_DG2),
+	.subplatforms = (const struct xe_subplatform_info[]) {
+		{ XE_SUBPLATFORM_DG2_G10, "G10", dg2_g10_ids },
+		{ XE_SUBPLATFORM_DG2_G11, "G11", dg2_g11_ids },
+		{ XE_SUBPLATFORM_DG2_G12, "G12", dg2_g12_ids },
+		{ }
+	},
 	.platform_engine_mask =
 		BIT(XE_HW_ENGINE_RCS0) | BIT(XE_HW_ENGINE_BCS0) |
 		BIT(XE_HW_ENGINE_VECS0) | BIT(XE_HW_ENGINE_VECS1) |
@@ -425,6 +445,20 @@ MODULE_DEVICE_TABLE(pci, pciidlist);
 
 #undef INTEL_VGA_DEVICE
 
+static const struct xe_subplatform_info *
+subplatform_get(const struct xe_device *xe, const struct intel_device_info *devinfo)
+{
+	const struct xe_subplatform_info *sp;
+	const u16 *id;
+
+	for (sp = devinfo->subplatforms; sp->subplatform; sp++)
+		for (id = sp->pciidlist; *id; id++)
+			if (*id == xe->info.devid)
+				return sp;
+
+	return NULL;
+}
+
 static void xe_pci_remove(struct pci_dev *pdev)
 {
 	struct xe_device *xe;
@@ -440,6 +474,7 @@ static void xe_pci_remove(struct pci_dev *pdev)
 static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	const struct intel_device_info *devinfo = (void *)ent->driver_data;
+	const struct xe_subplatform_info *sbi;
 	struct xe_device *xe;
 	int err;
 
@@ -475,8 +510,12 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	xe->info.tile_count = devinfo->has_tiles ? 1 : 0;
 	xe->info.vm_max_level = devinfo->vm_max_level;
 
-	drm_dbg(&xe->drm, "%s %04x:%04x dgfx:%d gfx100:%d dma_m_s:%d tc:%d",
-		devinfo->platform_name, xe->info.devid, xe->info.revid,
+	sbi = subplatform_get(xe, devinfo);
+	xe->info.subplatform = sbi ? sbi->subplatform : XE_SUBPLATFORM_NONE;
+
+	drm_dbg(&xe->drm, "%s %s %04x:%04x dgfx:%d gfx100:%d dma_m_s:%d tc:%d",
+		devinfo->platform_name, sbi ? sbi->name : "",
+		xe->info.devid, xe->info.revid,
 		xe->info.is_dgfx, xe->info.graphics_verx100,
 		xe->info.dma_mask_size, xe->info.tile_count);
 
