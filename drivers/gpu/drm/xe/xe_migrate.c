@@ -991,6 +991,7 @@ static int run_sanity_job(struct xe_migrate *m, struct xe_device *xe, struct xe_
 	if (sanity_fence_failed(xe, fence, str))
 		return -ETIMEDOUT;
 
+	dma_fence_put(fence);
 	drm_dbg(&xe->drm, "%s: Job completed\n", str);
 	return 0;
 }
@@ -1045,6 +1046,7 @@ static void test_copy(struct xe_migrate *m, struct xe_bo *bo)
                 retval = iosys_map_rd(&sysmem->vmap, sysmem->size - 8, u64);
                 check(retval, expected, "sysmem last offset should be cleared");
 	}
+	dma_fence_put(fence);
 
 	/* Try to copy 0xc0 from sysmem to lmem with 2MB or 64KiB/4KiB pages */
 	iosys_map_memset(&sysmem->vmap, 0, 0xc0, sysmem->size);
@@ -1057,6 +1059,7 @@ static void test_copy(struct xe_migrate *m, struct xe_bo *bo)
 		retval = iosys_map_rd(&bo->vmap, bo->size - 8, u64);
 		check(retval, expected, "sysmem -> vram bo offset should be copied");
 	}
+	dma_fence_put(fence);
 
 	/* And other way around.. slightly hacky.. */
 	iosys_map_memset(&sysmem->vmap, 0, 0xd0, sysmem->size);
@@ -1069,6 +1072,7 @@ static void test_copy(struct xe_migrate *m, struct xe_bo *bo)
 		retval = iosys_map_rd(&sysmem->vmap, bo->size - 8, u64);
 		check(retval, expected, "vram -> sysmem bo last offset should be copied");
 	}
+	dma_fence_put(fence);
 
 free_sysmem:
 	xe_bo_unpin(sysmem);
@@ -1167,6 +1171,7 @@ static void test_pt_update(struct xe_migrate *m, struct xe_bo *pt)
 	if (sanity_fence_failed(xe, fence, "Migration pagetable update"))
 		return;
 
+	dma_fence_put(fence);
 	retval = iosys_map_rd(&pt->vmap, 0, u64);
 	check(retval, expected, "PTE[0] must stay untouched");
 
@@ -1273,6 +1278,8 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 	fence = xe_migrate_clear(m, tiny, expected);
 	if (sanity_fence_failed(xe, fence, "Clearing small bo"))
 		goto out;
+
+	dma_fence_put(fence);
 	retval = iosys_map_rd(&tiny->vmap, 0, u32);
 	check(retval, expected, "Command clear small first value");
 	retval = iosys_map_rd(&tiny->vmap, tiny->size - 4, u32);
@@ -1288,6 +1295,7 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 	if (sanity_fence_failed(xe, fence, "Clearing big bo"))
 		goto out;
 
+	dma_fence_put(fence);
 	retval = iosys_map_rd(&big->vmap, 0, u32);
 	check(retval, expected, "Command clear big first value");
 	retval = iosys_map_rd(&big->vmap, big->size - 4, u32);
