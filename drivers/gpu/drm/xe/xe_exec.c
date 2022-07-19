@@ -129,6 +129,10 @@ static int xe_exec_begin(struct xe_engine *e, struct ww_acquire_ctx *ww,
 		list_for_each_entry(vma, &vm->evict_list, evict_link) {
 			err = xe_bo_validate(vma->bo, vm);
 			if (err) {
+				/*
+				 * XXX: Do we put the VM in an error state if
+				 * the VM is using async VM bind ops?
+				 */
 				ttm_eu_backoff_reservation(ww, objs);
 				return err;
 			}
@@ -234,6 +238,25 @@ retry:
 	err = down_read_interruptible(&vm->lock);
 	if (err)
 		goto err_syncs;
+
+	/* We don't allow execs while the VM is in error state */
+	if (vm->async_ops.error) {
+		err = vm->async_ops.error;
+		goto err_unlock_list;
+	}
+
+	/*
+	 * Extreme corner where we exit a VM error state with a munmap style VM
+	 * unbind inflight which requires a rebind. In this case the rebind
+	 * needs to install some fences into the dma-resv slots. The worker to
+	 * do this queued, let that worker make progress by dropping vm->lock,
+	 * flushing the worker and retrying the exec.
+	 */
+	if (vm->async_ops.munmap_rebind_inflight) {
+		up_read(&vm->lock);
+		flush_work(&vm->async_ops.work);
+		goto retry;
+	}
 
 	err = xe_vm_userptr_pin(vm, false);
 	if (err)

@@ -207,8 +207,13 @@ struct xe_vm {
 			/** @seqno: seqno of async fence */
 			u32 seqno;
 		} fence;
-		/** @pause: pause all pending async VM ops */
-		bool pause;
+		/** @error: error state for async VM ops */
+		int error;
+		/**
+		 * @munmap_rebind_inflight: an munmap style VM bind is in the
+		 * middle of a set of ops which requires a rebind at the end.
+		 */
+		bool munmap_rebind_inflight;
 	} async_ops;
 
 	/** @userptr: user pointer state */
