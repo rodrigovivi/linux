@@ -676,6 +676,73 @@ err:
 	return fence;
 }
 
+static struct dma_fence *
+xe_migrate_update_pgtables_cpu(struct xe_migrate *m,
+			       struct xe_vm *vm,
+			       struct xe_bo *bo,
+			       struct xe_engine *eng,
+			       struct xe_vm_pgtable_update *updates, u32 num_updates,
+			       struct xe_sync_entry *syncs, u32 num_syncs,
+			       xe_migrate_populatefn_t populatefn,
+			       void *arg)
+{
+	int err = 0;
+	u32 i, j;
+	struct ttm_bo_kmap_obj maps[9];
+
+	BUG_ON(num_updates > ARRAY_SIZE(maps));
+
+	for (i = 0; i < num_syncs; i++) {
+		err = xe_sync_entry_wait(&syncs[i]);
+		if (err)
+			return ERR_PTR(err);
+	}
+
+	if (bo) {
+		long wait;
+
+		wait = dma_resv_wait_timeout(bo->ttm.base.resv,
+					     DMA_RESV_USAGE_KERNEL,
+					     true, MAX_SCHEDULE_TIMEOUT);
+		if (wait <= 0)
+			return ERR_PTR(-ETIME);
+	}
+
+	for (i = 0; i < num_updates; i++) {
+		err = ttm_bo_kmap(&updates[i].pt_bo->ttm, 0,
+				  updates[i].pt_bo->size / GEN8_PAGE_SIZE, &maps[i]);
+		if (err)
+			goto unmap;
+	}
+
+	for (i = 0; i < num_updates; i++) {
+		bool is_iomem;
+		struct xe_vm_pgtable_update *update = &updates[i];
+		u64 *map_u64 = ttm_kmap_obj_virtual(&maps[i], &is_iomem);
+
+		if (is_iomem) {
+			u64 val[512];
+
+			populatefn(&val, update->ofs, update->qwords,  update, arg);
+			for (j = 0; j < update->qwords; j++)
+				writeq(val[j], (u64 __iomem *)&map_u64[j + update->ofs]);
+		} else {
+			populatefn(&map_u64[update->ofs], update->ofs,
+				   update->qwords, update, arg);
+		}
+	}
+
+unmap:
+	while (i-- > 0)
+		ttm_bo_kunmap(&maps[i]);
+
+	if (err)
+		return ERR_PTR(err);
+
+	return dma_fence_get_stub();
+}
+
+
 static void write_pgtable(struct xe_bb *bb, u64 ppgtt_ofs,
 			  struct xe_vm_pgtable_update *update,
 			  xe_migrate_populatefn_t populatefn, void *arg)
@@ -735,6 +802,20 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	u32 i, batch_size, ppgtt_ofs, update_idx;
 	u64 addr;
 	int err = 0;
+
+	if (gt_to_xe(gt)->info.platform == XE_DG2) {
+		fence = xe_migrate_update_pgtables_cpu(m, vm, bo, eng, updates,
+						       num_updates, syncs,
+						       num_syncs, populatefn,
+						       arg);
+		if (IS_ERR(fence))
+			return fence;
+
+		for (i = 0; i < num_syncs; ++i)
+			xe_sync_entry_signal(&syncs[i], NULL, fence);
+
+		return fence;
+	}
 
 	/* fixed + PTE entries */
 	batch_size = 6 + num_updates * 2;

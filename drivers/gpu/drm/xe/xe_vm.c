@@ -286,7 +286,7 @@ static bool vma_uses_64k_pages(struct xe_vma *vma)
 }
 
 static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
-				  u64 start, u64 end, bool rebind)
+				  u64 start, u64 end, bool rebind, u32 idx)
 {
 	u32 start_ofs = xe_pt_idx(start, pt->level);
 	u32 last_ofs = xe_pt_idx(end - 1, pt->level);
@@ -313,8 +313,8 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 		}
 	}
 
-	vm_dbg(&vm->xe->drm, "\t\t%u: %d..%d F:0x%x\n", pt->level,
-	       start_ofs, last_ofs, flags);
+	vm_dbg(&vm->xe->drm, "\t\t%u: %d..%d F:0x%x 0x%x %d\n", pt->level,
+	       start_ofs, last_ofs, flags, page_size, idx);
 
 	if (pt->level) {
 		u64 cur = start;
@@ -338,7 +338,7 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 			if (pte) {
 				err = xe_pt_populate_for_vma(vma, pte,
 							     cur, cur_end,
-							     rebind);
+							     rebind, i);
 				if (err)
 					return err;
 			}
@@ -1617,7 +1617,6 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 
 		if (entry->pt->level == 0 && vma_uses_64k_pages(vma)) {
 			page_size = SZ_64K;
-			entry->flags |= GEN12_PDE_64K;
 		}
 		start = vma->start + entry->target_offset - vma->bo_offset;
 		len = (u64)entry->qwords << page_size;
@@ -1625,9 +1624,9 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 		start = xe_pt_prev_end(start + 1, entry->pt->level);
 		end = start + len;
 
-		vm_dbg(&vm->xe->drm, "\t%u: Update level %u at (%u + %u) [%llx...%llx)\n",
+		vm_dbg(&vm->xe->drm, "\t%u: Update level %u at (%u + %u) [%llx...%llx) f:%x\n",
 		       i, entry->pt->level, entry->ofs, entry->qwords,
-		       start, end);
+		       start, end, entry->flags);
 	}
 
 
@@ -1807,7 +1806,7 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 			if (vma_uses_64k_pages(vma) && pt->level == 1)
 				flags = GEN12_PDE_64K;
 
-			vm_dbg(&xe->drm, "\t%u: Populating %u/%u subentry %u level %u [%llx...%llx) f: 0x%x\n",
+			vm_dbg(&xe->drm, "\t%u: Populating %u/%u subentry %u level %u [%llx...%llx) f:%x\n",
 			       pt->level, i + 1, my_added_pte,
 			       start_ofs + i, pt->level - 1, cur, cur_end, flags);
 
@@ -1825,7 +1824,8 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 
 			if (entry) {
 				err = xe_pt_populate_for_vma(vma, entry, cur,
-							     cur_end, rebind);
+							     cur_end, rebind,
+							     start_ofs + i);
 				if (err) {
 					xe_pt_destroy(entry, vma->vm->flags);
 					goto unwind;
@@ -1934,7 +1934,6 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 
 		if (entry->pt->level == 0 && vma_uses_64k_pages(vma)) {
 			page_size = SZ_64K;
-			entry->flags |= GEN12_PDE_64K;
 		}
 		start = vma->start + entry->target_offset - vma->bo_offset;
 		len = (u64)entry->qwords << page_size;
@@ -1942,9 +1941,9 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 		start = xe_pt_prev_end(start + 1, entry->pt->level);
 		end = start + len;
 
-		vm_dbg(&vm->xe->drm, "\t%u: Update level %u at (%u + %u) [%llx...%llx)\n",
+		vm_dbg(&vm->xe->drm, "\t%u: Update level %u at (%u + %u) [%llx...%llx) f:%x\n",
 		       i, entry->pt->level, entry->ofs, entry->qwords,
-		       start, end);
+		       start, end, entry->flags);
 	}
 
 	fence = xe_migrate_update_pgtables(gt->migrate,
@@ -3069,65 +3068,6 @@ free_objs:
 	if (args->num_binds > 1)
 		kfree(bind_ops);
 	return err;
-}
-
-static char *xe_dump_prefix_lvl[5] = { "     ", "    ", "   ", "  ", " "};
-
-static void dump_pgtt_lvl(struct xe_vm *vm, struct xe_pt *pt, int lvl, int tag64k)
-{
-	struct xe_pt_dir *pt_dir;
-	int i;
-	int err;
-	struct ttm_bo_kmap_obj map;
-
-	if (lvl == 0) {
-		err = __xe_pt_kmap(pt, &map);
-		if (!err) {
-			char *mode = "M4k";
-			int numpt = GEN8_PDES;
-
-			if (tag64k) {
-				numpt = 32;
-				mode = "M64k";
-			}
-			for (i = 0; i < numpt; i++) {
-				uint64_t v = __xe_pt_read(&map, i);
-
-				if (v) {
-					drm_info(&vm->xe->drm, "L%d %s index %d <0x%llx> %s\n",
-						lvl, xe_dump_prefix_lvl[lvl], i, v, mode);
-				}
-			}
-			ttm_bo_kunmap(&map);
-		}
-		return;
-	}
-	pt_dir = as_xe_pt_dir(pt);
-	err = __xe_pt_kmap(pt, &map);
-	if (!err) {
-		for (i = 0; i < GEN8_PDES; i++) {
-			if (pt_dir->entries[i]) {
-				uint64_t v = 0;
-				int is_64k = 0;
-
-				v = __xe_pt_read(&map, i);
-				is_64k = v & GEN12_PDE_64K;
-				drm_info(&vm->xe->drm, "L%d %s index %d exist <0x%llx> %s\n",
-					lvl, xe_dump_prefix_lvl[lvl], i, v, (is_64k)?"64k":"");
-				dump_pgtt_lvl(vm, pt_dir->entries[i], lvl-1, is_64k);
-			}
-		}
-		ttm_bo_kunmap(&map);
-	}
-}
-
-void xe_vm_dump_pgtt(struct xe_vm *vm)
-{
-	struct xe_pt *pt =  vm->pt_root;
-	uint64_t desc = xe_vm_pdp4_descriptor(vm);
-
-	drm_info(&vm->xe->drm, "dump_pgtt desc=0x%llx bo(%p)\n", desc, vm->pt_root->bo);
-	dump_pgtt_lvl(vm, pt, vm->xe->info.vm_max_level, 0);
 }
 
 /*
