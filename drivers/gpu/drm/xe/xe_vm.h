@@ -88,8 +88,6 @@ u64 gen8_pte_encode(struct xe_vma *vma, struct xe_bo *bo,
 
 extern struct ttm_device_funcs xe_ttm_funcs;
 
-void xe_vm_dump_pgtt(struct xe_vm *vm);
-
 struct ttm_buffer_object *xe_vm_ttm_bo(struct xe_vm *vm);
 
 #endif /* _XE_VM_H_ */
