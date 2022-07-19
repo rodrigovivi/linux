@@ -320,8 +320,7 @@ struct drm_xe_vm_destroy {
 
 struct drm_xe_vm_bind_op {
 	/**
-	 * @obj: GEM object to operate on, MBZ for MAP_USERPTR, MBZ for UNMAP if
-	 * VMA is a userptr
+	 * @obj: GEM object to operate on, MBZ for MAP_USERPTR, MBZ for UNMAP
 	 */
 	__u32 obj;
 

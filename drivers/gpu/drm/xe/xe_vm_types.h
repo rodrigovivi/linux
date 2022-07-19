@@ -42,6 +42,22 @@ struct xe_vma {
 	/** @destroyed: VMA is destroyed */
 	bool destroyed;
 
+	/**
+	 * @first_munmap_rebind: VMA is first in a sequence of ops that triggers
+	 * a rebind (munmap style VM unbinds). This indicates the operation
+	 * using this VMA must wait on all dma-resv slots (wait for pending jobs
+	 * / trigger preempt fences).
+	 */
+	bool first_munmap_rebind;
+
+	/**
+	 * @last_munmap_rebind: VMA is first in a sequence of ops that triggers
+	 * a rebind (munmap style VM unbinds). This indicates the operation
+	 * using this VMA must install itself into kernel dma-resv slot (blocks
+	 * future jobs) and kick the rebind work in compute mode.
+	 */
+	bool last_munmap_rebind;
+
 	union {
 		/** @bo_link: link into BO if not a userptr */
 		struct list_head bo_link;
@@ -51,6 +67,12 @@ struct xe_vma {
 
 	/** @evict_link: link into VM if this VMA has been evicted */
 	struct list_head evict_link;
+
+	/**
+	 * @unbind_link: link or list head if an unbind of multiple VMAs, in
+	 * single unbind op, is being done.
+	 */
+	struct list_head unbind_link;
 
 	/** @userptr: user pointer state */
 	struct {
@@ -185,8 +207,13 @@ struct xe_vm {
 			/** @seqno: seqno of async fence */
 			u32 seqno;
 		} fence;
-		/** @pause: pause all pending async VM ops */
-		bool pause;
+		/** @error: error state for async VM ops */
+		int error;
+		/**
+		 * @munmap_rebind_inflight: an munmap style VM bind is in the
+		 * middle of a set of ops which requires a rebind at the end.
+		 */
+		bool munmap_rebind_inflight;
 	} async_ops;
 
 	/** @userptr: user pointer state */
