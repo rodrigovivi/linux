@@ -27,7 +27,6 @@
 #include <drm/drm_gem.h>
 
 #include "display/intel_display.h"
-#include "display/intel_frontbuffer.h"
 #include "gem/i915_gem_lmem.h"
 #include "gem/i915_gem_tiling.h"
 #include "gt/intel_engine.h"
@@ -1900,17 +1899,6 @@ int _i915_vma_move_to_active(struct i915_vma *vma,
 		err = dma_resv_reserve_fences(vma->obj->base.resv, idx);
 		if (unlikely(err))
 			return err;
-	}
-
-	if (flags & EXEC_OBJECT_WRITE) {
-		struct intel_frontbuffer *front;
-
-		front = __intel_frontbuffer_get(obj);
-		if (unlikely(front)) {
-			if (intel_frontbuffer_invalidate(front, ORIGIN_CS))
-				i915_active_add_request(&front->write, rq);
-			intel_frontbuffer_put(front);
-		}
 	}
 
 	if (fence) {
