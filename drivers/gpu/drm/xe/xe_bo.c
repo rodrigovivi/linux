@@ -559,7 +559,8 @@ int xe_bo_pin(struct xe_bo *bo)
 	 * contiguous VRAM memory. Required eviction / restore during suspend /
 	 * resume (force restore to same physical address).
 	 */
-	if (IS_DGFX(xe)) {
+	if (IS_DGFX(xe) && !(IS_ENABLED(CONFIG_DRM_XE_DEBUG) &&
+	    bo->flags & XE_BO_INTERNAL_TEST)) {
 		struct ttm_place *place = &(bo->placements[0]);
 		bool lmem;
 
@@ -593,7 +594,8 @@ void xe_bo_unpin(struct xe_bo *bo)
 	XE_BUG_ON(bo->ttm.base.import_attach);
 	XE_BUG_ON(!xe_bo_is_pinned(bo));
 
-	if (IS_DGFX(xe)) {
+	if (IS_DGFX(xe) && !(IS_ENABLED(CONFIG_DRM_XE_DEBUG) &&
+	    bo->flags & XE_BO_INTERNAL_TEST)) {
 		XE_BUG_ON(list_empty(&bo->pinned_link));
 
 		spin_lock(&xe->pinned.lock);

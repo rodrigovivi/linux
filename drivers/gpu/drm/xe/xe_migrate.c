@@ -1025,7 +1025,8 @@ static void test_copy(struct xe_migrate *m, struct xe_bo *bo)
 	struct xe_bo *sysmem = xe_bo_create_pin_map(xe, m->eng->vm, bo->size,
 						    ttm_bo_type_kernel,
 						    XE_BO_CREATE_SYSTEM_BIT |
-						    XE_BO_CREATE_PINNED_BIT);
+						    XE_BO_CREATE_PINNED_BIT |
+						    XE_BO_INTERNAL_TEST);
 	if (IS_ERR(sysmem)) {
 		drm_err(&xe->drm, "Failed to allocate sysmem bo for %s: %li\n", str, PTR_ERR(sysmem));
 		return;
