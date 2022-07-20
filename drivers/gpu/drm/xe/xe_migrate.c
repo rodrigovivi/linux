@@ -76,6 +76,11 @@ static u64 xe_migrate_vm_addr(u64 slot, u32 level)
 	return (slot + 1ULL) << xe_pt_shift(level + 1);
 }
 
+static u64 xe_migrate_vram_ofs(u64 addr)
+{
+	return addr + (256ULL << xe_pt_shift(2));
+}
+
 static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 {
 	u32 num_entries = NUM_PT_SLOTS, num_level = vm->pt_root->level;
@@ -84,6 +89,7 @@ static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 	struct xe_bo *bo, *batch = m->gt->kernel_bb_pool.bo;
 	u64 entry;
 	int err;
+	struct xe_device *xe = vm->xe;
 
 	/* Can't bump NUM_PT_SLOTS too high */
 	BUILD_BUG_ON(NUM_PT_SLOTS > SZ_2M/GEN8_PAGE_SIZE);
@@ -138,13 +144,18 @@ static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 			i += 1;
 	}
 
-	/* Write out batch too */
-	m->batch_base_ofs = NUM_PT_SLOTS * GEN8_PAGE_SIZE;
-	for (i = 0; i < batch->size; i += vm->flags & XE_VM_FLAGS_64K ? SZ_64K : SZ_4K) {
-		entry = gen8_pte_encode(NULL, batch, i, XE_CACHE_WB, 0, 0);
+	if (!IS_DGFX(xe)) {
+		/* Write out batch too */
+		m->batch_base_ofs = NUM_PT_SLOTS * GEN8_PAGE_SIZE;
+		for (i = 0; i < batch->size; i += vm->flags & XE_VM_FLAGS_64K ? SZ_64K : SZ_4K) {
+			entry = gen8_pte_encode(NULL, batch, i, XE_CACHE_WB, 0, 0);
 
-		iosys_map_wr(&bo->vmap, map_ofs + level * 8, u64, entry);
-		level++;
+			iosys_map_wr(&bo->vmap, map_ofs + level * 8, u64, entry);
+			level++;
+		}
+	} else {
+		bool is_lmem;
+		m->batch_base_ofs = xe_migrate_vram_ofs(xe_bo_addr(batch, 0, GEN8_PAGE_SIZE, &is_lmem));
 	}
 
 	for (level = 1; level < num_level; level++) {
@@ -171,6 +182,24 @@ static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 		}
 	}
 
+	/* Identity map the entire vram at 256GiB offset */
+	if (IS_DGFX(xe)) {
+		u64 pos, ofs, flags;
+
+		level = 2;
+		ofs = map_ofs + GEN8_PAGE_SIZE * level + 256 * 8;
+		flags = GEN8_PAGE_RW | GEN8_PAGE_PRESENT | PPAT_CACHED |
+			GEN12_PPGTT_PTE_LM | GEN8_PDPE_PS_1G;
+
+		/*
+		 * Use 1GB pages, it shouldn't matter the physical amount of
+		 * vram is less, when we don't access it.
+		 */
+		for (pos = 0; pos < m->gt->mem.vram.size; pos += SZ_1G, ofs += 8)
+			iosys_map_wr(&bo->vmap, ofs, u64, pos | flags);
+
+	}
+
 	xe_bo_vunmap(bo);
 
 	/*
@@ -192,7 +221,7 @@ static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 	 * everywhere, this allows lockless updates to scratch pages by using
 	 * the different addresses in VM.
 	 */
-	drm_suballoc_manager_init(&m->vm_update_sa, num_entries - num_level - NUM_KERNEL_PDE, 0);
+	drm_suballoc_manager_init(&m->vm_update_sa, map_ofs / GEN8_PAGE_SIZE - NUM_KERNEL_PDE, 0);
 
 	m->pt_bo = bo;
 	return 0;
