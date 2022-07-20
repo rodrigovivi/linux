@@ -14,6 +14,7 @@
 
 #include "xe_gt_types.h"
 #include "xe_platform_types.h"
+#include "xe_step_types.h"
 
 #define XE_BO_INVALID_OFFSET	LONG_MAX
 
@@ -44,6 +45,8 @@ struct xe_device {
 		u16 devid;
 		/** @revid: device revision */
 		u8 revid;
+		/** @step: stepping information for each IP */
+		struct xe_step_info step;
 		/** @dma_mask_size: DMA address bits */
 		u8 dma_mask_size;
 		/** @vram_flags: Vram flags */
