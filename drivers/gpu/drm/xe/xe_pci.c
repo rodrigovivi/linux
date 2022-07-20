@@ -20,54 +20,13 @@
 
 #include "../i915/i915_reg.h"
 
-enum intel_ppgtt_type {
-	INTEL_PPGTT_NONE = 0,
-	INTEL_PPGTT_ALIASING = 1,
-	INTEL_PPGTT_FULL = 2,
-};
-
-#define GTT_PAGE_SIZE_4K	BIT_ULL(12)
-#define GTT_PAGE_SIZE_64K	BIT_ULL(16)
-#define GTT_PAGE_SIZE_2M	BIT_ULL(21)
-
-enum intel_region_id {
-	INTEL_REGION_SMEM = 0,
-	INTEL_REGION_LMEM,
-	INTEL_REGION_STOLEN_SMEM,
-	INTEL_REGION_STOLEN_LMEM,
-	INTEL_REGION_UNKNOWN, /* Should be last */
-};
-
-#define REGION_SMEM     BIT(INTEL_REGION_SMEM)
-#define REGION_LMEM     BIT(INTEL_REGION_LMEM)
-#define REGION_STOLEN_SMEM   BIT(INTEL_REGION_STOLEN_SMEM)
-#define REGION_STOLEN_LMEM   BIT(INTEL_REGION_STOLEN_LMEM)
-
 typedef u32 intel_engine_mask_t;
 
 #define DEV_INFO_FOR_EACH_FLAG(func) \
-	func(is_mobile); \
-	func(is_lp); \
 	func(require_force_probe); \
 	func(is_dgfx); \
 	/* Keep has_* in alphabetical order */ \
-	func(has_64bit_reloc); \
-	func(has_reset_engine); \
-	func(has_global_mocs); \
-	func(has_gt_uc); \
-	func(has_l3_dpf); \
-	func(has_llc); \
-	func(has_logical_ring_contexts); \
-	func(has_logical_ring_elsq); \
-	func(has_pooled_eu); \
-	func(has_rc6); \
-	func(has_rc6p); \
-	func(has_rps); \
-	func(has_runtime_pm); \
-	func(has_snoop); \
-	func(has_coherent_ggtt); \
-	func(unfenced_needs_alignment); \
-	func(hws_needs_physical);
+
 
 struct xe_subplatform_desc {
 	enum xe_subplatform subplatform;
@@ -88,13 +47,6 @@ struct xe_device_desc {
 	const struct xe_subplatform_desc *subplatforms;
 
 	u8 dma_mask_size; /* available DMA address bits */
-
-	enum intel_ppgtt_type ppgtt_type;
-	unsigned int ppgtt_size; /* log2, e.g. 31/32/48 bits */
-
-	unsigned int page_sizes; /* page sizes supported by the HW */
-
-	u32 memory_regions; /* regions supported by the HW */
 
 	u8 gt; /* GT number, 0 if undefined */
 
@@ -118,26 +70,7 @@ struct xe_device_desc {
 #define GEN12_FEATURES \
 	.graphics_ver = 12, \
 	.media_ver = 12, \
-	.dma_mask_size = 39, \
-	.has_64bit_reloc = 1, \
-	.has_coherent_ggtt = false, \
-	.has_global_mocs = 1, \
-	.has_gt_uc = 1, \
-	.has_llc = 1, \
-	.has_logical_ring_contexts = 1, \
-	.has_logical_ring_elsq = 1, \
-	.has_rc6 = 1, \
-	.has_rc6p = 0, \
-	.has_reset_engine = true, \
-	.has_rps = true, \
-	.has_runtime_pm = 1, \
 	.has_tiles = false, \
-	.memory_regions = REGION_SMEM | REGION_STOLEN_SMEM, \
-	.ppgtt_type = INTEL_PPGTT_FULL, \
-	.ppgtt_size = 48, \
-	.page_sizes = GTT_PAGE_SIZE_4K | \
-		      GTT_PAGE_SIZE_64K | \
-		      GTT_PAGE_SIZE_2M, \
 	.vm_max_level = 3, \
 	.vram_flags = 0
 
@@ -160,9 +93,6 @@ static const struct xe_device_desc adl_s_desc = {
 };
 
 #define DGFX_FEATURES \
-	.memory_regions = REGION_SMEM | REGION_LMEM | REGION_STOLEN_LMEM, \
-	.has_llc = 0, \
-	.has_snoop = 1, \
 	.is_dgfx = 1
 
 static const struct xe_device_desc dg1_desc = {
@@ -170,37 +100,16 @@ static const struct xe_device_desc dg1_desc = {
 	DGFX_FEATURES,
 	.graphics_rel = 10,
 	PLATFORM(XE_DG1),
-	.require_force_probe = 1,
+	.require_force_probe = true,
 	.platform_engine_mask =
 		BIT(XE_HW_ENGINE_RCS0) | BIT(XE_HW_ENGINE_BCS0) |
 		BIT(XE_HW_ENGINE_VECS0) | BIT(XE_HW_ENGINE_VCS0) |
 		BIT(XE_HW_ENGINE_VCS2),
-	/* Wa_16011227922 */
-	.ppgtt_size = 47,
 };
-
-#define XE_HP_PAGE_SIZES \
-	.page_sizes = GTT_PAGE_SIZE_4K | \
-	GTT_PAGE_SIZE_64K | \
-	GTT_PAGE_SIZE_2M
 
 #define XE_HP_FEATURES \
 	.graphics_ver = 12, \
 	.graphics_rel = 50, \
-	XE_HP_PAGE_SIZES, \
-	.dma_mask_size = 46, \
-	.has_64bit_reloc = 1, \
-	.has_global_mocs = 1, \
-	.has_gt_uc = 1, \
-	.has_llc = 1, \
-	.has_logical_ring_contexts = 1, \
-	.has_logical_ring_elsq = 1, \
-	.has_rc6 = 1, \
-	.has_reset_engine = 1, \
-	.has_rps = 1, \
-	.has_runtime_pm = 1, \
-	.ppgtt_size = 48, \
-	.ppgtt_type = INTEL_PPGTT_FULL, \
 	.dma_mask_size = 46, \
 	.has_tiles = false, \
 	.vm_max_level = 3
@@ -232,7 +141,7 @@ static const struct xe_device_desc ats_m_desc = {
 		BIT(XE_HW_ENGINE_VCS0) | BIT(XE_HW_ENGINE_VCS2) |
 		BIT(XE_HW_ENGINE_CCS0) | BIT(XE_HW_ENGINE_CCS1) |
 		BIT(XE_HW_ENGINE_CCS2) | BIT(XE_HW_ENGINE_CCS3),
-	.require_force_probe = 1,
+	.require_force_probe = true,
 	.vram_flags = XE_VRAM_FLAGS_NEED64K,
 };
 
@@ -255,8 +164,7 @@ static const struct xe_device_desc pvc_desc = {
 	.graphics_rel = 60,
 	.media_rel = 60,
 	.platform_engine_mask = PVC_ENGINES,
-	.require_force_probe = 1,
-	.is_dgfx = 1,
+	.require_force_probe = true,
 	.vram_flags = XE_VRAM_FLAGS_NEED64K,
 	.dma_mask_size = 52,
 	.has_tiles = true,
