@@ -20,7 +20,7 @@
 static void gen3_assert_iir_is_zero(struct xe_device *xe, i915_reg_t reg)
 {
 	struct xe_gt *gt = to_gt(xe);
-	uint32_t val = xe_mmio_read32(gt, reg.reg);
+	u32 val = xe_mmio_read32(gt, reg.reg);
 
 	if (val == 0)
 		return;
@@ -72,7 +72,7 @@ static void gen3_irq_reset(struct xe_device *xe, i915_reg_t imr,
 #define GEN3_IRQ_RESET(xe, type) \
 	gen3_irq_reset((xe), type##IMR, type##IIR, type##IER)
 
-static uint32_t gen11_intr_disable(struct xe_device *xe)
+static u32 gen11_intr_disable(struct xe_device *xe)
 {
 	struct xe_gt *gt = to_gt(xe);
 
@@ -99,10 +99,10 @@ static inline void gen11_intr_enable(struct xe_device *xe, bool stall)
 static void gen11_gt_irq_postinstall(struct xe_device *xe)
 {
 	struct xe_gt *gt = to_gt(xe);
-	uint32_t irqs, dmask, smask;
-	uint32_t ccs_mask = xe_hw_engine_mask_per_class(gt,
+	u32 irqs, dmask, smask;
+	u32 ccs_mask = xe_hw_engine_mask_per_class(gt,
 							XE_ENGINE_CLASS_COMPUTE);
-	uint32_t bcs_mask = xe_hw_engine_mask_per_class(gt,
+	u32 bcs_mask = xe_hw_engine_mask_per_class(gt,
 							XE_ENGINE_CLASS_COPY);
 
 	if (xe_gt_guc_submission_enabled(gt)) {
@@ -175,14 +175,14 @@ static void gen11_irq_postinstall(struct xe_device *xe)
 	gen11_intr_enable(xe, true);
 }
 
-static uint32_t
+static u32
 gen11_gt_engine_identity(struct xe_device *xe,
 			 const unsigned int bank,
 			 const unsigned int bit)
 {
 	struct xe_gt *gt = to_gt(xe);
-	uint32_t timeout_ts;
-	uint32_t ident;
+	u32 timeout_ts;
+	u32 ident;
 
 	lockdep_assert_held(&xe->irq.lock);
 
@@ -217,13 +217,13 @@ gen11_gt_other_irq_handler(struct xe_gt *gt, const u8 instance, const u16 iir)
 		return xe_guc_irq_handler(&gt->uc.guc, iir);
 }
 
-static void gen11_gt_irq_handler(struct xe_device *xe, uint32_t master_ctl)
+static void gen11_gt_irq_handler(struct xe_device *xe, u32 master_ctl)
 {
 	struct xe_gt *gt = to_gt(xe);
 	unsigned int bank, bit;
 	long unsigned int intr_dw;
-	uint32_t identity[32];
-	uint16_t instance, intr_vec;
+	u32 identity[32];
+	u16 instance, intr_vec;
 	enum xe_engine_class class;
 	struct xe_hw_engine *hwe;
 
@@ -263,7 +263,7 @@ static void gen11_gt_irq_handler(struct xe_device *xe, uint32_t master_ctl)
 static irqreturn_t gen11_irq_handler(int irq, void *arg)
 {
 	struct xe_device *xe = arg;
-	uint32_t master_ctl;
+	u32 master_ctl;
 
 	master_ctl = gen11_intr_disable(xe);
 	if (!master_ctl) {
@@ -280,10 +280,10 @@ static irqreturn_t gen11_irq_handler(int irq, void *arg)
 	return IRQ_HANDLED;
 }
 
-static uint32_t dg1_intr_disable(struct xe_device *xe)
+static u32 dg1_intr_disable(struct xe_device *xe)
 {
 	struct xe_gt *gt = to_gt(xe);
-	uint32_t val;
+	u32 val;
 
 	/* First disable interrupts */
 	xe_mmio_write32(gt, DG1_MSTR_TILE_INTR.reg, 0);
@@ -322,7 +322,7 @@ static irqreturn_t dg1_irq_handler(int irq, void *arg)
 {
 	struct xe_device *xe = arg;
 	struct xe_gt *gt = to_gt(xe);
-	uint32_t master_tile_ctl, master_ctl;
+	u32 master_tile_ctl, master_ctl;
 
 	/* TODO: This really shouldn't be copied+pasted */
 
@@ -354,9 +354,9 @@ static irqreturn_t dg1_irq_handler(int irq, void *arg)
 void gen11_gt_irq_reset(struct xe_device *xe)
 {
 	struct xe_gt *gt = to_gt(xe);
-	uint32_t ccs_mask = xe_hw_engine_mask_per_class(gt,
+	u32 ccs_mask = xe_hw_engine_mask_per_class(gt,
 							XE_ENGINE_CLASS_COMPUTE);
-	uint32_t bcs_mask = xe_hw_engine_mask_per_class(gt,
+	u32 bcs_mask = xe_hw_engine_mask_per_class(gt,
 							XE_ENGINE_CLASS_COPY);
 
 	/* Disable RCS, BCS, VCS and VECS class engines. */

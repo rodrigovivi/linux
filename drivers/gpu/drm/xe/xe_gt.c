@@ -93,10 +93,10 @@ static int gt_ttm_mgr_init(struct xe_gt *gt)
 {
 	int err;
 	struct sysinfo si;
-	uint64_t gtt_size;
+	u64 gtt_size;
 
 	si_meminfo(&si);
-	gtt_size = (uint64_t)si.totalram * si.mem_unit * 3/4;
+	gtt_size = (u64)si.totalram * si.mem_unit * 3/4;
 
 	if (gt->mem.vram.size) {
 		err = xe_ttm_vram_mgr_init(gt, gt->mem.vram_mgr);
@@ -366,7 +366,7 @@ void xe_gt_migrate_wait(struct xe_gt *gt)
 
 struct xe_hw_engine *xe_gt_hw_engine(struct xe_gt *gt,
 				     enum xe_engine_class class,
-				     uint16_t instance, bool logical)
+				     u16 instance, bool logical)
 {
 	struct xe_hw_engine *hwe;
 	enum xe_hw_engine_id id;

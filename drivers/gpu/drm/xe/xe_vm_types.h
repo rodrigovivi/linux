@@ -28,16 +28,16 @@ struct xe_vma {
 	 * @start: start address of this VMA within its address domain, end -
 	 * start + 1 == VMA size
 	 */
-	uint64_t start;
+	u64 start;
 	/** @end: end address of this VMA within its address domain */
-	uint64_t end;
+	u64 end;
 	/** @pte_flags: pte flags for this VMA */
-	uint32_t pte_flags;
+	u32 pte_flags;
 
 	/** @bo: BO if not a userptr, must be NULL is userptr */
 	struct xe_bo *bo;
 	/** @bo_offset: offset into BO if not a userptr, unused for userptr */
-	uint64_t bo_offset;
+	u64 bo_offset;
 
 	/** @destroyed: VMA is destroyed */
 	bool destroyed;
@@ -145,7 +145,7 @@ struct xe_vm {
 
 	struct dma_resv resv;
 
-	uint64_t size;
+	u64 size;
 	struct rb_root vmas;
 
 	struct xe_pt *pt_root;

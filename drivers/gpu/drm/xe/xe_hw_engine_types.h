@@ -85,7 +85,7 @@ struct xe_hw_engine {
 	/** @fence_irq: fence IRQ to run when a hw engine IRQ is received */
 	struct xe_hw_fence_irq *fence_irq;
 	/** @irq_handler: IRQ handler to run when hw engine IRQ is received */
-	void (*irq_handler)(struct xe_hw_engine *, uint16_t);
+	void (*irq_handler)(struct xe_hw_engine *, u16);
 };
 
 #endif /* _XE_HW_ENGINE_TYPES_H_ */

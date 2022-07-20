@@ -22,7 +22,7 @@ struct xe_execlist_port {
 
 	struct list_head active[DRM_SCHED_PRIORITY_COUNT];
 
-	uint32_t last_ctx_id;
+	u32 last_ctx_id;
 
 	struct xe_execlist_engine *running_exl;
 

@@ -15,7 +15,7 @@ int xe_sched_job_module_init(void);
 void xe_sched_job_module_exit(void);
 
 struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
-					 uint64_t *batch_addr);
+					 u64 *batch_addr);
 void xe_sched_job_free(struct xe_sched_job *job);
 
 void xe_sched_job_set_error(struct xe_sched_job *job, int error);

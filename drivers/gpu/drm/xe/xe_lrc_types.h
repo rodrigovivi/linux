@@ -21,21 +21,21 @@ struct xe_lrc {
 	struct xe_bo *bo;
 
 	/** @flags: LRC flags */
-	uint32_t flags;
+	u32 flags;
 #define XE_LRC_PINNED BIT(1)
 
 	/** @ring: submission ring state */
 	struct {
 		/** @size: size of submission ring */
-		uint32_t size;
+		u32 size;
 		/** @tail: tail of submission ring */
-		uint32_t tail;
+		u32 tail;
 		/** @old_tail: shadow of tail */
-		uint32_t old_tail;
+		u32 old_tail;
 	} ring;
 
 	/** @desc: LRC descriptor */
-	uint64_t desc;
+	u64 desc;
 
 	/** @fence_ctx: context for hw fence */
 	struct xe_hw_fence_ctx fence_ctx;

@@ -21,7 +21,7 @@ struct xe_sync_entry;
 
 void __xe_vma_unbind(struct xe_vma *vma);
 
-struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags);
+struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags);
 void xe_vm_free(struct kref *ref);
 
 struct xe_vm *xe_vm_lookup(struct xe_file *xef, u32 id);
@@ -50,7 +50,7 @@ static inline bool xe_vm_is_closed(struct xe_vm *vm)
 
 #define xe_vm_assert_held(vm) dma_resv_assert_held(&(vm)->resv)
 
-uint64_t xe_vm_pdp4_descriptor(struct xe_vm *vm);
+u64 xe_vm_pdp4_descriptor(struct xe_vm *vm);
 
 int xe_vm_create_ioctl(struct drm_device *dev, void *data,
 		       struct drm_file *file);
@@ -79,7 +79,7 @@ static inline bool xe_vm_has_userptr(struct xe_vm *vm)
 
 int xe_vm_async_fence_wait_start(struct dma_fence *fence);
 
-void __xe_pt_write(struct ttm_bo_kmap_obj *map, unsigned int idx, uint64_t data);
+void __xe_pt_write(struct ttm_bo_kmap_obj *map, unsigned int idx, u64 data);
 u64 gen8_pde_encode(struct xe_bo *bo, u64 bo_offset,
 		    const enum xe_cache_level level);
 u64 gen8_pte_encode(struct xe_vma *vma, struct xe_bo *bo,

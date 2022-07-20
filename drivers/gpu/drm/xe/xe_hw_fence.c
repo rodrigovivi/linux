@@ -175,10 +175,10 @@ static bool xe_hw_fence_enable_signaling(struct dma_fence *dma_fence)
 static bool xe_hw_fence_signaled(struct dma_fence *dma_fence)
 {
 	struct xe_hw_fence *fence = to_xe_hw_fence(dma_fence);
-	uint32_t seqno = dbm_read32(fence->seqno_map);
+	u32 seqno = dbm_read32(fence->seqno_map);
 
 	return dma_fence->error ||
-		(int32_t)fence->dma.seqno <= (int32_t)seqno;
+		(s32)fence->dma.seqno <= (s32)seqno;
 }
 
 static void xe_hw_fence_release(struct dma_fence *dma_fence)

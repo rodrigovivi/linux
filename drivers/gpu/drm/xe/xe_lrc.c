@@ -25,7 +25,7 @@
 #define GEN11_ENGINE_CLASS_SHIFT		61
 #define GEN11_ENGINE_INSTANCE_SHIFT		48
 
-uint32_t lrc_size(struct xe_device *xe, enum xe_engine_class class)
+u32 lrc_size(struct xe_device *xe, enum xe_engine_class class)
 {
 	switch (class) {
 	case XE_ENGINE_CLASS_RENDER:
@@ -673,7 +673,7 @@ static const u8 *reg_offsets(struct xe_device *xe, enum xe_engine_class class)
 	}
 }
 
-static void set_context_control(uint32_t * regs, struct xe_hw_engine *hwe,
+static void set_context_control(u32 * regs, struct xe_hw_engine *hwe,
 				bool inhibit)
 {
 	struct xe_device *xe = gt_to_xe(hwe->gt);
@@ -707,7 +707,7 @@ static int lrc_ring_mi_mode(struct xe_hw_engine *hwe)
 		return -1;
 }
 
-static void reset_stop_ring(uint32_t *regs, struct xe_hw_engine *hwe)
+static void reset_stop_ring(u32 *regs, struct xe_hw_engine *hwe)
 {
 	int x;
 
@@ -718,12 +718,12 @@ static void reset_stop_ring(uint32_t *regs, struct xe_hw_engine *hwe)
 	}
 }
 
-static inline uint32_t __xe_lrc_ring_offset(struct xe_lrc *lrc)
+static inline u32 __xe_lrc_ring_offset(struct xe_lrc *lrc)
 {
 	return 0;
 }
 
-static inline uint32_t __xe_lrc_pphwsp_offset(struct xe_lrc *lrc)
+static inline u32 __xe_lrc_pphwsp_offset(struct xe_lrc *lrc)
 {
 	return lrc->ring.size;
 }
@@ -733,25 +733,25 @@ static inline uint32_t __xe_lrc_pphwsp_offset(struct xe_lrc *lrc)
 #define LRC_PARALLEL_PPHWSP_OFFSET 2048
 #define LRC_PPHWSP_SIZE SZ_4K
 
-static inline uint32_t __xe_lrc_seqno_offset(struct xe_lrc *lrc)
+static inline u32 __xe_lrc_seqno_offset(struct xe_lrc *lrc)
 {
 	/* The seqno is stored in the driver-defined portion of PPHWSP */
 	return __xe_lrc_pphwsp_offset(lrc) + LRC_SEQNO_PPHWSP_OFFSET;
 }
 
-static inline uint32_t __xe_lrc_start_seqno_offset(struct xe_lrc *lrc)
+static inline u32 __xe_lrc_start_seqno_offset(struct xe_lrc *lrc)
 {
 	/* The start seqno is stored in the driver-defined portion of PPHWSP */
 	return __xe_lrc_pphwsp_offset(lrc) + LRC_START_SEQNO_PPHWSP_OFFSET;
 }
 
-static inline uint32_t __xe_lrc_parallel_offset(struct xe_lrc *lrc)
+static inline u32 __xe_lrc_parallel_offset(struct xe_lrc *lrc)
 {
 	/* The parallel is stored in the driver-defined portion of PPHWSP */
 	return __xe_lrc_pphwsp_offset(lrc) + LRC_PARALLEL_PPHWSP_OFFSET;
 }
 
-static inline uint32_t __xe_lrc_regs_offset(struct xe_lrc *lrc)
+static inline u32 __xe_lrc_regs_offset(struct xe_lrc *lrc)
 {
 	return __xe_lrc_pphwsp_offset(lrc) + LRC_PPHWSP_SIZE;
 }
@@ -765,7 +765,7 @@ static inline struct iosys_map __xe_lrc_##elem##_map(struct xe_lrc *lrc) \
 	iosys_map_incr(&map, __xe_lrc_##elem##_offset(lrc)); \
 	return map; \
 } \
-static inline uint32_t __xe_lrc_##elem##_ggtt_addr(struct xe_lrc *lrc) \
+static inline u32 __xe_lrc_##elem##_ggtt_addr(struct xe_lrc *lrc) \
 { \
 	return xe_bo_ggtt_addr(lrc->bo) + __xe_lrc_##elem##_offset(lrc); \
 } \
@@ -779,26 +779,26 @@ DECL_MAP_ADDR_HELPERS(parallel)
 
 #undef DECL_MAP_ADDR_HELPERS
 
-uint32_t xe_lrc_ggtt_addr(struct xe_lrc *lrc)
+u32 xe_lrc_ggtt_addr(struct xe_lrc *lrc)
 {
 	return __xe_lrc_pphwsp_ggtt_addr(lrc);
 }
 
-uint32_t xe_lrc_read_ctx_reg(struct xe_lrc *lrc, int reg_nr)
+u32 xe_lrc_read_ctx_reg(struct xe_lrc *lrc, int reg_nr)
 {
 	struct iosys_map map;
 
 	map = __xe_lrc_regs_map(lrc);
-	iosys_map_incr(&map, reg_nr * sizeof(uint32_t));
+	iosys_map_incr(&map, reg_nr * sizeof(u32));
 	return dbm_read32(map);
 }
 
-void xe_lrc_write_ctx_reg(struct xe_lrc *lrc, int reg_nr, uint32_t val)
+void xe_lrc_write_ctx_reg(struct xe_lrc *lrc, int reg_nr, u32 val)
 {
 	struct iosys_map map;
 
 	map = __xe_lrc_regs_map(lrc);
-	iosys_map_incr(&map, reg_nr * sizeof(uint32_t));
+	iosys_map_incr(&map, reg_nr * sizeof(u32));
 	dbm_write32(map, val);
 }
 
@@ -806,7 +806,7 @@ static void *empty_lrc_data(struct xe_hw_engine *hwe)
 {
 	struct xe_device *xe = gt_to_xe(hwe->gt);
 	void *data;
-	uint32_t *regs;
+	u32 *regs;
 
 	data = kzalloc(lrc_size(xe, hwe->class), GFP_KERNEL);
 	if (!data)
@@ -826,19 +826,19 @@ static void *empty_lrc_data(struct xe_hw_engine *hwe)
 
 static void xe_lrc_set_ppgtt(struct xe_lrc *lrc, struct xe_vm *vm)
 {
-	uint64_t desc = xe_vm_pdp4_descriptor(vm);
+	u64 desc = xe_vm_pdp4_descriptor(vm);
 
 	xe_lrc_write_ctx_reg(lrc, CTX_PDP0_UDW, upper_32_bits(desc));
 	xe_lrc_write_ctx_reg(lrc, CTX_PDP0_LDW, lower_32_bits(desc));
 }
 
 int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
-		struct xe_vm *vm, uint32_t ring_size)
+		struct xe_vm *vm, u32 ring_size)
 {
 	struct xe_device *xe = gt_to_xe(hwe->gt);
 	struct iosys_map map;
 	void *init_data;
-	uint32_t arb_enable;
+	u32 arb_enable;
 	int err;
 
 	lrc->flags = 0;
@@ -905,8 +905,8 @@ int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 		lrc->desc |= GEN8_CTX_L3LLC_COHERENT;
 
 	if (GRAPHICS_VER(xe) >= 11 && GRAPHICS_VERx100(xe) < 1250) {
-		lrc->desc |= (uint64_t)hwe->instance << GEN11_ENGINE_INSTANCE_SHIFT;
-		lrc->desc |= (uint64_t)hwe->class << GEN11_ENGINE_CLASS_SHIFT;
+		lrc->desc |= (u64)hwe->instance << GEN11_ENGINE_INSTANCE_SHIFT;
+		lrc->desc |= (u64)hwe->class << GEN11_ENGINE_CLASS_SHIFT;
 	}
 
 	arb_enable = MI_ARB_ON_OFF | MI_ARB_ENABLE;
@@ -942,21 +942,21 @@ void xe_lrc_finish(struct xe_lrc *lrc)
 	xe_bo_put(lrc->bo);
 }
 
-void xe_lrc_set_ring_head(struct xe_lrc *lrc, uint32_t head)
+void xe_lrc_set_ring_head(struct xe_lrc *lrc, u32 head)
 {
 	xe_lrc_write_ctx_reg(lrc, CTX_RING_HEAD, head);
 }
 
-uint32_t xe_lrc_ring_head(struct xe_lrc *lrc)
+u32 xe_lrc_ring_head(struct xe_lrc *lrc)
 {
 	return xe_lrc_read_ctx_reg(lrc, CTX_RING_HEAD) & HEAD_ADDR;
 }
 
-uint32_t xe_lrc_ring_space(struct xe_lrc *lrc)
+u32 xe_lrc_ring_space(struct xe_lrc *lrc)
 {
-	const uint32_t head = xe_lrc_ring_head(lrc);
-	const uint32_t tail = lrc->ring.tail;
-	const uint32_t size = lrc->ring.size;
+	const u32 head = xe_lrc_ring_head(lrc);
+	const u32 tail = lrc->ring.tail;
+	const u32 size = lrc->ring.size;
 
 	return ((head - tail - 1) & (size - 1)) + 1;
 }
@@ -964,7 +964,7 @@ uint32_t xe_lrc_ring_space(struct xe_lrc *lrc)
 static void xe_lrc_assert_ring_space(struct xe_lrc *lrc, size_t size)
 {
 #if XE_EXTRA_DEBUG
-	uint32_t space = xe_lrc_ring_space(lrc);
+	u32 space = xe_lrc_ring_space(lrc);
 
 	BUG_ON(size > lrc->ring.size);
 	WARN(size > space, "Insufficient ring space: %lu > %u, head=%d, tail=%d",
@@ -983,7 +983,7 @@ static void __xe_lrc_write_ring(struct xe_lrc *lrc, struct iosys_map ring,
 void xe_lrc_write_ring(struct xe_lrc *lrc, const void *data, size_t size)
 {
 	struct iosys_map ring;
-	uint32_t rhs;
+	u32 rhs;
 	size_t aligned_size;
 
 	XE_BUG_ON(!IS_ALIGNED(size, 4));
@@ -1003,18 +1003,18 @@ void xe_lrc_write_ring(struct xe_lrc *lrc, const void *data, size_t size)
 	}
 
 	if (aligned_size > size) {
-		uint32_t noop = MI_NOOP;
+		u32 noop = MI_NOOP;
 
 		__xe_lrc_write_ring(lrc, ring, &noop, sizeof(noop));
 	}
 }
 
-uint64_t xe_lrc_descriptor(struct xe_lrc *lrc)
+u64 xe_lrc_descriptor(struct xe_lrc *lrc)
 {
 	return lrc->desc | xe_lrc_ggtt_addr(lrc);
 }
 
-uint32_t xe_lrc_seqno_ggtt_addr(struct xe_lrc *lrc)
+u32 xe_lrc_seqno_ggtt_addr(struct xe_lrc *lrc)
 {
 	return __xe_lrc_seqno_ggtt_addr(lrc);
 }
@@ -1025,22 +1025,22 @@ struct dma_fence *xe_lrc_create_seqno_fence(struct xe_lrc *lrc)
 				   __xe_lrc_seqno_map(lrc))->dma;
 }
 
-int32_t xe_lrc_seqno(struct xe_lrc *lrc)
+s32 xe_lrc_seqno(struct xe_lrc *lrc)
 {
 	return dbm_read32(__xe_lrc_seqno_map(lrc));
 }
 
-int32_t xe_lrc_start_seqno(struct xe_lrc *lrc)
+s32 xe_lrc_start_seqno(struct xe_lrc *lrc)
 {
 	return dbm_read32(__xe_lrc_start_seqno_map(lrc));
 }
 
-uint32_t xe_lrc_start_seqno_ggtt_addr(struct xe_lrc *lrc)
+u32 xe_lrc_start_seqno_ggtt_addr(struct xe_lrc *lrc)
 {
 	return __xe_lrc_start_seqno_ggtt_addr(lrc);
 }
 
-uint32_t xe_lrc_parallel_ggtt_addr(struct xe_lrc *lrc)
+u32 xe_lrc_parallel_ggtt_addr(struct xe_lrc *lrc)
 {
 	return __xe_lrc_parallel_ggtt_addr(lrc);
 }

@@ -24,7 +24,7 @@ DECLARE_EVENT_CLASS(xe_bo,
 
 		    TP_STRUCT__entry(
 			     __field(size_t, size)
-			     __field(uint32_t, flags)
+			     __field(u32, flags)
 			     __field(u64, vm)
 			     ),
 

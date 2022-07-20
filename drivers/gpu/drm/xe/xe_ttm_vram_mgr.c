@@ -47,7 +47,7 @@ static int xe_ttm_vram_mgr_new(struct ttm_resource_manager *man,
 {
 	unsigned long lpfn, num_nodes, pages_per_node, pages_left, pages;
 	struct xe_ttm_vram_mgr *mgr = to_vram_mgr(man);
-	uint64_t mem_bytes;
+	u64 mem_bytes;
 	struct ttm_range_mgr_node *node;
 	struct drm_mm *mm = &mgr->mm;
 	enum drm_mm_insert_mode mode;
@@ -66,7 +66,7 @@ static int xe_ttm_vram_mgr_new(struct ttm_resource_manager *man,
 	} else {
 		/* default to 2MB */
 		pages_per_node = 2UL << (20UL - PAGE_SHIFT);
-		pages_per_node = max_t(uint32_t, pages_per_node,
+		pages_per_node = max_t(u32, pages_per_node,
 				       tbo->page_alignment);
 		num_nodes = DIV_ROUND_UP_ULL(PFN_UP(mem_bytes), pages_per_node);
 	}
@@ -94,7 +94,7 @@ static int xe_ttm_vram_mgr_new(struct ttm_resource_manager *man,
 	i = 0;
 	spin_lock(&mgr->lock);
 	while (pages_left) {
-		uint32_t alignment = tbo->page_alignment;
+		u32 alignment = tbo->page_alignment;
 
 		if (pages >= pages_per_node)
 			alignment = pages_per_node;
@@ -142,7 +142,7 @@ static void xe_ttm_vram_mgr_del(struct ttm_resource_manager *man,
 {
 	struct ttm_range_mgr_node *node = to_ttm_range_mgr_node(res);
 	struct xe_ttm_vram_mgr *mgr = to_vram_mgr(man);
-	uint64_t usage = 0;
+	u64 usage = 0;
 	int i, pages;
 
 	spin_lock(&mgr->lock);

@@ -83,7 +83,7 @@ static void invalidate_tlb(struct xe_sched_job *job, u32 *dw, u32 *pi)
 static void __emit_job_gen12(struct xe_sched_job *job, struct xe_lrc *lrc,
 			     u64 batch_addr, u32 seqno)
 {
-	uint32_t dw[MAX_JOB_SIZE_DW], i = 0;
+	u32 dw[MAX_JOB_SIZE_DW], i = 0;
 	u32 ppgtt_flag = job->engine->vm ? BIT(8) : 0;
 
 #if 1

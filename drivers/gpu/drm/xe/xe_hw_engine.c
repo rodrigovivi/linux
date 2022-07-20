@@ -277,7 +277,7 @@ static const struct engine_info engine_infos[] = {
 	},
 };
 
-static uint32_t engine_info_mmio_base(const struct engine_info *info,
+static u32 engine_info_mmio_base(const struct engine_info *info,
 				      unsigned int graphics_ver)
 {
 	int i;
@@ -323,7 +323,7 @@ static u32 hw_engine_mmio_read32(struct xe_hw_engine *hwe, u32 reg)
 
 void xe_hw_engine_enable_ring(struct xe_hw_engine *hwe)
 {
-	uint32_t ccs_mask = xe_hw_engine_mask_per_class(hwe->gt,
+	u32 ccs_mask = xe_hw_engine_mask_per_class(hwe->gt,
 							XE_ENGINE_CLASS_COMPUTE);
 
 	if (hwe->class == XE_ENGINE_CLASS_COMPUTE && ccs_mask & BIT(0))
@@ -494,7 +494,7 @@ int xe_hw_engines_init(struct xe_gt *gt)
 	return 0;
 }
 
-void xe_hw_engine_handle_irq(struct xe_hw_engine *hwe, uint16_t intr_vec)
+void xe_hw_engine_handle_irq(struct xe_hw_engine *hwe, u16 intr_vec)
 {
 	wake_up_all(&gt_to_xe(hwe->gt)->ufence_wq);
 

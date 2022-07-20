@@ -69,11 +69,11 @@ u64 gen8_pde_encode(struct xe_bo *bo, u64 bo_offset,
 
 static bool vma_is_userptr(struct xe_vma *vma);
 
-static dma_addr_t vma_addr(struct xe_vma *vma, uint64_t offset,
+static dma_addr_t vma_addr(struct xe_vma *vma, u64 offset,
 			   size_t page_size, bool *is_lmem)
 {
 	if (vma_is_userptr(vma)) {
-		uint64_t page = offset >> PAGE_SHIFT;
+		u64 page = offset >> PAGE_SHIFT;
 
 		*is_lmem = false;
 		offset &= (PAGE_SIZE - 1);
@@ -126,7 +126,7 @@ u64 gen8_pte_encode(struct xe_vma *vma, struct xe_bo *bo,
 	return pte;
 }
 
-static uint64_t __xe_vm_empty_pte(struct xe_vm *vm, unsigned int level)
+static u64 __xe_vm_empty_pte(struct xe_vm *vm, unsigned int level)
 {
 	if (!vm->scratch_bo)
 		return 0;
@@ -144,14 +144,14 @@ static int __xe_pt_kmap(struct xe_pt *pt, struct ttm_bo_kmap_obj *map)
 	return ttm_bo_kmap(&pt->bo->ttm, 0, pt->bo->size / PAGE_SIZE, map);
 }
 
-void __xe_pt_write(struct ttm_bo_kmap_obj *map, unsigned int idx, uint64_t data)
+void __xe_pt_write(struct ttm_bo_kmap_obj *map, unsigned int idx, u64 data)
 {
 	bool is_iomem;
-	uint64_t *map_u64;
+	u64 *map_u64;
 
 	map_u64 = ttm_kmap_obj_virtual(map, &is_iomem);
 	if (is_iomem)
-		writeq(data, (uint64_t __iomem *)&map_u64[idx]);
+		writeq(data, (u64 __iomem *)&map_u64[idx]);
 	else
 		map_u64[idx] = data;
 }
@@ -192,7 +192,7 @@ err_kfree:
 static int xe_pt_populate_empty(struct xe_vm *vm, struct xe_pt *pt)
 {
 	struct ttm_bo_kmap_obj map;
-	uint64_t empty;
+	u64 empty;
 	int err, i;
 	int numpte = GEN8_PDES;
 	int flags = 0;
@@ -220,21 +220,21 @@ static u64 xe_pt_shift(unsigned int level)
 	return GEN8_PTE_SHIFT + GEN8_PDE_SHIFT * level;
 }
 
-static unsigned int xe_pt_idx(uint64_t addr, unsigned int level)
+static unsigned int xe_pt_idx(u64 addr, unsigned int level)
 {
 	return (addr >> xe_pt_shift(level)) & GEN8_PDE_MASK;
 }
 
-static uint64_t xe_pt_next_start(uint64_t start, unsigned int level)
+static u64 xe_pt_next_start(u64 start, unsigned int level)
 {
-	uint64_t pt_range = 1ull << xe_pt_shift(level);
+	u64 pt_range = 1ull << xe_pt_shift(level);
 
 	return ALIGN_DOWN(start + pt_range, pt_range);
 }
 
-static uint64_t xe_pt_prev_end(uint64_t end, unsigned int level)
+static u64 xe_pt_prev_end(u64 end, unsigned int level)
 {
-	uint64_t pt_range = 1ull << xe_pt_shift(level);
+	u64 pt_range = 1ull << xe_pt_shift(level);
 
 	return ALIGN_DOWN(end - 1, pt_range);
 }
@@ -374,7 +374,7 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 	return 0;
 }
 
-static void xe_pt_destroy(struct xe_pt *pt, uint32_t flags)
+static void xe_pt_destroy(struct xe_pt *pt, u32 flags)
 {
 	int i;
 	int numpdes = GEN8_PDES;
@@ -967,8 +967,8 @@ struct dma_fence *xe_vm_rebind(struct xe_vm *vm, bool rebind_worker)
 
 static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 				    struct xe_bo *bo,
-				    uint64_t bo_offset_or_userptr,
-				    uint64_t start, uint64_t end,
+				    u64 bo_offset_or_userptr,
+				    u64 start, u64 end,
 				    bool read_only)
 {
 	struct xe_vma *vma;
@@ -1115,7 +1115,7 @@ static void xe_vm_remove_vma(struct xe_vm *vm, struct xe_vma *vma)
 
 static void async_op_work_func(struct work_struct *w);
 
-struct xe_vm *xe_vm_create(struct xe_device *xe, uint32_t flags)
+struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 {
 	struct xe_vm *vm;
 	struct xe_vma *vma;
@@ -1253,7 +1253,7 @@ static void vm_async_op_error_capture(struct xe_vm *vm, int err,
 				      u32 op, u64 addr, u64 size)
 {
 	struct drm_xe_vm_bind_op_error_capture capture;
-	uint64_t __user *address =
+	u64 __user *address =
 		u64_to_user_ptr(vm->async_ops.error_capture.addr);
 	bool in_kthread = !current->mm;
 
@@ -1389,7 +1389,7 @@ struct xe_vm *xe_vm_lookup(struct xe_file *xef, u32 id)
 	return vm;
 }
 
-uint64_t xe_vm_pdp4_descriptor(struct xe_vm *vm)
+u64 xe_vm_pdp4_descriptor(struct xe_vm *vm)
 {
 	return gen8_pde_encode(vm->pt_root->bo, 0, XE_CACHE_WB);
 }
@@ -2203,7 +2203,7 @@ static const xe_vm_set_property_fn vm_set_property_funcs[] = {
 static int vm_user_ext_set_property(struct xe_device *xe, struct xe_vm *vm,
 				    u64 extension)
 {
-	uint64_t __user *address = u64_to_user_ptr(extension);
+	u64 __user *address = u64_to_user_ptr(extension);
 	struct drm_xe_ext_vm_set_property ext;
 	int err;
 
@@ -2229,7 +2229,7 @@ static const xe_vm_set_property_fn vm_user_extension_funcs[] = {
 static int vm_user_extensions(struct xe_device *xe, struct xe_vm *vm,
 			      u64 extensions, int ext_number)
 {
-	uint64_t __user *address = u64_to_user_ptr(extensions);
+	u64 __user *address = u64_to_user_ptr(extensions);
 	struct xe_user_extension ext;
 	int err;
 
@@ -2964,7 +2964,7 @@ static struct xe_vma *vm_unbind_lookup_vmas(struct xe_vm *vm,
 
 	if (last->end != lookup->end) {
 		struct ww_acquire_ctx ww;
-		uint64_t chunk = lookup->end + 1 - last->start;
+		u64 chunk = lookup->end + 1 - last->start;
 
 		if (last->bo)
 			err = xe_bo_lock(last->bo, &ww, 0, true);
@@ -3123,7 +3123,7 @@ static int vm_bind_ioctl_check_args(struct xe_device *xe,
 		return -EINVAL;
 
 	if (args->num_binds > 1) {
-		uint64_t __user *bind_user =
+		u64 __user *bind_user =
 			u64_to_user_ptr(args->vector_of_binds);
 
 		*bind_ops = kmalloc(sizeof(struct drm_xe_vm_bind_op) *
