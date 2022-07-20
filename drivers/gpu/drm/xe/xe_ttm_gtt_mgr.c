@@ -104,7 +104,7 @@ static void ttm_gtt_mgr_fini(struct drm_device *drm, void *arg)
 }
 
 int xe_ttm_gtt_mgr_init(struct xe_gt *gt, struct xe_ttm_gtt_mgr *mgr,
-			uint64_t gtt_size)
+			u64 gtt_size)
 {
 	struct xe_device *xe = gt_to_xe(gt);
 	struct ttm_resource_manager *man = &mgr->manager;

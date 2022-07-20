@@ -26,7 +26,7 @@ struct xe_bo {
 	/** @size: Size of this buffer object */
 	size_t size;
 	/** @flags: flags for this buffer object */
-	uint32_t flags;
+	u32 flags;
 	/** @vm: VM this BO is attached to, for extobj this will be NULL */
 	struct xe_vm *vm;
 	/** @vmas: List of VMAs for this BO */

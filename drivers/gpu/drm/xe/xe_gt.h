@@ -25,7 +25,7 @@ void xe_gt_migrate_wait(struct xe_gt *gt);
 
 struct xe_hw_engine *xe_gt_hw_engine(struct xe_gt *gt,
 				     enum xe_engine_class class,
-				     uint16_t instance,
+				     u16 instance,
 				     bool logical);
 
 static inline bool xe_gt_guc_submission_enabled(struct xe_gt *gt)

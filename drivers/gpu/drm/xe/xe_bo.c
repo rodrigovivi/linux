@@ -38,7 +38,7 @@ static struct ttm_placement sys_placement = {
 };
 
 static int xe_bo_placement_for_flags(struct xe_device *xe, struct xe_bo *bo,
-				     uint32_t bo_flags)
+				     u32 bo_flags)
 {
 	struct ttm_place *places = bo->placements;
 	u32 c = 0;
@@ -109,7 +109,7 @@ struct xe_ttm_tt {
 };
 
 static struct ttm_tt *xe_ttm_tt_create(struct ttm_buffer_object *ttm_bo,
-				       uint32_t page_flags)
+				       u32 page_flags)
 {
 	struct xe_bo *bo = ttm_to_xe_bo(ttm_bo);
 	struct xe_ttm_tt *tt;
@@ -371,7 +371,7 @@ static const struct drm_gem_object_funcs xe_gem_object_funcs = {
 
 struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct dma_resv *resv,
 				    size_t size, enum ttm_bo_type type,
-				    uint32_t flags)
+				    u32 flags)
 {
 	struct xe_bo *bo;
 	struct ttm_operation_ctx ctx = {
@@ -421,7 +421,7 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct dma_resv *resv,
 
 struct xe_bo *xe_bo_create_locked(struct xe_device *xe, struct xe_vm *vm,
 				  size_t size, enum ttm_bo_type type,
-				  uint32_t flags)
+				  u32 flags)
 {
 	struct xe_ggtt *ggtt = to_gt(xe)->mem.ggtt;
 	struct xe_bo *bo;
@@ -453,7 +453,7 @@ err_unlock_put_bo:
 }
 
 struct xe_bo *xe_bo_create(struct xe_device *xe, struct xe_vm *vm,
-			   size_t size, enum ttm_bo_type type, uint32_t flags)
+			   size_t size, enum ttm_bo_type type, u32 flags)
 {
 	struct xe_bo *bo = xe_bo_create_locked(xe, vm, size, type, flags);
 
@@ -465,7 +465,7 @@ struct xe_bo *xe_bo_create(struct xe_device *xe, struct xe_vm *vm,
 
 struct xe_bo *xe_bo_create_pin_map(struct xe_device *xe, struct xe_vm *vm,
 				   size_t size, enum ttm_bo_type type,
-				   uint32_t flags)
+				   u32 flags)
 {
 	struct xe_bo *bo = xe_bo_create_locked(xe, vm, size, type, flags);
 	int err;
@@ -495,7 +495,7 @@ err_put:
 
 struct xe_bo *xe_bo_create_from_data(struct xe_device *xe, const void *data,
 				     size_t size, enum ttm_bo_type type,
-				     uint32_t flags)
+				     u32 flags)
 {
 	struct xe_bo *bo = xe_bo_create_pin_map(xe, NULL,
 						ALIGN(size, PAGE_SIZE),
@@ -633,10 +633,10 @@ bool xe_bo_is_xe_bo(struct ttm_buffer_object *bo)
 	return false;
 }
 
-dma_addr_t xe_bo_addr(struct xe_bo *bo, uint64_t offset,
+dma_addr_t xe_bo_addr(struct xe_bo *bo, u64 offset,
 		      size_t page_size, bool *is_lmem)
 {
-	uint64_t page;
+	u64 page;
 
 	if (!READ_ONCE(bo->ttm.pin_count))
 		xe_bo_assert_held(bo);
