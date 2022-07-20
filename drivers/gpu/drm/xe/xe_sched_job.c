@@ -67,7 +67,7 @@ static void job_free(struct xe_sched_job *job)
 }
 
 struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
-					 uint64_t *batch_addr)
+					 u64 *batch_addr)
 {
 	struct xe_sched_job *job;
 	struct dma_fence **fences;

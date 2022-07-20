@@ -45,9 +45,9 @@ struct xe_hw_fence_ctx {
 	/** @irq: fence irq handler */
 	struct xe_hw_fence_irq *irq;
 	/** @dma_fence_ctx: dma fence context for hardware fence */
-	uint64_t dma_fence_ctx;
+	u64 dma_fence_ctx;
 	/** @next_seqno: next seqno for hardware fence */
-	uint32_t next_seqno;
+	u32 next_seqno;
 	/** @name of hardare fence context */
 	char name[MAX_FENCE_NAME_LEN];
 };

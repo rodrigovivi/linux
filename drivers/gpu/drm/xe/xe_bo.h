@@ -70,18 +70,18 @@
 
 struct xe_bo *__xe_bo_create_locked(struct xe_device *xe,
 				    struct dma_resv *resv, size_t size,
-				    enum ttm_bo_type type, uint32_t flags);
+				    enum ttm_bo_type type, u32 flags);
 struct xe_bo *xe_bo_create_locked(struct xe_device *xe,
 				  struct xe_vm *vm, size_t size,
-				  enum ttm_bo_type type, uint32_t flags);
+				  enum ttm_bo_type type, u32 flags);
 struct xe_bo *xe_bo_create(struct xe_device *xe, struct xe_vm *vm, size_t size,
-			   enum ttm_bo_type type, uint32_t flags);
+			   enum ttm_bo_type type, u32 flags);
 struct xe_bo *xe_bo_create_pin_map(struct xe_device *xe, struct xe_vm *vm,
 				   size_t size, enum ttm_bo_type type,
-				   uint32_t flags);
+				   u32 flags);
 struct xe_bo *xe_bo_create_from_data(struct xe_device *xe, const void *data,
 				     size_t size, enum ttm_bo_type type,
-				     uint32_t flags);
+				     u32 flags);
 
 void xe_bo_trigger_rebind(struct xe_bo *bo);
 
@@ -170,7 +170,7 @@ static inline void xe_bo_unpin_map_no_vm(struct xe_bo *bo)
 }
 
 bool xe_bo_is_xe_bo(struct ttm_buffer_object *bo);
-dma_addr_t xe_bo_addr(struct xe_bo *bo, uint64_t offset,
+dma_addr_t xe_bo_addr(struct xe_bo *bo, u64 offset,
 		      size_t page_size, bool *is_lmem);
 
 static inline dma_addr_t
@@ -181,7 +181,7 @@ xe_bo_main_addr(struct xe_bo *bo, size_t page_size)
 	return xe_bo_addr(bo, 0, page_size, &is_lmem);
 }
 
-static inline uint32_t
+static inline u32
 xe_bo_ggtt_addr(struct xe_bo *bo)
 {
 	XE_BUG_ON(bo->ggtt_node.size != bo->size);
@@ -204,20 +204,20 @@ int xe_gem_mmap_offset_ioctl(struct drm_device *dev, void *data,
  * reworking the iosys-map headers. Let's see how that pans out and follow up
  * on his series if needed.
  */
-static inline uint32_t dbm_read32(struct iosys_map map)
+static inline u32 dbm_read32(struct iosys_map map)
 {
 	if (map.is_iomem)
 		return readl(map.vaddr_iomem);
 	else
-		return READ_ONCE(*(uint32_t *)map.vaddr);
+		return READ_ONCE(*(u32 *)map.vaddr);
 }
 
-static inline void dbm_write32(struct iosys_map map, uint32_t val)
+static inline void dbm_write32(struct iosys_map map, u32 val)
 {
 	if (map.is_iomem)
 		writel(val, map.vaddr_iomem);
 	else
-		*(uint32_t *)map.vaddr = val;
+		*(u32 *)map.vaddr = val;
 }
 
 #endif /* _XE_BO_H_ */

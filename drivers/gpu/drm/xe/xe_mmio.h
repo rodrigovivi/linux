@@ -24,20 +24,20 @@ struct xe_device;
 int xe_mmio_init(struct xe_device *xe);
 
 static inline void xe_mmio_write32(struct xe_gt *gt,
-				   uint32_t reg, uint32_t val)
+				   u32 reg, u32 val)
 {
 	writel(val, gt->mmio.regs + reg);
 }
 
-static inline uint32_t xe_mmio_read32(struct xe_gt *gt, uint32_t reg)
+static inline u32 xe_mmio_read32(struct xe_gt *gt, u32 reg)
 {
 	return readl(gt->mmio.regs + reg);
 }
 
-static inline void xe_mmio_rmw32(struct xe_gt *gt, uint32_t reg, uint32_t mask,
-				 uint32_t val)
+static inline void xe_mmio_rmw32(struct xe_gt *gt, u32 reg, u32 mask,
+				 u32 val)
 {
-	uint32_t reg_val;
+	u32 reg_val;
 
 	reg_val = xe_mmio_read32(gt, reg);
 	reg_val &= mask;
@@ -46,21 +46,21 @@ static inline void xe_mmio_rmw32(struct xe_gt *gt, uint32_t reg, uint32_t mask,
 }
 
 static inline void xe_mmio_write64(struct xe_gt *gt,
-				   uint32_t reg, uint64_t val)
+				   u32 reg, u64 val)
 {
 	writeq(val, gt->mmio.regs + reg);
 }
 
-static inline uint64_t xe_mmio_read64(struct xe_gt *gt, uint32_t reg)
+static inline u64 xe_mmio_read64(struct xe_gt *gt, u32 reg)
 {
 	return readq(gt->mmio.regs + reg);
 }
 
 static inline int xe_mmio_write32_and_verify(struct xe_gt *gt,
-					     uint32_t reg, uint32_t val,
-					     uint32_t mask, uint32_t eval)
+					     u32 reg, u32 val,
+					     u32 mask, u32 eval)
 {
-	uint32_t reg_val;
+	u32 reg_val;
 
 	xe_mmio_write32(gt, reg, val);
 	reg_val = xe_mmio_read32(gt, reg);
@@ -69,8 +69,8 @@ static inline int xe_mmio_write32_and_verify(struct xe_gt *gt,
 }
 
 static inline int xe_mmio_wait32(struct xe_gt *gt,
-				 uint32_t reg, uint32_t val,
-				 uint32_t mask, uint32_t timeout_ms)
+				 u32 reg, u32 val,
+				 u32 mask, u32 timeout_ms)
 {
 	return wait_for((xe_mmio_read32(gt, reg) & mask) == val,
 			timeout_ms);
