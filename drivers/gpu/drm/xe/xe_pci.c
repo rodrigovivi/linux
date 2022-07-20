@@ -17,6 +17,7 @@
 #include "xe_device.h"
 #include "xe_macros.h"
 #include "xe_pm.h"
+#include "xe_step.h"
 
 #include "../i915/i915_reg.h"
 
@@ -261,12 +262,18 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	spd = subplatform_get(xe, desc);
 	xe->info.subplatform = spd ? spd->subplatform : XE_SUBPLATFORM_NONE;
+	xe->info.step = xe_step_get(xe);
 
 	drm_dbg(&xe->drm, "%s %s %04x:%04x dgfx:%d gfx100:%d dma_m_s:%d tc:%d",
 		desc->platform_name, spd ? spd->name : "",
 		xe->info.devid, xe->info.revid,
 		xe->info.is_dgfx, xe->info.graphics_verx100,
 		xe->info.dma_mask_size, xe->info.tile_count);
+
+	drm_dbg(&xe->drm, "Stepping = (G:%s, M:%s, D:%s)\n",
+		xe_step_name(xe->info.step.graphics),
+		xe_step_name(xe->info.step.media),
+		xe_step_name(xe->info.step.display));
 
 	pci_set_drvdata(pdev, xe);
 	err = pci_enable_device(pdev);
