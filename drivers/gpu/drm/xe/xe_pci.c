@@ -26,35 +26,9 @@ enum intel_ppgtt_type {
 	INTEL_PPGTT_FULL = 2,
 };
 
-enum pipe {
-	INVALID_PIPE = -1,
-
-	PIPE_A = 0,
-	PIPE_B,
-	PIPE_C,
-	PIPE_D,
-	_PIPE_EDP,
-
-	_MAX_PIPES = _PIPE_EDP
-};
-
-/*
- * FIXME: We should probably switch this to a 0-based scheme to be consistent
- * with how we now name/number DBUF_CTL instances.
- */
-enum dbuf_slice {
-	DBUF_S1,
-	DBUF_S2,
-	DBUF_S3,
-	DBUF_S4,
-	_MAX_DBUF_SLICES
-};
-
-
 #define GTT_PAGE_SIZE_4K	BIT_ULL(12)
 #define GTT_PAGE_SIZE_64K	BIT_ULL(16)
 #define GTT_PAGE_SIZE_2M	BIT_ULL(21)
-
 
 enum intel_region_id {
 	INTEL_REGION_SMEM = 0,
@@ -69,32 +43,6 @@ enum intel_region_id {
 #define REGION_STOLEN_SMEM   BIT(INTEL_REGION_STOLEN_SMEM)
 #define REGION_STOLEN_LMEM   BIT(INTEL_REGION_STOLEN_LMEM)
 
-enum transcoder {
-	INVALID_TRANSCODER = -1,
-	/*
-	 * The following transcoders have a 1:1 transcoder -> pipe mapping,
-	 * keep their values fixed: the code assumes that TRANSCODER_A=0, the
-	 * rest have consecutive values and match the enum values of the pipes
-	 * they map to.
-	 */
-	TRANSCODER_A = PIPE_A,
-	TRANSCODER_B = PIPE_B,
-	TRANSCODER_C = PIPE_C,
-	TRANSCODER_D = PIPE_D,
-
-	/*
-	 * The following transcoders can map to any pipe, their enum value
-	 * doesn't need to stay fixed.
-	 */
-	TRANSCODER_EDP,
-	TRANSCODER_DSI_0,
-	TRANSCODER_DSI_1,
-	TRANSCODER_DSI_A = TRANSCODER_DSI_0,	/* legacy DSI */
-	TRANSCODER_DSI_C = TRANSCODER_DSI_1,	/* legacy DSI */
-
-	_MAX_TRANSCODERS
-};
-
 typedef u32 intel_engine_mask_t;
 
 #define DEV_INFO_FOR_EACH_FLAG(func) \
@@ -104,7 +52,6 @@ typedef u32 intel_engine_mask_t;
 	func(is_dgfx); \
 	/* Keep has_* in alphabetical order */ \
 	func(has_64bit_reloc); \
-	func(gpu_reset_clobbers_display); \
 	func(has_reset_engine); \
 	func(has_global_mocs); \
 	func(has_gt_uc); \
@@ -121,29 +68,6 @@ typedef u32 intel_engine_mask_t;
 	func(has_coherent_ggtt); \
 	func(unfenced_needs_alignment); \
 	func(hws_needs_physical);
-
-#define DEV_INFO_DISPLAY_FOR_EACH_FLAG(func) \
-	/* Keep in alphabetical order */ \
-	func(cursor_needs_physical); \
-	func(has_cdclk_crawl); \
-	func(has_dmc); \
-	func(has_ddi); \
-	func(has_dp_mst); \
-	func(has_dsb); \
-	func(has_dsc); \
-	func(has_fbc); \
-	func(has_fpga_dbg); \
-	func(has_gmch); \
-	func(has_hdcp); \
-	func(has_hotplug); \
-	func(has_hti); \
-	func(has_ipc); \
-	func(has_modular_fia); \
-	func(has_overlay); \
-	func(has_psr); \
-	func(has_psr_hw_tracking); \
-	func(overlay_needs_physical); \
-	func(supports_tv);
 
 struct xe_subplatform_desc {
 	enum xe_subplatform subplatform;
@@ -172,43 +96,12 @@ struct xe_device_desc {
 
 	u32 memory_regions; /* regions supported by the HW */
 
-	u32 display_mmio_offset;
-
 	u8 gt; /* GT number, 0 if undefined */
-
-	u8 pipe_mask;
-	u8 cpu_transcoder_mask;
-
-	u8 abox_mask;
 
 #define DEFINE_FLAG(name) u8 name:1
 	DEV_INFO_FOR_EACH_FLAG(DEFINE_FLAG);
 #undef DEFINE_FLAG
 
-	struct {
-		u8 ver;
-
-#define DEFINE_FLAG(name) u8 name:1
-		DEV_INFO_DISPLAY_FOR_EACH_FLAG(DEFINE_FLAG);
-#undef DEFINE_FLAG
-	} display;
-
-	struct {
-		u16 size; /* in blocks */
-		u8 slice_mask;
-	} dbuf;
-
-	/* Register offsets for the various display pipes and transcoders */
-	int pipe_offsets[_MAX_TRANSCODERS];
-	int trans_offsets[_MAX_TRANSCODERS];
-	int cursor_offsets[_MAX_PIPES];
-
-	struct color_luts {
-		u32 degamma_lut_size;
-		u32 gamma_lut_size;
-		u32 degamma_lut_tests;
-		u32 gamma_lut_tests;
-	} color;
 	u8 vram_flags;
 	bool has_tiles;
 	u8 vm_max_level;
@@ -225,23 +118,6 @@ struct xe_device_desc {
 #define GEN12_FEATURES \
 	.graphics_ver = 12, \
 	.media_ver = 12, \
-	.abox_mask = GENMASK(2, 1), \
-	.color = { .degamma_lut_size = 33, .gamma_lut_size = 262145 }, \
-	.dbuf.size = 2048, \
-	.dbuf.slice_mask = BIT(DBUF_S1) | BIT(DBUF_S2), \
-	.display.has_ddi = 1, \
-	.display.has_dmc = 1, \
-	.display.has_dp_mst = 1, \
-	.display.has_dsb = 1, \
-	.display.has_dsc = 1, \
-	.display.has_fbc = 1, \
-	.display.has_fpga_dbg = 1, \
-	.display.has_hdcp = 1, \
-	.display.has_hotplug = 1, \
-	.display.has_ipc = 1, \
-	.display.has_psr = 1, \
-	.display.has_psr_hw_tracking = 1, \
-	.display.ver = 12, \
 	.dma_mask_size = 39, \
 	.has_64bit_reloc = 1, \
 	.has_coherent_ggtt = false, \
@@ -262,39 +138,12 @@ struct xe_device_desc {
 	.page_sizes = GTT_PAGE_SIZE_4K | \
 		      GTT_PAGE_SIZE_64K | \
 		      GTT_PAGE_SIZE_2M, \
-	.pipe_mask = BIT(PIPE_A) | BIT(PIPE_B) | BIT(PIPE_C) | BIT(PIPE_D), \
-	.cpu_transcoder_mask = BIT(TRANSCODER_A) | BIT(TRANSCODER_B) | \
-		BIT(TRANSCODER_C) | BIT(TRANSCODER_D) | \
-		BIT(TRANSCODER_DSI_0) | BIT(TRANSCODER_DSI_1), \
-	.pipe_offsets = { \
-		[TRANSCODER_A] = PIPE_A_OFFSET, \
-		[TRANSCODER_B] = PIPE_B_OFFSET, \
-		[TRANSCODER_C] = PIPE_C_OFFSET, \
-		[TRANSCODER_D] = PIPE_D_OFFSET, \
-		[TRANSCODER_DSI_0] = PIPE_DSI0_OFFSET, \
-		[TRANSCODER_DSI_1] = PIPE_DSI1_OFFSET, \
-	}, \
-	.trans_offsets = { \
-		[TRANSCODER_A] = TRANSCODER_A_OFFSET, \
-		[TRANSCODER_B] = TRANSCODER_B_OFFSET, \
-		[TRANSCODER_C] = TRANSCODER_C_OFFSET, \
-		[TRANSCODER_D] = TRANSCODER_D_OFFSET, \
-		[TRANSCODER_DSI_0] = TRANSCODER_DSI0_OFFSET, \
-		[TRANSCODER_DSI_1] = TRANSCODER_DSI1_OFFSET, \
-	}, \
-	.cursor_offsets = { \
-		[PIPE_A] = CURSOR_A_OFFSET, \
-		[PIPE_B] = IVB_CURSOR_B_OFFSET, \
-		[PIPE_C] = IVB_CURSOR_C_OFFSET, \
-		[PIPE_D] = TGL_CURSOR_D_OFFSET, \
-	}, \
 	.vm_max_level = 3, \
 	.vram_flags = 0
 
 static const struct xe_device_desc tgl_desc = {
 	GEN12_FEATURES,
 	PLATFORM(XE_TIGERLAKE),
-	.display.has_modular_fia = 1,
 	.platform_engine_mask =
 		BIT(XE_HW_ENGINE_RCS0) | BIT(XE_HW_ENGINE_BCS0) |
 		BIT(XE_HW_ENGINE_VECS0) | BIT(XE_HW_ENGINE_VCS0) |
@@ -321,7 +170,6 @@ static const struct xe_device_desc dg1_desc = {
 	DGFX_FEATURES,
 	.graphics_rel = 10,
 	PLATFORM(XE_DG1),
-	.pipe_mask = BIT(PIPE_A) | BIT(PIPE_B) | BIT(PIPE_C) | BIT(PIPE_D),
 	.require_force_probe = 1,
 	.platform_engine_mask =
 		BIT(XE_HW_ENGINE_RCS0) | BIT(XE_HW_ENGINE_BCS0) |
@@ -369,8 +217,6 @@ static const struct xe_device_desc ats_m_desc = {
 	XE_HP_FEATURES,
 	XE_HPM_FEATURES,
 	DGFX_FEATURES,
-	.display = { },
-	.pipe_mask = 0,
 	.graphics_rel = 55,
 	.media_rel = 55,
 	PLATFORM(XE_DG2),
@@ -406,10 +252,8 @@ static const struct xe_device_desc pvc_desc = {
 	XE_HPM_FEATURES,
 	DGFX_FEATURES,
 	PLATFORM(XE_PVC),
-	.display = { 0 },
 	.graphics_rel = 60,
 	.media_rel = 60,
-	.pipe_mask = 0,
 	.platform_engine_mask = PVC_ENGINES,
 	.require_force_probe = 1,
 	.is_dgfx = 1,
