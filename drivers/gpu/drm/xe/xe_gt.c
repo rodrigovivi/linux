@@ -82,6 +82,7 @@ int xe_gt_alloc(struct xe_device *xe, struct xe_gt *gt)
 	return 0;
 }
 
+/* FIXME: These should be in a common file */
 #define CHV_PPAT_SNOOP			REG_BIT(6)
 #define GEN8_PPAT_AGE(x)		((x)<<4)
 #define GEN8_PPAT_LLCeLLC		(3<<2)
@@ -93,6 +94,7 @@ int xe_gt_alloc(struct xe_device *xe, struct xe_gt *gt)
 #define GEN8_PPAT_UC			(0<<0)
 #define GEN8_PPAT_ELLC_OVERRIDE		(0<<2)
 #define GEN8_PPAT(i, x)			((u64)(x) << ((i) * 8))
+#define GEN12_PPAT_CLOS(x)              ((x)<<2)
 
 static void tgl_setup_private_ppat(struct xe_gt *gt)
 {
@@ -105,6 +107,32 @@ static void tgl_setup_private_ppat(struct xe_gt *gt)
 	xe_mmio_write32(gt, GEN12_PAT_INDEX(5).reg, GEN8_PPAT_WB);
 	xe_mmio_write32(gt, GEN12_PAT_INDEX(6).reg, GEN8_PPAT_WB);
 	xe_mmio_write32(gt, GEN12_PAT_INDEX(7).reg, GEN8_PPAT_WB);
+}
+
+static void pvc_setup_private_ppat(struct xe_gt *gt)
+{
+        xe_mmio_write32(gt, GEN12_PAT_INDEX(0).reg, GEN8_PPAT_UC);
+        xe_mmio_write32(gt, GEN12_PAT_INDEX(1).reg, GEN8_PPAT_WC);
+        xe_mmio_write32(gt, GEN12_PAT_INDEX(2).reg, GEN8_PPAT_WT);
+        xe_mmio_write32(gt, GEN12_PAT_INDEX(3).reg, GEN8_PPAT_WB);
+        xe_mmio_write32(gt, GEN12_PAT_INDEX(4).reg,
+			GEN12_PPAT_CLOS(1) | GEN8_PPAT_WT);
+        xe_mmio_write32(gt, GEN12_PAT_INDEX(5).reg,
+			GEN12_PPAT_CLOS(1) | GEN8_PPAT_WB);
+        xe_mmio_write32(gt, GEN12_PAT_INDEX(6).reg,
+			GEN12_PPAT_CLOS(2) | GEN8_PPAT_WT);
+        xe_mmio_write32(gt, GEN12_PAT_INDEX(7).reg,
+			GEN12_PPAT_CLOS(2) | GEN8_PPAT_WB);
+}
+
+static void setup_private_ppat(struct xe_gt *gt)
+{
+	struct xe_device *xe = gt_to_xe(gt);
+
+	if (xe->info.platform == XE_PVC)
+		pvc_setup_private_ppat(gt);
+	else
+		tgl_setup_private_ppat(gt);
 }
 
 static int gt_ttm_mgr_init(struct xe_gt *gt)
@@ -162,7 +190,7 @@ int xe_gt_init(struct xe_gt *gt)
 	if (err)
 		goto err_hw_fence_irq;
 
-	tgl_setup_private_ppat(gt);
+	setup_private_ppat(gt);
 
 	if (!xe_gt_is_media_type(gt)) {
 		err = gt_ttm_mgr_init(gt);
@@ -272,7 +300,7 @@ static int gt_reset(struct xe_gt *gt)
 	if (err)
 		goto err_out;
 
-	tgl_setup_private_ppat(gt);
+	setup_private_ppat(gt);
 
 	err = xe_wopcm_init(&gt->uc.wopcm);
 	if (err)
