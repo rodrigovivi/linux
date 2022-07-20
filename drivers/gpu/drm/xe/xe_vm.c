@@ -156,19 +156,6 @@ void __xe_pt_write(struct ttm_bo_kmap_obj *map, unsigned int idx, uint64_t data)
 		map_u64[idx] = data;
 }
 
-static uint64_t __xe_pt_read(struct ttm_bo_kmap_obj *map,
-		unsigned int idx)
-{
-	bool is_iomem;
-	uint64_t *map_u64;
-
-	map_u64 = ttm_kmap_obj_virtual(map, &is_iomem);
-	if (is_iomem)
-		return readq((uint64_t __iomem *)&map_u64[idx]);
-
-	return map_u64[idx];
-}
-
 static struct xe_pt *xe_pt_create(struct xe_vm *vm, unsigned int level)
 {
 	struct xe_pt *pt;

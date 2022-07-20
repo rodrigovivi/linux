@@ -721,9 +721,11 @@ xe_migrate_update_pgtables_cpu(struct xe_migrate *m,
 		u64 *map_u64 = ttm_kmap_obj_virtual(&maps[i], &is_iomem);
 
 		if (is_iomem) {
-			u64 val[512];
+			u64 val[192];
 
-			populatefn(&val, update->ofs, update->qwords,  update, arg);
+			BUG_ON(update->qwords > ARRAY_SIZE(val));
+
+			populatefn(&val, update->ofs, update->qwords, update, arg);
 			for (j = 0; j < update->qwords; j++)
 				writeq(val[j], (u64 __iomem *)&map_u64[j + update->ofs]);
 		} else {
