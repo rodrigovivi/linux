@@ -14,13 +14,13 @@ struct xe_gt;
 struct xe_ggtt {
 	struct xe_gt *gt;
 
-	uint64_t size;
+	u64 size;
 
 	struct xe_bo *scratch;
 
 	struct mutex lock;
 
-	uint64_t __iomem *gsm;
+	u64 __iomem *gsm;
 
 	struct drm_mm mm;
 };

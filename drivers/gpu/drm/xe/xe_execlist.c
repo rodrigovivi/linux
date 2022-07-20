@@ -41,11 +41,11 @@
 
 
 static void __start_lrc(struct xe_hw_engine *hwe, struct xe_lrc *lrc,
-			uint32_t ctx_id)
+			u32 ctx_id)
 {
 	struct xe_gt *gt = hwe->gt;
 	struct xe_device *xe = gt_to_xe(gt);
-	uint64_t lrc_desc;
+	u64 lrc_desc;
 
 	printk(KERN_INFO "__start_lrc(%s, 0x%p, %u)\n", hwe->name, lrc, ctx_id);
 
@@ -118,7 +118,7 @@ static void __xe_execlist_port_start(struct xe_execlist_port *port,
 
 static void __xe_execlist_port_idle(struct xe_execlist_port *port)
 {
-	uint32_t noop[2] = { MI_NOOP, MI_NOOP };
+	u32 noop[2] = { MI_NOOP, MI_NOOP };
 
 	xe_execlist_port_assert_held(port);
 
@@ -168,10 +168,10 @@ static void __xe_execlist_port_start_next_active(struct xe_execlist_port *port)
 	__xe_execlist_port_idle(port);
 }
 
-static uint64_t read_execlist_status(struct xe_hw_engine *hwe)
+static u64 read_execlist_status(struct xe_hw_engine *hwe)
 {
 	struct xe_gt *gt = hwe->gt;
-	uint32_t hi, lo;
+	u32 hi, lo;
 
 	lo = xe_mmio_read32(gt, RING_EXECLIST_STATUS_LO(hwe->mmio_base).reg);
 	hi = xe_mmio_read32(gt, RING_EXECLIST_STATUS_HI(hwe->mmio_base).reg);
@@ -179,12 +179,12 @@ static uint64_t read_execlist_status(struct xe_hw_engine *hwe)
 	printk(KERN_INFO "EXECLIST_STATUS %d:%d = 0x%08x %08x\n", hwe->class,
 	       hwe->instance, hi, lo);
 
-	return lo | (uint64_t)hi << 32;
+	return lo | (u64)hi << 32;
 }
 
 static void xe_execlist_port_irq_handler_locked(struct xe_execlist_port *port)
 {
-	uint64_t status;
+	u64 status;
 
 	xe_execlist_port_assert_held(port);
 
@@ -196,7 +196,7 @@ static void xe_execlist_port_irq_handler_locked(struct xe_execlist_port *port)
 }
 
 static void xe_execlist_port_irq_handler(struct xe_hw_engine *hwe,
-					 uint16_t intr_vec)
+					 u16 intr_vec)
 {
 	struct xe_execlist_port *port = hwe->exl_port;
 

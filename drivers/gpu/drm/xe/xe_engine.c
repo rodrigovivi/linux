@@ -280,7 +280,7 @@ static int engine_user_ext_set_property(struct xe_device *xe,
 					u64 extension,
 					bool create)
 {
-	uint64_t __user *address = u64_to_user_ptr(extension);
+	u64 __user *address = u64_to_user_ptr(extension);
 	struct drm_xe_ext_engine_set_property ext;
 	int err;
 
@@ -309,7 +309,7 @@ static const xe_engine_set_property_fn engine_user_extension_funcs[] = {
 static int engine_user_extensions(struct xe_device *xe, struct xe_engine *e,
 				  u64 extensions, int ext_number, bool create)
 {
-	uint64_t __user *address = u64_to_user_ptr(extensions);
+	u64 __user *address = u64_to_user_ptr(extensions);
 	struct xe_user_extension ext;
 	int err;
 

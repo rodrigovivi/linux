@@ -32,9 +32,9 @@
 
 /* state back for walking over vram_mgr and gtt_mgr allocations */
 struct xe_res_cursor {
-	uint64_t		start;
-	uint64_t		size;
-	uint64_t		remaining;
+	u64		start;
+	u64		size;
+	u64		remaining;
 	struct drm_mm_node	*node;
 };
 
@@ -49,7 +49,7 @@ struct xe_res_cursor {
  * Start walking over the range of allocations between @start and @size.
  */
 static inline void xe_res_first(struct ttm_resource *res,
-				uint64_t start, uint64_t size,
+				u64 start, u64 size,
 				struct xe_res_cursor *cur)
 {
 	struct drm_mm_node *node;
@@ -83,7 +83,7 @@ static inline void xe_res_first(struct ttm_resource *res,
  *
  * Move the cursor @size bytes forwrad, walking to the next node if necessary.
  */
-static inline void xe_res_next(struct xe_res_cursor *cur, uint64_t size)
+static inline void xe_res_next(struct xe_res_cursor *cur, u64 size)
 {
 	struct drm_mm_node *node = cur->node;
 

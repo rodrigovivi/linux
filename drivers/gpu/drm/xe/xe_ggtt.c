@@ -19,9 +19,9 @@
 #include "../i915/i915_reg.h"
 #include "../i915/gt/intel_gt_regs.h"
 
-static uint64_t gen8_pte_encode(struct xe_bo *bo, uint64_t bo_offset)
+static u64 gen8_pte_encode(struct xe_bo *bo, u64 bo_offset)
 {
-	uint64_t pte;
+	u64 pte;
 	bool is_lmem;
 
 	pte = xe_bo_addr(bo, bo_offset, GEN8_PAGE_SIZE, &is_lmem);
@@ -35,14 +35,14 @@ static uint64_t gen8_pte_encode(struct xe_bo *bo, uint64_t bo_offset)
 
 static unsigned int probe_gsm_size(struct pci_dev *pdev)
 {
-	uint16_t gmch_ctl, ggms;
+	u16 gmch_ctl, ggms;
 
 	pci_read_config_word(pdev, SNB_GMCH_CTRL, &gmch_ctl);
 	ggms = (gmch_ctl >> BDW_GMCH_GGMS_SHIFT) & BDW_GMCH_GGMS_MASK;
 	return ggms ? SZ_1M << ggms : 0;
 }
 
-static void xe_ggtt_set_pte(struct xe_ggtt *ggtt, uint64_t addr, uint64_t pte)
+static void xe_ggtt_set_pte(struct xe_ggtt *ggtt, u64 addr, u64 pte)
 {
 	XE_BUG_ON(addr & GEN8_PTE_MASK);
 	XE_BUG_ON(addr >= ggtt->size);
@@ -50,10 +50,10 @@ static void xe_ggtt_set_pte(struct xe_ggtt *ggtt, uint64_t addr, uint64_t pte)
 	writeq(pte, &ggtt->gsm[addr >> GEN8_PTE_SHIFT]);
 }
 
-static void xe_ggtt_clear(struct xe_ggtt *ggtt, uint64_t start, uint64_t size)
+static void xe_ggtt_clear(struct xe_ggtt *ggtt, u64 start, u64 size)
 {
-	uint64_t end = start + size - 1;
-	uint64_t scratch_pte;
+	u64 end = start + size - 1;
+	u64 scratch_pte;
 
 	XE_BUG_ON(start >= end);
 
@@ -151,7 +151,7 @@ int xe_ggtt_init(struct xe_gt *gt, struct xe_ggtt *ggtt)
 	if (err)
 		goto err_scratch;
 
-	ggtt->size = (gsm_size / 8) * (uint64_t)GEN8_PAGE_SIZE;
+	ggtt->size = (gsm_size / 8) * (u64)GEN8_PAGE_SIZE;
 	xe_ggtt_clear(ggtt, 0, ggtt->size - 1);
 
 	/*
@@ -220,7 +220,7 @@ static void xe_ggtt_invalidate(struct xe_gt *gt)
 
 void xe_ggtt_printk(struct xe_ggtt *ggtt, const char *prefix)
 {
-	uint64_t addr, scratch_pte;
+	u64 addr, scratch_pte;
 
 	scratch_pte = gen8_pte_encode(ggtt->scratch, 0);
 
@@ -233,7 +233,7 @@ void xe_ggtt_printk(struct xe_ggtt *ggtt, const char *prefix)
 			continue;
 
 		printk("%s    ggtt[0x%08x] = 0x%016llx",
-		       prefix, (uint32_t)addr, ggtt->gsm[i]);
+		       prefix, (u32)addr, ggtt->gsm[i]);
 	}
 }
 
@@ -252,8 +252,8 @@ int xe_ggtt_insert_special_node(struct xe_ggtt *ggtt, struct drm_mm_node *node,
 
 void xe_ggtt_map_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 {
-	uint64_t start = bo->ggtt_node.start;
-	uint64_t offset, pte;
+	u64 start = bo->ggtt_node.start;
+	u64 offset, pte;
 
 	for (offset = 0; offset < bo->size; offset += GEN8_PAGE_SIZE) {
 		pte = gen8_pte_encode(bo, offset);

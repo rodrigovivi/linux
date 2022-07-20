@@ -155,11 +155,11 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	struct xe_file *xef = to_xe_file(file);
 	struct drm_xe_exec *args = data;
 	struct drm_xe_sync __user *syncs_user = u64_to_user_ptr(args->syncs);
-	uint64_t __user *addresses_user = u64_to_user_ptr(args->address);
+	u64 __user *addresses_user = u64_to_user_ptr(args->address);
 	struct xe_engine *engine;
 	struct xe_sync_entry *syncs = NULL;
-	uint64_t addresses[XE_HW_ENGINE_MAX_INSTANCE];
-	uint32_t i, num_syncs = 0;
+	u64 addresses[XE_HW_ENGINE_MAX_INSTANCE];
+	u32 i, num_syncs = 0;
 	struct xe_sched_job *job;
 	struct dma_fence *rebind_fence;
 	struct xe_vm *vm;
@@ -204,7 +204,7 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	}
 
 	if (xe_engine_is_parallel(engine)) {
-		err = __copy_from_user(addresses, addresses_user, sizeof(uint64_t) *
+		err = __copy_from_user(addresses, addresses_user, sizeof(u64) *
 				       engine->width);
 		if (err) {
 			err = -EFAULT;
