@@ -76,12 +76,18 @@ static u64 xe_migrate_vm_addr(u64 slot, u32 level)
 	return (slot + 1ULL) << xe_pt_shift(level + 1);
 }
 
+static u64 xe_migrate_vram_ofs(u64 addr)
+{
+	return addr + (256ULL << xe_pt_shift(2));
+}
+
 static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 {
 	u32 num_entries = NUM_PT_SLOTS, num_level = vm->pt_root->level;
 	struct ttm_bo_kmap_obj map;
 	u32 map_ofs, level, i;
 	struct xe_bo *bo, *batch = m->gt->kernel_bb_pool.bo;
+	struct xe_device *xe = gt_to_xe(m->gt);
 	u64 entry;
 	int err;
 
@@ -138,13 +144,18 @@ static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 			i += 1;
 	}
 
-	/* Write out batch too */
-	m->batch_base_ofs = NUM_PT_SLOTS * GEN8_PAGE_SIZE;
-	for (i = 0; i < batch->size; i += vm->flags & XE_VM_FLAGS_64K ? SZ_64K : SZ_4K) {
-		entry = gen8_pte_encode(NULL, batch, i, XE_CACHE_WB, 0, 0);
+	if (!IS_DGFX(xe)) {
+		/* Write out batch too */
+		m->batch_base_ofs = NUM_PT_SLOTS * GEN8_PAGE_SIZE;
+		for (i = 0; i < batch->size; i += vm->flags & XE_VM_FLAGS_64K ? SZ_64K : SZ_4K) {
+			entry = gen8_pte_encode(NULL, batch, i, XE_CACHE_WB, 0, 0);
 
-		iosys_map_wr(&bo->vmap, map_ofs + level * 8, u64, entry);
-		level++;
+			iosys_map_wr(&bo->vmap, map_ofs + level * 8, u64, entry);
+			level++;
+		}
+	} else {
+		bool is_lmem;
+		m->batch_base_ofs = xe_migrate_vram_ofs(xe_bo_addr(batch, 0, GEN8_PAGE_SIZE, &is_lmem));
 	}
 
 	for (level = 1; level < num_level; level++) {
@@ -171,6 +182,24 @@ static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 		}
 	}
 
+	/* Identity map the entire vram at 256GiB offset */
+	if (IS_DGFX(xe)) {
+		u64 pos, ofs, flags;
+
+		level = 2;
+		ofs = map_ofs + GEN8_PAGE_SIZE * level + 256 * 8;
+		flags = GEN8_PAGE_RW | GEN8_PAGE_PRESENT | PPAT_CACHED |
+			GEN12_PPGTT_PTE_LM | GEN8_PDPE_PS_1G;
+
+		/*
+		 * Use 1GB pages, it shouldn't matter the physical amount of
+		 * vram is less, when we don't access it.
+		 */
+		for (pos = 0; pos < m->gt->mem.vram.size; pos += SZ_1G, ofs += 8)
+			iosys_map_wr(&bo->vmap, ofs, u64, pos | flags);
+
+	}
+
 	xe_bo_vunmap(bo);
 
 	/*
@@ -192,7 +221,7 @@ static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 	 * everywhere, this allows lockless updates to scratch pages by using
 	 * the different addresses in VM.
 	 */
-	drm_suballoc_manager_init(&m->vm_update_sa, num_entries - num_level - NUM_KERNEL_PDE, 0);
+	drm_suballoc_manager_init(&m->vm_update_sa, map_ofs / GEN8_PAGE_SIZE - NUM_KERNEL_PDE, 0);
 
 	m->pt_bo = bo;
 	return 0;
@@ -772,6 +801,13 @@ static void write_pgtable(struct xe_bb *bb, u64 ppgtt_ofs,
 	 * pages are used. Hence the BUG_ON.
 	 */
 	XE_BUG_ON(update->qwords > 0x1ff);
+	if (!ppgtt_ofs) {
+		bool is_lmem;
+
+		ppgtt_ofs = xe_migrate_vram_ofs(xe_bo_addr(update->pt_bo, 0, GEN8_PAGE_SIZE, &is_lmem));
+		XE_BUG_ON(!is_lmem);
+	}
+
 	do {
 		u64 addr = ppgtt_ofs + ofs * 8;
 		chunk = min(update->qwords, 0x1ffU);
@@ -807,6 +843,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 			   xe_migrate_populatefn_t populatefn, void *arg)
 {
 	struct xe_gt *gt = m->gt;
+	struct xe_device *xe = gt_to_xe(gt);
 	struct xe_sched_job *job;
 	struct dma_fence *fence;
 	struct drm_suballoc *sa_bo = NULL;
@@ -831,7 +868,10 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	}
 
 	/* fixed + PTE entries */
-	batch_size = 6 + num_updates * 2;
+	if (IS_DGFX(xe))
+		batch_size = 2;
+	else
+		batch_size = 6 + num_updates * 2;
 
 	for (i = 0; i < num_updates; i++) {
 		u32 num_cmds = DIV_ROUND_UP(updates[i].qwords, 0x1ff);
@@ -848,44 +888,54 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	 */
 	XE_BUG_ON(batch_size >= SZ_128K);
 
-	ppgtt_ofs = NUM_KERNEL_PDE - 1;
-	if (eng) {
-		sa_bo = drm_suballoc_new(&m->vm_update_sa, num_updates);
-		if (IS_ERR(sa_bo))
-			return ERR_CAST(sa_bo);
-
-		ppgtt_ofs = NUM_KERNEL_PDE + sa_bo->soffset;
-	}
-
 	bb = xe_bb_new(gt, batch_size);
-	if (IS_ERR(bb)) {
-		err = PTR_ERR(bb);
-		goto err;
+	if (IS_ERR(bb))
+		return ERR_CAST(bb);
+
+	/* For sysmem PTE's, need to map them in our hole.. */
+	if (!IS_DGFX(xe)) {
+		ppgtt_ofs = NUM_KERNEL_PDE - 1;
+		if (eng) {
+			sa_bo = drm_suballoc_new(&m->vm_update_sa, num_updates);
+			if (IS_ERR(sa_bo)) {
+				err = PTR_ERR(sa_bo);
+				goto err;
+			}
+
+			ppgtt_ofs = NUM_KERNEL_PDE + sa_bo->soffset;
+		}
+		emit_arb_clear(bb);
+
+		/* Map our PT's to gtt */
+		bb->cs[bb->len++] = MI_STORE_DATA_IMM | BIT(21) | (num_updates * 2 + 1);
+		bb->cs[bb->len++] = ppgtt_ofs * GEN8_PAGE_SIZE;
+		bb->cs[bb->len++] = 0; /* upper_32_bits */
+
+		for (i = 0; i < num_updates; i++) {
+			struct xe_bo *bo = updates[i].pt_bo;
+
+			BUG_ON(bo->size != SZ_4K);
+
+			addr = gen8_pte_encode(NULL, bo, 0, XE_CACHE_WB, 0, 0);
+			bb->cs[bb->len++] = lower_32_bits(addr);
+			bb->cs[bb->len++] = upper_32_bits(addr);
+		}
+
+		bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
+		update_idx = bb->len;
+
+		addr = xe_migrate_vm_addr(ppgtt_ofs, 0);
+		for (i = 0; i < num_updates; i++)
+			write_pgtable(bb, addr + i * GEN8_PAGE_SIZE, &updates[i], populatefn, arg);
+	} else {
+		/* phys pages, no preamble required */
+		bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
+		update_idx = bb->len;
+
+		emit_arb_clear(bb);
+		for (i = 0; i < num_updates; i++)
+			write_pgtable(bb, 0, &updates[i], populatefn, arg);
 	}
-
-	emit_arb_clear(bb);
-
-	/* Map our PT's to gtt */
-	bb->cs[bb->len++] = MI_STORE_DATA_IMM | BIT(21) | (num_updates * 2 + 1);
-	bb->cs[bb->len++] = ppgtt_ofs * GEN8_PAGE_SIZE;
-	bb->cs[bb->len++] = 0; /* upper_32_bits */
-
-	for (i = 0; i < num_updates; i++) {
-		struct xe_bo *bo = updates[i].pt_bo;
-
-		BUG_ON(bo->size != SZ_4K);
-
-		addr = gen8_pte_encode(NULL, bo, 0, XE_CACHE_WB, 0, 0);
-		bb->cs[bb->len++] = lower_32_bits(addr);
-		bb->cs[bb->len++] = upper_32_bits(addr);
-	}
-
-	bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
-	update_idx = bb->len;
-
-	addr = xe_migrate_vm_addr(ppgtt_ofs, 0);
-	for (i = 0; i < num_updates; i++)
-		write_pgtable(bb, addr + i * GEN8_PAGE_SIZE, &updates[i], populatefn, arg);
 
 	if (!eng)
 		mutex_lock(&m->job_mutex);
