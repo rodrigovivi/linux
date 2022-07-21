@@ -1767,6 +1767,7 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 			start_ofs = start_ofs / 16;
 			last_ofs = last_ofs / 16;
 			my_added_pte = last_ofs + 1 - start_ofs;
+			flags |= GEN12_PDE_64K;
 		}
 		vm_dbg(&xe->drm, "\t%u: Populating entry [%u..%u +%u) [%llx...%llx)\n",
 		       pt->level, start_ofs, last_ofs, my_added_pte, start, end);
