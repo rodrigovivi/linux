@@ -71,6 +71,7 @@ struct xe_device_desc {
 #define GEN12_FEATURES \
 	.graphics_ver = 12, \
 	.media_ver = 12, \
+	.dma_mask_size = 39, \
 	.has_tiles = false, \
 	.vm_max_level = 3, \
 	.vram_flags = 0
