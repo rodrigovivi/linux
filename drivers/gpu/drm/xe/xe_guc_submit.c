@@ -687,16 +687,28 @@ static void guc_engine_free_job(struct drm_sched_job *drm_job)
 		e->guc->id,						\
 		GUC_CONTEXT_##enable_disable,				\
 	}
+#define MIN_SCHED_TIMEOUT	1
 
 static void disable_scheduling_deregister(struct xe_guc *guc,
 					  struct xe_engine *e)
 {
 	MAKE_SCHED_CONTEXT_ACTION(e, DISABLE);
+	int ret;
 
 	set_min_preemption_timeout(guc, e);
 	smp_rmb();
-	wait_event(guc->ct.wq, !engine_pending_enable(e) ||
-		   atomic_read(&guc->submission_state.stopped));
+	ret = wait_event_timeout(guc->ct.wq, !engine_pending_enable(e) ||
+				 atomic_read(&guc->submission_state.stopped),
+				 HZ * 5);
+	if (!ret) {
+		struct drm_gpu_scheduler *sched = &e->guc->sched;
+
+		XE_WARN_ON("Pending enable failed to respond");
+		sched->timeout = MIN_SCHED_TIMEOUT;
+		drm_sched_run_wq_start(sched);
+		xe_gt_reset_async(e->gt);
+		return;
+	}
 
 	clear_engine_enabled(e);
 	set_engine_pending_disable(e);
@@ -711,8 +723,6 @@ static void disable_scheduling_deregister(struct xe_guc *guc,
 		       G2H_LEN_DW_SCHED_CONTEXT_MODE_SET +
 		       G2H_LEN_DW_DEREGISTER_CONTEXT, 2);
 }
-
-#define MIN_SCHED_TIMEOUT	1
 
 static enum drm_gpu_sched_stat
 guc_engine_timedout_job(struct drm_sched_job *drm_job)
