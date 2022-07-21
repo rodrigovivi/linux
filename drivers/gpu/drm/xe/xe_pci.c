@@ -204,7 +204,7 @@ subplatform_get(const struct xe_device *xe, const struct xe_device_desc *desc)
 	const struct xe_subplatform_desc *sp;
 	const u16 *id;
 
-	for (sp = desc->subplatforms; sp->subplatform; sp++)
+	for (sp = desc->subplatforms; sp && sp->subplatform; sp++)
 		for (id = sp->pciidlist; *id; id++)
 			if (*id == xe->info.devid)
 				return sp;
