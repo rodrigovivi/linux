@@ -10,6 +10,7 @@
 #include "xe_guc_ct.h"
 #include "xe_guc_log.h"
 #include "xe_guc_reg.h"
+#include "xe_guc_pc.h"
 #include "xe_guc_submit.h"
 #include "xe_gt.h"
 #include "xe_platform_types.h"
@@ -69,7 +70,7 @@ static u32 guc_ctl_debug_flags(struct xe_guc *guc)
 
 static u32 guc_ctl_feature_flags(struct xe_guc *guc)
 {
-	return 0;
+	return GUC_CTL_ENABLE_SLPC;
 }
 
 static u32 guc_ctl_log_params_flags(struct xe_guc *guc)
@@ -216,6 +217,10 @@ int xe_guc_init(struct xe_guc *guc)
 		goto out;
 
 	ret = xe_guc_ct_init(&guc->ct);
+	if (ret)
+		goto out;
+
+	ret = xe_guc_pc_init(&guc->pc);
 	if (ret)
 		goto out;
 
@@ -711,6 +716,9 @@ int xe_guc_stop(struct xe_guc *guc)
 	ret = xe_guc_submit_stop(guc);
 	if (ret)
 		return ret;
+
+	ret = xe_guc_pc_start(&guc->pc);
+	XE_WARN_ON(ret);
 
 	return 0;
 }
