@@ -439,6 +439,7 @@ static void read_fuses(struct xe_gt *gt)
 	u32 media_fuse;
 	u16 vdbox_mask;
 	u16 vebox_mask;
+	u32 bcs_mask;
 	int i, j;
 
 	/*
@@ -464,7 +465,7 @@ static void read_fuses(struct xe_gt *gt)
 		}
 	}
 
-	for (i = XE_HW_ENGINE_VECS0, j =0; i <= XE_HW_ENGINE_VECS3; ++i, ++j) {
+	for (i = XE_HW_ENGINE_VECS0, j = 0; i <= XE_HW_ENGINE_VECS3; ++i, ++j) {
 		if (!(gt->info.engine_mask & BIT(i)))
 			continue;
 
@@ -474,7 +475,20 @@ static void read_fuses(struct xe_gt *gt)
 		}
 	}
 
-	/* TODO: Copy engines, compute engines */
+	bcs_mask = xe_mmio_read32(gt, GEN10_MIRROR_FUSE3.reg);
+	bcs_mask = REG_FIELD_GET(GEN12_MEML3_EN_MASK, bcs_mask);
+
+	for (i = XE_HW_ENGINE_BCS1, j = 0; i <= XE_HW_ENGINE_BCS8; ++i, ++j) {
+		if (!(gt->info.engine_mask & BIT(i)))
+			continue;
+
+		if (!(BIT(j/2) & bcs_mask)) {
+			gt->info.engine_mask &= ~BIT(i);
+			drm_info(&xe->drm, "bcs%u fused off\n", j);
+		}
+	}
+
+	/* TODO: compute engines */
 }
 
 int xe_hw_engines_init(struct xe_gt *gt)
