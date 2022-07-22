@@ -7,6 +7,7 @@
 #include "xe_huc.h"
 #include "xe_gt.h"
 #include "xe_guc.h"
+#include "xe_guc_pc.h"
 #include "xe_guc_submit.h"
 #include "xe_uc.h"
 #include "xe_uc_fw.h"
@@ -105,6 +106,10 @@ int xe_uc_init_hw(struct xe_uc *uc)
 		return ret;
 
 	ret = xe_guc_enable_communication(&uc->guc);
+	if (ret)
+		return ret;
+
+	ret = xe_guc_pc_start(&uc->guc.pc);
 	if (ret)
 		return ret;
 

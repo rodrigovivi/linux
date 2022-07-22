@@ -131,6 +131,9 @@ struct xe_gt {
 
 	/** @migrate: Migration helper for vram blits and clearing */
 	struct xe_migrate *migrate;
+
+	/** @sysfs: sysfs' kobj used by xe_gt_sysfs */
+	struct kobject *sysfs;
 };
 
 #endif

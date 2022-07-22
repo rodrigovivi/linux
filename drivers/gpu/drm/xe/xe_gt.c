@@ -23,6 +23,7 @@
 #include "xe_ttm_vram_mgr.h"
 #include "xe_uc.h"
 #include "xe_wopcm.h"
+#include "xe_gt_sysfs.h"
 
 #include "../i915/gt/intel_gt_regs.h"
 
@@ -212,6 +213,8 @@ int xe_gt_init(struct xe_gt *gt)
 		gt->ring_ops[i] = xe_ring_ops_get(gt, i);
 		xe_hw_fence_irq_init(&gt->fence_irq[i]);
 	}
+
+	xe_gt_sysfs_init(gt);
 
 	xe_device_mem_access_wa_get(gt_to_xe(gt));
 	err = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);

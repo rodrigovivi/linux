@@ -13,6 +13,7 @@
 #include "xe_guc_ct_types.h"
 #include "xe_guc_fwif.h"
 #include "xe_guc_log_types.h"
+#include "xe_guc_pc_types.h"
 #include "xe_uc_fw_types.h"
 
 /**
@@ -27,6 +28,8 @@ struct xe_guc {
 	struct xe_guc_ads ads;
 	/** @log: GuC ct */
 	struct xe_guc_ct ct;
+	/** @pc: GuC Power Conservation */
+	struct xe_guc_pc pc;
 	/** @submission_state: GuC submission state */
 	struct {
 		/** @engine_lookup: Lookup an xe_engine from guc_id */
