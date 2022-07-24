@@ -168,8 +168,8 @@ static struct xe_pt *xe_pt_create(struct xe_vm *vm, unsigned int level)
 	if (!pt)
 		return ERR_PTR(-ENOMEM);
 
-	bo = xe_bo_create(vm->xe, vm, SZ_4K, ttm_bo_type_kernel,
-			  XE_BO_CREATE_VRAM_IF_DGFX(vm->xe) |
+	bo = xe_bo_create(vm->xe, to_gt(vm->xe), vm, SZ_4K, ttm_bo_type_kernel,
+			  XE_BO_CREATE_VRAM_IF_DGFX(to_gt(vm->xe)) |
 			  XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT |
 			  XE_BO_CREATE_PINNED_BIT);
 	if (IS_ERR(bo)) {
@@ -254,7 +254,7 @@ static bool xe_pte_hugepage_possible(struct xe_vma *vma, u32 level, u64 start, u
 	if (start + pagesize != end)
 		return false;
 
-	if (vma->bo->ttm.resource->mem_type != TTM_PL_VRAM)
+	if (!mem_type_is_vram(vma->bo->ttm.resource->mem_type))
 		return false;
 
 	xe_res_first(vma->bo->ttm.resource, bo_ofs, pagesize, &cur);
@@ -831,6 +831,7 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 {
 	struct xe_vma *vma = container_of(mni, struct xe_vma, userptr.notifier);
 	struct xe_vm *vm = vma->vm;
+	struct xe_device *xe = vm->xe;
 	struct dma_resv_iter cursor;
 	struct dma_fence *fence;
 	long err;
@@ -870,7 +871,7 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 
 	/* If this VM in compute mode, rebind the VMA */
 	if (xe_vm_in_compute_mode(vm))
-		queue_work(to_gt(vm->xe)->ordered_wq, &vm->preempt.rebind_work);
+		queue_work(xe->ordered_wq, &vm->preempt.rebind_work);
 
 	return true;
 }
@@ -1163,9 +1164,9 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 	}
 
 	if (flags & XE_VM_FLAG_SCRATCH_PAGE) {
-		vm->scratch_bo = xe_bo_create(xe, vm, SZ_4K,
+		vm->scratch_bo = xe_bo_create(xe, to_gt(xe), vm, SZ_4K,
 					      ttm_bo_type_kernel,
-					      XE_BO_CREATE_VRAM_IF_DGFX(xe) |
+					      XE_BO_CREATE_VRAM_IF_DGFX(to_gt(xe)) |
 					      XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT |
 					      XE_BO_CREATE_PINNED_BIT);
 		if (IS_ERR(vm->scratch_bo)) {
@@ -1212,7 +1213,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 			xe_migrate_get_vm(to_gt(xe)->migrate);
 		struct xe_engine *eng;
 
-		eng = xe_engine_create_class(xe, migrate_vm,
+		eng = xe_engine_create_class(xe, to_gt(xe), migrate_vm,
 					     XE_ENGINE_CLASS_COPY,
 					     ENGINE_FLAG_VM);
 		xe_vm_put(migrate_vm);

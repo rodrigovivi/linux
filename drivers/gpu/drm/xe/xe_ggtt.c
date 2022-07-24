@@ -73,25 +73,13 @@ static void ggtt_fini(struct drm_device *drm, void *arg)
 	drm_mm_takedown(&ggtt->mm);
 
 	xe_bo_unpin_map_no_vm(ggtt->scratch);
-
-	iounmap(ggtt->gsm);
 }
-
-#define XEHP_TILE0_ADDR_RANGE		_MMIO(0x4900)
-#define XEHP_TILE1_ADDR_RANGE		_MMIO(0x4904)
-#define XEHP_TILE2_ADDR_RANGE		_MMIO(0x4908)
-#define XEHP_TILE3_ADDR_RANGE		_MMIO(0x490C)
-#define XEHP_TILE_LMEM_RANGE_SHIFT	8
-#define XEHP_TILE_LMEM_BASE_SHIFT	1
-#define XEHP_TILE_LMEM_BASE_MASK	REG_GENMASK(7, 1)
-#define XEHP_TILE_LMEM_RANGE_MASK	REG_GENMASK(14, 8)
 
 int xe_ggtt_init(struct xe_gt *gt, struct xe_ggtt *ggtt)
 {
 	struct xe_device *xe = gt_to_xe(gt);
 	struct pci_dev *pdev = to_pci_dev(xe->drm.dev);
 	unsigned int gsm_size;
-	phys_addr_t phys_addr;
 	int err;
 
 	ggtt->gt = gt;
@@ -102,44 +90,10 @@ int xe_ggtt_init(struct xe_gt *gt, struct xe_ggtt *ggtt)
 		return -ENOMEM;
 	}
 
-	if (xe->info.tile_count > 1) {
-		static const i915_reg_t tile_addr_reg[] = {
-			XEHP_TILE0_ADDR_RANGE,
-			XEHP_TILE1_ADDR_RANGE,
-			XEHP_TILE2_ADDR_RANGE,
-			XEHP_TILE3_ADDR_RANGE,
-		};
-		u64 lmem_size, lmem_base;
-		u64 lmr = xe_mmio_read64(gt, tile_addr_reg[0].reg) & 0xffff;
-		u32 stolen = xe_mmio_read64(gt, GEN6_STOLEN_RESERVED.reg);
-		u64 dsm_base = xe_mmio_read64(gt, GEN12_DSMBASE.reg);
-
-		drm_info(&xe->drm, "XEHP_TILE0_ADDR_RANGE = %llx\n", lmr);
-		drm_info(&xe->drm, "GEN6_STOLEN_RESERVED = %08x\n", stolen);
-		drm_info(&xe->drm, "GEN12_DSMBASE = %llx\n", dsm_base);
-
-		lmem_size = lmr >> XEHP_TILE_LMEM_RANGE_SHIFT;
-		lmem_base = (lmr & 0xFF) >> XEHP_TILE_LMEM_BASE_SHIFT;
-		lmem_size *= SZ_1G;
-		lmem_base *= SZ_1G;
-		phys_addr = pci_resource_start(pdev, 0) +
-			    pci_resource_len(pdev, 0) / (2 * xe->info.tile_count);
-
-		drm_dbg(&xe->drm, "tile%d: 0x%llx 0x%llx\n", 0, lmem_base, lmem_size);
-	} else {
-		/* For Modern GENs the PTEs and register space are split in the BAR */
-		phys_addr = pci_resource_start(pdev, 0) + pci_resource_len(pdev, 0) / 2;
-	}
-
-	ggtt->gsm = ioremap(phys_addr, gsm_size);
-	if (!ggtt->gsm) {
-		drm_err(&xe->drm, "Failed to map the ggtt page table\n");
-		return -ENOMEM;
-	}
-
-	ggtt->scratch = xe_bo_create_locked(xe, NULL, GEN8_PAGE_SIZE,
+	ggtt->gsm = gt->mmio.regs + SZ_8M;
+	ggtt->scratch = xe_bo_create_locked(xe, gt, NULL, GEN8_PAGE_SIZE,
 					    ttm_bo_type_kernel,
-					    XE_BO_CREATE_VRAM_IF_DGFX(xe) |
+					    XE_BO_CREATE_VRAM_IF_DGFX(gt) |
 					    XE_BO_CREATE_PINNED_BIT);
 	if (IS_ERR(ggtt->scratch)) {
 		err = PTR_ERR(ggtt->scratch);
@@ -184,7 +138,6 @@ int xe_ggtt_init(struct xe_gt *gt, struct xe_ggtt *ggtt)
 err_scratch:
 	xe_bo_put(ggtt->scratch);
 err_iomap:
-	iounmap(ggtt->gsm);
 	return err;
 }
 
@@ -203,7 +156,7 @@ static void xe_ggtt_invalidate(struct xe_gt *gt)
 	 * therefore flushing WC buffers.  Is that really true here?
 	 */
 	xe_mmio_write32(gt, GFX_FLSH_CNTL_GEN6.reg, GFX_FLSH_CNTL_EN);
-	if (xe_gt_guc_submission_enabled(gt)) {
+	if (xe_device_guc_submission_enabled(gt_to_xe(gt))) {
 		struct xe_device *xe = gt_to_xe(gt);
 
 		/* TODO: also use vfunc here */

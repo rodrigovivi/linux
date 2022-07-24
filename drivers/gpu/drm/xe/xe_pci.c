@@ -56,7 +56,7 @@ struct xe_device_desc {
 #undef DEFINE_FLAG
 
 	u8 vram_flags;
-	bool has_tiles;
+	u8 max_tiles;
 	u8 vm_max_level;
 };
 
@@ -72,7 +72,7 @@ struct xe_device_desc {
 	.graphics_ver = 12, \
 	.media_ver = 12, \
 	.dma_mask_size = 39, \
-	.has_tiles = false, \
+	.max_tiles = 1, \
 	.vm_max_level = 3, \
 	.vram_flags = 0
 
@@ -113,7 +113,7 @@ static const struct xe_device_desc dg1_desc = {
 	.graphics_ver = 12, \
 	.graphics_rel = 50, \
 	.dma_mask_size = 46, \
-	.has_tiles = false, \
+	.max_tiles = 1, \
 	.vm_max_level = 3
 
 #define XE_HPM_FEATURES \
@@ -169,7 +169,7 @@ static const struct xe_device_desc pvc_desc = {
 	.require_force_probe = true,
 	.vram_flags = XE_VRAM_FLAGS_NEED64K,
 	.dma_mask_size = 52,
-	.has_tiles = true,
+	.max_tiles = 2,
 	.vm_max_level = 4,
 };
 
@@ -230,6 +230,8 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	const struct xe_device_desc *desc = (void *)ent->driver_data;
 	const struct xe_subplatform_desc *spd;
 	struct xe_device *xe;
+	struct xe_gt *gt;
+	u8 id;
 	int err;
 
 	/* Only bind to function 0 of the device. Early generations
@@ -257,13 +259,20 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	xe->info.platform = desc->platform;
 	xe->info.dma_mask_size = desc->dma_mask_size;
 	xe->info.vram_flags = desc->vram_flags;
-	to_gt(xe)->info.engine_mask = desc->platform_engine_mask;
-	xe->info.tile_count = desc->has_tiles ? 1 : 0;
+	xe->info.tile_count = desc->max_tiles;
 	xe->info.vm_max_level = desc->vm_max_level;
 
 	spd = subplatform_get(xe, desc);
 	xe->info.subplatform = spd ? spd->subplatform : XE_SUBPLATFORM_NONE;
 	xe->info.step = xe_step_get(xe);
+
+	/* FIXME: hack but enough for 2 tile PVC to boot */
+	for (id = 0; id < xe->info.tile_count; ++id) {
+		gt = xe->gt + id;
+		gt->info.id = id;
+		gt->info.vram_id = id;
+		gt->info.engine_mask = desc->platform_engine_mask;
+	}
 
 	drm_dbg(&xe->drm, "%s %s %04x:%04x dgfx:%d gfx100:%d dma_m_s:%d tc:%d",
 		desc->platform_name, spd ? spd->name : "",

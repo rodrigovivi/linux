@@ -330,7 +330,7 @@ static int execlist_engine_init(struct xe_engine *e)
 	struct xe_execlist_engine *exl;
 	int err;
 
-	XE_BUG_ON(xe_gt_guc_submission_enabled(e->gt));
+	XE_BUG_ON(xe_device_guc_submission_enabled(gt_to_xe(e->gt)));
 
 	exl = kzalloc(sizeof(*exl), GFP_KERNEL);
 	if (!exl)
@@ -394,7 +394,7 @@ static void execlist_engine_fini_async(struct work_struct *w)
 	struct xe_execlist_engine *exl = e->execlist;
 	unsigned long flags;
 
-	XE_BUG_ON(xe_gt_guc_submission_enabled(e->gt));
+	XE_BUG_ON(xe_device_guc_submission_enabled(gt_to_xe(e->gt)));
 
 	spin_lock_irqsave(&exl->port->lock, flags);
 	if (WARN_ON(exl->active_priority != DRM_SCHED_PRIORITY_UNSET))
@@ -475,7 +475,7 @@ static const struct xe_engine_ops execlist_engine_ops = {
 int xe_execlist_init(struct xe_gt *gt)
 {
 	/* GuC submission enabled, nothing to do */
-	if (xe_gt_guc_submission_enabled(gt))
+	if (xe_device_guc_submission_enabled(gt_to_xe(gt)))
 		return 0;
 
 	gt->engine_ops = &execlist_engine_ops;

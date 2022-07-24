@@ -101,9 +101,10 @@ static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 	/* Need to be sure everything fits in the first PT, or create more */
 	XE_BUG_ON(m->batch_base_ofs + batch->size >= SZ_2M);
 
-	bo = xe_bo_create_pin_map(vm->xe, vm, num_entries * GEN8_PAGE_SIZE,
+	bo = xe_bo_create_pin_map(vm->xe, m->gt, vm,
+				  num_entries * GEN8_PAGE_SIZE,
 				  ttm_bo_type_kernel,
-				  XE_BO_CREATE_VRAM_IF_DGFX(vm->xe) |
+				  XE_BO_CREATE_VRAM_IF_DGFX(m->gt) |
 				  XE_BO_CREATE_PINNED_BIT);
 	if (IS_ERR(bo))
 		return PTR_ERR(bo);
@@ -254,7 +255,8 @@ struct xe_migrate *xe_migrate_init(struct xe_gt *gt)
 		return ERR_PTR(err);
 	}
 
-	m->eng = xe_engine_create_class(xe, vm, XE_ENGINE_CLASS_COPY, ENGINE_FLAG_KERNEL);
+	m->eng = xe_engine_create_class(xe, gt, vm, XE_ENGINE_CLASS_COPY,
+					ENGINE_FLAG_KERNEL);
 	if (IS_ERR(m->eng)) {
 		xe_vm_close_and_put(vm);
 		return ERR_CAST(m->eng);
@@ -285,7 +287,7 @@ static void xe_migrate_res_sizes(struct ttm_resource *res,
 				 struct xe_res_cursor *cur,
 				 u64 *L0, u64 *L1)
 {
-	if (res->mem_type != TTM_PL_VRAM ||
+	if (!mem_type_is_vram(res->mem_type) ||
 	    (cur->start & (SZ_2M - 1))) {
 		*L1 = 0;
 		*L0 = cur->remaining;
@@ -350,7 +352,7 @@ static void emit_pte(struct xe_migrate *m,
 		     u32 size, struct ttm_tt *ttm)
 {
 	u32 ptes;
-	bool lmem = res->mem_type == TTM_PL_VRAM;
+	bool lmem = mem_type_is_vram(res->mem_type);
 	u32 ofs = at_pt * GEN8_PAGE_SIZE;
 
 	if (!pagesize)
@@ -991,7 +993,8 @@ static void test_copy(struct xe_migrate *m, struct xe_bo *bo)
 	const char *str = big ? "Copying big bo" : "Copying small bo";
 	int err;
 
-	struct xe_bo *sysmem = xe_bo_create_pin_map(xe, m->eng->vm, bo->size,
+	struct xe_bo *sysmem = xe_bo_create_pin_map(xe, m->gt, m->eng->vm,
+						    bo->size,
 						    ttm_bo_type_kernel,
 						    XE_BO_CREATE_SYSTEM_BIT |
 						    XE_BO_CREATE_PINNED_BIT |
@@ -1063,9 +1066,9 @@ static void test_addressing_2mb(struct xe_migrate *m)
 		return;
 	}
 
-	bo = xe_bo_create_pin_map(xe, m->eng->vm, size,
+	bo = xe_bo_create_pin_map(xe, m->gt, m->eng->vm, size,
 				  ttm_bo_type_kernel,
-				  XE_BO_CREATE_VRAM_BIT |
+				  XE_BO_CREATE_VRAM_IF_DGFX(m->gt) |
 				  XE_BO_CREATE_PINNED_BIT);
 
 	if (IS_ERR(bo)) {
@@ -1168,8 +1171,8 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 		return;
 	}
 
-	big = xe_bo_create_pin_map(xe, m->eng->vm, SZ_4M, ttm_bo_type_kernel,
-				      XE_BO_CREATE_VRAM_IF_DGFX(xe) |
+	big = xe_bo_create_pin_map(xe, m->gt, m->eng->vm, SZ_4M, ttm_bo_type_kernel,
+				      XE_BO_CREATE_VRAM_IF_DGFX(m->gt) |
 				      XE_BO_CREATE_PINNED_BIT);
 	if (IS_ERR(big)) {
 		drm_err(&xe->drm, "Failed to allocate bo: %li\n", PTR_ERR(big));
@@ -1179,8 +1182,8 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 	if (err)
 		goto free_big;
 
-	pt = xe_bo_create_pin_map(xe, m->eng->vm, GEN8_PAGE_SIZE, ttm_bo_type_kernel,
-				  XE_BO_CREATE_VRAM_IF_DGFX(xe) |
+	pt = xe_bo_create_pin_map(xe, m->gt, m->eng->vm, GEN8_PAGE_SIZE, ttm_bo_type_kernel,
+				  XE_BO_CREATE_VRAM_IF_DGFX(m->gt) |
 				  XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT |
 				  XE_BO_CREATE_PINNED_BIT);
 	if (IS_ERR(pt)) {
@@ -1191,8 +1194,8 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 	if (err)
 		goto free_pt;
 
-	tiny = xe_bo_create_pin_map(xe, m->eng->vm, 2 * xe_migrate_pagesize(m), ttm_bo_type_kernel,
-				  XE_BO_CREATE_VRAM_IF_DGFX(xe) |
+	tiny = xe_bo_create_pin_map(xe, m->gt, m->eng->vm, 2 * xe_migrate_pagesize(m), ttm_bo_type_kernel,
+				  XE_BO_CREATE_VRAM_IF_DGFX(m->gt) |
 				  XE_BO_CREATE_PINNED_BIT);
 	if (IS_ERR(tiny)) {
 		drm_err(&xe->drm, "Failed to allocate fake pt: %li\n", PTR_ERR(pt));

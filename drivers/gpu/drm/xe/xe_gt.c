@@ -8,6 +8,7 @@
 #include <drm/drm_managed.h>
 
 #include "xe_bo.h"
+#include "xe_device.h"
 #include "xe_engine_types.h"
 #include "xe_execlist.h"
 #include "xe_force_wake.h"
@@ -25,19 +26,12 @@
 
 #include "../i915/gt/intel_gt_regs.h"
 
-/* FIXME: Move to common param infrastructure */
-static bool enable_guc = true;
-module_param_named_unsafe(enable_guc, enable_guc, bool, 0444);
-MODULE_PARM_DESC(enable_guc, "Enable GuC submission");
-
-static void gt_params_init(struct xe_gt *gt)
+int xe_gt_alloc(struct xe_device *xe, struct xe_gt *gt, u8 id)
 {
-	gt->info.enable_guc = enable_guc;
-}
+	struct drm_device *drm = &xe->drm;
 
-int xe_gt_alloc(struct xe_gt *gt)
-{
-	struct drm_device *drm = &gt_to_xe(gt)->drm;
+	gt->xe = xe;
+	gt->info.id = id;
 
 	gt->mmio.fw = drmm_kzalloc(drm, sizeof(*gt->mmio.fw), GFP_KERNEL);
 	if (!gt->mmio.fw)
@@ -58,8 +52,6 @@ int xe_gt_alloc(struct xe_gt *gt)
 		return -ENOMEM;
 
 	gt->ordered_wq = alloc_ordered_workqueue("gt-ordered-wq", 0);
-
-	gt_params_init(gt);
 
 	return 0;
 }
@@ -233,7 +225,7 @@ static int gt_reset(struct xe_gt *gt)
 	int err;
 
 	/* We only support GT resets with GuC submission */
-	if (!xe_gt_guc_submission_enabled(gt))
+	if (!xe_device_guc_submission_enabled(gt_to_xe(gt)))
 		return -ENODEV;
 
 	drm_info(&xe->drm, "GT reset started\n");
@@ -309,7 +301,7 @@ int xe_gt_suspend(struct xe_gt *gt)
 	int err;
 
 	/* For now suspend/resume is only allowed with GuC */
-	if (!xe_gt_guc_submission_enabled(gt))
+	if (!xe_device_guc_submission_enabled(gt_to_xe(gt)))
 		return -ENODEV;
 
 	err = xe_force_wake_get(gt->mmio.fw, XE_FORCEWAKE_ALL);

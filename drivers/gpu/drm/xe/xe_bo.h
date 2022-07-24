@@ -14,12 +14,14 @@
 
 #define XE_BO_CREATE_USER_BIT		BIT(1)
 #define XE_BO_CREATE_SYSTEM_BIT		BIT(2)
-#define XE_BO_CREATE_VRAM_BIT		BIT(3)
-#define XE_BO_CREATE_VRAM_IF_DGFX(xe) \
-	(IS_DGFX(xe) ? XE_BO_CREATE_VRAM_BIT : XE_BO_CREATE_SYSTEM_BIT)
-#define XE_BO_CREATE_GGTT_BIT		BIT(4)
-#define XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT BIT(5)
-#define XE_BO_CREATE_PINNED_BIT		BIT(6)
+#define XE_BO_CREATE_VRAM0_BIT		BIT(3)
+#define XE_BO_CREATE_VRAM1_BIT		BIT(4)
+#define XE_BO_CREATE_VRAM_IF_DGFX(gt) \
+	(IS_DGFX(gt_to_xe(gt)) ? XE_BO_CREATE_VRAM0_BIT << gt->info.vram_id : \
+	 XE_BO_CREATE_SYSTEM_BIT)
+#define XE_BO_CREATE_GGTT_BIT		BIT(5)
+#define XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT BIT(6)
+#define XE_BO_CREATE_PINNED_BIT		BIT(7)
 /* this one is trigger internally only */
 #define XE_BO_INTERNAL_TEST		BIT(30)
 #define XE_BO_INTERNAL_64K		BIT(31)
@@ -68,22 +70,28 @@
 
 #define PTE_READ_ONLY			BIT(0)
 
-struct xe_bo *__xe_bo_create_locked(struct xe_device *xe,
+#define XE_PL_SYSTEM		TTM_PL_SYSTEM
+#define XE_PL_TT		TTM_PL_TT
+#define XE_PL_VRAM0		TTM_PL_VRAM
+#define XE_PL_VRAM1		(XE_PL_VRAM0 + 1)
+
+struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_gt *gt,
 				    struct dma_resv *resv, size_t size,
 				    enum ttm_bo_type type, u32 flags);
-struct xe_bo *xe_bo_create_locked(struct xe_device *xe,
+struct xe_bo *xe_bo_create_locked(struct xe_device *xe, struct xe_gt *gt,
 				  struct xe_vm *vm, size_t size,
 				  enum ttm_bo_type type, u32 flags);
-struct xe_bo *xe_bo_create(struct xe_device *xe, struct xe_vm *vm, size_t size,
+struct xe_bo *xe_bo_create(struct xe_device *xe, struct xe_gt *gt,
+			   struct xe_vm *vm, size_t size,
 			   enum ttm_bo_type type, u32 flags);
-struct xe_bo *xe_bo_create_pin_map(struct xe_device *xe, struct xe_vm *vm,
-				   size_t size, enum ttm_bo_type type,
-				   u32 flags);
-struct xe_bo *xe_bo_create_from_data(struct xe_device *xe, const void *data,
-				     size_t size, enum ttm_bo_type type,
-				     u32 flags);
+struct xe_bo *xe_bo_create_pin_map(struct xe_device *xe, struct xe_gt *gt,
+				   struct xe_vm *vm, size_t size,
+				   enum ttm_bo_type type, u32 flags);
+struct xe_bo *xe_bo_create_from_data(struct xe_device *xe, struct xe_gt *gt,
+				     const void *data, size_t size,
+				     enum ttm_bo_type type, u32 flags);
 
-void xe_bo_trigger_rebind(struct xe_bo *bo);
+void xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo);
 
 static inline struct xe_bo *ttm_to_xe_bo(const struct ttm_buffer_object *bo)
 {
@@ -191,6 +199,9 @@ xe_bo_ggtt_addr(struct xe_bo *bo)
 
 int xe_bo_vmap(struct xe_bo *bo);
 void xe_bo_vunmap(struct xe_bo *bo);
+
+bool mem_type_is_vram(u32 mem_type);
+bool xe_bo_is_vram(struct xe_bo *bo);
 
 extern struct ttm_device_funcs xe_ttm_funcs;
 

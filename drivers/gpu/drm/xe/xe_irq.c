@@ -17,15 +17,14 @@
 #include "../i915/i915_reg.h"
 #include "../i915/gt/intel_gt_regs.h"
 
-static void gen3_assert_iir_is_zero(struct xe_device *xe, i915_reg_t reg)
+static void gen3_assert_iir_is_zero(struct xe_gt *gt, i915_reg_t reg)
 {
-	struct xe_gt *gt = to_gt(xe);
 	u32 val = xe_mmio_read32(gt, reg.reg);
 
 	if (val == 0)
 		return;
 
-	drm_WARN(&xe->drm, 1,
+	drm_WARN(&gt_to_xe(gt)->drm, 1,
 		 "Interrupt register 0x%x is not zero: 0x%08x\n",
 		 reg.reg, val);
 	xe_mmio_write32(gt, reg.reg, 0xffffffff);
@@ -34,30 +33,26 @@ static void gen3_assert_iir_is_zero(struct xe_device *xe, i915_reg_t reg)
 	xe_mmio_read32(gt, reg.reg);
 }
 
-static void gen3_irq_init(struct xe_device *xe,
+static void gen3_irq_init(struct xe_gt *gt,
 			  i915_reg_t imr, u32 imr_val,
 			  i915_reg_t ier, u32 ier_val,
 			  i915_reg_t iir)
 {
-	struct xe_gt *gt = to_gt(xe);
-
-	gen3_assert_iir_is_zero(xe, iir);
+	gen3_assert_iir_is_zero(gt, iir);
 
 	xe_mmio_write32(gt, ier.reg, ier_val);
 	xe_mmio_write32(gt, imr.reg, imr_val);
 	xe_mmio_read32(gt, imr.reg);
 }
-#define GEN3_IRQ_INIT(xe, type, imr_val, ier_val) \
-	gen3_irq_init((xe), \
+#define GEN3_IRQ_INIT(gt, type, imr_val, ier_val) \
+	gen3_irq_init((gt), \
 		      type##IMR, imr_val, \
 		      type##IER, ier_val, \
 		      type##IIR)
 
-static void gen3_irq_reset(struct xe_device *xe, i915_reg_t imr,
-			   i915_reg_t iir, i915_reg_t ier)
+static void gen3_irq_reset(struct xe_gt *gt, i915_reg_t imr, i915_reg_t iir,
+			   i915_reg_t ier)
 {
-	struct xe_gt *gt = to_gt(xe);
-
 	xe_mmio_write32(gt, imr.reg, 0xffffffff);
 	xe_mmio_read32(gt, imr.reg);
 
@@ -69,13 +64,11 @@ static void gen3_irq_reset(struct xe_device *xe, i915_reg_t imr,
 	xe_mmio_write32(gt, iir.reg, 0xffffffff);
 	xe_mmio_read32(gt, iir.reg);
 }
-#define GEN3_IRQ_RESET(xe, type) \
-	gen3_irq_reset((xe), type##IMR, type##IIR, type##IER)
+#define GEN3_IRQ_RESET(gt, type) \
+	gen3_irq_reset((gt), type##IMR, type##IIR, type##IER)
 
-static u32 gen11_intr_disable(struct xe_device *xe)
+static u32 gen11_intr_disable(struct xe_gt *gt)
 {
-	struct xe_gt *gt = to_gt(xe);
-
 	xe_mmio_write32(gt, GEN11_GFX_MSTR_IRQ.reg, 0);
 
 	/*
@@ -87,25 +80,20 @@ static u32 gen11_intr_disable(struct xe_device *xe)
 	return xe_mmio_read32(gt, GEN11_GFX_MSTR_IRQ.reg);
 }
 
-static inline void gen11_intr_enable(struct xe_device *xe, bool stall)
+static inline void gen11_intr_enable(struct xe_gt *gt, bool stall)
 {
-	struct xe_gt *gt = to_gt(xe);
-
 	xe_mmio_write32(gt, GEN11_GFX_MSTR_IRQ.reg, GEN11_MASTER_IRQ);
 	if (stall)
 		xe_mmio_read32(gt, GEN11_GFX_MSTR_IRQ.reg);
 }
 
-static void gen11_gt_irq_postinstall(struct xe_device *xe)
+static void gen11_gt_irq_postinstall(struct xe_device *xe, struct xe_gt *gt)
 {
-	struct xe_gt *gt = to_gt(xe);
 	u32 irqs, dmask, smask;
-	u32 ccs_mask = xe_hw_engine_mask_per_class(gt,
-							XE_ENGINE_CLASS_COMPUTE);
-	u32 bcs_mask = xe_hw_engine_mask_per_class(gt,
-							XE_ENGINE_CLASS_COPY);
+	u32 ccs_mask = xe_hw_engine_mask_per_class(gt, XE_ENGINE_CLASS_COMPUTE);
+	u32 bcs_mask = xe_hw_engine_mask_per_class(gt, XE_ENGINE_CLASS_COPY);
 
-	if (xe_gt_guc_submission_enabled(gt)) {
+	if (xe_device_guc_submission_enabled(xe)) {
 		irqs = GT_RENDER_USER_INTERRUPT |
 			GT_RENDER_PIPECTL_NOTIFY_INTERRUPT;
 	} else {
@@ -162,25 +150,25 @@ static void gen11_gt_irq_postinstall(struct xe_device *xe)
 	xe_mmio_write32(gt, GEN11_GUC_SG_INTR_MASK.reg,  ~0);
 }
 
-static void gen11_irq_postinstall(struct xe_device *xe)
+static void gen11_irq_postinstall(struct xe_device *xe, struct xe_gt *gt)
 {
 	/* TODO: PCH */
 
-	gen11_gt_irq_postinstall(xe);
+	gen11_gt_irq_postinstall(xe, gt);
 
 	/* TODO: Display */
 
-	GEN3_IRQ_INIT(xe, GEN11_GU_MISC_, ~GEN11_GU_MISC_GSE, GEN11_GU_MISC_GSE);
+	GEN3_IRQ_INIT(gt, GEN11_GU_MISC_, ~GEN11_GU_MISC_GSE, GEN11_GU_MISC_GSE);
 
-	gen11_intr_enable(xe, true);
+	gen11_intr_enable(gt, true);
 }
 
 static u32
 gen11_gt_engine_identity(struct xe_device *xe,
+			 struct xe_gt *gt,
 			 const unsigned int bank,
 			 const unsigned int bit)
 {
-	struct xe_gt *gt = to_gt(xe);
 	u32 timeout_ts;
 	u32 ident;
 
@@ -215,11 +203,14 @@ gen11_gt_other_irq_handler(struct xe_gt *gt, const u8 instance, const u16 iir)
 {
 	if (instance == OTHER_GUC_INSTANCE)
 		return xe_guc_irq_handler(&gt->uc.guc, iir);
+
+	WARN_ONCE(1, "unhandled other interrupt instance=0x%x, iir=0x%x\n",
+		  instance, iir);
 }
 
-static void gen11_gt_irq_handler(struct xe_device *xe, u32 master_ctl)
+static void gen11_gt_irq_handler(struct xe_device *xe, struct xe_gt *gt,
+				 u32 master_ctl)
 {
-	struct xe_gt *gt = to_gt(xe);
 	unsigned int bank, bit;
 	long unsigned int intr_dw;
 	u32 identity[32];
@@ -235,7 +226,8 @@ static void gen11_gt_irq_handler(struct xe_device *xe, u32 master_ctl)
 
 		intr_dw = xe_mmio_read32(gt, GEN11_GT_INTR_DW(bank).reg);
 		for_each_set_bit(bit, &intr_dw, 32)
-			identity[bit] = gen11_gt_engine_identity(xe, bank, bit);
+			identity[bit] = gen11_gt_engine_identity(xe, gt, bank,
+								 bit);
 		xe_mmio_write32(gt, GEN11_GT_INTR_DW(bank).reg, intr_dw);
 
 		for_each_set_bit(bit, &intr_dw, 32) {
@@ -263,17 +255,18 @@ static void gen11_gt_irq_handler(struct xe_device *xe, u32 master_ctl)
 static irqreturn_t gen11_irq_handler(int irq, void *arg)
 {
 	struct xe_device *xe = arg;
+	struct xe_gt *gt = xe_device_get_gt(xe, 0);	/* Only 1 GT here */
 	u32 master_ctl;
 
-	master_ctl = gen11_intr_disable(xe);
+	master_ctl = gen11_intr_disable(gt);
 	if (!master_ctl) {
-		gen11_intr_enable(xe, false);
+		gen11_intr_enable(gt, false);
 		return IRQ_NONE;
 	}
 
-	gen11_gt_irq_handler(xe, master_ctl);
+	gen11_gt_irq_handler(xe, gt, master_ctl);
 
-	gen11_intr_enable(xe, false);
+	gen11_intr_enable(gt, false);
 
 	/* TODO: Handle display interrupts */
 
@@ -282,7 +275,7 @@ static irqreturn_t gen11_irq_handler(int irq, void *arg)
 
 static u32 dg1_intr_disable(struct xe_device *xe)
 {
-	struct xe_gt *gt = to_gt(xe);
+	struct xe_gt *gt = xe_device_get_gt(xe, 0);
 	u32 val;
 
 	/* First disable interrupts */
@@ -300,29 +293,32 @@ static u32 dg1_intr_disable(struct xe_device *xe)
 
 static void dg1_intr_enable(struct xe_device *xe, bool stall)
 {
-	struct xe_gt *gt = to_gt(xe);
+	struct xe_gt *gt = xe_device_get_gt(xe, 0);
 
 	xe_mmio_write32(gt, DG1_MSTR_TILE_INTR.reg, DG1_MSTR_IRQ);
 	if (stall)
 		xe_mmio_read32(gt, DG1_MSTR_TILE_INTR.reg);
 }
 
-static void dg1_irq_postinstall(struct xe_device *xe)
+static void dg1_irq_postinstall(struct xe_device *xe, struct xe_gt *gt)
 {
-	gen11_gt_irq_postinstall(xe);
+	gen11_gt_irq_postinstall(xe, gt);
 
-	GEN3_IRQ_INIT(xe, GEN11_GU_MISC_, ~GEN11_GU_MISC_GSE, GEN11_GU_MISC_GSE);
+	GEN3_IRQ_INIT(gt, GEN11_GU_MISC_, ~GEN11_GU_MISC_GSE,
+		      GEN11_GU_MISC_GSE);
 
 	/* TODO: Display */
 
-	dg1_intr_enable(xe, true);
+	if (gt->info.id + 1 == xe->info.tile_count)
+		dg1_intr_enable(xe, true);
 }
 
 static irqreturn_t dg1_irq_handler(int irq, void *arg)
 {
 	struct xe_device *xe = arg;
-	struct xe_gt *gt = to_gt(xe);
+	struct xe_gt *gt;
 	u32 master_tile_ctl, master_ctl;
+	u8 id;
 
 	/* TODO: This really shouldn't be copied+pasted */
 
@@ -332,17 +328,26 @@ static irqreturn_t dg1_irq_handler(int irq, void *arg)
 		return IRQ_NONE;
 	}
 
-	if (master_tile_ctl & DG1_MSTR_TILE(0)) {
-		master_ctl = xe_mmio_read32(gt, GEN11_GFX_MSTR_IRQ.reg);
-		xe_mmio_write32(gt, GEN11_GFX_MSTR_IRQ.reg, master_ctl);
-	} else {
-		drm_err(&xe->drm, "Tile not supported: 0x%08x\n",
-			master_tile_ctl);
-		dg1_intr_enable(xe, false);
-		return IRQ_NONE;
-	}
+	for_each_gt(gt, xe, id) {
+		if ((master_tile_ctl & DG1_MSTR_TILE(id)) == 0)
+			continue;
 
-	gen11_gt_irq_handler(xe, master_ctl);
+		master_ctl = xe_mmio_read32(gt, GEN11_GFX_MSTR_IRQ.reg);
+
+		/*
+		 * We might be in irq handler just when PCIe DPC is initiated
+		 * and all MMIO reads will be returned with all 1's. Ignore this
+		 * irq as device is inaccessible.
+		 */
+		if (master_ctl == REG_GENMASK(31, 0)) {
+			dev_dbg(gt_to_xe(gt)->drm.dev,
+				"Ignore this IRQ as device might be in DPC containment.\n");
+			return IRQ_HANDLED;
+		}
+
+		xe_mmio_write32(gt, GEN11_GFX_MSTR_IRQ.reg, master_ctl);
+		gen11_gt_irq_handler(xe, gt, master_ctl);
+	}
 
 	dg1_intr_enable(xe, false);
 
@@ -351,13 +356,10 @@ static irqreturn_t dg1_irq_handler(int irq, void *arg)
 	return IRQ_HANDLED;
 }
 
-void gen11_gt_irq_reset(struct xe_device *xe)
+static void gen11_gt_irq_reset(struct xe_gt *gt)
 {
-	struct xe_gt *gt = to_gt(xe);
-	u32 ccs_mask = xe_hw_engine_mask_per_class(gt,
-							XE_ENGINE_CLASS_COMPUTE);
-	u32 bcs_mask = xe_hw_engine_mask_per_class(gt,
-							XE_ENGINE_CLASS_COPY);
+	u32 ccs_mask = xe_hw_engine_mask_per_class(gt, XE_ENGINE_CLASS_COMPUTE);
+	u32 bcs_mask = xe_hw_engine_mask_per_class(gt, XE_ENGINE_CLASS_COPY);
 
 	/* Disable RCS, BCS, VCS and VECS class engines. */
 	xe_mmio_write32(gt, GEN11_RENDER_COPY_INTR_ENABLE.reg,	 0);
@@ -396,49 +398,60 @@ void gen11_gt_irq_reset(struct xe_device *xe)
 	xe_mmio_write32(gt, GEN11_GUC_SG_INTR_MASK.reg,		~0);
 }
 
-static void gen11_irq_reset(struct xe_device *xe)
+static void gen11_irq_reset(struct xe_gt *gt)
 {
-	gen11_intr_disable(xe);
+	gen11_intr_disable(gt);
 
-	gen11_gt_irq_reset(xe);
+	gen11_gt_irq_reset(gt);
 
 	/* TODO: Display */
 
-	GEN3_IRQ_RESET(xe, GEN11_GU_MISC_);
-	GEN3_IRQ_RESET(xe, GEN8_PCU_);
+	GEN3_IRQ_RESET(gt, GEN11_GU_MISC_);
+	GEN3_IRQ_RESET(gt, GEN8_PCU_);
 }
 
-static void dg1_irq_reset(struct xe_device *xe)
+static void dg1_irq_reset(struct xe_gt *gt)
 {
-	dg1_intr_disable(xe);
+	if (gt->info.id == 0)
+		dg1_intr_disable(gt_to_xe(gt));
 
-	gen11_gt_irq_reset(xe);
+	gen11_gt_irq_reset(gt);
 
 	/* TODO: Display */
 
-	GEN3_IRQ_RESET(xe, GEN11_GU_MISC_);
-	GEN3_IRQ_RESET(xe, GEN8_PCU_);
+	GEN3_IRQ_RESET(gt, GEN11_GU_MISC_);
+	GEN3_IRQ_RESET(gt, GEN8_PCU_);
 }
 
 void xe_irq_reset(struct xe_device *xe)
 {
-	if (GRAPHICS_VERx100(xe) >= 1210) {
-		dg1_irq_reset(xe);
-	} else if (GRAPHICS_VER(xe) >= 11) {
-		gen11_irq_reset(xe);
-	} else {
-		drm_err(&xe->drm, "No interrupt reset hook");
+	struct xe_gt *gt;
+	u8 id;
+
+	for_each_gt(gt, xe, id) {
+		if (GRAPHICS_VERx100(xe) >= 1210) {
+			dg1_irq_reset(gt);
+		} else if (GRAPHICS_VER(xe) >= 11) {
+			gen11_irq_reset(gt);
+		} else {
+			drm_err(&xe->drm, "No interrupt reset hook");
+		}
 	}
 }
 
 void xe_irq_postinstall(struct xe_device *xe)
 {
-	if (GRAPHICS_VERx100(xe) >= 1210) {
-		dg1_irq_postinstall(xe);
-	} else if (GRAPHICS_VER(xe) >= 11) {
-		gen11_irq_postinstall(xe);
-	} else {
-		drm_err(&xe->drm, "No interrupt postinstall hook");
+	struct xe_gt *gt;
+	u8 id;
+
+	for_each_gt(gt, xe, id) {
+		if (GRAPHICS_VERx100(xe) >= 1210) {
+			dg1_irq_postinstall(xe, gt);
+		} else if (GRAPHICS_VER(xe) >= 11) {
+			gen11_irq_postinstall(xe, gt);
+		} else {
+			drm_err(&xe->drm, "No interrupt postinstall hook");
+		}
 	}
 }
 

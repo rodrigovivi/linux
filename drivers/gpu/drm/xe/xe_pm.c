@@ -39,6 +39,8 @@
  */
 int xe_pm_suspend(struct xe_device *xe)
 {
+	struct xe_gt *gt;
+	u8 id;
 	int err;
 
 	/* FIXME: Super racey... */
@@ -46,9 +48,11 @@ int xe_pm_suspend(struct xe_device *xe)
 	if (err)
 		return err;
 
-	err = xe_gt_suspend(to_gt(xe));
-	if (err)
-		return err;
+	for_each_gt(gt, xe, id) {
+		err = xe_gt_suspend(gt);
+		if (err)
+			return err;
+	}
 
 	xe_irq_suspend(xe);
 
@@ -61,6 +65,8 @@ int xe_pm_suspend(struct xe_device *xe)
  */
 int xe_pm_resume(struct xe_device *xe)
 {
+	struct xe_gt *gt;
+	u8 id;
 	int err;
 
 	/*
@@ -72,7 +78,9 @@ int xe_pm_resume(struct xe_device *xe)
 		return err;
 
 	xe_irq_resume(xe);
-	xe_gt_resume(to_gt(xe));
+
+	for_each_gt(gt, xe, id)
+		xe_gt_resume(gt);
 
 	return 0;
 }

@@ -60,11 +60,13 @@ void xe_gt_debugfs_register(struct xe_gt *gt)
 	struct drm_minor *minor = gt_to_xe(gt)->drm.primary;
 	struct dentry *root;
 	struct drm_info_list *local;
+	char name[8];
 	int i;
 
 	XE_BUG_ON(!minor->debugfs_root);
 
-	root = debugfs_create_dir("gt", minor->debugfs_root);
+	sprintf(name, "gt%d", gt->info.id);
+	root = debugfs_create_dir(name, minor->debugfs_root);
 	if (IS_ERR(root)) {
 		XE_WARN_ON("Create GT directory failed");
 		return;

@@ -29,6 +29,8 @@ struct xe_bo {
 	u32 flags;
 	/** @vm: VM this BO is attached to, for extobj this will be NULL */
 	struct xe_vm *vm;
+	/** @gt: GT this BO is attached to (kernel BO only) */
+	struct xe_gt *gt;
 	/** @vmas: List of VMAs for this BO */
 	struct list_head vmas;
 	/** @placements: valid placements for this BO */

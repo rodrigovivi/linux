@@ -64,7 +64,7 @@ static struct sg_table *xe_dma_buf_map(struct dma_buf_attachment *attach,
 	}
 
 	switch (bo->ttm.resource->mem_type) {
-	case TTM_PL_TT:
+	case XE_PL_TT:
 		sgt = drm_prime_pages_to_sg(obj->dev,
 					    bo->ttm.ttm->pages,
 					    bo->ttm.ttm->num_pages);
@@ -76,7 +76,8 @@ static struct sg_table *xe_dma_buf_map(struct dma_buf_attachment *attach,
 			goto error_free;
 		break;
 
-	case TTM_PL_VRAM:
+	case XE_PL_VRAM0:
+	case XE_PL_VRAM1:
 		r = xe_ttm_vram_mgr_alloc_sgt(xe_bo_device(bo),
 					      bo->ttm.resource, 0,
 					      bo->ttm.base.size, attach->dev,
@@ -155,8 +156,8 @@ xe_dma_buf_create_obj(struct drm_device *dev, struct dma_buf *dma_buf)
 	int ret;
 
 	dma_resv_lock(resv, NULL);
-	bo = __xe_bo_create_locked(xe, resv, dma_buf->size, ttm_bo_type_sg,
-				   XE_BO_CREATE_SYSTEM_BIT);
+	bo = __xe_bo_create_locked(xe, NULL, resv, dma_buf->size,
+				   ttm_bo_type_sg, XE_BO_CREATE_SYSTEM_BIT);
 	if (IS_ERR(bo)) {
 		ret = PTR_ERR(bo);
 		goto error;
@@ -176,7 +177,7 @@ xe_dma_buf_move_notify(struct dma_buf_attachment *attach)
 	struct drm_gem_object *obj = attach->importer_priv;
 	struct xe_bo *bo = gem_to_xe_bo(obj);
 
-	xe_bo_trigger_rebind(bo);
+	xe_bo_trigger_rebind(xe_bo_device(bo), bo);
 }
 
 static const struct dma_buf_attach_ops xe_dma_buf_attach_ops = {

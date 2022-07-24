@@ -63,10 +63,10 @@ int check_hw_engines(struct xe_device *xe,
 	int i;
 
 	for (i = 0; i < num_engines; ++i) {
-		if (eci[i].gt_id != 0)
+		if (eci[i].gt_id >= xe->info.tile_count)
 			return -EINVAL;
 
-		if (!xe_gt_hw_engine(to_gt(xe),
+		if (!xe_gt_hw_engine(xe_device_get_gt(xe, eci[i].gt_id),
 				     user_to_xe_engine_class[eci[i].engine_class],
 				     eci[i].engine_instance, true))
 			return -EINVAL;
