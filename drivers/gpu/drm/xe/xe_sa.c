@@ -35,8 +35,8 @@ int xe_sa_bo_manager_init(struct xe_gt *gt,
 
 	sa_manager->bo = NULL;
 
-	bo = xe_bo_create_pin_map(xe, NULL, size, ttm_bo_type_kernel,
-				  XE_BO_CREATE_VRAM_IF_DGFX(xe) |
+	bo = xe_bo_create_pin_map(xe, gt, NULL, size, ttm_bo_type_kernel,
+				  XE_BO_CREATE_VRAM_IF_DGFX(gt) |
 				  XE_BO_CREATE_GGTT_BIT);
 	if (IS_ERR(bo)) {
 		drm_err(&xe->drm, "failed to allocate bo for sa manager: %ld\n", PTR_ERR(bo));

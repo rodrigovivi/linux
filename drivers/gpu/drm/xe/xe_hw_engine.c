@@ -8,7 +8,7 @@
 #include <drm/drm_managed.h>
 
 #include "xe_bo.h"
-#include "xe_device_types.h"
+#include "xe_device.h"
 #include "xe_execlist.h"
 #include "xe_force_wake.h"
 #include "xe_gt.h"
@@ -363,8 +363,8 @@ static int hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
 	hwe->name = info->name;
 	hwe->fence_irq = &gt->fence_irq[info->class];
 
-	hwe->hwsp = xe_bo_create_locked(xe, NULL, SZ_4K, ttm_bo_type_kernel,
-					XE_BO_CREATE_VRAM_IF_DGFX(xe) |
+	hwe->hwsp = xe_bo_create_locked(xe, gt, NULL, SZ_4K, ttm_bo_type_kernel,
+					XE_BO_CREATE_VRAM_IF_DGFX(gt) |
 					XE_BO_CREATE_GGTT_BIT);
 	if (IS_ERR(hwe->hwsp)) {
 		err = PTR_ERR(hwe->hwsp);
@@ -385,7 +385,7 @@ static int hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
 	if (err)
 		goto err_hwsp;
 
-	if (!xe_gt_guc_submission_enabled(gt)) {
+	if (!xe_device_guc_submission_enabled(xe)) {
 		hwe->exl_port = xe_execlist_port_create(xe, hwe);
 		if (IS_ERR(hwe->exl_port)) {
 			err = PTR_ERR(hwe->exl_port);
@@ -393,7 +393,7 @@ static int hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
 		}
 	}
 
-	if (xe_gt_guc_submission_enabled(gt))
+	if (xe_device_guc_submission_enabled(xe))
 		xe_hw_engine_enable_ring(hwe);
 
 	err = drmm_add_action_or_reset(&xe->drm, hw_engine_fini, hwe);

@@ -16,7 +16,7 @@
 	     for_each_if (((hwe__) = (gt__)->hw_engines + (id__)) && \
 			  xe_hw_engine_is_valid((hwe__)))
 
-int xe_gt_alloc(struct xe_gt *gt);
+int xe_gt_alloc(struct xe_device *xe, struct xe_gt *gt, u8 id);
 int xe_gt_init(struct xe_gt *gt);
 int xe_gt_suspend(struct xe_gt *gt);
 int xe_gt_resume(struct xe_gt *gt);
@@ -28,19 +28,9 @@ struct xe_hw_engine *xe_gt_hw_engine(struct xe_gt *gt,
 				     u16 instance,
 				     bool logical);
 
-static inline bool xe_gt_guc_submission_enabled(struct xe_gt *gt)
-{
-	return gt->info.enable_guc;
-}
-
-static inline void xe_gt_guc_submission_disable(struct xe_gt *gt)
-{
-	gt->info.enable_guc = false;
-}
-
 static inline struct xe_device * gt_to_xe(struct xe_gt *gt)
 {
-	return container_of(gt, struct xe_device, gt);
+	return gt->xe;
 }
 
 #endif	/* _XE_GT_H_ */

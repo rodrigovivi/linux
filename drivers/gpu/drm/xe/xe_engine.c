@@ -24,7 +24,7 @@ static struct xe_engine *__xe_engine_create(struct xe_device *xe,
 					    u32 flags)
 {
 	struct xe_engine *e;
-	struct xe_gt *gt = to_gt(xe);
+	struct xe_gt *gt = hwe->gt;
 	int err;
 	int i;
 
@@ -99,11 +99,11 @@ struct xe_engine *xe_engine_create(struct xe_device *xe, struct xe_vm *vm,
 	return e;
 }
 
-struct xe_engine *xe_engine_create_class(struct xe_device *xe, struct xe_vm *vm,
+struct xe_engine *xe_engine_create_class(struct xe_device *xe, struct xe_gt *gt,
+					 struct xe_vm *vm,
 					 enum xe_engine_class class, u32 flags)
 {
 	struct xe_hw_engine *hwe, *hwe0 = NULL;
-	struct xe_gt *gt = to_gt(xe);
 	enum xe_hw_engine_id id;
 	u32 logical_mask = 0;
 
@@ -350,20 +350,19 @@ find_hw_engine(struct xe_device *xe,
 	if (eci.engine_class > ARRAY_SIZE(user_to_xe_engine_class))
 		return NULL;
 
-	if (eci.gt_id != 0)
+	if (eci.gt_id >= xe->info.tile_count)
 		return NULL;
 
-	return xe_gt_hw_engine(to_gt(xe),
+	return xe_gt_hw_engine(xe_device_get_gt(xe, eci.gt_id),
 			       user_to_xe_engine_class[eci.engine_class],
 			       eci.engine_instance, true);
 }
 
-static u32 bind_engine_logical_mask(struct xe_device *xe,
+static u32 bind_engine_logical_mask(struct xe_device *xe, struct xe_gt *gt,
 				    struct drm_xe_engine_class_instance *eci,
 				    u16 width, u16 num_placements)
 {
 	struct xe_hw_engine *hwe;
-	struct xe_gt *gt = to_gt(xe);
 	enum xe_hw_engine_id id;
 	u32 logical_mask = 0;
 
@@ -384,16 +383,17 @@ static u32 bind_engine_logical_mask(struct xe_device *xe,
 	return logical_mask;
 }
 
-static u32 calc_validate_logical_mask(struct xe_device *xe,
+static u32 calc_validate_logical_mask(struct xe_device *xe, struct xe_gt *gt,
 				      struct drm_xe_engine_class_instance *eci,
 				      u16 width, u16 num_placements)
 {
 	int len = width * num_placements;
 	int i, j, n;
 	u16 class;
+	u16 gt_id;
 	u32 return_mask = 0, prev_mask;
 
-	if (XE_IOCTL_ERR(xe, !xe_gt_guc_submission_enabled(to_gt(xe)) &&
+	if (XE_IOCTL_ERR(xe, !xe_device_guc_submission_enabled(xe) &&
 			 len > 1))
 		return 0;
 
@@ -406,10 +406,13 @@ static u32 calc_validate_logical_mask(struct xe_device *xe,
 			if (XE_IOCTL_ERR(xe, !find_hw_engine(xe, eci[n])))
 				return 0;
 
-			if (n && XE_IOCTL_ERR(xe, eci[n].engine_class != class))
+			if (n && (XE_IOCTL_ERR(xe, eci[n].engine_class != class) ||
+			    XE_IOCTL_ERR(xe, eci[n].gt_id != gt_id))) {
 				return 0;
-			else
+			} else {
 				class = eci[n].engine_class;
+				gt_id = eci[n].gt_id;
+			}
 
 			if (width == 1 || !j)
 				return_mask |= BIT(eci[n].engine_instance);
@@ -437,6 +440,7 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 		u64_to_user_ptr(args->instances);
 	struct xe_hw_engine *hwe;
 	struct xe_vm *vm, *migrate_vm = NULL;
+	struct xe_gt *gt;
 	struct xe_engine *e;
 	u32 logical_mask;
 	u32 id;
@@ -457,12 +461,18 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, err))
 		return -EFAULT;
 
+	if (XE_IOCTL_ERR(xe, eci[0].gt_id >= xe->info.tile_count))
+	       return -EINVAL;
+
+	gt = xe_device_get_gt(xe, eci[0].gt_id);
 	bind_engine = eci[0].engine_class == DRM_XE_ENGINE_CLASS_VM_BIND;
 	if (bind_engine)
-		logical_mask = bind_engine_logical_mask(xe, eci, args->width,
+		logical_mask = bind_engine_logical_mask(xe, gt, eci,
+							args->width,
 							args->num_placements);
 	else
-		logical_mask = calc_validate_logical_mask(xe, eci, args->width,
+		logical_mask = calc_validate_logical_mask(xe, gt, eci,
+							  args->width,
 							  args->num_placements);
 	if (XE_IOCTL_ERR(xe, !logical_mask))
 		return -EINVAL;
@@ -476,7 +486,7 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 		return -ENOENT;
 
 	if (bind_engine)
-		migrate_vm = xe_migrate_get_vm(to_gt(xe)->migrate);
+		migrate_vm = xe_migrate_get_vm(gt->migrate);
 
 	e = xe_engine_create(xe, migrate_vm ?: vm, logical_mask,
 			     args->width, hwe, ENGINE_FLAG_PERSISTENT |

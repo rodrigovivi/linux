@@ -30,14 +30,17 @@ struct xe_ttm_vram_mgr;
  * management, microcontrols, and a hardware set of engines).
  */
 struct xe_gt {
+	/** @xe: backpointer to XE device */
+	struct xe_device *xe;
+
 	/** @info: GT info */
 	struct {
 		/** @id: id of GT */
 		u8 id;
+		/** @vram: id of the VRAM for this GT */
+		u8 vram_id;
 		/** @engine_mask: mask of engines present on GT */
 		u64 engine_mask;
-		/** @enable_guc: GuC submission enabled */
-		bool enable_guc;
 	} info;
 
 	/**
