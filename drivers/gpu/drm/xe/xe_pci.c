@@ -21,8 +21,6 @@
 
 #include "../i915/i915_reg.h"
 
-typedef u32 intel_engine_mask_t;
-
 #define DEV_INFO_FOR_EACH_FLAG(func) \
 	func(require_force_probe); \
 	func(is_dgfx); \
@@ -35,17 +33,26 @@ struct xe_subplatform_desc {
 	const u16 *pciidlist;
 };
 
+struct xe_gt_desc {
+	enum xe_gt_type type;
+	u8 vram_id;
+	u64 engine_mask;
+	u32 mmio_adj_limit;
+	u32 mmio_adj_offset;
+};
+
 struct xe_device_desc {
 	u8 graphics_ver;
 	u8 graphics_rel;
 	u8 media_ver;
 	u8 media_rel;
 
-	intel_engine_mask_t platform_engine_mask; /* Engines supported by the HW */
+	u64 platform_engine_mask; /* Engines supported by the HW */
 
 	enum xe_platform platform;
 	const char *platform_name;
 	const struct xe_subplatform_desc *subplatforms;
+	const struct xe_gt_desc *extra_gts;
 
 	u8 dma_mask_size; /* available DMA address bits */
 
@@ -158,11 +165,22 @@ static const struct xe_device_desc ats_m_desc = {
 	BIT(XE_HW_ENGINE_CCS0) | BIT(XE_HW_ENGINE_CCS1) | \
 	BIT(XE_HW_ENGINE_CCS2) | BIT(XE_HW_ENGINE_CCS3)
 
+static const struct xe_gt_desc pvc_gts[] = {
+	{
+		.type = XE_GT_TYPE_REMOTE,
+		.vram_id = 1,
+		.engine_mask = PVC_ENGINES,
+		.mmio_adj_limit = 0,
+		.mmio_adj_offset = 0,
+	},
+};
+
 static const struct xe_device_desc pvc_desc = {
 	XE_HP_FEATURES,
 	XE_HPM_FEATURES,
 	DGFX_FEATURES,
 	PLATFORM(XE_PVC),
+	.extra_gts = pvc_gts,
 	.graphics_rel = 60,
 	.media_rel = 60,
 	.platform_engine_mask = PVC_ENGINES,
@@ -261,17 +279,33 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	xe->info.vram_flags = desc->vram_flags;
 	xe->info.tile_count = desc->max_tiles;
 	xe->info.vm_max_level = desc->vm_max_level;
+	xe->info.media_ver = desc->media_ver;
 
 	spd = subplatform_get(xe, desc);
 	xe->info.subplatform = spd ? spd->subplatform : XE_SUBPLATFORM_NONE;
 	xe->info.step = xe_step_get(xe);
 
-	/* FIXME: hack but enough for 2 tile PVC to boot */
 	for (id = 0; id < xe->info.tile_count; ++id) {
 		gt = xe->gt + id;
 		gt->info.id = id;
-		gt->info.vram_id = id;
-		gt->info.engine_mask = desc->platform_engine_mask;
+		gt->xe = xe;
+
+		if (id == 0) {
+			gt->info.type = XE_GT_TYPE_MAIN;
+			gt->info.vram_id = id;
+			gt->info.engine_mask = desc->platform_engine_mask;
+			gt->mmio.adj_limit = 0;
+			gt->mmio.adj_offset = 0;
+		} else {
+			gt->info.type = desc->extra_gts[id - 1].type;
+			gt->info.vram_id = desc->extra_gts[id - 1].vram_id;
+			gt->info.engine_mask =
+				desc->extra_gts[id - 1].engine_mask;
+			gt->mmio.adj_limit =
+				desc->extra_gts[id - 1].mmio_adj_limit;
+			gt->mmio.adj_offset =
+				desc->extra_gts[id - 1].mmio_adj_offset;
+		}
 	}
 
 	drm_dbg(&xe->drm, "%s %s %04x:%04x dgfx:%d gfx100:%d dma_m_s:%d tc:%d",

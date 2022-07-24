@@ -82,6 +82,8 @@ int xe_ggtt_init(struct xe_gt *gt, struct xe_ggtt *ggtt)
 	unsigned int gsm_size;
 	int err;
 
+	XE_BUG_ON(xe_gt_is_media_type(gt));
+
 	ggtt->gt = gt;
 
 	gsm_size = probe_gsm_size(pdev);

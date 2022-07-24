@@ -188,7 +188,7 @@ int xe_device_probe(struct xe_device *xe)
 	u8 id;
 
 	for_each_gt(gt, xe, id) {
-		err = xe_gt_alloc(xe, gt, id);
+		err = xe_gt_alloc(xe, gt);
 		if (err)
 			return err;
 	}

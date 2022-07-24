@@ -51,6 +51,7 @@ static inline struct xe_gt *xe_device_get_gt(struct xe_device *xe, u8 gt_id)
 	XE_BUG_ON(gt_id > XE_MAX_GT);
 	gt = xe->gt + gt_id;
 	XE_BUG_ON(gt->info.id != gt_id);
+	XE_BUG_ON(gt->info.type == XE_GT_TYPE_UNINITIALIZED);
 
 	return gt;
 }

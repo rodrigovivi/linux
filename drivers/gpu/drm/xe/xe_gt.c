@@ -26,30 +26,56 @@
 
 #include "../i915/gt/intel_gt_regs.h"
 
-int xe_gt_alloc(struct xe_device *xe, struct xe_gt *gt, u8 id)
+static struct xe_gt *
+find_full_gt(struct xe_gt *gt)
+{
+	struct xe_gt *search;
+	u8 id;
+
+	XE_BUG_ON(!xe_gt_is_media_type(gt));
+
+	for_each_gt(search, gt_to_xe(gt), id) {
+		if (search->info.vram_id == gt->info.vram_id)
+			return search;
+	}
+
+	XE_BUG_ON("NOT POSSIBLE");
+	return NULL;
+}
+
+int xe_gt_alloc(struct xe_device *xe, struct xe_gt *gt)
 {
 	struct drm_device *drm = &xe->drm;
 
-	gt->xe = xe;
-	gt->info.id = id;
+	XE_BUG_ON(gt->info.type == XE_GT_TYPE_UNINITIALIZED);
 
-	gt->mmio.fw = drmm_kzalloc(drm, sizeof(*gt->mmio.fw), GFP_KERNEL);
+	gt->mmio.fw = drmm_kzalloc(drm, sizeof(*gt->mmio.fw),
+				   GFP_KERNEL);
 	if (!gt->mmio.fw)
 		return -ENOMEM;
 
-	gt->mem.ggtt = drmm_kzalloc(drm, sizeof(*gt->mem.ggtt), GFP_KERNEL);
-	if (!gt->mem.ggtt)
-		return -ENOMEM;
+	if (!xe_gt_is_media_type(gt)) {
+		gt->mem.ggtt = drmm_kzalloc(drm, sizeof(*gt->mem.ggtt),
+					    GFP_KERNEL);
+		if (!gt->mem.ggtt)
+			return -ENOMEM;
 
-	gt->mem.vram_mgr = drmm_kzalloc(drm, sizeof(*gt->mem.vram_mgr),
-					GFP_KERNEL);
-	if (!gt->mem.vram_mgr)
-		return -ENOMEM;
+		gt->mem.vram_mgr = drmm_kzalloc(drm, sizeof(*gt->mem.vram_mgr),
+						GFP_KERNEL);
+		if (!gt->mem.vram_mgr)
+			return -ENOMEM;
 
-	gt->mem.gtt_mgr = drmm_kzalloc(drm, sizeof(*gt->mem.gtt_mgr),
-				       GFP_KERNEL);
-	if (!gt->mem.gtt_mgr)
-		return -ENOMEM;
+		gt->mem.gtt_mgr = drmm_kzalloc(drm, sizeof(*gt->mem.gtt_mgr),
+					       GFP_KERNEL);
+		if (!gt->mem.gtt_mgr)
+			return -ENOMEM;
+	} else {
+		struct xe_gt *full_gt = find_full_gt(gt);
+
+		gt->mem.ggtt = full_gt->mem.ggtt;
+		gt->mem.vram_mgr = full_gt->mem.vram_mgr;
+		gt->mem.gtt_mgr = full_gt->mem.gtt_mgr;
+	}
 
 	gt->ordered_wq = alloc_ordered_workqueue("gt-ordered-wq", 0);
 
@@ -94,10 +120,6 @@ static int gt_ttm_mgr_init(struct xe_gt *gt)
 		err = xe_ttm_vram_mgr_init(gt, gt->mem.vram_mgr);
 		if (err)
 			return err;
-#ifdef CONFIG_64BIT
-		gt->mem.vram.mapping = ioremap_wc(gt->mem.vram.io_start,
-						  gt->mem.vram.size);
-#endif
 		gtt_size = min(max((XE_DEFAULT_GTT_SIZE_MB << 20),
 				   gt->mem.vram.size),
 			       gtt_size);
@@ -119,9 +141,6 @@ static void gt_fini(struct drm_device *drm, void *arg)
 
 	for (i = 0; i < XE_ENGINE_CLASS_MAX; ++i)
 		xe_hw_fence_irq_finish(&gt->fence_irq[i]);
-
-	if (gt->mem.vram.mapping)
-		iounmap(gt->mem.vram.mapping);
 }
 
 static void gt_reset_worker(struct work_struct *w);
@@ -145,13 +164,15 @@ int xe_gt_init(struct xe_gt *gt)
 
 	tgl_setup_private_ppat(gt);
 
-	err = gt_ttm_mgr_init(gt);
-	if (err)
-		goto err_force_wake;
+	if (!xe_gt_is_media_type(gt)) {
+		err = gt_ttm_mgr_init(gt);
+		if (err)
+			goto err_force_wake;
 
-	err = xe_ggtt_init(gt, gt->mem.ggtt);
-	if (err)
-		goto err_ttm_mgr;
+		err = xe_ggtt_init(gt, gt->mem.ggtt);
+		if (err)
+			goto err_force_wake;
+	}
 
 	/* Allow driver to load if uC init fails (likely missing firmware) */
 	err = xe_uc_init(&gt->uc);
@@ -159,26 +180,38 @@ int xe_gt_init(struct xe_gt *gt)
 
 	err = xe_execlist_init(gt);
 	if (err)
-		goto err_ttm_mgr;
+		goto err_force_wake;
 
 	err = xe_hw_engines_init(gt);
 	if (err)
-		goto err_ttm_mgr;
+		goto err_force_wake;
 
-	err = xe_sa_bo_manager_init(gt, &gt->kernel_bb_pool, SZ_1M, 16);
-	if (err)
-		goto err_ttm_mgr;
+	/*
+	 * FIXME: This should be ok as SA should only be used by gt->migrate and
+	 * vm->gt->migrate and both should be pointing to a non-media GT. But to
+	 * realy safe, convert gt->kernel_bb_pool to a pointer and point a media
+	 * GT to the kernel_bb_pool on a real tile.
+	 */
+	if (!xe_gt_is_media_type(gt)) {
+		err = xe_sa_bo_manager_init(gt, &gt->kernel_bb_pool, SZ_1M, 16);
+		if (err)
+			goto err_force_wake;
 
-	/* Reserve the last page for prefetcher overflow */
-	gt->kernel_bb_pool.base.size -= SZ_4K;
+		/* Reserve the last page for prefetcher overflow */
+		gt->kernel_bb_pool.base.size -= SZ_4K;
+	}
 
 	err = xe_uc_init_hw(&gt->uc);
 	if (err)
-		goto err_ttm_mgr;
+		goto err_force_wake;
 
-	gt->migrate = xe_migrate_init(gt);
-	if (IS_ERR(gt->migrate))
-		goto err_ttm_mgr;
+	if (!xe_gt_is_media_type(gt)) {
+		gt->migrate = xe_migrate_init(gt);
+		if (IS_ERR(gt->migrate))
+			goto err_force_wake;
+	} else {
+		gt->migrate = find_full_gt(gt)->migrate;
+	}
 
 	err = xe_force_wake_put(gt->mmio.fw, XE_FORCEWAKE_ALL);
 	XE_WARN_ON(err);
@@ -191,9 +224,6 @@ int xe_gt_init(struct xe_gt *gt)
 
 	return 0;
 
-err_ttm_mgr:
-	if (gt->mem.vram.mapping)
-		iounmap(gt->mem.vram.mapping);
 err_force_wake:
 	xe_force_wake_put(gt->mmio.fw, XE_FORCEWAKE_ALL);
 err_hw_fence_irq:

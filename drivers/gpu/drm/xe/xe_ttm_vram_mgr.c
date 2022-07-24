@@ -207,6 +207,8 @@ int xe_ttm_vram_mgr_init(struct xe_gt *gt, struct xe_ttm_vram_mgr *mgr)
 	struct ttm_resource_manager *man = &mgr->manager;
 	int err;
 
+	XE_BUG_ON(xe_gt_is_media_type(gt));
+
 	mgr->gt = gt;
 	man->func = &xe_ttm_vram_mgr_func;
 
