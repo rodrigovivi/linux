@@ -7,6 +7,7 @@
 #include <drm/ttm/ttm_placement.h>
 #include <linux/nospec.h>
 
+#include "xe_bo.h"
 #include "xe_device.h"
 #include "xe_gt.h"
 #include "xe_macros.h"
@@ -25,10 +26,13 @@ static size_t calc_hw_engine_info_size(struct xe_device *xe)
 {
 	struct xe_hw_engine *hwe;
 	enum xe_hw_engine_id id;
+	struct xe_gt *gt;
+	u8 gt_id;
 	int i = 0;
 
-	for_each_hw_engine(hwe, to_gt(xe), id)
-		i++;
+	for_each_gt(gt, xe, gt_id)
+		for_each_hw_engine(hwe, gt, id)
+			i++;
 
 	return i * sizeof(struct drm_xe_engine_class_instance);
 }
@@ -42,6 +46,8 @@ static int query_engines(struct xe_device *xe,
 	struct drm_xe_engine_class_instance *hw_engine_info;
 	struct xe_hw_engine *hwe;
 	enum xe_hw_engine_id id;
+	struct xe_gt *gt;
+	u8 gt_id;
 	int i = 0;
 
 	if (query->size == 0) {
@@ -55,12 +61,14 @@ static int query_engines(struct xe_device *xe,
 	if (XE_IOCTL_ERR(xe, !hw_engine_info))
 		return -ENOMEM;
 
-	for_each_hw_engine(hwe, to_gt(xe), id) {
-		hw_engine_info[i].engine_class =
-			xe_to_user_engine_class[hwe->class];
-		hw_engine_info[i].engine_instance = hwe->logical_instance;
-		hw_engine_info[i++].gt_id = to_gt(xe)->info.id;
-	}
+	for_each_gt(gt, xe, gt_id)
+		for_each_hw_engine(hwe, gt, id) {
+			hw_engine_info[i].engine_class =
+				xe_to_user_engine_class[hwe->class];
+			hw_engine_info[i].engine_instance =
+				hwe->logical_instance;
+			hw_engine_info[i++].gt_id = gt->info.id;
+		}
 
 	if (copy_to_user(query_ptr, hw_engine_info, size)) {
 		kfree(hw_engine_info);
@@ -75,7 +83,7 @@ static size_t calc_memory_usage_size(struct xe_device *xe)
 {
 	u32 num_managers = 1;
 
-	if (ttm_manager_type(&xe->ttm, TTM_PL_VRAM))
+	if (ttm_manager_type(&xe->ttm, XE_PL_VRAM0))
 		num_managers++;
 
 	return offsetof(struct drm_xe_query_mem_usage, regions[num_managers]);
@@ -104,14 +112,14 @@ static int query_memory_usage(struct xe_device *xe,
 
 	usage->pad = 0;
 
-	man = ttm_manager_type(&xe->ttm, TTM_PL_TT);
+	man = ttm_manager_type(&xe->ttm, XE_PL_TT);
 	usage->regions[0].mem_class = XE_QUERY_MEM_REGION_CLASS_SYSMEM;
 	usage->regions[0].instance = 0;
 	usage->regions[0].pad = 0;
 	usage->regions[0].total_size = man->size << PAGE_SHIFT;
 	usage->regions[0].used = ttm_resource_manager_usage(man);
 
-	man = ttm_manager_type(&xe->ttm, TTM_PL_VRAM);
+	man = ttm_manager_type(&xe->ttm, XE_PL_VRAM0);
 	if (man) {
 		usage->regions[1].mem_class = XE_QUERY_MEM_REGION_CLASS_LMEM;
 		usage->regions[1].instance = 0;
@@ -157,13 +165,13 @@ static int query_config(struct xe_device *xe,
 	config->num_params = num_params;
 	config->info[XE_QUERY_CONFIG_REV_AND_DEVICE_ID] =
 		xe->info.devid | (xe->info.revid << 16);
-	if (xe->gt.mem.vram.size)
+	if (to_gt(xe)->mem.vram.size)
 		config->info[XE_QUERY_CONFIG_FLAGS] = XE_QUERY_CONFIG_FLAGS_HAS_VRAM;
-	if (xe->gt.info.enable_guc)
+	if (xe->info.enable_guc)
 		config->info[XE_QUERY_CONFIG_FLAGS] |= XE_QUERY_CONFIG_FLAGS_USE_GUC;
 	config->info[XE_QUERY_CONFIG_MIN_ALIGNEMENT] =
 		xe->info.vram_flags & XE_VRAM_FLAGS_NEED64K ? SZ_64K : SZ_4K;
-	config->info[XE_QUERY_CONFIG_GTT_SIZE] = xe->gt.mem.ggtt->size;
+	config->info[XE_QUERY_CONFIG_GTT_SIZE] = to_gt(xe)->mem.ggtt->size;
 	config->info[XE_QUERY_CONFIG_TILE_COUNT] = xe->info.tile_count;
 
 	if (copy_to_user(query_ptr, config, size)) {

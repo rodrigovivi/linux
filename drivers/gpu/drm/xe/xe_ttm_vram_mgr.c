@@ -197,7 +197,8 @@ static void ttm_vram_mgr_fini(struct drm_device *drm, void *arg)
 	spin_unlock(&mgr->lock);
 
 	ttm_resource_manager_cleanup(man);
-	ttm_set_driver_manager(&xe->ttm, TTM_PL_VRAM, NULL);
+	ttm_set_driver_manager(&xe->ttm, XE_PL_VRAM0 + mgr->gt->info.vram_id,
+			       NULL);
 }
 
 int xe_ttm_vram_mgr_init(struct xe_gt *gt, struct xe_ttm_vram_mgr *mgr)
@@ -213,7 +214,8 @@ int xe_ttm_vram_mgr_init(struct xe_gt *gt, struct xe_ttm_vram_mgr *mgr)
 
 	drm_mm_init(&mgr->mm, 0, man->size);
 	spin_lock_init(&mgr->lock);
-	ttm_set_driver_manager(&xe->ttm, TTM_PL_VRAM, &mgr->manager);
+	ttm_set_driver_manager(&xe->ttm, XE_PL_VRAM0 + gt->info.vram_id,
+			       &mgr->manager);
 	ttm_resource_manager_set_used(man, true);
 
 	err = drmm_add_action_or_reset(&xe->drm, ttm_vram_mgr_fini, mgr);
@@ -230,6 +232,7 @@ int xe_ttm_vram_mgr_alloc_sgt(struct xe_device *xe,
 			      enum dma_data_direction dir,
 			      struct sg_table **sgt)
 {
+	struct xe_gt *gt = xe_device_get_gt(xe, res->mem_type - XE_PL_VRAM0);
 	struct xe_res_cursor cursor;
 	struct scatterlist *sg;
 	int num_entries = 0;
@@ -262,7 +265,7 @@ int xe_ttm_vram_mgr_alloc_sgt(struct xe_device *xe,
 	 */
 	xe_res_first(res, offset, length, &cursor);
 	for_each_sgtable_sg((*sgt), sg, i) {
-		phys_addr_t phys = cursor.start + to_gt(xe)->mem.vram.io_start;
+		phys_addr_t phys = cursor.start + gt->mem.vram.io_start;
 		size_t size = cursor.size;
 		dma_addr_t addr;
 

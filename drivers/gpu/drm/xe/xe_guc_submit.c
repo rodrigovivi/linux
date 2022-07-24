@@ -1008,7 +1008,7 @@ static int guc_engine_init(struct xe_engine *e)
 	struct xe_guc_engine *ge;
 	int err;
 
-	XE_BUG_ON(!xe_gt_guc_submission_enabled(guc_to_gt(guc)));
+	XE_BUG_ON(!xe_device_guc_submission_enabled(guc_to_xe(guc)));
 
 	ge = kzalloc(sizeof(*ge), GFP_KERNEL);
 	if (!ge)
@@ -1636,7 +1636,7 @@ void xe_guc_submit_print(struct xe_guc *guc, struct drm_printer *p)
 	struct xe_engine *e;
 	unsigned long index;
 
-	if (!xe_gt_guc_submission_enabled(guc_to_gt(guc)))
+	if (!xe_device_guc_submission_enabled(guc_to_xe(guc)))
 		return;
 
 	mutex_lock(&guc->submission_state.lock);

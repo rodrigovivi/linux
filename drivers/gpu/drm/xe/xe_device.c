@@ -23,6 +23,11 @@
 #include "xe_vm.h"
 #include "xe_wait_user_fence.h"
 
+/* FIXME: Move to common param infrastructure */
+static bool enable_guc = true;
+module_param_named_unsafe(enable_guc, enable_guc, bool, 0444);
+MODULE_PARM_DESC(enable_guc, "Enable GuC submission");
+
 static int xe_file_open(struct drm_device *dev, struct drm_file *file)
 {
 	struct xe_file *xef;
@@ -154,6 +159,7 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 
 	xe->info.devid = pdev->device;
 	xe->info.revid = pdev->revision;
+	xe->info.enable_guc = enable_guc;
 
 	spin_lock_init(&xe->irq.lock);
 
@@ -166,6 +172,8 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 	INIT_LIST_HEAD(&xe->pinned.present);
 	INIT_LIST_HEAD(&xe->pinned.evicted);
 
+	xe->ordered_wq = alloc_ordered_workqueue("xe-ordered-wq", 0);
+
 	return xe;
 
 err_put:
@@ -175,11 +183,15 @@ err_put:
 
 int xe_device_probe(struct xe_device *xe)
 {
+	struct xe_gt *gt;
 	int err;
+	u8 id;
 
-	err = xe_gt_alloc(to_gt(xe));
-	if (err)
-		return err;
+	for_each_gt(gt, xe, id) {
+		err = xe_gt_alloc(xe, gt, id);
+		if (err)
+			return err;
+	}
 
 	err = xe_mmio_init(xe);
 	if (err)
@@ -189,10 +201,12 @@ int xe_device_probe(struct xe_device *xe)
 	if (err)
 		return err;
 
-	err = xe_gt_init(to_gt(xe));
-	if (err) {
-		xe_irq_shutdown(xe);
-		return err;
+	for_each_gt(gt, xe, id) {
+		err = xe_gt_init(gt);
+		if (err) {
+			xe_irq_shutdown(xe);
+			return err;
+		}
 	}
 
 	err = drm_dev_register(&xe->drm, 0);
@@ -208,6 +222,7 @@ int xe_device_probe(struct xe_device *xe)
 
 void xe_device_remove(struct xe_device *xe)
 {
+	destroy_workqueue(xe->ordered_wq);
 	mutex_destroy(&xe->persitent_engines.lock);
 	xe_irq_shutdown(xe);
 	drm_dev_unregister(&xe->drm);

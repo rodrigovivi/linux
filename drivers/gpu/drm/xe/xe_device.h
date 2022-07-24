@@ -9,7 +9,10 @@
 struct xe_engine;
 struct xe_file;
 
+#include <drm/drm_util.h>
+
 #include "xe_device_types.h"
+#include "xe_macros.h"
 
 static inline struct xe_device *to_xe_device(const struct drm_device *dev)
 {
@@ -41,12 +44,37 @@ static inline struct xe_file *to_xe_file(const struct drm_file *file)
 	return file->driver_priv;
 }
 
+static inline struct xe_gt *xe_device_get_gt(struct xe_device *xe, u8 gt_id)
+{
+	struct xe_gt *gt;
+
+	XE_BUG_ON(gt_id > XE_MAX_GT);
+	gt = xe->gt + gt_id;
+	XE_BUG_ON(gt->info.id != gt_id);
+
+	return gt;
+}
+
 /*
  * FIXME: Placeholder until multi-gt lands. Once that lands, kill this function.
  */
 static inline struct xe_gt *to_gt(struct xe_device *xe)
 {
-	return &xe->gt;
+	return xe->gt;
 }
+
+static inline bool xe_device_guc_submission_enabled(struct xe_device *xe)
+{
+	return xe->info.enable_guc;
+}
+
+static inline void xe_device_guc_submission_disable(struct xe_device *xe)
+{
+	xe->info.enable_guc = false;
+}
+
+#define for_each_gt(gt__, xe__, id__) \
+	for ((id__) = 0; (id__) < (xe__)->info.tile_count; (id__++)) \
+		for_each_if ((gt__) = xe_device_get_gt((xe__), (id__)))
 
 #endif /* _XE_DEVICE_H_ */

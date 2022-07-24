@@ -44,7 +44,8 @@ mask_err:
 
 static void xe_mmio_probe_vram(struct xe_device *xe)
 {
-	struct xe_gt *gt = to_gt(xe);
+	struct xe_gt *gt = xe_device_get_gt(xe, 0);
+	u8 id;
 
 	if (!IS_DGFX(xe)) {
 		gt->mem.vram.size = gt->mem.vram.io_start = 0;
@@ -54,23 +55,62 @@ static void xe_mmio_probe_vram(struct xe_device *xe)
 	gt->mem.vram.size = xe_mmio_read64(gt, GEN12_GSMBASE.reg);
 	gt->mem.vram.io_start = pci_resource_start(to_pci_dev(xe->drm.dev), 2);
 
-	drm_dbg(&xe->drm, "VRAM: %pa\n", &gt->mem.vram.size);
+	drm_info(&xe->drm, "TOTAL VRAM: %pa, %pa\n",
+		 &xe->mem.vram.io_start, &xe->mem.vram.size);
+
+	/* FIXME: Assuming equally partitioned VRAM, incorrect */
+	if (xe->info.tile_count > 1) {
+		resource_size_t size = gt->mem.vram.size / xe->info.tile_count;
+		resource_size_t io_start = gt->mem.vram.io_start;
+
+		for_each_gt(gt, xe, id) {
+			gt->mem.vram.size = size;
+			gt->mem.vram.io_start = io_start;
+			gt->info.vram_id = id;
+			io_start += size;
+			drm_dbg(&xe->drm, "VRAM[%u]: %pa, %pa\n",
+				id, &gt->mem.vram.io_start, &gt->mem.vram.size);
+		}
+	} else {
+		drm_dbg(&xe->drm, "VRAM: %pa\n", &gt->mem.vram.size);
+	}
 }
 
 static void xe_mmio_probe_tiles(struct xe_device *xe)
 {
+	struct xe_gt *gt = xe_device_get_gt(xe, 0);
+	u8 id;
 	u32 mtcfg;
-	struct xe_gt *gt = to_gt(xe);
 
-	if (!xe->info.tile_count)
+	if (xe->info.tile_count == 1)
 		return;
 
 	mtcfg = xe_mmio_read64(gt, XEHP_MTCFG_ADDR.reg);
 	xe->info.tile_count = REG_FIELD_GET(TILE_COUNT, mtcfg) + 1;
 
 	drm_dbg(&xe->drm, "tile_count: %d\n", xe->info.tile_count);
-}
 
+	/* FIXME: Hack but likely works for PVC */
+	if (xe->info.tile_count > 1) {
+		const int mmio_bar = 0;
+		size_t size;
+		void *regs;
+
+		pci_iounmap(to_pci_dev(xe->drm.dev), xe->mmio.regs);
+		xe->mmio.size = SZ_16M * xe->info.tile_count;
+		xe->mmio.regs = pci_iomap(to_pci_dev(xe->drm.dev), mmio_bar,
+					  xe->mmio.size);
+
+		size = xe->mmio.size / xe->info.tile_count;
+		regs = xe->mmio.regs;
+
+		for_each_gt(gt, xe, id) {
+			gt->mmio.size = size;
+			gt->mmio.regs = regs;
+			regs += size;
+		}
+	}
+}
 
 static void mmio_fini(struct drm_device *drm, void *arg)
 {
@@ -81,11 +121,17 @@ static void mmio_fini(struct drm_device *drm, void *arg)
 
 int xe_mmio_init(struct xe_device *xe)
 {
-	struct xe_gt *gt = to_gt(xe);
+	struct xe_gt *gt = xe_device_get_gt(xe, 0);
 	const int mmio_bar = 0;
 	int err;
 
-	xe->mmio.size = IS_DGFX(xe) ? SZ_4M : SZ_2M;
+	/*
+	 * Map the entire BAR, which includes registers (0-4MB), reserved space
+	 * (4MB-8MB), and GGTT (8MB-16MB). Other parts of the driver (GTs,
+	 * GGTTs) will derive the pointers they need from the mapping in the
+	 * device structure.
+	 */
+	xe->mmio.size = SZ_16M;
 	xe->mmio.regs = pci_iomap(to_pci_dev(xe->drm.dev), mmio_bar,
 				  xe->mmio.size);
 	if (xe->mmio.regs == NULL) {
@@ -116,8 +162,8 @@ int xe_mmio_init(struct xe_device *xe)
 	if (err)
 		return err;
 
-	xe_mmio_probe_vram(xe);
 	xe_mmio_probe_tiles(xe);
+	xe_mmio_probe_vram(xe);
 
 	return 0;
 }

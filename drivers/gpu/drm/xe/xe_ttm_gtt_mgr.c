@@ -10,6 +10,7 @@
 #include <drm/ttm/ttm_placement.h>
 #include <drm/ttm/ttm_bo_driver.h>
 
+#include "xe_bo.h"
 #include "xe_gt.h"
 #include "xe_ttm_gtt_mgr.h"
 
@@ -100,7 +101,7 @@ static void ttm_gtt_mgr_fini(struct drm_device *drm, void *arg)
 		return;
 
 	ttm_resource_manager_cleanup(man);
-	ttm_set_driver_manager(&xe->ttm, TTM_PL_TT, NULL);
+	ttm_set_driver_manager(&xe->ttm, XE_PL_TT, NULL);
 }
 
 int xe_ttm_gtt_mgr_init(struct xe_gt *gt, struct xe_ttm_gtt_mgr *mgr,
@@ -116,7 +117,7 @@ int xe_ttm_gtt_mgr_init(struct xe_gt *gt, struct xe_ttm_gtt_mgr *mgr,
 
 	ttm_resource_manager_init(man, &xe->ttm, gtt_size >> PAGE_SHIFT);
 
-	ttm_set_driver_manager(&xe->ttm, TTM_PL_TT, &mgr->manager);
+	ttm_set_driver_manager(&xe->ttm, XE_PL_TT, &mgr->manager);
 	ttm_resource_manager_set_used(man, true);
 
 	err = drmm_add_action_or_reset(&xe->drm, ttm_gtt_mgr_fini, mgr);

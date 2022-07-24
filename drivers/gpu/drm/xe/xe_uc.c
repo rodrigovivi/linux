@@ -3,6 +3,7 @@
  * Copyright © 2022 Intel Corporation
  */
 
+#include "xe_device.h"
 #include "xe_huc.h"
 #include "xe_gt.h"
 #include "xe_guc.h"
@@ -29,7 +30,7 @@ int xe_uc_init(struct xe_uc *uc)
 	int ret;
 
 	/* GuC submission not enabled, nothing to do */
-	if (!xe_gt_guc_submission_enabled(uc_to_gt(uc)))
+	if (!xe_device_guc_submission_enabled(uc_to_xe(uc)))
 		return 0;
 
 	ret = xe_guc_init(&uc->guc);
@@ -52,7 +53,7 @@ int xe_uc_init(struct xe_uc *uc)
 
 err:
 	/* If any uC firmwares not found, fall back to execlists */
-	xe_gt_guc_submission_disable(uc_to_gt(uc));
+	xe_device_guc_submission_disable(uc_to_xe(uc));
 
 	return ret;
 }
@@ -88,7 +89,7 @@ int xe_uc_init_hw(struct xe_uc *uc)
 	int ret;
 
 	/* GuC submission not enabled, nothing to do */
-	if (!xe_gt_guc_submission_enabled(uc_to_gt(uc)))
+	if (!xe_device_guc_submission_enabled(uc_to_xe(uc)))
 		return 0;
 
 	ret = uc_sanitize(uc);
@@ -117,7 +118,7 @@ int xe_uc_init_hw(struct xe_uc *uc)
 int xe_uc_reset_prepare(struct xe_uc *uc)
 {
 	/* GuC submission not enabled, nothing to do */
-	if (!xe_gt_guc_submission_enabled(uc_to_gt(uc)))
+	if (!xe_device_guc_submission_enabled(uc_to_xe(uc)))
 		return 0;
 
 	return xe_guc_reset_prepare(&uc->guc);
@@ -126,7 +127,7 @@ int xe_uc_reset_prepare(struct xe_uc *uc)
 int xe_uc_stop(struct xe_uc *uc)
 {
 	/* GuC submission not enabled, nothing to do */
-	if (!xe_gt_guc_submission_enabled(uc_to_gt(uc)))
+	if (!xe_device_guc_submission_enabled(uc_to_xe(uc)))
 		return 0;
 
 	return xe_guc_stop(&uc->guc);
@@ -135,7 +136,7 @@ int xe_uc_stop(struct xe_uc *uc)
 int xe_uc_start(struct xe_uc *uc)
 {
 	/* GuC submission not enabled, nothing to do */
-	if (!xe_gt_guc_submission_enabled(uc_to_gt(uc)))
+	if (!xe_device_guc_submission_enabled(uc_to_xe(uc)))
 		return 0;
 
 	return xe_guc_start(&uc->guc);
@@ -158,7 +159,7 @@ int xe_uc_suspend(struct xe_uc *uc)
 	int ret;
 
 	/* GuC submission not enabled, nothing to do */
-	if (!xe_gt_guc_submission_enabled(uc_to_gt(uc)))
+	if (!xe_device_guc_submission_enabled(uc_to_xe(uc)))
 		return 0;
 
 	uc_reset_wait(uc);
@@ -175,7 +176,7 @@ int xe_uc_resume(struct xe_uc *uc)
 	int ret;
 
 	/* GuC submission not enabled, nothing to do */
-	if (!xe_gt_guc_submission_enabled(uc_to_gt(uc)))
+	if (!xe_device_guc_submission_enabled(uc_to_xe(uc)))
 		return 0;
 
 	ret = xe_wopcm_init(&uc->wopcm);

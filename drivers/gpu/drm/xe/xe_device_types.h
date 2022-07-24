@@ -24,6 +24,10 @@
 
 #define XE_VRAM_FLAGS_NEED64K		BIT(0)
 
+#define XE_GT0		0
+#define XE_GT1		1
+#define XE_MAX_GT	(XE_GT1 + 1)
+
 /**
  * struct xe_device - Top level struct of XE device
  */
@@ -55,6 +59,8 @@ struct xe_device {
 		u8 tile_count;
 		/** @vm_max_level: Max VM level */
 		u8 vm_max_level;
+		/** @enable_guc: GuC submission enabled */
+		bool enable_guc;
 	} info;
 
 	/** @irq: device interrupt state */
@@ -97,8 +103,11 @@ struct xe_device {
 	/** @ufence_wq: user fence wait queue */
 	wait_queue_head_t ufence_wq;
 
+	/** @ordered_wq: used to serialize compute mode resume */
+	struct workqueue_struct *ordered_wq;
+
 	/** @gt: graphics tile */
-	struct xe_gt gt;
+	struct xe_gt gt[XE_MAX_GT];
 };
 
 /**

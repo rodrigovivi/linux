@@ -26,6 +26,7 @@ static int info(struct seq_file *m, void *data)
 	drm_printf(&p, "revid %d\n", xe->info.revid);
 	drm_printf(&p, "tile_count %d\n", xe->info.tile_count);
 	drm_printf(&p, "vm_max_level %d\n", xe->info.vm_max_level);
+	drm_printf(&p, "enable_guc %s\n", xe->info.enable_guc ? "yes" : "no");
 
 	return 0;
 }
@@ -37,10 +38,13 @@ static const struct drm_info_list debugfs_list[] = {
 void xe_debugfs_register(struct xe_device *xe)
 {
 	struct drm_minor *minor = xe->drm.primary;
+	struct xe_gt *gt;
+	u8 id;
 
 	drm_debugfs_create_files(debugfs_list,
 				 ARRAY_SIZE(debugfs_list),
 				 minor->debugfs_root, minor);
 
-	xe_gt_debugfs_register(to_gt(xe));
+	for_each_gt(gt, xe, id)
+		xe_gt_debugfs_register(gt);
 }

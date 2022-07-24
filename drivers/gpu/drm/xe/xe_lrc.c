@@ -843,10 +843,10 @@ int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 
 	lrc->flags = 0;
 
-	lrc->bo = xe_bo_create_locked(xe, vm,
+	lrc->bo = xe_bo_create_locked(xe, hwe->gt, vm,
 				      ring_size + lrc_size(xe, hwe->class),
 				      ttm_bo_type_kernel,
-				      XE_BO_CREATE_VRAM_IF_DGFX(xe) |
+				      XE_BO_CREATE_VRAM_IF_DGFX(hwe->gt) |
 				      XE_BO_CREATE_GGTT_BIT);
 	if (IS_ERR(lrc->bo))
 		return PTR_ERR(lrc->bo);
