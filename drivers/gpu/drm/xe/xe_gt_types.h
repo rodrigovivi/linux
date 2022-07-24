@@ -21,6 +21,13 @@ struct xe_ring_ops;
 struct xe_ttm_gtt_mgr;
 struct xe_ttm_vram_mgr;
 
+enum xe_gt_type {
+	XE_GT_TYPE_UNINITIALIZED,
+	XE_GT_TYPE_MAIN,
+	XE_GT_TYPE_REMOTE,
+	XE_GT_TYPE_MEDIA,
+};
+
 /**
  * struct xe_gt - Top level struct of a graphics tile
  *
@@ -35,6 +42,8 @@ struct xe_gt {
 
 	/** @info: GT info */
 	struct {
+		/** @type: type of GT */
+		enum xe_gt_type type;
 		/** @id: id of GT */
 		u8 id;
 		/** @vram: id of the VRAM for this GT */
@@ -57,6 +66,13 @@ struct xe_gt {
 		 * against virtual GTs sharing FW domains
 		 */
 		struct xe_force_wake *fw;
+		/**
+		 * @adj_limit: adjust MMIO address if address is below this
+		 * value
+		 */
+		u32 adj_limit;
+		/** @adj_offset: offect to add to MMIO address when adjusting */
+		u32 adj_offset;
 	} mmio;
 
 	/**
@@ -66,7 +82,7 @@ struct xe_gt {
 	struct {
 		/**
 		 * @vram: VRAM info for GT, multiple GTs can point to same info
-		 * (virtual split)
+		 * (virtual split), can be subset of global device VRAM
 		 */
 		struct {
 			/** @io_start: start address of VRAM */

@@ -9,6 +9,7 @@
 #include <drm/xe_drm.h>
 
 #include "xe_device.h"
+#include "xe_gt.h"
 #include "xe_macros.h"
 
 #include "../i915/i915_reg.h"
@@ -44,70 +45,108 @@ mask_err:
 
 static void xe_mmio_probe_vram(struct xe_device *xe)
 {
-	struct xe_gt *gt = xe_device_get_gt(xe, 0);
+	struct xe_gt *gt;
 	u8 id;
 
 	if (!IS_DGFX(xe)) {
-		gt->mem.vram.size = gt->mem.vram.io_start = 0;
+		xe->mem.vram.mapping = 0;
+		xe->mem.vram.size = 0;
+		xe->mem.vram.io_start = 0;
+
+		for_each_gt(gt, xe, id) {
+			gt->mem.vram.mapping = 0;
+			gt->mem.vram.size = 0;
+			gt->mem.vram.io_start = 0;
+		}
 		return;
 	}
 
-	gt->mem.vram.size = xe_mmio_read64(gt, GEN12_GSMBASE.reg);
-	gt->mem.vram.io_start = pci_resource_start(to_pci_dev(xe->drm.dev), 2);
+	gt = xe_device_get_gt(xe, 0);
+	xe->mem.vram.size = xe_mmio_read64(gt, GEN12_GSMBASE.reg);
+	xe->mem.vram.io_start = pci_resource_start(to_pci_dev(xe->drm.dev), 2);
+#ifdef CONFIG_64BIT
+	xe->mem.vram.mapping = ioremap_wc(xe->mem.vram.io_start,
+					  xe->mem.vram.size);
+#endif
 
 	drm_info(&xe->drm, "TOTAL VRAM: %pa, %pa\n",
 		 &xe->mem.vram.io_start, &xe->mem.vram.size);
 
 	/* FIXME: Assuming equally partitioned VRAM, incorrect */
 	if (xe->info.tile_count > 1) {
-		resource_size_t size = gt->mem.vram.size / xe->info.tile_count;
-		resource_size_t io_start = gt->mem.vram.io_start;
+		u8 adj_tile_count = xe->info.tile_count;
+		resource_size_t size, io_start;
+
+		for_each_gt(gt, xe, id)
+			if (xe_gt_is_media_type(gt))
+				--adj_tile_count;
+
+		XE_BUG_ON(!adj_tile_count);
+
+		size = xe->mem.vram.size / adj_tile_count;
+		io_start = xe->mem.vram.io_start;
 
 		for_each_gt(gt, xe, id) {
+			if (id && !xe_gt_is_media_type(gt))
+				io_start += size;
+
 			gt->mem.vram.size = size;
 			gt->mem.vram.io_start = io_start;
-			gt->info.vram_id = id;
-			io_start += size;
-			drm_dbg(&xe->drm, "VRAM[%u]: %pa, %pa\n",
-				id, &gt->mem.vram.io_start, &gt->mem.vram.size);
+			gt->mem.vram.mapping = xe->mem.vram.mapping +
+				(io_start - xe->mem.vram.io_start);
+
+			drm_info(&xe->drm, "VRAM[%u, %u]: %pa, %pa\n",
+				 id, gt->info.vram_id, &gt->mem.vram.io_start,
+				 &gt->mem.vram.size);
 		}
 	} else {
-		drm_dbg(&xe->drm, "VRAM: %pa\n", &gt->mem.vram.size);
+		gt->mem.vram.size = xe->mem.vram.size;
+		gt->mem.vram.io_start = xe->mem.vram.io_start;
+		gt->mem.vram.mapping = xe->mem.vram.mapping;
+
+		drm_info(&xe->drm, "VRAM: %pa\n", &gt->mem.vram.size);
 	}
 }
 
 static void xe_mmio_probe_tiles(struct xe_device *xe)
 {
 	struct xe_gt *gt = xe_device_get_gt(xe, 0);
-	u8 id;
 	u32 mtcfg;
+	u8 adj_tile_count;
+	u8 id;
 
 	if (xe->info.tile_count == 1)
 		return;
 
 	mtcfg = xe_mmio_read64(gt, XEHP_MTCFG_ADDR.reg);
-	xe->info.tile_count = REG_FIELD_GET(TILE_COUNT, mtcfg) + 1;
+	adj_tile_count = xe->info.tile_count =
+		REG_FIELD_GET(TILE_COUNT, mtcfg) + 1;
+	if (xe->info.media_ver >= 13)
+		xe->info.tile_count *= 2;
 
-	drm_dbg(&xe->drm, "tile_count: %d\n", xe->info.tile_count);
+	drm_info(&xe->drm, "tile_count: %d, adj_tile_count %d\n",
+		 xe->info.tile_count, adj_tile_count);
 
-	/* FIXME: Hack but likely works for PVC */
 	if (xe->info.tile_count > 1) {
 		const int mmio_bar = 0;
 		size_t size;
 		void *regs;
 
-		pci_iounmap(to_pci_dev(xe->drm.dev), xe->mmio.regs);
-		xe->mmio.size = SZ_16M * xe->info.tile_count;
-		xe->mmio.regs = pci_iomap(to_pci_dev(xe->drm.dev), mmio_bar,
-					  xe->mmio.size);
+		if (adj_tile_count > 1) {
+			pci_iounmap(to_pci_dev(xe->drm.dev), xe->mmio.regs);
+			xe->mmio.size = SZ_16M * adj_tile_count;
+			xe->mmio.regs = pci_iomap(to_pci_dev(xe->drm.dev),
+						  mmio_bar, xe->mmio.size);
+		}
 
-		size = xe->mmio.size / xe->info.tile_count;
+		size = xe->mmio.size / adj_tile_count;
 		regs = xe->mmio.regs;
 
 		for_each_gt(gt, xe, id) {
+			if (id && !xe_gt_is_media_type(gt))
+				regs += size;
 			gt->mmio.size = size;
 			gt->mmio.regs = regs;
-			regs += size;
 		}
 	}
 }
@@ -117,6 +156,8 @@ static void mmio_fini(struct drm_device *drm, void *arg)
 	struct xe_device *xe = arg;
 
 	pci_iounmap(to_pci_dev(xe->drm.dev), xe->mmio.regs);
+	if (xe->mem.vram.mapping)
+		iounmap(xe->mem.vram.mapping);
 }
 
 int xe_mmio_init(struct xe_device *xe)
