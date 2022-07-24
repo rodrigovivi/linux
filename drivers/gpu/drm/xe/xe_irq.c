@@ -198,22 +198,28 @@ gen11_gt_engine_identity(struct xe_device *xe,
 	return ident;
 }
 
+#define   OTHER_MEDIA_GUC_INSTANCE           16
+
 static void
 gen11_gt_other_irq_handler(struct xe_gt *gt, const u8 instance, const u16 iir)
 {
-	if (instance == OTHER_GUC_INSTANCE)
+	if (instance == OTHER_GUC_INSTANCE && !xe_gt_is_media_type(gt))
+		return xe_guc_irq_handler(&gt->uc.guc, iir);
+	if (instance == OTHER_MEDIA_GUC_INSTANCE && xe_gt_is_media_type(gt))
 		return xe_guc_irq_handler(&gt->uc.guc, iir);
 
-	WARN_ONCE(1, "unhandled other interrupt instance=0x%x, iir=0x%x\n",
-		  instance, iir);
+	if (instance != OTHER_GUC_INSTANCE &&
+	    instance != OTHER_MEDIA_GUC_INSTANCE) {
+		WARN_ONCE(1, "unhandled other interrupt instance=0x%x, iir=0x%x\n",
+			  instance, iir);
+	}
 }
 
 static void gen11_gt_irq_handler(struct xe_device *xe, struct xe_gt *gt,
-				 u32 master_ctl)
+				 u32 master_ctl, long unsigned int *intr_dw,
+				 u32 *identity)
 {
 	unsigned int bank, bit;
-	long unsigned int intr_dw;
-	u32 identity[32];
 	u16 instance, intr_vec;
 	enum xe_engine_class class;
 	struct xe_hw_engine *hwe;
@@ -224,13 +230,18 @@ static void gen11_gt_irq_handler(struct xe_device *xe, struct xe_gt *gt,
 		if (!(master_ctl & GEN11_GT_DW_IRQ(bank)))
 			continue;
 
-		intr_dw = xe_mmio_read32(gt, GEN11_GT_INTR_DW(bank).reg);
-		for_each_set_bit(bit, &intr_dw, 32)
-			identity[bit] = gen11_gt_engine_identity(xe, gt, bank,
-								 bit);
-		xe_mmio_write32(gt, GEN11_GT_INTR_DW(bank).reg, intr_dw);
+		if (!xe_gt_is_media_type(gt)) {
+			intr_dw[bank] =
+				xe_mmio_read32(gt, GEN11_GT_INTR_DW(bank).reg);
+			for_each_set_bit(bit, intr_dw + bank, 32)
+				identity[bit] = gen11_gt_engine_identity(xe, gt,
+									 bank,
+									 bit);
+			xe_mmio_write32(gt, GEN11_GT_INTR_DW(bank).reg,
+					intr_dw[bank]);
+		}
 
-		for_each_set_bit(bit, &intr_dw, 32) {
+		for_each_set_bit(bit, intr_dw + bank, 32) {
 			class = GEN11_INTR_ENGINE_CLASS(identity[bit]);
 			instance = GEN11_INTR_ENGINE_INSTANCE(identity[bit]);
 			intr_vec = GEN11_INTR_ENGINE_INTR(identity[bit]);
@@ -257,6 +268,8 @@ static irqreturn_t gen11_irq_handler(int irq, void *arg)
 	struct xe_device *xe = arg;
 	struct xe_gt *gt = xe_device_get_gt(xe, 0);	/* Only 1 GT here */
 	u32 master_ctl;
+	long unsigned int intr_dw[2];
+	u32 identity[32];
 
 	master_ctl = gen11_intr_disable(gt);
 	if (!master_ctl) {
@@ -264,7 +277,7 @@ static irqreturn_t gen11_irq_handler(int irq, void *arg)
 		return IRQ_NONE;
 	}
 
-	gen11_gt_irq_handler(xe, gt, master_ctl);
+	gen11_gt_irq_handler(xe, gt, master_ctl, intr_dw, identity);
 
 	gen11_intr_enable(gt, false);
 
@@ -318,6 +331,8 @@ static irqreturn_t dg1_irq_handler(int irq, void *arg)
 	struct xe_device *xe = arg;
 	struct xe_gt *gt;
 	u32 master_tile_ctl, master_ctl;
+	long unsigned int intr_dw[2];
+	u32 identity[32];
 	u8 id;
 
 	/* TODO: This really shouldn't be copied+pasted */
@@ -329,10 +344,11 @@ static irqreturn_t dg1_irq_handler(int irq, void *arg)
 	}
 
 	for_each_gt(gt, xe, id) {
-		if ((master_tile_ctl & DG1_MSTR_TILE(id)) == 0)
+		if ((master_tile_ctl & DG1_MSTR_TILE(gt->info.vram_id)) == 0)
 			continue;
 
-		master_ctl = xe_mmio_read32(gt, GEN11_GFX_MSTR_IRQ.reg);
+		if (!xe_gt_is_media_type(gt))
+			master_ctl = xe_mmio_read32(gt, GEN11_GFX_MSTR_IRQ.reg);
 
 		/*
 		 * We might be in irq handler just when PCIe DPC is initiated
@@ -345,8 +361,9 @@ static irqreturn_t dg1_irq_handler(int irq, void *arg)
 			return IRQ_HANDLED;
 		}
 
-		xe_mmio_write32(gt, GEN11_GFX_MSTR_IRQ.reg, master_ctl);
-		gen11_gt_irq_handler(xe, gt, master_ctl);
+		if (!xe_gt_is_media_type(gt))
+			xe_mmio_write32(gt, GEN11_GFX_MSTR_IRQ.reg, master_ctl);
+		gen11_gt_irq_handler(xe, gt, master_ctl, intr_dw, identity);
 	}
 
 	dg1_intr_enable(xe, false);
