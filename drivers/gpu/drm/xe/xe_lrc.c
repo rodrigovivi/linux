@@ -640,6 +640,49 @@ static const u8 dg2_rcs_offsets[] = {
 	END
 };
 
+static const u8 mtl_rcs_offsets[] = {
+       NOP(1),
+       LRI(15, POSTED),
+       REG16(0x244),
+       REG(0x034),
+       REG(0x030),
+       REG(0x038),
+       REG(0x03c),
+       REG(0x168),
+       REG(0x140),
+       REG(0x110),
+       REG(0x1c0),
+       REG(0x1c4),
+       REG(0x1c8),
+       REG(0x180),
+       REG16(0x2b4),
+       REG(0x120),
+       REG(0x124),
+
+       NOP(1),
+       LRI(9, POSTED),
+       REG16(0x3a8),
+       REG16(0x28c),
+       REG16(0x288),
+       REG16(0x284),
+       REG16(0x280),
+       REG16(0x27c),
+       REG16(0x278),
+       REG16(0x274),
+       REG16(0x270),
+
+       NOP(2),
+       LRI(2, POSTED),
+       REG16(0x5a8),
+       REG16(0x5ac),
+
+       NOP(6),
+       LRI(1, 0),
+       REG(0x0c8),
+
+       END
+};
+
 #undef END
 #undef REG16
 #undef REG
@@ -649,7 +692,9 @@ static const u8 dg2_rcs_offsets[] = {
 static const u8 *reg_offsets(struct xe_device *xe, enum xe_engine_class class)
 {
 	if (class == XE_ENGINE_CLASS_RENDER) {
-		if (GRAPHICS_VERx100(xe) >= 1255)
+		if (GRAPHICS_VERx100(xe) >= 1270)
+			return mtl_rcs_offsets;
+		else if (GRAPHICS_VERx100(xe) >= 1255)
 			return dg2_rcs_offsets;
 		else if (GRAPHICS_VERx100(xe) >= 1250)
 			return xehp_rcs_offsets;

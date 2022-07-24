@@ -193,9 +193,12 @@ void guc_write_params(struct xe_guc *guc)
 		xe_mmio_write32(gt, SOFT_SCRATCH(1 + i).reg, guc->params[i]);
 }
 
+#define MEDIA_GUC_HOST_INTERRUPT        _MMIO(0x190304)
+
 int xe_guc_init(struct xe_guc *guc)
 {
 	struct xe_device *xe = guc_to_xe(guc);
+	struct xe_gt *gt = guc_to_gt(guc);
 	int ret;
 
 	guc->fw.type = XE_UC_FW_TYPE_GUC;
@@ -216,6 +219,11 @@ int xe_guc_init(struct xe_guc *guc)
 		goto out;
 
 	guc_init_params(guc);
+
+	if (xe_gt_is_media_type(gt))
+		guc->notify_reg = MEDIA_GUC_HOST_INTERRUPT.reg;
+	else
+		guc->notify_reg = GEN11_GUC_HOST_INTERRUPT.reg;
 
 	xe_uc_fw_change_status(&guc->fw, XE_UC_FIRMWARE_LOADABLE);
 
@@ -492,11 +500,13 @@ int xe_guc_suspend(struct xe_guc *guc)
 	return 0;
 }
 
+#define MEDIA_GUC_HOST_INTERRUPT        _MMIO(0x190304)
+
 void xe_guc_notify(struct xe_guc *guc)
 {
 	struct xe_gt *gt = guc_to_gt(guc);
 
-	xe_mmio_write32(gt, GEN11_GUC_HOST_INTERRUPT.reg, GUC_SEND_TRIGGER);
+	xe_mmio_write32(gt, guc->notify_reg, GUC_SEND_TRIGGER);
 }
 
 void xe_guc_wb(struct xe_guc *guc)
@@ -518,32 +528,47 @@ int xe_guc_auth_huc(struct xe_guc *guc, u32 rsa_addr)
 	return xe_guc_ct_send_block(&guc->ct, action, ARRAY_SIZE(action));
 }
 
+#define MEDIA_SOFT_SCRATCH(n)           _MMIO(0x190310 + (n) * 4)
+#define MEDIA_SOFT_SCRATCH_COUNT        4
+
 int xe_guc_send_mmio(struct xe_guc *guc, const u32 *request, u32 len)
 {
 	struct xe_device *xe = guc_to_xe(guc);
 	struct xe_gt *gt = guc_to_gt(guc);
 	u32 header;
+	u32 reply_reg = xe_gt_is_media_type(gt) ?
+		MEDIA_SOFT_SCRATCH(0).reg : GEN11_SOFT_SCRATCH(0).reg;
 	int ret;
 	int i;
 
 	XE_BUG_ON(guc->ct.enabled);
 	XE_BUG_ON(!len);
 	XE_BUG_ON(len > GEN11_SOFT_SCRATCH_COUNT);
+	XE_BUG_ON(len > MEDIA_SOFT_SCRATCH_COUNT);
 	XE_BUG_ON(FIELD_GET(GUC_HXG_MSG_0_ORIGIN, request[0]) !=
 		  GUC_HXG_ORIGIN_HOST);
 	XE_BUG_ON(FIELD_GET(GUC_HXG_MSG_0_TYPE, request[0]) !=
 		  GUC_HXG_TYPE_REQUEST);
 
 retry:
-	for (i = 0; i < len; ++i)
-		xe_mmio_write32(gt, GEN11_SOFT_SCRATCH(i).reg, request[i]);
+	/* Not in critical data-path, just do if else for GT type */
+	if (xe_gt_is_media_type(gt)) {
+		for (i = 0; i < len; ++i)
+			xe_mmio_write32(gt, MEDIA_SOFT_SCRATCH(i).reg,
+					request[i]);
 
-	xe_mmio_read32(gt, GEN11_SOFT_SCRATCH(GEN11_SOFT_SCRATCH_COUNT - 1).reg);
+		xe_mmio_read32(gt, MEDIA_SOFT_SCRATCH(MEDIA_SOFT_SCRATCH_COUNT - 1).reg);
+	} else {
+		for (i = 0; i < len; ++i)
+			xe_mmio_write32(gt, GEN11_SOFT_SCRATCH(i).reg,
+					request[i]);
+
+		xe_mmio_read32(gt, GEN11_SOFT_SCRATCH(GEN11_SOFT_SCRATCH_COUNT - 1).reg);
+	}
 
 	xe_guc_notify(guc);
 
-#define REPLY_REG	GEN11_SOFT_SCRATCH(0).reg
-	ret = xe_mmio_wait32(gt, REPLY_REG,
+	ret = xe_mmio_wait32(gt, reply_reg,
 			     FIELD_PREP(GUC_HXG_MSG_0_ORIGIN,
 					GUC_HXG_ORIGIN_GUC),
 			     GUC_HXG_MSG_0_ORIGIN,
@@ -551,14 +576,14 @@ retry:
 	if (ret) {
 timeout:
 		drm_err(&xe->drm, "mmio request 0x%08x: no reply 0x%08x\n",
-			request[0], xe_mmio_read32(gt, REPLY_REG));
+			request[0], xe_mmio_read32(gt, reply_reg));
 		return ret;
 	}
 
-	header = xe_mmio_read32(gt, REPLY_REG);
+	header = xe_mmio_read32(gt, reply_reg);
 	if (FIELD_GET(GUC_HXG_MSG_0_TYPE, header) ==
 	    GUC_HXG_TYPE_NO_RESPONSE_BUSY) {
-#define done ({ header = xe_mmio_read32(gt, REPLY_REG); \
+#define done ({ header = xe_mmio_read32(gt, reply_reg); \
 		FIELD_GET(GUC_HXG_MSG_0_ORIGIN, header) != GUC_HXG_ORIGIN_GUC || \
 		FIELD_GET(GUC_HXG_MSG_0_TYPE, header) != GUC_HXG_TYPE_NO_RESPONSE_BUSY; })
 
@@ -570,7 +595,6 @@ timeout:
 			goto proto;
 #undef done
 	}
-#undef REPLY_REG
 
 	if (FIELD_GET(GUC_HXG_MSG_0_TYPE, header) ==
 	    GUC_HXG_TYPE_NO_RESPONSE_RETRY) {

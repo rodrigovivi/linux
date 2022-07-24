@@ -50,6 +50,10 @@ struct xe_guc {
 		} suspend;
 	} submission_state;
 
+	/**
+	 * @notify_reg: Register which is written to notify GuC of H2G messages
+	 */
+	u32 notify_reg;
 	/** @params: Control params for fw initialization */
 	u32 params[GUC_CTL_MAX_DWORDS];
 };

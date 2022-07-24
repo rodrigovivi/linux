@@ -51,6 +51,9 @@
 #define DGFX_WOPCM_SIZE			SZ_4M	/* FIXME: Larger size require
 						   for 2 tile PVC, do a proper
 						   probe sooner or later */
+#define MTL_WOPCM_SIZE			SZ_4M	/* FIXME: Larger size require
+						   for MTL, do a proper probe
+						   sooner or later */
 #define GEN11_WOPCM_SIZE		SZ_2M
 /* 16KB WOPCM (RSVD WOPCM) is reserved from HuC firmware top. */
 #define WOPCM_RESERVED_SIZE		SZ_16K
@@ -175,7 +178,9 @@ err_out:
 
 u32 xe_wopcm_size(struct xe_device *xe)
 {
-	return IS_DGFX(xe) ? DGFX_WOPCM_SIZE : GEN11_WOPCM_SIZE;
+	return IS_DGFX(xe) ? DGFX_WOPCM_SIZE :
+		xe->info.platform == XE_METEORLAKE ? MTL_WOPCM_SIZE :
+		GEN11_WOPCM_SIZE;
 }
 
 /**
