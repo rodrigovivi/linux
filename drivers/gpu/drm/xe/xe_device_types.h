@@ -59,6 +59,8 @@ struct xe_device {
 		u8 tile_count;
 		/** @vm_max_level: Max VM level */
 		u8 vm_max_level;
+		/** @media_ver: Media version */
+		u8 media_ver;
 		/** @enable_guc: GuC submission enabled */
 		bool enable_guc;
 	} info;
@@ -81,6 +83,19 @@ struct xe_device {
 		/** @regs: pointer to MMIO space for device */
 		void *regs;
 	} mmio;
+
+	/** @mem: memory info for device */
+	struct {
+		/** @vram: VRAM info for device */
+		struct {
+			/** @io_start: start address of VRAM */
+			resource_size_t io_start;
+			/** @size: size of VRAM */
+			resource_size_t size;
+			/** @mapping: pointer to VRAM mappable space */
+			void *__iomem mapping;
+		} vram;
+	} mem;
 
 	/** @persitent_engines: engines that are closed but still running */
 	struct {

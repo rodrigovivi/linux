@@ -196,7 +196,7 @@ static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 		 * Use 1GB pages, it shouldn't matter the physical amount of
 		 * vram is less, when we don't access it.
 		 */
-		for (pos = 0; pos < m->gt->mem.vram.size; pos += SZ_1G, ofs += 8)
+		for (pos = 0; pos < xe->mem.vram.size; pos += SZ_1G, ofs += 8)
 			iosys_map_wr(&bo->vmap, ofs, u64, pos | flags);
 
 	}
@@ -235,6 +235,8 @@ struct xe_migrate *xe_migrate_init(struct xe_gt *gt)
 	struct xe_vm *vm;
 	struct ww_acquire_ctx ww;
 	int err;
+
+	XE_BUG_ON(xe_gt_is_media_type(gt));
 
 	m = drmm_kzalloc(&xe->drm, sizeof(*m), GFP_KERNEL);
 	if (!m)

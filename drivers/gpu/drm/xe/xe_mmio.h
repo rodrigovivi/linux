@@ -26,11 +26,17 @@ int xe_mmio_init(struct xe_device *xe);
 static inline void xe_mmio_write32(struct xe_gt *gt,
 				   u32 reg, u32 val)
 {
+	if (reg < gt->mmio.adj_limit)
+		reg += gt->mmio.adj_offset;
+
 	writel(val, gt->mmio.regs + reg);
 }
 
 static inline u32 xe_mmio_read32(struct xe_gt *gt, u32 reg)
 {
+	if (reg < gt->mmio.adj_limit)
+		reg += gt->mmio.adj_offset;
+
 	return readl(gt->mmio.regs + reg);
 }
 
@@ -48,11 +54,17 @@ static inline void xe_mmio_rmw32(struct xe_gt *gt, u32 reg, u32 mask,
 static inline void xe_mmio_write64(struct xe_gt *gt,
 				   u32 reg, u64 val)
 {
+	if (reg < gt->mmio.adj_limit)
+		reg += gt->mmio.adj_offset;
+
 	writeq(val, gt->mmio.regs + reg);
 }
 
 static inline u64 xe_mmio_read64(struct xe_gt *gt, u32 reg)
 {
+	if (reg < gt->mmio.adj_limit)
+		reg += gt->mmio.adj_offset;
+
 	return readq(gt->mmio.regs + reg);
 }
 
