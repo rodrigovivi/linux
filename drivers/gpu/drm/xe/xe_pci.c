@@ -191,6 +191,41 @@ static const struct xe_device_desc pvc_desc = {
 	.vm_max_level = 4,
 };
 
+#define MTL_MEDIA_ENGINES \
+	BIT(XE_HW_ENGINE_VCS0) | BIT(XE_HW_ENGINE_VCS2) | \
+	BIT(XE_HW_ENGINE_VECS0)	/* TODO: GSC0 */
+
+static const struct xe_gt_desc xelpmp_gts[] = {
+	{
+		.type = XE_GT_TYPE_MEDIA,
+		.vram_id = 0,
+		.engine_mask = MTL_MEDIA_ENGINES,
+		.mmio_adj_limit = 0x40000,
+		.mmio_adj_offset = 0x380000,
+	},
+};
+
+#define MTL_MAIN_ENGINES \
+	BIT(XE_HW_ENGINE_RCS0) | BIT(XE_HW_ENGINE_BCS0) | \
+	BIT(XE_HW_ENGINE_CCS0)
+
+static const struct xe_device_desc mtl_desc = {
+	/*
+	 * Real graphics IP version will be obtained from hardware GMD_ID
+	 * register.  Value provided here is just for sanity checking.
+	 */
+	.graphics_ver = 12,
+	.graphics_rel = 70,
+	.dma_mask_size = 46,
+	.max_tiles = 2,
+	.vm_max_level = 3,
+	.media_ver = 13,
+	PLATFORM(XE_METEORLAKE),
+	.extra_gts = xelpmp_gts,
+	.platform_engine_mask = MTL_MAIN_ENGINES,
+	.require_force_probe = 1,
+};
+
 #undef PLATFORM
 
 #define INTEL_VGA_DEVICE(id, info) {			\
@@ -211,6 +246,7 @@ static const struct pci_device_id pciidlist[] = {
 	XE_DG2_IDS(INTEL_VGA_DEVICE, &ats_m_desc), /* TODO: switch to proper dg2_desc */
 	XE_ADLS_IDS(INTEL_VGA_DEVICE, &adl_s_desc),
 	XE_PVC_IDS(INTEL_VGA_DEVICE, &pvc_desc),
+	XE_MTL_IDS(INTEL_VGA_DEVICE, &mtl_desc),
 	{ }
 };
 MODULE_DEVICE_TABLE(pci, pciidlist);

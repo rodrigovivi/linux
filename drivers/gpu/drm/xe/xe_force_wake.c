@@ -35,8 +35,11 @@ static void domain_init(struct xe_force_wake_domain *domain,
 	domain->mask = mask;
 }
 
+#define FORCEWAKE_ACK_GT_MTL                 _MMIO(0xdfc)
+
 void xe_force_wake_init(struct xe_gt *gt, struct xe_force_wake *fw)
 {
+	struct xe_device *xe = gt_to_xe(gt);
 	int i, j;
 
 	fw->gt = gt;
@@ -45,17 +48,26 @@ void xe_force_wake_init(struct xe_gt *gt, struct xe_force_wake *fw)
 	/* Assuming gen11+ so assert this assumption is correct */
 	XE_BUG_ON(GRAPHICS_VER(gt_to_xe(gt)) < 11);
 
-	domain_init(&fw->domains[XE_FW_DOMAIN_ID_GT],
-		    XE_FW_DOMAIN_ID_GT,
-		    FORCEWAKE_GT_GEN9.reg,
-		    FORCEWAKE_ACK_GT_GEN9.reg,
-		    BIT(0), BIT(16));
+	if (xe->info.platform == XE_METEORLAKE) {
+		domain_init(&fw->domains[XE_FW_DOMAIN_ID_GT],
+			    XE_FW_DOMAIN_ID_GT,
+			    FORCEWAKE_GT_GEN9.reg,
+			    FORCEWAKE_ACK_GT_MTL.reg,
+			    BIT(0), BIT(16));
+	} else {
+		domain_init(&fw->domains[XE_FW_DOMAIN_ID_GT],
+			    XE_FW_DOMAIN_ID_GT,
+			    FORCEWAKE_GT_GEN9.reg,
+			    FORCEWAKE_ACK_GT_GEN9.reg,
+			    BIT(0), BIT(16));
+	}
 
-	domain_init(&fw->domains[XE_FW_DOMAIN_ID_RENDER],
-		    XE_FW_DOMAIN_ID_RENDER,
-		    FORCEWAKE_RENDER_GEN9.reg,
-		    FORCEWAKE_ACK_RENDER_GEN9.reg,
-		    BIT(0), BIT(16));
+	if (!xe_gt_is_media_type(gt))
+		domain_init(&fw->domains[XE_FW_DOMAIN_ID_RENDER],
+			    XE_FW_DOMAIN_ID_RENDER,
+			    FORCEWAKE_RENDER_GEN9.reg,
+			    FORCEWAKE_ACK_RENDER_GEN9.reg,
+			    BIT(0), BIT(16));
 
 	for (i = XE_HW_ENGINE_VCS0, j = 0; i <= XE_HW_ENGINE_VCS7; ++i, ++j) {
 		if (!(gt->info.engine_mask & BIT(i)))
