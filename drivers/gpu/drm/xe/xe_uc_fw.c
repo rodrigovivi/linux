@@ -328,7 +328,7 @@ static int uc_fw_xfer(struct xe_uc_fw *uc_fw, u32 offset, u32 dma_flags)
 	u32 src_offset;
 	int ret;
 
-	xe_force_wake_assert_held(gt->mmio.fw, XE_FW_GT);
+	xe_force_wake_assert_held(gt_to_fw(gt), XE_FW_GT);
 
 	/* Set the source address for the uCode */
 	src_offset = uc_fw_ggtt_offset(uc_fw);

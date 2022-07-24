@@ -49,11 +49,6 @@ int xe_gt_alloc(struct xe_device *xe, struct xe_gt *gt)
 
 	XE_BUG_ON(gt->info.type == XE_GT_TYPE_UNINITIALIZED);
 
-	gt->mmio.fw = drmm_kzalloc(drm, sizeof(*gt->mmio.fw),
-				   GFP_KERNEL);
-	if (!gt->mmio.fw)
-		return -ENOMEM;
-
 	if (!xe_gt_is_media_type(gt)) {
 		gt->mem.ggtt = drmm_kzalloc(drm, sizeof(*gt->mem.ggtt),
 					    GFP_KERNEL);
@@ -209,8 +204,8 @@ int xe_gt_init(struct xe_gt *gt)
 		xe_hw_fence_irq_init(&gt->fence_irq[i]);
 	}
 
-	xe_force_wake_init(gt, gt->mmio.fw);
-	err = xe_force_wake_get(gt->mmio.fw, XE_FORCEWAKE_ALL);
+	xe_force_wake_init(gt, gt_to_fw(gt));
+	err = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 	if (err)
 		goto err_hw_fence_irq;
 
@@ -265,10 +260,10 @@ int xe_gt_init(struct xe_gt *gt)
 		gt->migrate = find_full_gt(gt)->migrate;
 	}
 
-	err = xe_force_wake_put(gt->mmio.fw, XE_FORCEWAKE_ALL);
+	err = xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 	XE_WARN_ON(err);
 
-	xe_force_wake_prune(gt, gt->mmio.fw);
+	xe_force_wake_prune(gt, gt_to_fw(gt));
 
 	err = drmm_add_action_or_reset(&gt_to_xe(gt)->drm, gt_fini, gt);
 	if (err)
@@ -277,7 +272,7 @@ int xe_gt_init(struct xe_gt *gt)
 	return 0;
 
 err_force_wake:
-	xe_force_wake_put(gt->mmio.fw, XE_FORCEWAKE_ALL);
+	xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 err_hw_fence_irq:
 	for (i = 0; i < XE_ENGINE_CLASS_MAX; ++i)
 		xe_hw_fence_irq_finish(&gt->fence_irq[i]);
@@ -312,7 +307,7 @@ static int gt_reset(struct xe_gt *gt)
 
 	drm_info(&xe->drm, "GT reset started\n");
 
-	err = xe_force_wake_get(gt->mmio.fw, XE_FORCEWAKE_ALL);
+	err = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 	if (err)
 		goto err_unlock;
 
@@ -341,7 +336,7 @@ static int gt_reset(struct xe_gt *gt)
 	if (err)
 		goto err_out;
 
-	err = xe_force_wake_put(gt->mmio.fw, XE_FORCEWAKE_ALL);
+	err = xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 	XE_WARN_ON(err);
 
 	drm_info(&xe->drm, "GT reset done\n");
@@ -349,7 +344,7 @@ static int gt_reset(struct xe_gt *gt)
 	return 0;
 
 err_out:
-	XE_WARN_ON(xe_force_wake_put(gt->mmio.fw, XE_FORCEWAKE_ALL));
+	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
 err_unlock:
 	drm_err(&xe->drm, "GT reset failed, err=%d\n", err);
 
@@ -386,7 +381,7 @@ int xe_gt_suspend(struct xe_gt *gt)
 	if (!xe_device_guc_submission_enabled(gt_to_xe(gt)))
 		return -ENODEV;
 
-	err = xe_force_wake_get(gt->mmio.fw, XE_FORCEWAKE_ALL);
+	err = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 	if (err)
 		goto err_msg;
 
@@ -394,13 +389,13 @@ int xe_gt_suspend(struct xe_gt *gt)
 	if (err)
 		goto err_fw;
 
-	XE_WARN_ON(xe_force_wake_put(gt->mmio.fw, XE_FORCEWAKE_ALL));
+	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
 	drm_info(&xe->drm, "GT suspended\n");
 
 	return 0;
 
 err_fw:
-	XE_WARN_ON(xe_force_wake_put(gt->mmio.fw, XE_FORCEWAKE_ALL));
+	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
 err_msg:
 	drm_err(&xe->drm, "GT suspend failed: %d\n", err);
 
@@ -412,7 +407,7 @@ int xe_gt_resume(struct xe_gt *gt)
 	struct xe_device *xe = gt_to_xe(gt);
 	int err;
 
-	err = xe_force_wake_get(gt->mmio.fw, XE_FORCEWAKE_ALL);
+	err = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 	if (err)
 		goto err_msg;
 
@@ -420,13 +415,13 @@ int xe_gt_resume(struct xe_gt *gt)
 	if (err)
 		goto err_fw;
 
-	XE_WARN_ON(xe_force_wake_put(gt->mmio.fw, XE_FORCEWAKE_ALL));
+	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
 	drm_info(&xe->drm, "GT resumed\n");
 
 	return 0;
 
 err_fw:
-	XE_WARN_ON(xe_force_wake_put(gt->mmio.fw, XE_FORCEWAKE_ALL));
+	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
 err_msg:
 	drm_err(&xe->drm, "GT resume failed: %d\n", err);
 
