@@ -8,13 +8,13 @@
 #ifndef _XE_GT_TYPES_H_
 #define _XE_GT_TYPES_H_
 
+#include "xe_force_wake_types.h"
 #include "xe_hw_engine_types.h"
 #include "xe_hw_fence_types.h"
 #include "xe_sa_types.h"
 #include "xe_uc_types.h"
 
 struct xe_engine_ops;
-struct xe_force_wake;
 struct xe_ggtt;
 struct xe_migrate;
 struct xe_ring_ops;
@@ -61,11 +61,8 @@ struct xe_gt {
 		size_t size;
 		/** @regs: pointer to MMIO space on GT */
 		void *regs;
-		/**
-		 * @fw: force wake for GT, making a pointer to future proof
-		 * against virtual GTs sharing FW domains
-		 */
-		struct xe_force_wake *fw;
+		/** @fw: force wake for GT */
+		struct xe_force_wake fw;
 		/**
 		 * @adj_limit: adjust MMIO address if address is below this
 		 * value

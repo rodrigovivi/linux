@@ -38,4 +38,9 @@ static inline struct xe_device * gt_to_xe(struct xe_gt *gt)
 	return gt->xe;
 }
 
+static inline struct xe_force_wake * gt_to_fw(struct xe_gt *gt)
+{
+	return &gt->mmio.fw;
+}
+
 #endif	/* _XE_GT_H_ */
