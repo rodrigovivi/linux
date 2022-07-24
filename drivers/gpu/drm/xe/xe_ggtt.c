@@ -19,8 +19,13 @@
 #include "../i915/i915_reg.h"
 #include "../i915/gt/intel_gt_regs.h"
 
+/* FIXME: Common file, preferably auto-gen */
+#define MTL_GGTT_PTE_PAT0	BIT(52)
+#define MTL_GGTT_PTE_PAT1	BIT(53)
+
 static u64 gen8_pte_encode(struct xe_bo *bo, u64 bo_offset)
 {
+	struct xe_device *xe = xe_bo_device(bo);
 	u64 pte;
 	bool is_lmem;
 
@@ -29,6 +34,12 @@ static u64 gen8_pte_encode(struct xe_bo *bo, u64 bo_offset)
 
 	if (is_lmem)
 		pte |= GEN12_GGTT_PTE_LM;
+
+	/* FIXME: vfunc + pass in caching rules */
+	if (xe->info.platform == XE_METEORLAKE) {
+		pte |= MTL_GGTT_PTE_PAT0;
+		pte |= MTL_GGTT_PTE_PAT1;
+	}
 
 	return pte;
 }

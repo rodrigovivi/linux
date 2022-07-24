@@ -59,6 +59,8 @@ u64 gen8_pde_encode(struct xe_bo *bo, u64 bo_offset,
 
 	XE_WARN_ON(IS_DGFX(xe_bo_device(bo)) && !is_lmem);
 
+	/* FIXME: I don't think the PPAT handling is correct for MTL */
+
 	if (level != XE_CACHE_NONE)
 		pde |= PPAT_CACHED_PDE;
 	else
@@ -102,6 +104,8 @@ u64 gen8_pte_encode(struct xe_vma *vma, struct xe_bo *bo,
 
 	if (is_lmem)
 		pte |= GEN12_PPGTT_PTE_LM;
+
+	/* FIXME: I don't think the PPAT handling is correct for MTL */
 
 	switch (cache) {
 	case XE_CACHE_NONE:
