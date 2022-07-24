@@ -27,14 +27,14 @@ static int hw_engines(struct seq_file *m, void *data)
 	enum xe_hw_engine_id id;
 	int err;
 
-	err = xe_force_wake_get(gt->mmio.fw, XE_FORCEWAKE_ALL);
+	err = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 	if (err)
 		return err;
 
 	for_each_hw_engine(hwe, gt, id)
 		xe_hw_engine_print_state(hwe, &p);
 
-	err = xe_force_wake_put(gt->mmio.fw, XE_FORCEWAKE_ALL);
+	err = xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 	if (err)
 		return err;
 

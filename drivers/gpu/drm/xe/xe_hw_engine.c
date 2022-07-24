@@ -308,7 +308,7 @@ static void hw_engine_fini(struct drm_device *drm, void *arg)
 static void hw_engine_mmio_write32(struct xe_hw_engine *hwe, u32 reg, u32 val)
 {
 	XE_BUG_ON(reg & hwe->mmio_base);
-	xe_force_wake_assert_held(hwe->gt->mmio.fw, hwe->domain);
+	xe_force_wake_assert_held(gt_to_fw(hwe->gt), hwe->domain);
 
 	xe_mmio_write32(hwe->gt, reg + hwe->mmio_base, val);
 }
@@ -316,7 +316,7 @@ static void hw_engine_mmio_write32(struct xe_hw_engine *hwe, u32 reg, u32 val)
 static u32 hw_engine_mmio_read32(struct xe_hw_engine *hwe, u32 reg)
 {
 	XE_BUG_ON(reg & hwe->mmio_base);
-	xe_force_wake_assert_held(hwe->gt->mmio.fw, hwe->domain);
+	xe_force_wake_assert_held(gt_to_fw(hwe->gt), hwe->domain);
 
 	return xe_mmio_read32(hwe->gt, reg + hwe->mmio_base);
 }
@@ -527,7 +527,7 @@ void xe_hw_engine_print_state(struct xe_hw_engine *hwe, struct drm_printer *p)
 	drm_printf(p, "%s\n", hwe->name);
 	drm_printf(p, "\tForcewake: domain 0x%x, ref %d\n",
 		   hwe->domain,
-		   xe_force_wake_ref(hwe->gt->mmio.fw, hwe->domain));
+		   xe_force_wake_ref(gt_to_fw(hwe->gt), hwe->domain));
 	drm_printf(p, "\tMMIO base: 0x%08x\n", hwe->mmio_base);
 
 	drm_printf(p, "\tHWSTAM: 0x%08x\n",

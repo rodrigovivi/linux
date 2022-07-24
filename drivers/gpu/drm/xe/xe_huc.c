@@ -120,12 +120,12 @@ void xe_huc_print_info(struct xe_huc *huc, struct drm_printer *p)
 	if (xe_uc_fw_is_disabled(&huc->fw))
 		return;
 
-	err = xe_force_wake_get(gt->mmio.fw, XE_FW_GT);
+	err = xe_force_wake_get(gt_to_fw(gt), XE_FW_GT);
 	if (err)
 		return;
 
 	drm_printf(p, "\nHuC status: 0x%08x\n",
 		   xe_mmio_read32(gt, GEN11_HUC_KERNEL_LOAD_INFO.reg));
 
-	xe_force_wake_put(gt->mmio.fw, XE_FW_GT);
+	xe_force_wake_put(gt_to_fw(gt), XE_FW_GT);
 }

@@ -185,7 +185,7 @@ void guc_write_params(struct xe_guc *guc)
 	struct xe_gt *gt = guc_to_gt(guc);
 	int i;
 
-	xe_force_wake_assert_held(gt->mmio.fw, XE_FW_GT);
+	xe_force_wake_assert_held(gt_to_fw(gt), XE_FW_GT);
 
 	xe_mmio_write32(gt, SOFT_SCRATCH(0).reg, 0);
 
@@ -241,7 +241,7 @@ int xe_guc_reset(struct xe_guc *guc)
 	u32 guc_status;
 	int ret;
 
-	xe_force_wake_assert_held(gt->mmio.fw, XE_FW_GT);
+	xe_force_wake_assert_held(gt_to_fw(gt), XE_FW_GT);
 
 	xe_mmio_write32(gt, GEN6_GDRST.reg, GEN11_GRDOM_GUC);
 
@@ -439,7 +439,7 @@ static void guc_handle_mmio_msg(struct xe_guc *guc)
 	struct xe_gt *gt = guc_to_gt(guc);
 	u32 msg;
 
-	xe_force_wake_assert_held(gt->mmio.fw, XE_FW_GT);
+	xe_force_wake_assert_held(gt_to_fw(gt), XE_FW_GT);
 
 	msg = xe_mmio_read32(gt, SOFT_SCRATCH(15).reg);
 	msg &= XE_GUC_RECV_MSG_EXCEPTION |
@@ -731,7 +731,7 @@ void xe_guc_print_info(struct xe_guc *guc, struct drm_printer *p)
 
 	xe_uc_fw_print(&guc->fw, p);
 
-	err = xe_force_wake_get(gt->mmio.fw, XE_FW_GT);
+	err = xe_force_wake_get(gt_to_fw(gt), XE_FW_GT);
 	if (err)
 		return;
 
@@ -750,7 +750,7 @@ void xe_guc_print_info(struct xe_guc *guc, struct drm_printer *p)
 			   i, xe_mmio_read32(gt, SOFT_SCRATCH(i).reg));
 	}
 
-	xe_force_wake_put(gt->mmio.fw, XE_FW_GT);
+	xe_force_wake_put(gt_to_fw(gt), XE_FW_GT);
 
 	xe_guc_ct_print(&guc->ct, p);
 	xe_guc_submit_print(guc, p);
