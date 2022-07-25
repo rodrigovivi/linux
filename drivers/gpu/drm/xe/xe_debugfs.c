@@ -18,6 +18,8 @@ static int info(struct seq_file *m, void *data)
 {
 	struct xe_device *xe = node_to_xe(m->private);
 	struct drm_printer p = drm_seq_file_printer(m);
+	struct xe_gt *gt;
+	u8 id;
 
 	drm_printf(&p, "graphics_verx100 %d\n", xe->info.graphics_verx100);
 	drm_printf(&p, "is_dgfx %s\n", xe->info.is_dgfx ? "yes" : "no");
@@ -27,6 +29,9 @@ static int info(struct seq_file *m, void *data)
 	drm_printf(&p, "tile_count %d\n", xe->info.tile_count);
 	drm_printf(&p, "vm_max_level %d\n", xe->info.vm_max_level);
 	drm_printf(&p, "enable_guc %s\n", xe->info.enable_guc ? "yes" : "no");
+	for_each_gt(gt, xe, id)
+		drm_printf(&p, "gt%d force wake %d\n", id,
+			   xe_force_wake_ref(gt_to_fw(gt), XE_FW_GT));
 
 	return 0;
 }
