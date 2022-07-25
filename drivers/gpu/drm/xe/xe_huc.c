@@ -4,7 +4,7 @@
  */
 
 #include "xe_bo.h"
-#include "xe_device_types.h"
+#include "xe_device.h"
 #include "xe_force_wake.h"
 #include "xe_gt.h"
 #include "xe_guc.h"

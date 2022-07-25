@@ -6,6 +6,7 @@
 #include <drm/drm_debugfs.h>
 #include <drm/drm_managed.h>
 
+#include "xe_device.h"
 #include "xe_gt.h"
 #include "xe_huc.h"
 #include "xe_huc_debugfs.h"
@@ -31,9 +32,12 @@ static struct xe_huc *node_to_huc(struct drm_info_node *node)
 static int huc_info(struct seq_file *m, void *data)
 {
 	struct xe_huc *huc = node_to_huc(m->private);
+	struct xe_device *xe = huc_to_xe(huc);
 	struct drm_printer p = drm_seq_file_printer(m);
 
+	xe_device_mem_access_wa_get(xe);
 	xe_huc_print_info(huc, &p);
+	xe_device_mem_access_wa_put(xe);
 
 	return 0;
 }
