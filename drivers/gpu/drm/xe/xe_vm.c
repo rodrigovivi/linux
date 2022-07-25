@@ -1118,7 +1118,6 @@ static void async_op_work_func(struct work_struct *w);
 struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 {
 	struct xe_vm *vm;
-	struct xe_vma *vma;
 	int err, i = 0;
 
 	vm = kzalloc(sizeof(*vm), GFP_KERNEL);
@@ -1148,6 +1147,9 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 	INIT_LIST_HEAD(&vm->preempt.engines);
 	init_waitqueue_head(&vm->preempt.resume_wq);
 	vm->preempt.min_run_period_ms = 10;	/* FIXME: Wire up to uAPI */
+
+	if (!(flags & XE_VM_FLAG_MIGRATION))
+		xe_device_mem_access_wa_get(xe);
 
 	err = dma_resv_lock_interruptible(&vm->resv, NULL);
 	if (err)
@@ -1238,9 +1240,10 @@ err_destroy_root:
 err_unlock:
 	dma_resv_unlock(&vm->resv);
 err_put:
-	kfree(vma);
 	dma_resv_fini(&vm->resv);
 	kfree(vm);
+	if (!(flags & XE_VM_FLAG_MIGRATION))
+		xe_device_mem_access_wa_put(xe);
 	return ERR_PTR(err);
 }
 
@@ -1359,6 +1362,9 @@ void xe_vm_free(struct kref *ref)
 
 	/* xe_vm_close_and_put was not called? */
 	XE_WARN_ON(vm->size);
+
+	if (!(vm->flags & XE_VM_FLAG_MIGRATION))
+		xe_device_mem_access_wa_put(vm->xe);
 
 	/*
 	 * XXX: We delay destroying the PT root until the VM if freed as PT root

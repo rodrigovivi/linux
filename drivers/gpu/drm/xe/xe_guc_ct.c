@@ -482,21 +482,24 @@ static int __guc_ct_send_locked(struct xe_guc_ct *ct, const u32 *action,
 		}
 	}
 
+	xe_device_mem_access_wa_get(ct_to_xe(ct));
 retry:
 	ret = has_room(ct, len + GUC_CTB_HDR_LEN, g2h_len);
 	if (unlikely(ret))
-		goto out;
+		goto put_wa;
 
 	ret = h2g_write(ct, action, len, g2h_fence ? g2h_fence->seqno : 0,
 			!!g2h_fence);
 	if (unlikely(ret)) {
 		if (ret == -EAGAIN)
 			goto retry;
-		goto out;
+		goto put_wa;
 	}
 
 	g2h_reserve_space(ct, g2h_len, num_g2h);
 	xe_guc_notify(ct_to_guc(ct));
+put_wa:
+	xe_device_mem_access_wa_put(ct_to_xe(ct));
 out:
 
 	return ret;
@@ -955,6 +958,7 @@ static void g2h_worker_func(struct work_struct *w)
 	bool cookie = dma_fence_begin_signalling();
 	int ret;
 
+	xe_device_mem_access_wa_get(ct_to_xe(ct));
 	do {
 		mutex_lock(&ct->lock);
 		ret = dequeue_one_g2h(ct);
@@ -968,6 +972,7 @@ static void g2h_worker_func(struct work_struct *w)
 			kick_reset(ct);
 		}
 	} while (ret == 1);
+	xe_device_mem_access_wa_put(ct_to_xe(ct));
 
 	dma_fence_end_signalling(cookie);
 }
