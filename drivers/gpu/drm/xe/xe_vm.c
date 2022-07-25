@@ -2402,12 +2402,20 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 		LIST_HEAD(dups);
 		struct ttm_validate_buffer tv_bo, tv_vm;
 		struct ww_acquire_ctx ww;
+		struct xe_bo *bo = vma->bo;
 
 		xe_vm_tv_populate(vm, &tv_vm);
 		list_add_tail(&tv_vm.head, &objs);
 
-		if (vma->bo) {
-			tv_bo.bo = &vma->bo->ttm;
+		if (bo) {
+			/*
+			 * An unbind can drop the last reference to the BO and
+			 * the BO is needed for ttm_eu_backoff_reservation so
+			 * take a reference here.
+			 */
+			drm_gem_object_get(&bo->ttm.base);
+
+			tv_bo.bo = &bo->ttm;
 			tv_bo.num_shared = 1;
 			list_add(&tv_bo.head, &objs);
 		}
@@ -2419,6 +2427,8 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 					      fence);
 			ttm_eu_backoff_reservation(&ww, &objs);
 		}
+		if (bo)
+			drm_gem_object_put(&bo->ttm.base);
 	} else {
 		err = __vm_bind_ioctl(vm, vma, e, NULL, bind_op->op,
 				      syncs, num_syncs, fence);
