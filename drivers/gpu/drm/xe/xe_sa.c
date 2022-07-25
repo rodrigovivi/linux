@@ -3,13 +3,14 @@
  * Copyright © 2022 Intel Corporation
  */
 
-#include "xe_sa.h"
-
 #include <linux/kernel.h>
 #include <drm/drm_managed.h>
+
 #include "xe_bo.h"
 #include "xe_device.h"
 #include "xe_gt.h"
+#include "xe_map.h"
+#include "xe_sa.h"
 
 static void xe_sa_bo_manager_fini(struct drm_device *drm, void *arg)
 {
@@ -74,13 +75,14 @@ struct drm_suballoc *xe_sa_bo_new(struct xe_sa_manager *sa_manager,
 void xe_sa_bo_flush_write(struct drm_suballoc *sa_bo)
 {
 	struct xe_sa_manager *sa_manager = to_xe_sa_manager(sa_bo->manager);
+	struct xe_device *xe = gt_to_xe(sa_manager->bo->gt);
 
 	if (!sa_manager->bo->vmap.is_iomem)
 		return;
 
-	iosys_map_memcpy_to(&sa_manager->bo->vmap, sa_bo->soffset,
-			    sa_manager->cpu_ptr + sa_bo->soffset,
-			    sa_bo->eoffset - sa_bo->soffset);
+	xe_map_memcpy_to(xe, &sa_manager->bo->vmap, sa_bo->soffset,
+			 sa_manager->cpu_ptr + sa_bo->soffset,
+			 sa_bo->eoffset - sa_bo->soffset);
 }
 
 void xe_sa_bo_free(struct drm_suballoc *sa_bo,

@@ -6,7 +6,9 @@
 #include "xe_lrc.h"
 
 #include "xe_bo.h"
+#include "xe_device.h"
 #include "xe_gt.h"
+#include "xe_map.h"
 #include "xe_hw_fence.h"
 #include "xe_vm.h"
 
@@ -25,7 +27,13 @@
 #define GEN11_ENGINE_CLASS_SHIFT		61
 #define GEN11_ENGINE_INSTANCE_SHIFT		48
 
-u32 lrc_size(struct xe_device *xe, enum xe_engine_class class)
+static struct xe_device *
+lrc_to_xe(struct xe_lrc *lrc)
+{
+	return gt_to_xe(lrc->fence_ctx.gt);
+}
+
+static u32 lrc_size(struct xe_device *xe, enum xe_engine_class class)
 {
 	switch (class) {
 	case XE_ENGINE_CLASS_RENDER:
@@ -832,20 +840,22 @@ u32 xe_lrc_ggtt_addr(struct xe_lrc *lrc)
 
 u32 xe_lrc_read_ctx_reg(struct xe_lrc *lrc, int reg_nr)
 {
+	struct xe_device *xe = lrc_to_xe(lrc);
 	struct iosys_map map;
 
 	map = __xe_lrc_regs_map(lrc);
 	iosys_map_incr(&map, reg_nr * sizeof(u32));
-	return dbm_read32(map);
+	return xe_map_read32(xe, &map);
 }
 
 void xe_lrc_write_ctx_reg(struct xe_lrc *lrc, int reg_nr, u32 val)
 {
+	struct xe_device *xe = lrc_to_xe(lrc);
 	struct iosys_map map;
 
 	map = __xe_lrc_regs_map(lrc);
 	iosys_map_incr(&map, reg_nr * sizeof(u32));
-	dbm_write32(map, val);
+	xe_map_write32(xe, &map, val);
 }
 
 static void *empty_lrc_data(struct xe_hw_engine *hwe)
@@ -926,7 +936,7 @@ int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 
 	/* Per-Process of HW status Page */
 	map = __xe_lrc_pphwsp_map(lrc);
-	iosys_map_memcpy_to(&map, 0, init_data, lrc_size(xe, hwe->class));
+	xe_map_memcpy_to(xe, &map, 0, init_data, lrc_size(xe, hwe->class));
 	kfree(init_data);
 
 	if (vm)
@@ -1022,8 +1032,10 @@ static void xe_lrc_assert_ring_space(struct xe_lrc *lrc, size_t size)
 static void __xe_lrc_write_ring(struct xe_lrc *lrc, struct iosys_map ring,
 				const void *data, size_t size)
 {
+	struct xe_device *xe = lrc_to_xe(lrc);
+
 	iosys_map_incr(&ring, lrc->ring.tail);
-	iosys_map_memcpy_to(&ring, 0, data, size);
+	xe_map_memcpy_to(xe, &ring, 0, data, size);
 	lrc->ring.tail = (lrc->ring.tail + size) & (lrc->ring.size - 1);
 }
 
@@ -1074,12 +1086,16 @@ struct dma_fence *xe_lrc_create_seqno_fence(struct xe_lrc *lrc)
 
 s32 xe_lrc_seqno(struct xe_lrc *lrc)
 {
-	return dbm_read32(__xe_lrc_seqno_map(lrc));
+	struct iosys_map map = __xe_lrc_seqno_map(lrc);
+
+	return xe_map_read32(lrc_to_xe(lrc), &map);
 }
 
 s32 xe_lrc_start_seqno(struct xe_lrc *lrc)
 {
-	return dbm_read32(__xe_lrc_start_seqno_map(lrc));
+	struct iosys_map map = __xe_lrc_start_seqno_map(lrc);
+
+	return xe_map_read32(lrc_to_xe(lrc), &map);
 }
 
 u32 xe_lrc_start_seqno_ggtt_addr(struct xe_lrc *lrc)

@@ -11,6 +11,7 @@
 #include "xe_guc_ads.h"
 #include "xe_guc_reg.h"
 #include "xe_hw_engine.h"
+#include "xe_map.h"
 #include "xe_mmio.h"
 #include "xe_platform_types.h"
 #include "../i915/gt/intel_gt_regs.h"
@@ -85,17 +86,18 @@ struct __guc_ads_blob {
 } __packed;
 
 #define ads_blob_read(ads_, field_) \
-	iosys_map_rd_field(ads_to_map(ads_), 0, struct __guc_ads_blob, field_)
+	xe_map_rd_field(ads_to_xe(ads_), ads_to_map(ads_), 0, \
+			struct __guc_ads_blob, field_)
 
 #define ads_blob_write(ads_, field_, val_)			\
-	iosys_map_wr_field(ads_to_map(ads_), 0,			\
-			   struct __guc_ads_blob, field_, val_)
+	xe_map_wr_field(ads_to_xe(ads_), ads_to_map(ads_), 0,	\
+			struct __guc_ads_blob, field_, val_)
 
-#define info_map_write(map_, field_, val_) \
-	iosys_map_wr_field(map_, 0, struct guc_gt_system_info, field_, val_)
+#define info_map_write(xe_, map_, field_, val_) \
+	xe_map_wr_field(xe_, map_, 0, struct guc_gt_system_info, field_, val_)
 
-#define info_map_read(map_, field_) \
-	iosys_map_rd_field(map_, 0, struct guc_gt_system_info, field_)
+#define info_map_read(xe_, map_, field_) \
+	xe_map_rd_field(xe_, map_, 0, struct guc_gt_system_info, field_)
 
 static size_t guc_ads_regset_size(struct xe_guc_ads *ads)
 {
@@ -239,7 +241,8 @@ static void fill_regset_pvc(struct xe_guc_ads *ads)
 
 	XE_BUG_ON(items >= XE_MAX_PVC_REGSET);
 
-	iosys_map_memcpy_to(&map, 0, regset, items*sizeof(struct guc_mmio_reg));
+	xe_map_memcpy_to(ads_to_xe(ads), &map, 0, regset,
+			 items * sizeof(struct guc_mmio_reg));
 	addr_ggtt += guc_ads_regset_offset(ads);
 	ads_blob_write(ads, ads.reg_state_list[GUC_COMPUTE_CLASS][0].address,
 		       addr_ggtt);
@@ -250,15 +253,18 @@ static void fill_regset_pvc(struct xe_guc_ads *ads)
 static void fill_engine_enable_masks(struct xe_gt *gt,
 				     struct iosys_map *info_map)
 {
-	info_map_write(info_map, engine_enabled_masks[GUC_RENDER_CLASS],
+	struct xe_device *xe = gt_to_xe(gt);
+
+	info_map_write(xe, info_map, engine_enabled_masks[GUC_RENDER_CLASS],
 		       engine_enable_mask(gt, XE_ENGINE_CLASS_RENDER));
-	info_map_write(info_map, engine_enabled_masks[GUC_BLITTER_CLASS],
+	info_map_write(xe, info_map, engine_enabled_masks[GUC_BLITTER_CLASS],
 		       engine_enable_mask(gt, XE_ENGINE_CLASS_COPY));
-	info_map_write(info_map, engine_enabled_masks[GUC_VIDEO_CLASS],
+	info_map_write(xe, info_map, engine_enabled_masks[GUC_VIDEO_CLASS],
 		       engine_enable_mask(gt, XE_ENGINE_CLASS_VIDEO_DECODE));
-	info_map_write(info_map, engine_enabled_masks[GUC_VIDEOENHANCE_CLASS],
+	info_map_write(xe, info_map,
+		       engine_enabled_masks[GUC_VIDEOENHANCE_CLASS],
 		       engine_enable_mask(gt, XE_ENGINE_CLASS_VIDEO_ENHANCE));
-	info_map_write(info_map, engine_enabled_masks[GUC_COMPUTE_CLASS],
+	info_map_write(xe, info_map, engine_enabled_masks[GUC_COMPUTE_CLASS],
 		       engine_enable_mask(gt, XE_ENGINE_CLASS_COMPUTE));
 }
 
@@ -279,7 +285,8 @@ static void guc_prep_golden_context(struct xe_guc_ads *ads)
 	/* FIXME: Setting up dummy golden contexts */
 	for (guc_class = 0; guc_class <= GUC_MAX_ENGINE_CLASSES;
 	     ++guc_class) {
-		if (!info_map_read(&info_map, engine_enabled_masks[guc_class]))
+		if (!info_map_read(xe, &info_map,
+				   engine_enabled_masks[guc_class]))
 			continue;
 
 		ads_blob_write(ads, ads.eng_state_size[guc_class],
@@ -294,6 +301,7 @@ static void guc_prep_golden_context(struct xe_guc_ads *ads)
 static void guc_mapping_table_init(struct xe_gt *gt,
 				   struct iosys_map *info_map)
 {
+	struct xe_device *xe = gt_to_xe(gt);
 	struct xe_hw_engine *hwe;
 	enum xe_hw_engine_id id;
 	unsigned int i, j;
@@ -301,14 +309,14 @@ static void guc_mapping_table_init(struct xe_gt *gt,
 	/* Table must be set to invalid values for entries not used */
 	for (i = 0; i < GUC_MAX_ENGINE_CLASSES; ++i)
 		for (j = 0; j < GUC_MAX_INSTANCES_PER_CLASS; ++j)
-			info_map_write(info_map, mapping_table[i][j],
+			info_map_write(xe, info_map, mapping_table[i][j],
 				       GUC_MAX_INSTANCES_PER_CLASS);
 
 	for_each_hw_engine(hwe, gt, id) {
 		u8 guc_class;
 
 		guc_class = xe_engine_class_to_guc_class(hwe->class);
-		info_map_write(info_map,
+		info_map_write(xe, info_map,
 			       mapping_table[guc_class][hwe->logical_instance],
 			       hwe->instance);
 	}
@@ -345,20 +353,6 @@ static void guc_mmio_reg_state_init(struct xe_guc_ads *ads)
 	}
 }
 
-static void guc_ads_private_data_reset(struct xe_guc_ads *ads)
-{
-	struct iosys_map map =
-		IOSYS_MAP_INIT_OFFSET(ads_to_map(ads),
-					guc_ads_private_data_offset(ads));
-	u32 size;
-
-	size = guc_ads_private_data_size(ads);
-	if (!size)
-		return;
-
-	iosys_map_memset(&map, 0, 0, size);
-}
-
 void xe_guc_ads_populate(struct xe_guc_ads *ads)
 {
 	struct xe_device *xe = ads_to_xe(ads);
@@ -369,7 +363,7 @@ void xe_guc_ads_populate(struct xe_guc_ads *ads)
 
 	XE_BUG_ON(!ads->bo);
 
-	iosys_map_memset(ads_to_map(ads), 0, 0, guc_ads_size(ads));
+	xe_map_memset(ads_to_xe(ads), ads_to_map(ads), 0, 0, guc_ads_size(ads));
 	guc_policies_init(ads);
 	fill_engine_enable_masks(gt, &info_map);
 	guc_prep_golden_context(ads);
@@ -396,8 +390,6 @@ void xe_guc_ads_populate(struct xe_guc_ads *ads)
 		       offsetof(struct __guc_ads_blob, system_info));
 	ads_blob_write(ads, ads.private_data, base +
 		       guc_ads_private_data_offset(ads));
-
-	guc_ads_private_data_reset(ads);
 }
 
 void xe_guc_ads_fini(struct xe_guc_ads *ads)

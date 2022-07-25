@@ -13,6 +13,7 @@
 #include "xe_force_wake.h"
 #include "xe_gt.h"
 #include "xe_guc_reg.h"
+#include "xe_map.h"
 #include "xe_mmio.h"
 #include "xe_uc_fw.h"
 
@@ -156,6 +157,7 @@ uc_fw_auto_select(struct xe_device *xe, struct xe_uc_fw *uc_fw)
  */
 size_t xe_uc_fw_copy_rsa(struct xe_uc_fw *uc_fw, void *dst, u32 max_len)
 {
+	struct xe_device *xe = uc_fw_to_xe(uc_fw);
 	struct iosys_map map = uc_fw->bo->vmap;
 	u32 size = min_t(u32, uc_fw->rsa_size, max_len);
 	u32 *dst32 = dst;
@@ -166,7 +168,7 @@ size_t xe_uc_fw_copy_rsa(struct xe_uc_fw *uc_fw, void *dst, u32 max_len)
 
 	iosys_map_incr(&map, xe_uc_fw_rsa_offset(uc_fw));
 	for (i = 0; i < size / sizeof(u32); ++i) {
-		dst32[i] = dbm_read32(map);
+		dst32[i] = xe_map_read32(xe, &map);
 		iosys_map_incr(&map, sizeof(u32));
 	}
 

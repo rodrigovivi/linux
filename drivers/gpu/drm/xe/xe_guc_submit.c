@@ -22,6 +22,7 @@
 #include "xe_hw_fence.h"
 #include "xe_lrc.h"
 #include "xe_macros.h"
+#include "xe_map.h"
 #include "xe_ring_ops_types.h"
 #include "xe_sched_job.h"
 #include "xe_trace.h"
@@ -396,10 +397,10 @@ struct parallel_scratch {
 	u32 wq[WQ_SIZE / sizeof(u32)];
 };
 
-#define parallel_read(map_, field_) \
-	iosys_map_rd_field(&map_, 0, struct parallel_scratch, field_)
-#define parallel_write(map_, field_, val_) \
-	iosys_map_wr_field(&map_, 0, struct parallel_scratch, field_, val_)
+#define parallel_read(xe_, map_, field_) \
+	xe_map_rd_field(xe_, &map_, 0, struct parallel_scratch, field_)
+#define parallel_write(xe_, map_, field_, val_) \
+	xe_map_wr_field(xe_, &map_, 0, struct parallel_scratch, field_, val_)
 
 static void __register_mlrc_engine(struct xe_guc *guc,
 				   struct xe_engine *e,
@@ -463,6 +464,7 @@ static void __register_engine(struct xe_guc *guc,
 static void register_engine(struct xe_engine *e)
 {
 	struct xe_guc *guc = engine_to_guc(e);
+	struct xe_device *xe = guc_to_xe(guc);
 	struct xe_lrc *lrc = e->lrc;
 	struct guc_ctxt_registration_info info;
 
@@ -492,8 +494,8 @@ static void register_engine(struct xe_engine *e)
 
 		e->guc->wqi_head = 0;
 		e->guc->wqi_tail = 0;
-		iosys_map_memset(&map, 0, 0, PARALLEL_SCRATCH_SIZE - WQ_SIZE);
-		parallel_write(map, wq_desc.wq_status, WQ_STATUS_ACTIVE);
+		xe_map_memset(xe, &map, 0, 0, PARALLEL_SCRATCH_SIZE - WQ_SIZE);
+		parallel_write(xe, map, wq_desc.wq_status, WQ_STATUS_ACTIVE);
 	}
 
 	set_engine_registered(e);
@@ -512,6 +514,8 @@ static u32 wq_space_until_wrap(struct xe_engine *e)
 
 static int wq_wait_for_space(struct xe_engine *e, u32 wqi_size)
 {
+	struct xe_guc *guc = engine_to_guc(e);
+	struct xe_device *xe = guc_to_xe(guc);
 	struct iosys_map map = xe_lrc_parallel_map(e->lrc);
 	unsigned int sleep_period_ms = 1;
 
@@ -519,7 +523,7 @@ static int wq_wait_for_space(struct xe_engine *e, u32 wqi_size)
 	CIRC_SPACE(e->guc->wqi_tail, e->guc->wqi_head, WQ_SIZE)
 	if (wqi_size > AVAILABLE_SPACE) {
 try_again:
-		e->guc->wqi_head = parallel_read(map, wq_desc.head);
+		e->guc->wqi_head = parallel_read(xe, map, wq_desc.head);
 		if (wqi_size > AVAILABLE_SPACE) {
 			if (sleep_period_ms == 1024) {
 				xe_gt_reset_async(e->gt);
@@ -538,6 +542,8 @@ try_again:
 
 static int wq_noop_append(struct xe_engine *e)
 {
+	struct xe_guc *guc = engine_to_guc(e);
+	struct xe_device *xe = guc_to_xe(guc);
 	struct iosys_map map = xe_lrc_parallel_map(e->lrc);
 	u32 len_dw = wq_space_until_wrap(e) / sizeof(u32) - 1;
 
@@ -546,7 +552,7 @@ static int wq_noop_append(struct xe_engine *e)
 
 	XE_BUG_ON(!FIELD_FIT(WQ_LEN_MASK, len_dw));
 
-	parallel_write(map, wq[e->guc->wqi_tail / sizeof(u32)],
+	parallel_write(xe, map, wq[e->guc->wqi_tail / sizeof(u32)],
 		       FIELD_PREP(WQ_TYPE_MASK, WQ_TYPE_NOOP) |
 		       FIELD_PREP(WQ_LEN_MASK, len_dw));
 	e->guc->wqi_tail = 0;
@@ -556,6 +562,8 @@ static int wq_noop_append(struct xe_engine *e)
 
 static void wq_item_append(struct xe_engine *e)
 {
+	struct xe_guc *guc = engine_to_guc(e);
+	struct xe_device *xe = guc_to_xe(guc);
 	struct iosys_map map = xe_lrc_parallel_map(e->lrc);
 	u32 wqi[XE_HW_ENGINE_MAX_INSTANCE + 3];
 	u32 wqi_size = (e->width + 3) * sizeof(u32);
@@ -585,14 +593,14 @@ static void wq_item_append(struct xe_engine *e)
 
 	iosys_map_incr(&map, offsetof(struct parallel_scratch,
 					wq[e->guc->wqi_tail / sizeof(u32)]));
-	iosys_map_memcpy_to(&map, 0, wqi, wqi_size);
+	xe_map_memcpy_to(xe, &map, 0, wqi, wqi_size);
 	e->guc->wqi_tail += wqi_size;
 	XE_BUG_ON(e->guc->wqi_tail > WQ_SIZE);
 
 	xe_guc_wb(engine_to_guc(e));
 
 	map = xe_lrc_parallel_map(e->lrc);
-	parallel_write(map, wq_desc.tail, e->guc->wqi_tail);
+	parallel_write(xe, map, wq_desc.tail, e->guc->wqi_tail);
 }
 
 #define RESUME_PENDING	~0x0ull
@@ -1589,22 +1597,24 @@ int xe_guc_engine_reset_failure_handler(struct xe_guc *guc, u32 *msg, u32 len)
 
 static void guc_engine_wq_print(struct xe_engine *e, struct drm_printer *p)
 {
+	struct xe_guc *guc = engine_to_guc(e);
+	struct xe_device *xe = guc_to_xe(guc);
 	struct iosys_map map = xe_lrc_parallel_map(e->lrc);
 	int i;
 
 	drm_printf(p, "\tWQ head: %u (internal), %d (memory)\n",
-		   e->guc->wqi_head, parallel_read(map, wq_desc.head));
+		   e->guc->wqi_head, parallel_read(xe, map, wq_desc.head));
 	drm_printf(p, "\tWQ tail: %u (internal), %d (memory)\n",
-		   e->guc->wqi_tail, parallel_read(map, wq_desc.tail));
+		   e->guc->wqi_tail, parallel_read(xe, map, wq_desc.tail));
 	drm_printf(p, "\tWQ status: %u\n",
-		   parallel_read(map, wq_desc.wq_status));
-	if (parallel_read(map, wq_desc.head) !=
-	    parallel_read(map, wq_desc.tail)) {
-		for (i = parallel_read(map, wq_desc.head);
-		     i != parallel_read(map, wq_desc.tail);
+		   parallel_read(xe, map, wq_desc.wq_status));
+	if (parallel_read(xe, map, wq_desc.head) !=
+	    parallel_read(xe, map, wq_desc.tail)) {
+		for (i = parallel_read(xe, map, wq_desc.head);
+		     i != parallel_read(xe, map, wq_desc.tail);
 		     i = (i + sizeof(u32)) % WQ_SIZE)
 			drm_printf(p, "\tWQ[%ld]: 0x%08x\n", i / sizeof(u32),
-				   parallel_read(map, wq[i / sizeof(u32)]));
+				   parallel_read(xe, map, wq[i / sizeof(u32)]));
 	}
 }
 

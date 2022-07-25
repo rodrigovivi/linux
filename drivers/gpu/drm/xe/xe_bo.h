@@ -211,25 +211,4 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 int xe_gem_mmap_offset_ioctl(struct drm_device *dev, void *data,
 			     struct drm_file *file);
 
-/*
- * FIXME: The below helpers should be in common code. Lucas has a series
- * reworking the iosys-map headers. Let's see how that pans out and follow up
- * on his series if needed.
- */
-static inline u32 dbm_read32(struct iosys_map map)
-{
-	if (map.is_iomem)
-		return readl(map.vaddr_iomem);
-	else
-		return READ_ONCE(*(u32 *)map.vaddr);
-}
-
-static inline void dbm_write32(struct iosys_map map, u32 val)
-{
-	if (map.is_iomem)
-		writel(val, map.vaddr_iomem);
-	else
-		*(u32 *)map.vaddr = val;
-}
-
 #endif /* _XE_BO_H_ */
