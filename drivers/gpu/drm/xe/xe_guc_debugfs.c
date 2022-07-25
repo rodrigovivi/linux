@@ -6,6 +6,7 @@
 #include <drm/drm_debugfs.h>
 #include <drm/drm_managed.h>
 
+#include "xe_device.h"
 #include "xe_gt.h"
 #include "xe_guc.h"
 #include "xe_guc_ct.h"
@@ -33,9 +34,12 @@ static struct xe_guc *node_to_guc(struct drm_info_node *node)
 static int guc_info(struct seq_file *m, void *data)
 {
 	struct xe_guc *guc = node_to_guc(m->private);
+	struct xe_device *xe = guc_to_xe(guc);
 	struct drm_printer p = drm_seq_file_printer(m);
 
+	xe_device_mem_access_wa_get(xe);
 	xe_guc_print_info(guc, &p);
+	xe_device_mem_access_wa_put(xe);
 
 	return 0;
 }
@@ -43,9 +47,12 @@ static int guc_info(struct seq_file *m, void *data)
 static int guc_log(struct seq_file *m, void *data)
 {
 	struct xe_guc *guc = node_to_guc(m->private);
+	struct xe_device *xe = guc_to_xe(guc);
 	struct drm_printer p = drm_seq_file_printer(m);
 
+	xe_device_mem_access_wa_get(xe);
 	xe_guc_log_print(&guc->log, &p);
+	xe_device_mem_access_wa_put(xe);
 
 	return 0;
 }
@@ -54,9 +61,12 @@ static int guc_log(struct seq_file *m, void *data)
 static int guc_ct_selftest(struct seq_file *m, void *data)
 {
 	struct xe_guc *guc = node_to_guc(m->private);
+	struct xe_device *xe = guc_to_xe(guc);
 	struct drm_printer p = drm_seq_file_printer(m);
 
+	xe_device_mem_access_wa_get(xe);
 	xe_guc_ct_selftest(&guc->ct, &p);
+	xe_device_mem_access_wa_put(xe);
 
 	return 0;
 }

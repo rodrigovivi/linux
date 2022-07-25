@@ -22,18 +22,23 @@ static struct xe_gt *node_to_gt(struct drm_info_node *node)
 static int hw_engines(struct seq_file *m, void *data)
 {
 	struct xe_gt *gt = node_to_gt(m->private);
+	struct xe_device *xe = gt_to_xe(gt);
 	struct drm_printer p = drm_seq_file_printer(m);
 	struct xe_hw_engine *hwe;
 	enum xe_hw_engine_id id;
 	int err;
 
+	xe_device_mem_access_wa_get(xe);
 	err = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
-	if (err)
+	if (err) {
+		xe_device_mem_access_wa_put(xe);
 		return err;
+	}
 
 	for_each_hw_engine(hwe, gt, id)
 		xe_hw_engine_print_state(hwe, &p);
 
+	xe_device_mem_access_wa_put(xe);
 	err = xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 	if (err)
 		return err;

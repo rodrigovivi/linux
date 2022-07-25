@@ -13,6 +13,7 @@ struct xe_file;
 
 #include "xe_device_types.h"
 #include "xe_macros.h"
+#include "xe_force_wake.h"
 
 static inline struct xe_device *to_xe_device(const struct drm_device *dev)
 {
@@ -74,13 +75,56 @@ static inline void xe_device_guc_submission_disable(struct xe_device *xe)
 	xe->info.enable_guc = false;
 }
 
-static inline void xe_device_assert_mem_access(struct xe_device *xe, bool vram)
-{
-	/* TODO: Do something */
-}
-
 #define for_each_gt(gt__, xe__, id__) \
 	for ((id__) = 0; (id__) < (xe__)->info.tile_count; (id__++)) \
 		for_each_if ((gt__) = xe_device_get_gt((xe__), (id__)))
+
+static inline struct xe_force_wake * gt_to_fw(struct xe_gt *gt)
+{
+	return &gt->mmio.fw;
+}
+
+/*
+ * TODO: Ensure this function compiles out if kernel built without debug options
+ */
+static inline void xe_device_assert_mem_access(struct xe_device *xe, bool vram)
+{
+	struct xe_gt *gt;
+	u8 id;
+
+	if (!vram || xe->info.platform != XE_PVC || xe->info.tile_count == 1)
+		return;
+
+	for_each_gt(gt, xe, id)
+		xe_force_wake_assert_held(gt_to_fw(gt), XE_FW_GT);
+}
+
+static inline void xe_device_mem_access_wa_get(struct xe_device *xe)
+{
+	struct xe_gt *gt;
+	int ret;
+	u8 id;
+
+	if (xe->info.platform != XE_PVC || xe->info.tile_count == 1)
+		return;
+
+	for_each_gt(gt, xe, id)
+		ret = xe_force_wake_get(gt_to_fw(gt), XE_FW_GT);
+	XE_WARN_ON(ret);
+}
+
+static inline void xe_device_mem_access_wa_put(struct xe_device *xe)
+{
+	struct xe_gt *gt;
+	int ret;
+	u8 id;
+
+	if (xe->info.platform != XE_PVC || xe->info.tile_count == 1)
+		return;
+
+	for_each_gt(gt, xe, id)
+		ret = xe_force_wake_put(gt_to_fw(gt), XE_FW_GT);
+	XE_WARN_ON(ret);
+}
 
 #endif /* _XE_DEVICE_H_ */
