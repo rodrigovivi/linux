@@ -8,6 +8,7 @@
 #include "xe_bo.h"
 #include "xe_gt.h"
 #include "xe_guc_log.h"
+#include "xe_map.h"
 
 static struct xe_gt *
 log_to_gt(struct xe_guc_log *log)
@@ -48,6 +49,7 @@ static size_t guc_log_size(void)
 
 void xe_guc_log_print(struct xe_guc_log *log, struct drm_printer *p)
 {
+	struct xe_device *xe = log_to_xe(log);
 	struct iosys_map map;
 	size_t size;
 	int i, j;
@@ -63,7 +65,7 @@ void xe_guc_log_print(struct xe_guc_log *log, struct drm_printer *p)
 		u32 read[DW_PER_PRINT];
 
 		for (j = 0; j < DW_PER_PRINT; ++j) {
-			read[j] = dbm_read32(map);
+			read[j] = xe_map_read32(xe, &map);
 			iosys_map_incr(&map, sizeof(u32));
 		}
 
@@ -95,7 +97,7 @@ int xe_guc_log_init(struct xe_guc_log *log)
 	if (IS_ERR(bo))
 		return PTR_ERR(bo);
 
-	iosys_map_memset(&bo->vmap, 0, 0, guc_log_size());
+	xe_map_memset(xe, &bo->vmap, 0, 0, guc_log_size());
 	log->bo = bo;
 	log->level = 5;	/* FIXME: Connect to modparam / debugfs */
 

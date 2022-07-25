@@ -7,6 +7,7 @@
 #define _XE_VM_H_
 
 #include "xe_macros.h"
+#include "xe_map.h"
 #include "xe_vm_types.h"
 
 struct drm_device;
@@ -78,8 +79,8 @@ static inline bool xe_vm_has_userptr(struct xe_vm *vm)
 
 int xe_vm_async_fence_wait_start(struct dma_fence *fence);
 
-#define xe_pt_write(map, idx, data) \
-	iosys_map_wr(map, idx * sizeof(u64), u64, data)
+#define xe_pt_write(xe, map, idx, data) \
+	xe_map_wr(xe, map, idx * sizeof(u64), u64, data)
 
 u64 gen8_pde_encode(struct xe_bo *bo, u64 bo_offset,
 		    const enum xe_cache_level level);

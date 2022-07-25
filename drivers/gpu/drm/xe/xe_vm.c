@@ -16,6 +16,7 @@
 #include "xe_device.h"
 #include "xe_engine.h"
 #include "xe_gt.h"
+#include "xe_map.h"
 #include "xe_migrate.h"
 #include "xe_preempt_fence.h"
 #include "xe_res_cursor.h"
@@ -195,11 +196,11 @@ static int xe_pt_populate_empty(struct xe_vm *vm, struct xe_pt *pt)
 		 * FIXME: Some memory is allocated already allocated to zero?
 		 * Find out which memory that is and avoid this memset...
 		 */
-		iosys_map_memset(map, 0, 0, SZ_4K);
+		xe_map_memset(vm->xe, map, 0, 0, SZ_4K);
 	} else {
 		empty = __xe_vm_empty_pte(vm, pt->level) | flags;
 		for (i = 0; i < numpte; i++)
-			xe_pt_write(map, i, empty);
+			xe_pt_write(vm->xe, map, i, empty);
 	}
 
 	return 0;
@@ -340,7 +341,7 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 			 * zero? Find out which memory that is and avoid this
 			 * memset...
 			 */
-			iosys_map_memset(map, 0, 0, SZ_4K);
+			xe_map_memset(vma->vm->xe, map, 0, 0, SZ_4K);
 		} else {
 			u32 init_flags = (vma->vm->scratch_bo) ? flags : 0;
 			u64 empty = __xe_vm_empty_pte(vma->vm, pt->level) |
@@ -349,9 +350,9 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 			empty = __xe_vm_empty_pte(vma->vm, pt->level) |
 				init_flags;
 			for (i = 0; i < start_ofs; i++)
-				xe_pt_write(map, i, empty);
+				xe_pt_write(vm->xe, map, i, empty);
 			for (i = last_ofs + 1; i < numpdes; i++)
-				xe_pt_write(map, i, empty);
+				xe_pt_write(vm->xe, map, i, empty);
 		}
 	}
 
@@ -366,7 +367,7 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 						XE_CACHE_WB, vma->pte_flags,
 						pt->level);
 
-		xe_pt_write(map, i, entry);
+		xe_pt_write(vm->xe, map, i, entry);
 	}
 
 	return 0;
