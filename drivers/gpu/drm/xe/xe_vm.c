@@ -143,24 +143,6 @@ static u64 __xe_vm_empty_pte(struct xe_vm *vm, unsigned int level)
 				       XE_CACHE_WB);
 }
 
-static int __xe_pt_kmap(struct xe_pt *pt, struct ttm_bo_kmap_obj *map)
-{
-	XE_BUG_ON(pt->bo->size % PAGE_SIZE);
-	return ttm_bo_kmap(&pt->bo->ttm, 0, pt->bo->size / PAGE_SIZE, map);
-}
-
-void __xe_pt_write(struct ttm_bo_kmap_obj *map, unsigned int idx, u64 data)
-{
-	bool is_iomem;
-	u64 *map_u64;
-
-	map_u64 = ttm_kmap_obj_virtual(map, &is_iomem);
-	if (is_iomem)
-		writeq(data, (u64 __iomem *)&map_u64[idx]);
-	else
-		map_u64[idx] = data;
-}
-
 static struct xe_pt *xe_pt_create(struct xe_vm *vm, unsigned int level)
 {
 	struct xe_pt *pt;
@@ -173,10 +155,11 @@ static struct xe_pt *xe_pt_create(struct xe_vm *vm, unsigned int level)
 	if (!pt)
 		return ERR_PTR(-ENOMEM);
 
-	bo = xe_bo_create(vm->xe, to_gt(vm->xe), vm, SZ_4K, ttm_bo_type_kernel,
-			  XE_BO_CREATE_VRAM_IF_DGFX(to_gt(vm->xe)) |
-			  XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT |
-			  XE_BO_CREATE_PINNED_BIT);
+	bo = xe_bo_create_pin_map(vm->xe, to_gt(vm->xe), vm, SZ_4K,
+				  ttm_bo_type_kernel,
+				  XE_BO_CREATE_VRAM_IF_DGFX(to_gt(vm->xe)) |
+				  XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT |
+				  XE_BO_CREATE_PINNED_BIT);
 	if (IS_ERR(bo)) {
 		err = PTR_ERR(bo);
 		goto err_kfree;
@@ -186,7 +169,6 @@ static struct xe_pt *xe_pt_create(struct xe_vm *vm, unsigned int level)
 
 	XE_BUG_ON(level > XE_VM_MAX_LEVEL);
 
-	xe_bo_pin(bo);
 	return pt;
 
 err_kfree:
@@ -196,15 +178,11 @@ err_kfree:
 
 static int xe_pt_populate_empty(struct xe_vm *vm, struct xe_pt *pt)
 {
-	struct ttm_bo_kmap_obj map;
+	struct iosys_map *map = &pt->bo->vmap;
 	u64 empty;
-	int err, i;
+	int i;
 	int numpte = GEN8_PDES;
 	int flags = 0;
-
-	err = __xe_pt_kmap(pt, &map);
-	if (err)
-		return err;
 
 	if (vm->flags & XE_VM_FLAGS_64K && pt->level == 1) {
 		numpte = 32;
@@ -212,11 +190,18 @@ static int xe_pt_populate_empty(struct xe_vm *vm, struct xe_pt *pt)
 			flags = GEN12_PDE_64K;
 	}
 
-	empty = __xe_vm_empty_pte(vm, pt->level) | flags;
-	for (i = 0; i < numpte; i++)
-		__xe_pt_write(&map, i, empty);
+	if (!vm->scratch_bo) {
+		/*
+		 * FIXME: Some memory is allocated already allocated to zero?
+		 * Find out which memory that is and avoid this memset...
+		 */
+		iosys_map_memset(map, 0, 0, SZ_4K);
+	} else {
+		empty = __xe_vm_empty_pte(vm, pt->level) | flags;
+		for (i = 0; i < numpte; i++)
+			xe_pt_write(map, i, empty);
+	}
 
-	ttm_bo_kunmap(&map);
 	return 0;
 }
 
@@ -283,7 +268,7 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 {
 	u32 start_ofs = xe_pt_idx(start, pt->level);
 	u32 last_ofs = xe_pt_idx(end - 1, pt->level);
-	struct ttm_bo_kmap_obj map;
+	struct iosys_map *map = &pt->bo->vmap;
 	struct xe_vm *vm = vma->vm;
 	struct xe_pt_dir *pt_dir = NULL;
 	bool init = !pt->num_live;
@@ -348,19 +333,26 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 			pt->num_live += last_ofs + 1 - start_ofs;
 	}
 
-	/* any pte entries now exist, fill in now */
-	err = __xe_pt_kmap(pt, &map);
-	if (err)
-		return err;
-
 	if (init) {
-		u32 init_flags = (vma->vm->scratch_bo) ? flags : 0;
-		u64 empty = __xe_vm_empty_pte(vma->vm, pt->level) | init_flags;
+		if (!vma->vm->scratch_bo) {
+			/*
+			 * FIXME: Some memory is allocated already allocated to
+			 * zero? Find out which memory that is and avoid this
+			 * memset...
+			 */
+			iosys_map_memset(map, 0, 0, SZ_4K);
+		} else {
+			u32 init_flags = (vma->vm->scratch_bo) ? flags : 0;
+			u64 empty = __xe_vm_empty_pte(vma->vm, pt->level) |
+				init_flags;
 
-		for (i = 0; i < start_ofs; i++)
-			__xe_pt_write(&map, i, empty);
-		for (i = last_ofs + 1; i < numpdes; i++)
-			__xe_pt_write(&map, i, empty);
+			empty = __xe_vm_empty_pte(vma->vm, pt->level) |
+				init_flags;
+			for (i = 0; i < start_ofs; i++)
+				xe_pt_write(map, i, empty);
+			for (i = last_ofs + 1; i < numpdes; i++)
+				xe_pt_write(map, i, empty);
+		}
 	}
 
 	for (i = start_ofs; i <= last_ofs; i++, bo_offset += page_size) {
@@ -374,10 +366,9 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 						XE_CACHE_WB, vma->pte_flags,
 						pt->level);
 
-		__xe_pt_write(&map, i, entry);
+		xe_pt_write(map, i, entry);
 	}
 
-	ttm_bo_kunmap(&map);
 	return 0;
 }
 

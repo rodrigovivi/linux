@@ -84,12 +84,10 @@ static u64 xe_migrate_vram_ofs(u64 addr)
 static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 {
 	u32 num_entries = NUM_PT_SLOTS, num_level = vm->pt_root->level;
-	struct ttm_bo_kmap_obj map;
 	u32 map_ofs, level, i;
 	struct xe_bo *bo, *batch = m->gt->kernel_bb_pool.bo;
 	struct xe_device *xe = gt_to_xe(m->gt);
 	u64 entry;
-	int err;
 
 	/* Can't bump NUM_PT_SLOTS too high */
 	BUILD_BUG_ON(NUM_PT_SLOTS > SZ_2M/GEN8_PAGE_SIZE);
@@ -109,17 +107,8 @@ static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 	if (IS_ERR(bo))
 		return PTR_ERR(bo);
 
-	/* Write top-level entry first */
-	err = ttm_bo_kmap(&vm->pt_root->bo->ttm, 0,
-			  vm->pt_root->bo->size / PAGE_SIZE, &map);
-	if (err) {
-		xe_bo_unpin(bo);
-		xe_bo_put(bo);
-		return err;
-	}
-
 	entry = gen8_pde_encode(bo, bo->size - GEN8_PAGE_SIZE, XE_CACHE_WB);
-	__xe_pt_write(&map, 0, entry);
+	xe_pt_write(&vm->pt_root->bo->vmap, 0, entry);
 
 #if 0
 	/* XXX: allow for 1 GiB pages? */
@@ -129,8 +118,6 @@ static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 		__xe_pt_write(&map, i + 1, entry);
 	}
 #endif
-
-	ttm_bo_kunmap(&map);
 
 	map_ofs = (num_entries - num_level) * GEN8_PAGE_SIZE;
 
@@ -210,10 +197,7 @@ static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 		 */
 		for (pos = 0; pos < xe->mem.vram.size; pos += SZ_1G, ofs += 8)
 			iosys_map_wr(&bo->vmap, ofs, u64, pos | flags);
-
 	}
-
-	xe_bo_vunmap(bo);
 
 	/*
 	 * Example layout created above, with root level = 3:

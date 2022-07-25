@@ -11,7 +11,6 @@
 
 struct drm_device;
 struct drm_file;
-struct ttm_bo_kmap_obj;
 
 struct ttm_buffer_object;
 
@@ -79,7 +78,9 @@ static inline bool xe_vm_has_userptr(struct xe_vm *vm)
 
 int xe_vm_async_fence_wait_start(struct dma_fence *fence);
 
-void __xe_pt_write(struct ttm_bo_kmap_obj *map, unsigned int idx, u64 data);
+#define xe_pt_write(map, idx, data) \
+	iosys_map_wr(map, idx * sizeof(u64), u64, data)
+
 u64 gen8_pde_encode(struct xe_bo *bo, u64 bo_offset,
 		    const enum xe_cache_level level);
 u64 gen8_pte_encode(struct xe_vma *vma, struct xe_bo *bo,
