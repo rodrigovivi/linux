@@ -18,6 +18,7 @@
 #include "xe_dma_buf.h"
 #include "xe_ggtt.h"
 #include "xe_gt.h"
+#include "xe_map.h"
 #include "xe_migrate.h"
 #include "xe_res_cursor.h"
 #include "xe_trace.h"
@@ -557,7 +558,7 @@ struct xe_bo *xe_bo_create_from_data(struct xe_device *xe, struct xe_gt *gt,
 	if (IS_ERR(bo))
 		return bo;
 
-	iosys_map_memcpy_to(&bo->vmap, 0, data, size);
+	xe_map_memcpy_to(xe, &bo->vmap, 0, data, size);
 
 	return bo;
 }

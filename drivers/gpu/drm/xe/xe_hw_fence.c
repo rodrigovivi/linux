@@ -9,10 +9,11 @@
 #include <linux/slab.h>
 
 #include "xe_bo.h"
-#include "xe_device_types.h"
+#include "xe_device.h"
 #include "xe_gt.h"
 #include "xe_hw_engine.h"
 #include "xe_macros.h"
+#include "xe_map.h"
 #include "xe_trace.h"
 
 static struct kmem_cache *xe_hw_fence_slab;
@@ -175,7 +176,8 @@ static bool xe_hw_fence_enable_signaling(struct dma_fence *dma_fence)
 static bool xe_hw_fence_signaled(struct dma_fence *dma_fence)
 {
 	struct xe_hw_fence *fence = to_xe_hw_fence(dma_fence);
-	u32 seqno = dbm_read32(fence->seqno_map);
+	struct xe_device *xe = gt_to_xe(fence->ctx->gt);
+	u32 seqno = xe_map_read32(xe, &fence->seqno_map);
 
 	return dma_fence->error ||
 		(s32)fence->dma.seqno <= (s32)seqno;
