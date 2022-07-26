@@ -37,7 +37,7 @@
  * is the user's responsibility to pass in / out fence between the two execs).
  *
  * Implicit dependencies for external BOs are handled by using the dma-buf
- * implicit dependency uAPI (TODO: add link). To make this work each exec must
+ * implicit dependency uAPI (TODO: add link). To make this works each exec must
  * install the job's fence into the DMA_RESV_USAGE_WRITE slot of every external
  * BO mapped in the VM.
  *
@@ -55,8 +55,10 @@
  * private to the VM. This is accomplished by the rebinds waiting on BOs
  * DMA_RESV_USAGE_KERNEL slot (kernel ops) and kernel ops waiting on all BOs
  * slots (inflight execs are in the DMA_RESV_USAGE_BOOKING for private BOs and
- * in DMA_RESV_USAGE_WRITE for external BOs). All of this applies to non-compute
- * VMs only as for compute mode we use preempt fences + a rebind worker.
+ * in DMA_RESV_USAGE_WRITE for external BOs).
+ *
+ * Rebinds / dma-resv usage applies to non-compute mode VMs only as for compute
+ * mode VMs we use preempt fences and a rebind worker (TODO: add link).
  *
  * There is no need to flow control the ring in the exec as we write the ring at
  * submission time and set the DRM scheduler max job limit SIZE_OF_RING /
@@ -68,22 +70,24 @@
  * Flow
  * ~~~~
  *
- * Parse input arguments
- * Wait for any async VM bind passed as in-fences to start
- * <----------------------------------------------------------------------|
- * Lock VM lists in read mode                                             |
- * Pin userptrs (also finds userptr invalidated since last exec)          |
- * Lock exec (VM dma-resv lock, external BOs dma-resv locks)              |
- * Validate BOs that have been evicted                                    |
- * Create job                                                             |
- * Rebind invalidated userptrs + evicted BOs (non-compute-mode)           |
- * Add rebind fence dependency to job                                     |
- * Add job VM dma-resv bookkeeing slot (non-compute mode)                 |
- * Add job to external BOs dma-resv write slots (non-compute mode)        |
- * Check if any userptrs invalidated since pin ------ Drop locks ---------|
- * Install in / out fences for job
- * Submit job
- * Unlock
+ * .. code-block::
+ *
+ *	Parse input arguments
+ *	Wait for any async VM bind passed as in-fences to start
+ *	<----------------------------------------------------------------------|
+ *	Lock global VM lock in read mode                                       |
+ *	Pin userptrs (also finds userptr invalidated since last exec)          |
+ *	Lock exec (VM dma-resv lock, external BOs dma-resv locks)              |
+ *	Validate BOs that have been evicted                                    |
+ *	Create job                                                             |
+ *	Rebind invalidated userptrs + evicted BOs (non-compute-mode)           |
+ *	Add rebind fence dependency to job                                     |
+ *	Add job VM dma-resv bookkeeping slot (non-compute mode)                |
+ *	Add job to external BOs dma-resv write slots (non-compute mode)        |
+ *	Check if any userptrs invalidated since pin ------ Drop locks ---------|
+ *	Install in / out fences for job
+ *	Submit job
+ *	Unlock all
  */
 
 static int xe_exec_begin(struct xe_engine *e, struct ww_acquire_ctx *ww,
