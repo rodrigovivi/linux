@@ -192,6 +192,13 @@ static void gt_fini(struct drm_device *drm, void *arg)
 
 static void gt_reset_worker(struct work_struct *w);
 
+int xe_gt_init_early(struct xe_gt *gt)
+{
+	xe_force_wake_init(gt, gt_to_fw(gt));
+
+	return 0;
+}
+
 int xe_gt_init(struct xe_gt *gt)
 {
 	int err;
@@ -204,7 +211,6 @@ int xe_gt_init(struct xe_gt *gt)
 		xe_hw_fence_irq_init(&gt->fence_irq[i]);
 	}
 
-	xe_force_wake_init(gt, gt_to_fw(gt));
 	xe_device_mem_access_wa_get(gt_to_xe(gt));
 	err = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 	if (err)

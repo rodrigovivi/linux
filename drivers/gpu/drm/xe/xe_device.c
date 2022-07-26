@@ -207,22 +207,28 @@ int xe_device_probe(struct xe_device *xe)
 		return err;
 
 	for_each_gt(gt, xe, id) {
+		err = xe_gt_init_early(gt);
+		if (err)
+			goto err_irq_shutdown;
+	}
+
+	for_each_gt(gt, xe, id) {
 		err = xe_gt_init(gt);
-		if (err) {
-			xe_irq_shutdown(xe);
-			return err;
-		}
+		if (err)
+			goto err_irq_shutdown;
 	}
 
 	err = drm_dev_register(&xe->drm, 0);
-	if (err) {
-		xe_irq_shutdown(xe);
-		return err;
-	}
+	if (err)
+		goto err_irq_shutdown;
 
 	xe_debugfs_register(xe);
 
 	return 0;
+
+err_irq_shutdown:
+	xe_irq_shutdown(xe);
+	return err;
 }
 
 void xe_device_remove(struct xe_device *xe)
