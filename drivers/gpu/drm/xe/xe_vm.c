@@ -776,15 +776,15 @@ retry:
 	if (rebind_fence) {
 		dma_fence_wait(rebind_fence, false);
 		dma_fence_put(rebind_fence);
-	} else {
-		/* Wait on munmap style VM unbinds */
-		wait = dma_resv_wait_timeout(&vm->resv,
-					     DMA_RESV_USAGE_KERNEL,
-					     false, MAX_SCHEDULE_TIMEOUT);
-		if (wait <= 0) {
-			err = -ETIME;
-			goto out_unlock;
-		}
+	}
+
+	/* Wait on munmap style VM unbinds */
+	wait = dma_resv_wait_timeout(&vm->resv,
+				     DMA_RESV_USAGE_KERNEL,
+				     false, MAX_SCHEDULE_TIMEOUT);
+	if (wait <= 0) {
+		err = -ETIME;
+		goto out_unlock;
 	}
 
 	reinstall_preempt_fences(vm);
