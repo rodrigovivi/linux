@@ -17,6 +17,7 @@
 			  xe_hw_engine_is_valid((hwe__)))
 
 int xe_gt_alloc(struct xe_device *xe, struct xe_gt *gt);
+int xe_gt_init_early(struct xe_gt *gt);
 int xe_gt_init(struct xe_gt *gt);
 int xe_gt_suspend(struct xe_gt *gt);
 int xe_gt_resume(struct xe_gt *gt);
