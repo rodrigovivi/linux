@@ -202,14 +202,6 @@ static int engine_set_compute_mode(struct xe_device *xe, struct xe_engine *e,
 		struct xe_vm *vm = e->vm;
 		int err;
 
-		/*
-		 * XXX: Installing new preempt fences are tricky if things are
-		 * inflight as all the preempt fences should be suspending /
-		 * resuming in unison, let's try not to support this. Adding a
-		 * warning for now until we get a UMD by in.
-		 */
-		XE_WARN_ON(!RB_EMPTY_ROOT(&vm->vmas));
-
 		if (XE_IOCTL_ERR(xe, !(e->vm->flags & XE_VM_FLAG_COMPUTE_MODE)))
 			return -ENOTSUPP;
 

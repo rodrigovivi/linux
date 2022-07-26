@@ -504,6 +504,24 @@ out:
 	return ret < 0 ? ret : 0;
 }
 
+static bool preempt_fences_waiting(struct xe_vm *vm)
+{
+	struct xe_engine *e;
+
+	lockdep_assert_held(&vm->lock);
+	xe_vm_assert_held(vm);
+
+	list_for_each_entry(e, &vm->preempt.engines, compute.link) {
+		if (!e->compute.pfence || (e->compute.pfence &&
+		    test_bit(DMA_FENCE_FLAG_ENABLE_SIGNAL_BIT,
+			     &e->compute.pfence->flags))) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 static int alloc_preempt_fences(struct xe_vm *vm)
 {
 	struct xe_engine *e;
@@ -519,15 +537,7 @@ static int alloc_preempt_fences(struct xe_vm *vm)
 	 * If any of pfences are NULL or is signaling is enabled on pfence we
 	 * know that their are page tables which need fixing.
 	 */
-	list_for_each_entry(e, &vm->preempt.engines, compute.link) {
-		if (!e->compute.pfence || (e->compute.pfence &&
-		    test_bit(DMA_FENCE_FLAG_ENABLE_SIGNAL_BIT,
-			     &e->compute.pfence->flags))) {
-			wait = true;
-			break;
-		}
-	}
-
+	wait = preempt_fences_waiting(vm);
 	if (!wait)
 		return 1;	/* nothing to do */
 
@@ -607,10 +617,11 @@ int xe_vm_add_compute_engine(struct xe_vm *vm, struct xe_engine *e)
 	struct dma_fence *pfence;
 	int i;
 	int err;
+	bool wait;
 
 	XE_BUG_ON(!xe_vm_in_compute_mode(vm));
 
-	down_read(&vm->lock);
+	down_write(&vm->lock);
 
 	tv_bos = kmalloc(sizeof(*tv_bos) * vm->extobj.entries,
 			 GFP_KERNEL);
@@ -659,10 +670,18 @@ int xe_vm_add_compute_engine(struct xe_vm *vm, struct xe_engine *e)
 				   DMA_RESV_USAGE_PREEMPT_FENCE);
 	}
 
+	/*
+	 * Check to see if a preemption on VM is in flight, if so trigger this
+	 * preempt fence to sync state with other preempt fences on the VM.
+	 */
+	wait = preempt_fences_waiting(vm);
+	if (wait)
+		dma_fence_enable_sw_signaling(pfence);
+
 out_unlock:
 	ttm_eu_backoff_reservation(&ww, &objs);
 out_unlock_outer:
-	up_read(&vm->lock);
+	up_write(&vm->lock);
 	kfree(tv_bos);
 
 	return err;
