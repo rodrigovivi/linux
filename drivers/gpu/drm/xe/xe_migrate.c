@@ -149,9 +149,9 @@ static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 		}
 	} else {
 		bool is_lmem;
-		m->batch_base_ofs =
-			xe_migrate_vram_ofs(xe_bo_addr(batch, 0, GEN8_PAGE_SIZE,
-						       &is_lmem));
+		u64 batch_addr = xe_bo_addr(batch, 0, GEN8_PAGE_SIZE, &is_lmem);
+
+		m->batch_base_ofs = xe_migrate_vram_ofs(batch_addr);
 	}
 
 	for (level = 1; level < num_level; level++) {
@@ -827,7 +827,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	if (!IS_DGFX(xe)) {
 		ppgtt_ofs = NUM_KERNEL_PDE - 1;
 		if (eng) {
-			sa_bo = drm_suballoc_new(&m->vm_update_sa, num_updates);
+			sa_bo = drm_suballoc_new(&m->vm_update_sa, 1);
 			if (IS_ERR(sa_bo)) {
 				err = PTR_ERR(sa_bo);
 				goto err;
