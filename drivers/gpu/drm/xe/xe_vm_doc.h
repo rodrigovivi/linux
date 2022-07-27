@@ -396,6 +396,7 @@
  * ===========
  *
  * Support large pages for sysmem and userptr.
+ *
  */
 
 #endif	/* _XE_VM_DOC_H_ */
