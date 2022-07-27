@@ -185,12 +185,6 @@ static int xe_pt_populate_empty(struct xe_vm *vm, struct xe_pt *pt)
 	int numpte = GEN8_PDES;
 	int flags = 0;
 
-	if (vm->flags & XE_VM_FLAGS_64K && pt->level == 1) {
-		numpte = 32;
-		if (vm->scratch_bo)
-			flags = GEN12_PDE_64K;
-	}
-
 	if (!vm->scratch_bo) {
 		/*
 		 * FIXME: Some memory is allocated already allocated to zero?
@@ -198,6 +192,11 @@ static int xe_pt_populate_empty(struct xe_vm *vm, struct xe_pt *pt)
 		 */
 		xe_map_memset(vm->xe, map, 0, 0, SZ_4K);
 	} else {
+		if (vm->flags & XE_VM_FLAGS_64K && pt->level == 1) {
+			numpte = 32;
+			flags = GEN12_PDE_64K;
+		}
+
 		empty = __xe_vm_empty_pte(vm, pt->level) | flags;
 		for (i = 0; i < numpte; i++)
 			xe_pt_write(vm->xe, map, i, empty);
@@ -403,7 +402,7 @@ static bool vma_is_userptr(struct xe_vma *vma)
 
 static int __vma_userptr_needs_repin(struct xe_vma *vma)
 {
-	/* TODO: lockdep assert */
+	lockdep_assert_held(&vma->vm->userptr.notifier_lock);
 	XE_BUG_ON(!vma_is_userptr(vma));
 
 	if (mmu_interval_read_retry(&vma->userptr.notifier,
