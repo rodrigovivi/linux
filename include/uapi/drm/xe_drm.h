@@ -220,13 +220,11 @@ struct drm_xe_gem_create {
 	/**
 	 * @vm_id: Attached VM, if any
 	 *
-	 * If a VM is specified, this dma-buf must:
+	 * If a VM is specified, this BO must:
 	 *
 	 *  1. Only ever be bound to that VM.
 	 *
 	 *  2. Cannot be exported as a PRIME fd.
-	 *
-	 *  3. Cannot be used for implicit synchronization.
 	 */
 	__u32 vm_id;
 
