@@ -35,7 +35,7 @@ struct xe_migrate {
 };
 
 #define NUM_KERNEL_PDE 17
-#define NUM_PT_SLOTS 48
+#define NUM_PT_SLOTS 32
 
 static void xe_migrate_sanity_test(struct xe_migrate *m);
 
@@ -218,8 +218,12 @@ static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 	 * everywhere, this allows lockless updates to scratch pages by using
 	 * the different addresses in VM.
 	 */
+#define NUM_VMUSA_UNIT_PER_PAGE	32
+#define VM_SA_UPDATE_UNIT_SIZE	(GEN8_PAGE_SIZE / NUM_VMUSA_UNIT_PER_PAGE)
+#define NUM_VMUSA_WRITES_PER_UNIT	(VM_SA_UPDATE_UNIT_SIZE / sizeof(u64))
 	drm_suballoc_manager_init(&m->vm_update_sa,
-				  map_ofs / GEN8_PAGE_SIZE - NUM_KERNEL_PDE, 0);
+				  (map_ofs / GEN8_PAGE_SIZE - NUM_KERNEL_PDE) *
+				  NUM_VMUSA_UNIT_PER_PAGE, 0);
 
 	m->pt_bo = bo;
 	return 0;
@@ -794,7 +798,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	struct drm_suballoc *sa_bo = NULL;
 	struct xe_vma *vma = arg;
 	struct xe_bb *bb;
-	u32 i, batch_size, ppgtt_ofs, update_idx;
+	u32 i, batch_size, ppgtt_ofs, update_idx, page_ofs = 0;
 	u64 addr;
 	int err = 0;
 
@@ -827,20 +831,25 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	if (!IS_DGFX(xe)) {
 		ppgtt_ofs = NUM_KERNEL_PDE - 1;
 		if (eng) {
+			XE_BUG_ON(num_updates > NUM_VMUSA_WRITES_PER_UNIT);
+
 			sa_bo = drm_suballoc_new(&m->vm_update_sa, 1);
 			if (IS_ERR(sa_bo)) {
 				err = PTR_ERR(sa_bo);
 				goto err;
 			}
 
-			ppgtt_ofs = NUM_KERNEL_PDE + sa_bo->soffset;
+			ppgtt_ofs = NUM_KERNEL_PDE +
+				(sa_bo->soffset / NUM_VMUSA_UNIT_PER_PAGE);
+			page_ofs = (sa_bo->soffset % NUM_VMUSA_UNIT_PER_PAGE) *
+				VM_SA_UPDATE_UNIT_SIZE;
 		}
 		emit_arb_clear(bb);
 
 		/* Map our PT's to gtt */
 		bb->cs[bb->len++] = MI_STORE_DATA_IMM | BIT(21) |
 			(num_updates * 2 + 1);
-		bb->cs[bb->len++] = ppgtt_ofs * GEN8_PAGE_SIZE;
+		bb->cs[bb->len++] = ppgtt_ofs * GEN8_PAGE_SIZE + page_ofs;
 		bb->cs[bb->len++] = 0; /* upper_32_bits */
 
 		for (i = 0; i < num_updates; i++) {
@@ -856,7 +865,8 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 		bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
 		update_idx = bb->len;
 
-		addr = xe_migrate_vm_addr(ppgtt_ofs, 0);
+		addr = xe_migrate_vm_addr(ppgtt_ofs, 0) +
+			(page_ofs / sizeof(u64)) * GEN8_PAGE_SIZE;
 		for (i = 0; i < num_updates; i++)
 			write_pgtable(bb, addr + i * GEN8_PAGE_SIZE,
 				      &updates[i], populatefn, arg);
