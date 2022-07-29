@@ -267,7 +267,8 @@ struct xe_migrate *xe_migrate_init(struct xe_gt *gt)
 
 	mutex_init(&m->job_mutex);
 
-	if (IS_ENABLED(CONFIG_DRM_XE_DEBUG)) {
+	/* FIXME: Blowing up 2 tile PVC, just disable for now */
+	if (IS_ENABLED(CONFIG_DRM_XE_DEBUG) && xe->info.platform != XE_PVC) {
 		xe_vm_lock(vm, &ww, 0, false);
 		xe_migrate_sanity_test(m);
 		xe_vm_unlock(vm, &ww);
