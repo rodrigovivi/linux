@@ -146,7 +146,8 @@ static void emit_migration_job_gen12(struct xe_sched_job *job,
 	dw[i++] = lower_32_bits(batch_addr);
 	dw[i++] = upper_32_bits(batch_addr);
 
-	dw[i++] = (MI_FLUSH_DW | MI_INVALIDATE_TLB | MI_FLUSH_DW_OP_STOREDW) + 1;
+	dw[i++] = (MI_FLUSH_DW | MI_INVALIDATE_TLB |
+		   MI_FLUSH_DW_OP_STOREDW) + 1;
 	dw[i++] = xe_lrc_seqno_ggtt_addr(lrc) | MI_FLUSH_DW_USE_GTT;
 	dw[i++] = 0;
 	dw[i++] = seqno; /* value */
@@ -165,7 +166,8 @@ static void emit_job_gen12(struct xe_sched_job *job)
 	int i;
 
 	if (job->engine->vm && job->engine->vm->flags & XE_VM_FLAG_MIGRATION) {
-		emit_migration_job_gen12(job, job->engine->lrc, xe_sched_job_seqno(job));
+		emit_migration_job_gen12(job, job->engine->lrc,
+					 xe_sched_job_seqno(job));
 		return;
 	}
 

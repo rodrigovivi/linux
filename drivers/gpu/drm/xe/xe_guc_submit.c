@@ -254,13 +254,15 @@ static int alloc_guc_id(struct xe_guc *guc, struct xe_engine *e)
 	 */
 	lockdep_assert_held(&guc->submission_state.lock);
 
-	if (xe_engine_is_parallel(e))
-		ret = bitmap_find_free_region(guc->submission_state.guc_ids_bitmap,
-					      GUC_ID_NUMBER_MLRC,
+	if (xe_engine_is_parallel(e)) {
+		void *bitmap = guc->submission_state.guc_ids_bitmap;
+
+		ret = bitmap_find_free_region(bitmap, GUC_ID_NUMBER_MLRC,
 					      order_base_2(e->width));
-	else
+	} else {
 		ret = ida_simple_get(&guc->submission_state.guc_ids, 0,
 				     GUC_ID_NUMBER_SLRC, GFP_NOWAIT);
+	}
 	if (ret < 0)
 		return ret;
 
@@ -347,15 +349,15 @@ static void init_policies(struct xe_guc *guc, struct xe_engine *e)
 {
         struct engine_policy policy;
 	enum drm_sched_priority prio = e->entity->priority;
+	u32 timeslice_us = e->sched_props.timeslice_us;
+	u32 preempt_timeout_us = e->sched_props.preempt_timeout_us;
 
 	XE_BUG_ON(!engine_registered(e));
 
         __guc_engine_policy_start_klv(&policy, e->guc->id);
         __guc_engine_policy_add_priority(&policy, drm_sched_prio_to_guc[prio]);
-        __guc_engine_policy_add_execution_quantum(&policy,
-						  e->sched_props.timeslice_us);
-        __guc_engine_policy_add_preemption_timeout(&policy,
-						   e->sched_props.preempt_timeout_us);
+        __guc_engine_policy_add_execution_quantum(&policy, timeslice_us);
+        __guc_engine_policy_add_preemption_timeout(&policy, preempt_timeout_us);
 
 	xe_guc_ct_send(&guc->ct, (u32 *)&policy.h2g,
 		       __guc_engine_policy_action_size(&policy), 0, 0);
@@ -681,6 +683,11 @@ static void guc_engine_free_job(struct drm_sched_job *drm_job)
 	xe_engine_put(e);
 }
 
+static int guc_read_stopped(struct xe_guc *guc)
+{
+	return atomic_read(&guc->submission_state.stopped);
+}
+
 #define MAKE_SCHED_CONTEXT_ACTION(e, enable_disable)			\
 	u32 action[] = {						\
 		XE_GUC_ACTION_SCHED_CONTEXT_MODE_SET,			\
@@ -698,8 +705,7 @@ static void disable_scheduling_deregister(struct xe_guc *guc,
 	set_min_preemption_timeout(guc, e);
 	smp_rmb();
 	ret = wait_event_timeout(guc->ct.wq, !engine_pending_enable(e) ||
-				 atomic_read(&guc->submission_state.stopped),
-				 HZ * 5);
+				 guc_read_stopped(guc), HZ * 5);
 	if (!ret) {
 		struct drm_gpu_scheduler *sched = &e->guc->sched;
 
@@ -787,8 +793,7 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 		smp_rmb();
 		ret = wait_event_timeout(guc->ct.wq,
 					 !engine_pending_disable(e) ||
-					 atomic_read(&guc->submission_state.stopped),
-					 HZ * 5);
+					 guc_read_stopped(guc), HZ * 5);
 		if (!ret) {
 			XE_WARN_ON("Schedule disable failed to respond");
 			sched->timeout = MIN_SCHED_TIMEOUT;
@@ -908,7 +913,7 @@ static void suspend_fence_signal(struct xe_engine *e)
 	struct xe_guc *guc = engine_to_guc(e);
 
 	XE_BUG_ON(!engine_suspended(e) && !engine_killed(e) &&
-		  !atomic_read(&guc->submission_state.stopped));
+		  !guc_read_stopped(guc));
 	XE_BUG_ON(!suspend_fence);
 
 	e->guc->suspend_fence = NULL;
@@ -925,12 +930,13 @@ static void __guc_engine_process_msg_suspend(struct drm_sched_msg *msg)
 	if (guc_engine_allowed_to_change_state(e) && !engine_suspended(e) &&
 	    engine_enabled(e)) {
 		wait_event(guc->ct.wq, e->guc->resume_time != RESUME_PENDING ||
-			   atomic_read(&guc->submission_state.stopped));
+			   guc_read_stopped(guc));
 
-		if (!atomic_read(&guc->submission_state.stopped)) {
+		if (!guc_read_stopped(guc)) {
 			MAKE_SCHED_CONTEXT_ACTION(e, DISABLE);
-			s64 since_resume_ms = ktime_ms_delta(ktime_get(),
-							     e->guc->resume_time);
+			s64 since_resume_ms =
+				ktime_ms_delta(ktime_get(),
+					       e->guc->resume_time);
 			s64 wait_ms = e->vm->preempt.min_run_period_ms -
 				since_resume_ms;
 
@@ -960,7 +966,7 @@ static void __guc_engine_process_msg_resume(struct drm_sched_msg *msg)
 	XE_BUG_ON(!engine_suspended(e));
 
 	wait_event(vm->preempt.resume_wq, vm->preempt.resume_go ||
-		   atomic_read(&guc->submission_state.stopped));
+		   guc_read_stopped(guc));
 
 	if (vm->preempt.resume_go < 0)
 		trace_xe_engine_supress_resume(e);
@@ -1053,7 +1059,7 @@ static int guc_engine_init(struct xe_engine *e)
 
 	e->entity = &ge->entity;
 
-	if (atomic_read(&guc->submission_state.stopped))
+	if (guc_read_stopped(guc))
 		drm_sched_stop(sched, NULL);
 
 	mutex_unlock(&guc->submission_state.lock);
@@ -1325,7 +1331,7 @@ int xe_guc_submit_reset_prepare(struct xe_guc *guc)
 
 void xe_guc_submit_reset_wait(struct xe_guc *guc)
 {
-	wait_event(guc->ct.wq, !atomic_read(&guc->submission_state.stopped));
+	wait_event(guc->ct.wq, !guc_read_stopped(guc));
 }
 
 int xe_guc_submit_stop(struct xe_guc *guc)
@@ -1334,7 +1340,7 @@ int xe_guc_submit_stop(struct xe_guc *guc)
 	unsigned long index;
 	bool cookie = dma_fence_begin_signalling();
 
-	XE_BUG_ON(atomic_read(&guc->submission_state.stopped) != 1);
+	XE_BUG_ON(guc_read_stopped(guc) != 1);
 
 	mutex_lock(&guc->submission_state.lock);
 
@@ -1374,7 +1380,7 @@ int xe_guc_submit_start(struct xe_guc *guc)
 	struct xe_engine *e;
 	unsigned long index;
 
-	XE_BUG_ON(atomic_read(&guc->submission_state.stopped) != 1);
+	XE_BUG_ON(guc_read_stopped(guc) != 1);
 
 	mutex_lock(&guc->submission_state.lock);
 	atomic_dec(&guc->submission_state.stopped);

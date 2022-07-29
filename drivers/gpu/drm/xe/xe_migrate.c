@@ -110,7 +110,8 @@ static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 		return PTR_ERR(bo);
 
 	/* Write top-level entry first */
-	err = ttm_bo_kmap(&vm->pt_root->bo->ttm, 0, vm->pt_root->bo->size / PAGE_SIZE, &map);
+	err = ttm_bo_kmap(&vm->pt_root->bo->ttm, 0,
+			  vm->pt_root->bo->size / PAGE_SIZE, &map);
 	if (err) {
 		xe_bo_unpin(bo);
 		xe_bo_put(bo);
@@ -135,7 +136,8 @@ static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 
 	/* Map the entire BO in our level 0 pt */
 	for (i = 0, level = 0; i < num_entries; level++) {
-		entry = gen8_pte_encode(NULL, bo, i * GEN8_PAGE_SIZE, XE_CACHE_WB, 0, 0);
+		entry = gen8_pte_encode(NULL, bo, i * GEN8_PAGE_SIZE,
+					XE_CACHE_WB, 0, 0);
 
 		iosys_map_wr(&bo->vmap, map_ofs + level * 8, u64, entry);
 
@@ -148,15 +150,20 @@ static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 	if (!IS_DGFX(xe)) {
 		/* Write out batch too */
 		m->batch_base_ofs = NUM_PT_SLOTS * GEN8_PAGE_SIZE;
-		for (i = 0; i < batch->size; i += vm->flags & XE_VM_FLAGS_64K ? SZ_64K : SZ_4K) {
-			entry = gen8_pte_encode(NULL, batch, i, XE_CACHE_WB, 0, 0);
+		for (i = 0; i < batch->size;
+		     i += vm->flags & XE_VM_FLAGS_64K ? SZ_64K : SZ_4K) {
+			entry = gen8_pte_encode(NULL, batch, i,
+						XE_CACHE_WB, 0, 0);
 
-			iosys_map_wr(&bo->vmap, map_ofs + level * 8, u64, entry);
+			iosys_map_wr(&bo->vmap, map_ofs + level * 8, u64,
+				     entry);
 			level++;
 		}
 	} else {
 		bool is_lmem;
-		m->batch_base_ofs = xe_migrate_vram_ofs(xe_bo_addr(batch, 0, GEN8_PAGE_SIZE, &is_lmem));
+		m->batch_base_ofs =
+			xe_migrate_vram_ofs(xe_bo_addr(batch, 0, GEN8_PAGE_SIZE,
+						       &is_lmem));
 	}
 
 	for (level = 1; level < num_level; level++) {
@@ -164,12 +171,15 @@ static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 		if (vm->flags & XE_VM_FLAGS_64K && level == 1)
 			flags = GEN12_PDE_64K;
 
-		entry = gen8_pde_encode(bo, map_ofs + (level - 1) * GEN8_PAGE_SIZE, XE_CACHE_WB);
-		iosys_map_wr(&bo->vmap, map_ofs + GEN8_PAGE_SIZE * level, u64, entry | flags);
+		entry = gen8_pde_encode(bo, map_ofs + (level - 1) *
+					GEN8_PAGE_SIZE, XE_CACHE_WB);
+		iosys_map_wr(&bo->vmap, map_ofs + GEN8_PAGE_SIZE * level, u64,
+			     entry | flags);
 
 		/* Write PDE's that point to our BO. */
 		for (i = 0; i < num_entries - num_level; i++) {
-			entry = gen8_pde_encode(bo, i * GEN8_PAGE_SIZE, XE_CACHE_WB);
+			entry = gen8_pde_encode(bo, i * GEN8_PAGE_SIZE,
+						XE_CACHE_WB);
 
 			/*
 			 * HACK: Is it allowed to make level 0 pagetables
@@ -179,7 +189,9 @@ static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 			if (i == NUM_KERNEL_PDE - 1)
 				flags = 0;
 
-			iosys_map_wr(&bo->vmap, map_ofs + GEN8_PAGE_SIZE * level + (i + 1) * 8, u64, entry | flags);
+			iosys_map_wr(&bo->vmap,
+				     map_ofs + GEN8_PAGE_SIZE *
+				     level + (i + 1) * 8, u64, entry | flags);
 		}
 	}
 
@@ -222,7 +234,8 @@ static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 	 * everywhere, this allows lockless updates to scratch pages by using
 	 * the different addresses in VM.
 	 */
-	drm_suballoc_manager_init(&m->vm_update_sa, map_ofs / GEN8_PAGE_SIZE - NUM_KERNEL_PDE, 0);
+	drm_suballoc_manager_init(&m->vm_update_sa,
+				  map_ofs / GEN8_PAGE_SIZE - NUM_KERNEL_PDE, 0);
 
 	m->pt_bo = bo;
 	return 0;
@@ -386,7 +399,8 @@ static void emit_pte(struct xe_migrate *m,
 				addr = cur->start | GEN12_PPGTT_PTE_LM;
 			} else {
 				unsigned long page = cur->start >> PAGE_SHIFT;
-				unsigned long offset = cur->start & (PAGE_SIZE - 1);
+				unsigned long offset = cur->start &
+					(PAGE_SIZE - 1);
 
 				addr = ttm->dma_address[page] + offset;
 			}
@@ -431,6 +445,12 @@ static void partition(u64 *lmem_L1, u64 *lmem_L0, u64 *sysmem,
 	*lmem_pts = 1;
 	*sysmem_pts = min_t(u32, *lmem_L1 / SZ_2M, NUM_KERNEL_PDE - 2);
 	*sysmem = *lmem_L1 = *sysmem_pts * SZ_2M;
+}
+
+static int job_add_deps(struct xe_sched_job *job, struct dma_resv *resv,
+			enum dma_resv_usage usage)
+{
+	return drm_sched_job_add_dependencies_resv(&job->drm, resv, usage);
 }
 
 struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
@@ -555,9 +575,8 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 		}
 
 		if (!fence) {
-			err = drm_sched_job_add_dependencies_resv(&job->drm,
-								  bo->ttm.base.resv,
-								  DMA_RESV_USAGE_PREEMPT_FENCE);
+			err = job_add_deps(job, bo->ttm.base.resv,
+					   DMA_RESV_USAGE_PREEMPT_FENCE);
 			if (err)
 				goto err_job;
 		}
@@ -589,7 +608,8 @@ err:
 	return fence;
 }
 
-static int emit_clear(struct xe_bb *bb, u64 src_ofs, u32 size, u32 pitch, u32 value)
+static int emit_clear(struct xe_bb *bb, u64 src_ofs, u32 size, u32 pitch,
+		      u32 value)
 {
 	BUG_ON(size / pitch > S16_MAX);
 	BUG_ON(pitch / 4 > S16_MAX);
@@ -634,7 +654,8 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 
 		/* Obtain max we can clear through L0 and L1 */
 		xe_migrate_res_sizes(src, &src_it, &clear_L0, &clear_L1);
-		drm_dbg(&xe->drm, "Pass %u, sizes: %llu / %llu\n", pass++, clear_L1, clear_L0);
+		drm_dbg(&xe->drm, "Pass %u, sizes: %llu / %llu\n", pass++,
+			clear_L1, clear_L0);
 
 		/* And calculate final sizes and batch size.. */
 		batch_size +=
@@ -688,7 +709,9 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		}
 
 		if (!fence) {
-			err = drm_sched_job_add_implicit_dependencies(&job->drm, &bo->ttm.base, true);
+			err = drm_sched_job_add_implicit_dependencies(&job->drm,
+								      &bo->ttm.base,
+								      true);
 			if (err)
 				goto err_job;
 		}
@@ -739,7 +762,9 @@ static void write_pgtable(struct xe_bb *bb, u64 ppgtt_ofs,
 	if (!ppgtt_ofs) {
 		bool is_lmem;
 
-		ppgtt_ofs = xe_migrate_vram_ofs(xe_bo_addr(update->pt_bo, 0, GEN8_PAGE_SIZE, &is_lmem));
+		ppgtt_ofs = xe_migrate_vram_ofs(xe_bo_addr(update->pt_bo, 0,
+							   GEN8_PAGE_SIZE,
+							   &is_lmem));
 		XE_BUG_ON(!is_lmem);
 	}
 
@@ -751,7 +776,8 @@ static void write_pgtable(struct xe_bb *bb, u64 ppgtt_ofs,
 		if (!(bb->len & 1))
 			bb->cs[bb->len++] = MI_NOOP;
 
-		bb->cs[bb->len++] = MI_STORE_DATA_IMM | BIT(21) | (chunk * 2 + 1);
+		bb->cs[bb->len++] = MI_STORE_DATA_IMM | BIT(21) |
+			(chunk * 2 + 1);
 		bb->cs[bb->len++] = lower_32_bits(addr);
 		bb->cs[bb->len++] = upper_32_bits(addr);
 		populatefn(bb->cs + bb->len, ofs, chunk, update, arg);
@@ -828,7 +854,8 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 		emit_arb_clear(bb);
 
 		/* Map our PT's to gtt */
-		bb->cs[bb->len++] = MI_STORE_DATA_IMM | BIT(21) | (num_updates * 2 + 1);
+		bb->cs[bb->len++] = MI_STORE_DATA_IMM | BIT(21) |
+			(num_updates * 2 + 1);
 		bb->cs[bb->len++] = ppgtt_ofs * GEN8_PAGE_SIZE;
 		bb->cs[bb->len++] = 0; /* upper_32_bits */
 
@@ -847,7 +874,8 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 
 		addr = xe_migrate_vm_addr(ppgtt_ofs, 0);
 		for (i = 0; i < num_updates; i++)
-			write_pgtable(bb, addr + i * GEN8_PAGE_SIZE, &updates[i], populatefn, arg);
+			write_pgtable(bb, addr + i * GEN8_PAGE_SIZE,
+				      &updates[i], populatefn, arg);
 	} else {
 		/* phys pages, no preamble required */
 		bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
@@ -861,7 +889,8 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	if (!eng)
 		mutex_lock(&m->job_mutex);
 
-	job = xe_bb_create_migration_job(eng ?: m->eng, bb, m->batch_base_ofs, update_idx);
+	job = xe_bb_create_migration_job(eng ?: m->eng, bb, m->batch_base_ofs,
+					 update_idx);
 	if (IS_ERR(job)) {
 		err = PTR_ERR(job);
 		goto err_bb;
@@ -869,9 +898,8 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 
 	/* Wait on BO move */
 	if (bo) {
-		err = drm_sched_job_add_dependencies_resv(&job->drm,
-							  bo->ttm.base.resv,
-							  DMA_RESV_USAGE_KERNEL);
+		err = job_add_deps(job, bo->ttm.base.resv,
+				   DMA_RESV_USAGE_KERNEL);
 		if (err)
 			goto err_job;
 	}
@@ -882,8 +910,8 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	 */
 	if ((!IS_ENABLED(CONFIG_DRM_XE_DEBUG) || vma) &&
 	    vma->first_munmap_rebind) {
-		err = drm_sched_job_add_dependencies_resv(&job->drm, &vm->resv,
-							  DMA_RESV_USAGE_PREEMPT_FENCE);
+		err = job_add_deps(job, &vm->resv,
+				   DMA_RESV_USAGE_PREEMPT_FENCE);
 		if (err)
 			goto err_job;
 	}
@@ -926,12 +954,14 @@ void xe_migrate_wait(struct xe_migrate *m)
 		dma_fence_wait(m->fence, false);
 }
 
-static bool sanity_fence_failed(struct xe_device *xe, struct dma_fence *fence, const char *str)
+static bool sanity_fence_failed(struct xe_device *xe, struct dma_fence *fence,
+				const char *str)
 {
 	long ret;
 
 	if (IS_ERR(fence)) {
-		drm_err(&xe->drm, "Failed to create fence for %s: %li\n", str, PTR_ERR(fence));
+		drm_err(&xe->drm, "Failed to create fence for %s: %li\n", str,
+			PTR_ERR(fence));
 		return true;
 	}
 	if (!fence)
@@ -946,13 +976,17 @@ static bool sanity_fence_failed(struct xe_device *xe, struct dma_fence *fence, c
 	return false;
 }
 
-static int run_sanity_job(struct xe_migrate *m, struct xe_device *xe, struct xe_bb *bb, u32 second_idx, const char *str)
+static int run_sanity_job(struct xe_migrate *m, struct xe_device *xe,
+			  struct xe_bb *bb, u32 second_idx, const char *str)
 {
-	struct xe_sched_job *job = xe_bb_create_migration_job(m->eng, bb, m->batch_base_ofs, second_idx);
+	struct xe_sched_job *job = xe_bb_create_migration_job(m->eng, bb,
+							      m->batch_base_ofs,
+							      second_idx);
 	struct dma_fence *fence;
 
 	if (IS_ERR(job)) {
-		drm_err(&xe->drm, "Failed to allocate fake pt: %li\n", PTR_ERR(job));
+		drm_err(&xe->drm, "Failed to allocate fake pt: %li\n",
+			PTR_ERR(job));
 		return PTR_ERR(job);
 	}
 
@@ -1002,7 +1036,8 @@ static void test_copy(struct xe_migrate *m, struct xe_bo *bo)
 						    XE_BO_CREATE_PINNED_BIT |
 						    XE_BO_INTERNAL_TEST);
 	if (IS_ERR(sysmem)) {
-		drm_err(&xe->drm, "Failed to allocate sysmem bo for %s: %li\n", str, PTR_ERR(sysmem));
+		drm_err(&xe->drm, "Failed to allocate sysmem bo for %s: %li\n",
+			str, PTR_ERR(sysmem));
 		return;
 	}
 
@@ -1025,8 +1060,10 @@ static void test_copy(struct xe_migrate *m, struct xe_bo *bo)
 	iosys_map_memset(&sysmem->vmap, 0, 0xc0, sysmem->size);
 	iosys_map_memset(&bo->vmap, 0, 0xd0, bo->size);
 
-	fence = xe_migrate_copy(m, sysmem, sysmem->ttm.resource, bo->ttm.resource);
-	if (!sanity_fence_failed(xe, fence, big ? "Copying big bo sysmem -> vram" : "Copying small bo sysmem -> vram")) {
+	fence = xe_migrate_copy(m, sysmem, sysmem->ttm.resource,
+				bo->ttm.resource);
+	if (!sanity_fence_failed(xe, fence, big ? "Copying big bo sysmem -> vram" :
+				 "Copying small bo sysmem -> vram")) {
 		retval = iosys_map_rd(&bo->vmap, 0, u64);
 		check(retval, expected, "sysmem -> vram bo first offset should be copied");
 		retval = iosys_map_rd(&bo->vmap, bo->size - 8, u64);
@@ -1038,8 +1075,10 @@ static void test_copy(struct xe_migrate *m, struct xe_bo *bo)
 	iosys_map_memset(&sysmem->vmap, 0, 0xd0, sysmem->size);
 	iosys_map_memset(&bo->vmap, 0, 0xc0, bo->size);
 
-	fence = xe_migrate_copy(m, sysmem, bo->ttm.resource, sysmem->ttm.resource);
-	if (!sanity_fence_failed(xe, fence, big ? "Copying big bo vram -> sysmem" : "Copying small bo vram -> sysmem")) {
+	fence = xe_migrate_copy(m, sysmem, bo->ttm.resource,
+				sysmem->ttm.resource);
+	if (!sanity_fence_failed(xe, fence, big ? "Copying big bo vram -> sysmem" :
+				 "Copying small bo vram -> sysmem")) {
 		retval = iosys_map_rd(&sysmem->vmap, 0, u64);
 		check(retval, expected, "vram -> sysmem bo first offset should be copied");
 		retval = iosys_map_rd(&sysmem->vmap, bo->size - 8, u64);
@@ -1087,7 +1126,8 @@ static void test_addressing_2mb(struct xe_migrate *m)
 	/* write our pagetables, one at a time.. */
 	xe_res_first(bo->ttm.resource, 0, bo->size, &src_it);
 	for (i = 0; i < NUM_KERNEL_PDE - 1; i++)
-		emit_pte(m, bb, i, SZ_2M, bo->ttm.resource, &src_it, SZ_2M, bo->ttm.ttm);
+		emit_pte(m, bb, i, SZ_2M, bo->ttm.resource, &src_it, SZ_2M,
+			 bo->ttm.ttm);
 
 	bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
 	update_idx = bb->len;
@@ -1105,7 +1145,8 @@ static void test_addressing_2mb(struct xe_migrate *m)
 		expected |= expected << 32ULL;
 
 		for (j = 0; j < ARRAY_SIZE(addrs); j += 8) {
-			retval = iosys_map_rd(&bo->vmap, i * SZ_2M + addrs[j], u64);
+			retval = iosys_map_rd(&bo->vmap, i * SZ_2M + addrs[j],
+					      u64);
 			if (retval != expected) {
 				drm_err(&xe->drm, "Sanity check failed at 2 mb page %u offset %u expected %llx, got %llx\n",
 					i, addrs[j], expected, retval);
@@ -1169,13 +1210,15 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 
 	err = xe_bo_vmap(bo);
 	if (err) {
-		drm_err(&xe->drm, "Failed to vmap our pagetables: %li\n", PTR_ERR(bo));
+		drm_err(&xe->drm, "Failed to vmap our pagetables: %li\n",
+			PTR_ERR(bo));
 		return;
 	}
 
-	big = xe_bo_create_pin_map(xe, m->gt, m->eng->vm, SZ_4M, ttm_bo_type_kernel,
-				      XE_BO_CREATE_VRAM_IF_DGFX(m->gt) |
-				      XE_BO_CREATE_PINNED_BIT);
+	big = xe_bo_create_pin_map(xe, m->gt, m->eng->vm, SZ_4M,
+				   ttm_bo_type_kernel,
+				   XE_BO_CREATE_VRAM_IF_DGFX(m->gt) |
+				   XE_BO_CREATE_PINNED_BIT);
 	if (IS_ERR(big)) {
 		drm_err(&xe->drm, "Failed to allocate bo: %li\n", PTR_ERR(big));
 		goto vunmap;
@@ -1184,23 +1227,28 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 	if (err)
 		goto free_big;
 
-	pt = xe_bo_create_pin_map(xe, m->gt, m->eng->vm, GEN8_PAGE_SIZE, ttm_bo_type_kernel,
+	pt = xe_bo_create_pin_map(xe, m->gt, m->eng->vm, GEN8_PAGE_SIZE,
+				  ttm_bo_type_kernel,
 				  XE_BO_CREATE_VRAM_IF_DGFX(m->gt) |
 				  XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT |
 				  XE_BO_CREATE_PINNED_BIT);
 	if (IS_ERR(pt)) {
-		drm_err(&xe->drm, "Failed to allocate fake pt: %li\n", PTR_ERR(pt));
+		drm_err(&xe->drm, "Failed to allocate fake pt: %li\n",
+			PTR_ERR(pt));
 		goto free_big;
 	}
 	err = xe_bo_populate(pt);
 	if (err)
 		goto free_pt;
 
-	tiny = xe_bo_create_pin_map(xe, m->gt, m->eng->vm, 2 * xe_migrate_pagesize(m), ttm_bo_type_kernel,
-				  XE_BO_CREATE_VRAM_IF_DGFX(m->gt) |
-				  XE_BO_CREATE_PINNED_BIT);
+	tiny = xe_bo_create_pin_map(xe, m->gt, m->eng->vm,
+				    2 * xe_migrate_pagesize(m),
+				    ttm_bo_type_kernel,
+				    XE_BO_CREATE_VRAM_IF_DGFX(m->gt) |
+				    XE_BO_CREATE_PINNED_BIT);
 	if (IS_ERR(tiny)) {
-		drm_err(&xe->drm, "Failed to allocate fake pt: %li\n", PTR_ERR(pt));
+		drm_err(&xe->drm, "Failed to allocate fake pt: %li\n",
+			PTR_ERR(pt));
 		goto free_pt;
 	}
 	err = xe_bo_populate(tiny);
@@ -1209,7 +1257,8 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 
 	bb = xe_bb_new(m->gt, 32);
 	if (IS_ERR(bb)) {
-		drm_err(&xe->drm, "Failed to create batchbuffer: %li\n", PTR_ERR(bb));
+		drm_err(&xe->drm, "Failed to create batchbuffer: %li\n",
+			PTR_ERR(bb));
 		goto free_tiny;
 	}
 
@@ -1222,7 +1271,8 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 	expected = gen8_pte_encode(NULL, pt, 0, XE_CACHE_WB, 0, 0);
 
 	xe_res_first(pt->ttm.resource, 0, pt->size, &src_it);
-	emit_pte(m, bb, NUM_KERNEL_PDE - 1, GEN8_PAGE_SIZE, pt->ttm.resource, &src_it, GEN8_PAGE_SIZE, pt->ttm.ttm);
+	emit_pte(m, bb, NUM_KERNEL_PDE - 1, GEN8_PAGE_SIZE, pt->ttm.resource,
+		 &src_it, GEN8_PAGE_SIZE, pt->ttm.ttm);
 	run_sanity_job(m, xe, bb, bb->len, "Writing PTE for our fake PT");
 
 	retval = iosys_map_rd(&bo->vmap, GEN8_PAGE_SIZE * (NUM_KERNEL_PDE - 1), u64);
@@ -1234,7 +1284,8 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 	iosys_map_wr(&pt->vmap, 0, u32, 0xdeaddead);
 	expected = 0x12345678U;
 
-	emit_clear(bb, xe_migrate_vm_addr(NUM_KERNEL_PDE - 1, 0), 4, 4, expected);
+	emit_clear(bb, xe_migrate_vm_addr(NUM_KERNEL_PDE - 1, 0), 4, 4,
+		   expected);
 	run_sanity_job(m, xe, bb, 1, "Writing to our newly mapped pagetable");
 
 	retval = iosys_map_rd(&pt->vmap, 0, u32);

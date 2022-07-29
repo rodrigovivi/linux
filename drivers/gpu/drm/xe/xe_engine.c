@@ -406,13 +406,12 @@ static u32 calc_validate_logical_mask(struct xe_device *xe, struct xe_gt *gt,
 			if (XE_IOCTL_ERR(xe, !find_hw_engine(xe, eci[n])))
 				return 0;
 
-			if (n && (XE_IOCTL_ERR(xe, eci[n].engine_class != class) ||
-			    XE_IOCTL_ERR(xe, eci[n].gt_id != gt_id))) {
+			if (XE_IOCTL_ERR(xe, n && eci[n].gt_id != gt_id) ||
+			    XE_IOCTL_ERR(xe, n && eci[n].engine_class != class))
 				return 0;
-			} else {
-				class = eci[n].engine_class;
-				gt_id = eci[n].gt_id;
-			}
+
+			class = eci[n].engine_class;
+			gt_id = eci[n].gt_id;
 
 			if (width == 1 || !j)
 				return_mask |= BIT(eci[n].engine_instance);
@@ -503,7 +502,8 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 			goto put_engine;
 	}
 
-	if (XE_IOCTL_ERR(xe, e->vm && !!(e->vm->flags & XE_VM_FLAG_COMPUTE_MODE) !=
+	if (XE_IOCTL_ERR(xe, e->vm &&
+			 !!(e->vm->flags & XE_VM_FLAG_COMPUTE_MODE) !=
 			 !!(e->flags & ENGINE_FLAG_COMPUTE_MODE))) {
 		err = -ENOTSUPP;
 		goto put_engine;
