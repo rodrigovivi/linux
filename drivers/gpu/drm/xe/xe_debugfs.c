@@ -5,6 +5,7 @@
 
 #include <drm/drm_debugfs.h>
 
+#include "xe_bo.h"
 #include "xe_device.h"
 #include "xe_debugfs.h"
 #include "xe_gt_debugfs.h"
@@ -42,13 +43,31 @@ static const struct drm_info_list debugfs_list[] = {
 
 void xe_debugfs_register(struct xe_device *xe)
 {
+	struct ttm_device *bdev = &xe->ttm;
 	struct drm_minor *minor = xe->drm.primary;
+	struct dentry *root = minor->debugfs_root;
+	struct ttm_resource_manager *man;
 	struct xe_gt *gt;
+	u32 mem_type;
 	u8 id;
 
 	drm_debugfs_create_files(debugfs_list,
 				 ARRAY_SIZE(debugfs_list),
-				 minor->debugfs_root, minor);
+				 root, minor);
+
+	for (mem_type = XE_PL_VRAM0; mem_type <= XE_PL_VRAM1; ++mem_type) {
+		man = ttm_manager_type(bdev, mem_type);
+
+		if (man) {
+			char name[16];
+
+			sprintf(name, "vram%d_mm", mem_type - XE_PL_VRAM0);
+			ttm_resource_manager_create_debugfs(man, root, name);
+		}
+	}
+
+	man = ttm_manager_type(bdev, XE_PL_TT);
+	ttm_resource_manager_create_debugfs(man, root, "gtt_mm");
 
 	for_each_gt(gt, xe, id)
 		xe_gt_debugfs_register(gt);
