@@ -1001,7 +1001,7 @@ static void guc_ct_ctb_print(struct xe_device *xe, struct guc_ctb *ctb,
 
 		while (head != tail) {
 			drm_printf(p, "\tcmd[%d]: 0x%08x\n", head,
-				   xe_map_read32(xe, &map));
+				   xe_map_rd(xe, &map, 0, u32));
 			++head;
 			if (head == ctb->size) {
 				head = 0;

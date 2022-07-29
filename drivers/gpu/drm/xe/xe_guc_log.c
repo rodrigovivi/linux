@@ -50,30 +50,29 @@ static size_t guc_log_size(void)
 void xe_guc_log_print(struct xe_guc_log *log, struct drm_printer *p)
 {
 	struct xe_device *xe = log_to_xe(log);
-	struct iosys_map map;
 	size_t size;
 	int i, j;
 
 	XE_BUG_ON(!log->bo);
 
-	map = log->bo->vmap;
 	size = log->bo->size;
 
+#define DW_PER_READ		128
+	XE_BUG_ON(size % (DW_PER_READ * sizeof(u32)));
+	for (i = 0; i < size / sizeof(u32); i += DW_PER_READ) {
+		u32 read[DW_PER_READ];
+
+		xe_map_memcpy_from(xe, read, &log->bo->vmap, i * sizeof(u32),
+				   DW_PER_READ * sizeof(u32));
 #define DW_PER_PRINT		4
-	XE_BUG_ON(size % (DW_PER_PRINT * sizeof(u32)));
-	for (i = 0; i < size / sizeof(u32); i += DW_PER_PRINT) {
-		u32 read[DW_PER_PRINT];
+		for (j = 0; j < DW_PER_READ / DW_PER_PRINT; ++j) {
+			u32 *print = read + j * DW_PER_PRINT;
 
-		for (j = 0; j < DW_PER_PRINT; ++j) {
-			read[j] = xe_map_read32(xe, &map);
-			iosys_map_incr(&map, sizeof(u32));
+			drm_printf(p, "0x%08x 0x%08x 0x%08x 0x%08x\n",
+				   *(print + 0), *(print + 1),
+				   *(print + 2), *(print + 3));
 		}
-
-		drm_printf(p, "0x%08x 0x%08x 0x%08x 0x%08x\n",
-			   *(read + 0), *(read + 1),
-			   *(read + 2), *(read + 3));
 	}
-#undef DW_PER_PRINT
 }
 
 static void guc_log_fini(struct drm_device *drm, void *arg)
