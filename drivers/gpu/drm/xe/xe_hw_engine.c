@@ -278,7 +278,7 @@ static const struct engine_info engine_infos[] = {
 };
 
 static u32 engine_info_mmio_base(const struct engine_info *info,
-				      unsigned int graphics_ver)
+				 unsigned int graphics_ver)
 {
 	int i;
 
@@ -323,8 +323,8 @@ static u32 hw_engine_mmio_read32(struct xe_hw_engine *hwe, u32 reg)
 
 void xe_hw_engine_enable_ring(struct xe_hw_engine *hwe)
 {
-	u32 ccs_mask = xe_hw_engine_mask_per_class(hwe->gt,
-							XE_ENGINE_CLASS_COMPUTE);
+	u32 ccs_mask =
+		xe_hw_engine_mask_per_class(hwe->gt, XE_ENGINE_CLASS_COMPUTE);
 
 	if (hwe->class == XE_ENGINE_CLASS_COMPUTE && ccs_mask & BIT(0))
 		xe_mmio_write32(hwe->gt, GEN12_RCU_MODE.reg,
@@ -591,13 +591,15 @@ void xe_hw_engine_print_state(struct xe_hw_engine *hwe, struct drm_printer *p)
 
 }
 
-u32 xe_hw_engine_mask_per_class(struct xe_gt *gt, enum xe_engine_class engine_class)
+u32 xe_hw_engine_mask_per_class(struct xe_gt *gt,
+				enum xe_engine_class engine_class)
 {
 	u32 mask = 0;
 	enum xe_hw_engine_id id;
 
 	for (id = 0; id < XE_NUM_HW_ENGINES; ++id) {
-		if (engine_infos[id].class == engine_class && gt->info.engine_mask & BIT(id))
+		if (engine_infos[id].class == engine_class &&
+		    gt->info.engine_mask & BIT(id))
 			mask |= BIT(engine_infos[id].instance);
 	}
 	return mask;

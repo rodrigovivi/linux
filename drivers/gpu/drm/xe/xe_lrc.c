@@ -58,7 +58,8 @@ static void set_offsets(u32 *regs,
 			const struct xe_hw_engine *hwe,
 			bool close)
 #define NOP(x) (BIT(7) | (x))
-#define LRI(count, flags) ((flags) << 6 | (count) | BUILD_BUG_ON_ZERO(count >= BIT(6)))
+#define LRI(count, flags) ((flags) << 6 | (count) | \
+			   BUILD_BUG_ON_ZERO(count >= BIT(6)))
 #define POSTED BIT(0)
 #define REG(x) (((x) >> 2) | BUILD_BUG_ON_ZERO(x >= 0x200))
 #define REG16(x) \
@@ -1012,7 +1013,8 @@ static void xe_lrc_assert_ring_space(struct xe_lrc *lrc, size_t size)
 	u32 space = xe_lrc_ring_space(lrc);
 
 	BUG_ON(size > lrc->ring.size);
-	WARN(size > space, "Insufficient ring space: %lu > %u, head=%d, tail=%d",
+	WARN(size > space,
+	     "Insufficient ring space: %lu > %u, head=%d, tail=%d",
 	     size, space, xe_lrc_ring_head(lrc), lrc->ring.tail);
 #endif
 }

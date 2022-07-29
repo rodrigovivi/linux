@@ -158,7 +158,8 @@ static void gen11_irq_postinstall(struct xe_device *xe, struct xe_gt *gt)
 
 	/* TODO: Display */
 
-	GEN3_IRQ_INIT(gt, GEN11_GU_MISC_, ~GEN11_GU_MISC_GSE, GEN11_GU_MISC_GSE);
+	GEN3_IRQ_INIT(gt, GEN11_GU_MISC_, ~GEN11_GU_MISC_GSE,
+		      GEN11_GU_MISC_GSE);
 
 	gen11_intr_enable(gt, true);
 }

@@ -136,7 +136,8 @@ static u64 __xe_vm_empty_pte(struct xe_vm *vm, unsigned int level)
 		return 0;
 
 	if (level == 0)
-		return gen8_pte_encode(NULL, vm->scratch_bo, 0, XE_CACHE_WB, 0, level);
+		return gen8_pte_encode(NULL, vm->scratch_bo, 0, XE_CACHE_WB, 0,
+				       level);
 	else
 		return gen8_pde_encode(vm->scratch_pt[level - 1]->bo, 0,
 				       XE_CACHE_WB);
@@ -243,7 +244,8 @@ static u64 xe_pt_prev_end(u64 end, unsigned int level)
 	return ALIGN_DOWN(end - 1, pt_range);
 }
 
-static bool xe_pte_hugepage_possible(struct xe_vma *vma, u32 level, u64 start, u64 end)
+static bool xe_pte_hugepage_possible(struct xe_vma *vma, u32 level, u64 start,
+				     u64 end)
 {
 	u64 pagesize = 1ull << xe_pt_shift(level);
 	u64 bo_ofs = vma->bo_offset + (start - vma->start);
@@ -369,7 +371,8 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 						0, XE_CACHE_WB) | flags;
 		else
 			entry = gen8_pte_encode(vma, vma->bo, bo_offset,
-						XE_CACHE_WB, vma->pte_flags, pt->level);
+						XE_CACHE_WB, vma->pte_flags,
+						pt->level);
 
 		__xe_pt_write(&map, i, entry);
 	}
@@ -1168,11 +1171,12 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 	}
 
 	if (flags & XE_VM_FLAG_SCRATCH_PAGE) {
-		vm->scratch_bo = xe_bo_create(xe, to_gt(xe), vm, SZ_4K,
-					      ttm_bo_type_kernel,
-					      XE_BO_CREATE_VRAM_IF_DGFX(to_gt(xe)) |
-					      XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT |
-					      XE_BO_CREATE_PINNED_BIT);
+		vm->scratch_bo =
+			xe_bo_create(xe, to_gt(xe), vm, SZ_4K,
+				     ttm_bo_type_kernel,
+				     XE_BO_CREATE_VRAM_IF_DGFX(to_gt(xe)) |
+				     XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT |
+				     XE_BO_CREATE_PINNED_BIT);
 		if (IS_ERR(vm->scratch_bo)) {
 			err = PTR_ERR(vm->scratch_bo);
 			goto err_destroy_root;
@@ -1254,8 +1258,8 @@ static void flush_async_ops(struct xe_vm *vm)
 	flush_work(&vm->async_ops.work);
 }
 
-static void vm_async_op_error_capture(struct xe_vm *vm, int err,
-				      u32 op, u64 addr, u64 size)
+static void vm_error_capture(struct xe_vm *vm, int err,
+			     u32 op, u64 addr, u64 size)
 {
 	struct drm_xe_vm_bind_op_error_capture capture;
 	u64 __user *address =
@@ -1443,7 +1447,8 @@ xe_pt_commit_unbind(struct xe_vma *vma,
 			struct xe_pt_dir *pt_dir = as_xe_pt_dir(pt);
 			u32 i;
 
-			for (i = entry->ofs; i < entry->ofs + entry->qwords; i++) {
+			for (i = entry->ofs; i < entry->ofs + entry->qwords;
+			     i++) {
 				if (pt_dir->entries[i])
 					xe_pt_destroy(pt_dir->entries[i],
 						      vma->vm->flags);
@@ -1495,8 +1500,9 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 		}
 		vm_dbg(&vma->vm->xe->drm,
 		       "\t%u: De-Populating entry [%u..%u +%u) [%llx...%llx)\n",
-			pt->level, start_ofs, last_ofs, my_removed_pte, start, end);
-		BUG_ON(!my_removed_pte);
+			pt->level, start_ofs, last_ofs, my_removed_pte, start,
+			end);
+		XE_BUG_ON(!my_removed_pte);
 	} else {
 		struct xe_pt_dir *pt_dir = as_xe_pt_dir(pt);
 
@@ -1509,13 +1515,16 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 		u32 first_ofs = start_ofs;
 
 		if (pt_dir->entries[start_ofs])
-			partial_begin = xe_pt_partial_entry(start, start_end, pt->level);
+			partial_begin = xe_pt_partial_entry(start, start_end,
+							    pt->level);
 
 		if (pt_dir->entries[last_ofs] && last_ofs > start_ofs)
-			partial_end = xe_pt_partial_entry(end_start, end, pt->level);
+			partial_end = xe_pt_partial_entry(end_start, end,
+							  pt->level);
 		vm_dbg(&vma->vm->xe->drm,
 		       "\t%u: [%llx...%llx) partial begin/end: %u / %u, %u entries\n",
-		       pt->level, start, end, partial_begin, partial_end, my_rm_pte);
+		       pt->level, start, end, partial_begin, partial_end,
+		       my_rm_pte);
 		my_rm_pte -= partial_begin + partial_end;
 		if (partial_begin) {
 			u32 rem = 0;
@@ -1535,11 +1544,13 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 		}
 		for (i = 0; i < my_rm_pte; i++) {
 			u32 rem = 0;
-			u64 cur_end = min(xe_pt_next_start(cur, pt->level), end);
+			u64 cur_end = min(xe_pt_next_start(cur, pt->level),
+					  end);
 
 			vm_dbg(&vma->vm->xe->drm, "\t%llx...%llx / %llx",
 			       xe_pt_next_start(cur, pt->level), end, cur_end);
-			__xe_pt_prepare_unbind(vma, pt_dir->entries[start_ofs++],
+			__xe_pt_prepare_unbind(vma,
+					       pt_dir->entries[start_ofs++],
 					       &rem, cur, cur_end, num_entries,
 					       entries);
 			if (rem) {
@@ -1592,8 +1603,9 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 	entry->flags = 0;
 
 	vm_dbg(&vma->vm->xe->drm, "REMOVE %d L:%d o:%d q:%d t:0x%llx (%llx,%llx,%llx) f:0x%x\n",
-	       (*num_entries)-1, pt->level, entry->ofs, entry->qwords, entry->target_offset,
-	       vma->bo_offset, start, vma->start, entry->flags);
+	       (*num_entries)-1, pt->level, entry->ofs, entry->qwords,
+	       entry->target_offset, vma->bo_offset, start, vma->start,
+	       entry->flags);
 }
 
 static void
@@ -1692,7 +1704,8 @@ xe_vm_populate_pgtable(void *data, u32 qword_ofs, u32 num_qwords,
 
 	for (i = 0; i < num_qwords; i++, bo_offset += page_size) {
 		if (ptes && ptes[i])
-			ptr[i] = gen8_pde_encode(ptes[i]->bo, 0, XE_CACHE_WB) | update->flags;
+			ptr[i] = gen8_pde_encode(ptes[i]->bo, 0, XE_CACHE_WB) |
+				update->flags;
 		else
 			ptr[i] = gen8_pte_encode(update->target_vma,
 						 update->target_vma->bo,
@@ -1703,7 +1716,9 @@ xe_vm_populate_pgtable(void *data, u32 qword_ofs, u32 num_qwords,
 	}
 }
 
-static void xe_pt_abort_bind(struct xe_vma *vma, struct xe_vm_pgtable_update *entries, u32 num_entries)
+static void xe_pt_abort_bind(struct xe_vma *vma,
+			     struct xe_vm_pgtable_update *entries,
+			     u32 num_entries)
 {
 	u32 i, j;
 
@@ -1739,7 +1754,8 @@ static void xe_pt_commit_bind(struct xe_vma *vma,
 			struct xe_pt *newpte = entries[i].pt_entries[j];
 
 			if (pt_dir->entries[j_])
-				xe_pt_destroy(pt_dir->entries[j_], vma->vm->flags);
+				xe_pt_destroy(pt_dir->entries[j_],
+					      vma->vm->flags);
 
 			pt_dir->entries[j_] = newpte;
 		}
@@ -1775,7 +1791,8 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 			flags |= GEN12_PDE_64K;
 		}
 		vm_dbg(&xe->drm, "\t%u: Populating entry [%u..%u +%u) [%llx...%llx)\n",
-		       pt->level, start_ofs, last_ofs, my_added_pte, start, end);
+		       pt->level, start_ofs, last_ofs, my_added_pte, start,
+		       end);
 	} else {
 		struct xe_pt_dir *pt_dir = as_xe_pt_dir(pt);
 		u32 i;
@@ -1786,10 +1803,12 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 		bool partial_begin = false, partial_end = false;
 
 		if (pt_dir->entries[start_ofs])
-			partial_begin = xe_pt_partial_entry(start, start_end, pt->level);
+			partial_begin = xe_pt_partial_entry(start, start_end,
+							    pt->level);
 
 		if (pt_dir->entries[last_ofs] && last_ofs > start_ofs)
-			partial_end = xe_pt_partial_entry(end_start, end, pt->level);
+			partial_end = xe_pt_partial_entry(end_start, end,
+							  pt->level);
 
 		my_added_pte -= partial_begin + partial_end;
 
@@ -1828,9 +1847,11 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 
 			vm_dbg(&xe->drm, "\t%u: Populating %u/%u subentry %u level %u [%llx...%llx) f:%x\n",
 			       pt->level, i + 1, my_added_pte,
-			       start_ofs + i, pt->level - 1, cur, cur_end, flags);
+			       start_ofs + i, pt->level - 1, cur, cur_end,
+			       flags);
 
-			if (xe_pte_hugepage_possible(vma, pt->level, cur, cur_end)) {
+			if (xe_pte_hugepage_possible(vma, pt->level, cur,
+						     cur_end)) {
 				/* We will directly a PTE to object */
 				entry = NULL;
 			} else {
@@ -1896,8 +1917,9 @@ done:
 	entry->flags = flags;
 
 	vm_dbg(&xe->drm, "ADD %d L:%d o:%d q:%d t:0x%llx (%llx,%llx,%llx) f:0x%x\n",
-	       *num_entries-1, pt->level, entry->ofs, entry->qwords, entry->target_offset,
-	       vma->bo_offset, start, vma->start, entry->flags);
+	       *num_entries-1, pt->level, entry->ofs, entry->qwords,
+	       entry->target_offset, vma->bo_offset, start, vma->start,
+	       entry->flags);
 
 	return 0;
 }
@@ -2566,10 +2588,10 @@ again:
 				up_write(&vm->lock);
 
 				if (vm->async_ops.error_capture.addr)
-					vm_async_op_error_capture(vm, err,
-								  op->bind_op.op,
-								  op->bind_op.addr,
-								  op->bind_op.range);
+					vm_error_capture(vm, err,
+							 op->bind_op.op,
+							 op->bind_op.addr,
+							 op->bind_op.range);
 				break;
 			}
 			up_write(&vm->lock);

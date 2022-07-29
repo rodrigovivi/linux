@@ -249,7 +249,8 @@ int xe_uc_fw_init(struct xe_uc_fw *uc_fw)
 	uc_fw->rsa_size = css->key_size_dw * sizeof(u32);
 
 	/* At least, it should have header, uCode and RSA. Size of all three. */
-	size = sizeof(struct uc_css_header) + uc_fw->ucode_size + uc_fw->rsa_size;
+	size = sizeof(struct uc_css_header) + uc_fw->ucode_size +
+		uc_fw->rsa_size;
 	if (unlikely(fw->size < size)) {
 		drm_warn(&xe->drm, "%s firmware %s: invalid size: %zu < %zu\n",
 			 xe_uc_fw_type_repr(uc_fw->type), uc_fw->path,
