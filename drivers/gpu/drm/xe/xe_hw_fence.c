@@ -177,7 +177,7 @@ static bool xe_hw_fence_signaled(struct dma_fence *dma_fence)
 {
 	struct xe_hw_fence *fence = to_xe_hw_fence(dma_fence);
 	struct xe_device *xe = gt_to_xe(fence->ctx->gt);
-	u32 seqno = xe_map_read32(xe, &fence->seqno_map);
+	u32 seqno = xe_map_rd(xe, &fence->seqno_map, 0, u32);
 
 	return dma_fence->error ||
 		(s32)fence->dma.seqno <= (s32)seqno;
