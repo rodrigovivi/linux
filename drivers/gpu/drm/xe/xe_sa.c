@@ -39,7 +39,8 @@ int xe_sa_bo_manager_init(struct xe_gt *gt,
 				  XE_BO_CREATE_VRAM_IF_DGFX(gt) |
 				  XE_BO_CREATE_GGTT_BIT);
 	if (IS_ERR(bo)) {
-		drm_err(&xe->drm, "failed to allocate bo for sa manager: %ld\n", PTR_ERR(bo));
+		drm_err(&xe->drm, "failed to allocate bo for sa manager: %ld\n",
+			PTR_ERR(bo));
 		return PTR_ERR(bo);
 	}
 	sa_manager->bo = bo;
@@ -60,8 +61,8 @@ int xe_sa_bo_manager_init(struct xe_gt *gt,
 		memset(sa_manager->cpu_ptr, 0, sa_manager->base.size);
 	}
 
-	return drmm_add_action_or_reset(&xe->drm, xe_sa_bo_manager_fini, sa_manager);
-
+	return drmm_add_action_or_reset(&xe->drm, xe_sa_bo_manager_fini,
+					sa_manager);
 }
 
 struct drm_suballoc *xe_sa_bo_new(struct xe_sa_manager *sa_manager,

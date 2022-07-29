@@ -224,7 +224,9 @@ static void fill_regset_pvc(struct xe_guc_ads *ads)
 	 * re-worked once we add full regset list
 	 */
 #define XE_MAX_PVC_REGSET 10
-	struct iosys_map map = IOSYS_MAP_INIT_OFFSET(ads_to_map(ads), guc_ads_regset_offset(ads));
+	struct iosys_map map =
+		IOSYS_MAP_INIT_OFFSET(ads_to_map(ads),
+				      guc_ads_regset_offset(ads));
 	struct guc_mmio_reg regset[XE_MAX_PVC_REGSET], *reg;
 	u32 addr_ggtt = xe_bo_ggtt_addr(ads->bo);
 	u32 items = 0;
@@ -239,7 +241,8 @@ static void fill_regset_pvc(struct xe_guc_ads *ads)
 
 	iosys_map_memcpy_to(&map, 0, regset, items*sizeof(struct guc_mmio_reg));
 	addr_ggtt += guc_ads_regset_offset(ads);
-	ads_blob_write(ads, ads.reg_state_list[GUC_COMPUTE_CLASS][0].address, addr_ggtt);
+	ads_blob_write(ads, ads.reg_state_list[GUC_COMPUTE_CLASS][0].address,
+		       addr_ggtt);
 	ads_blob_write(ads, ads.reg_state_list[GUC_COMPUTE_CLASS][0].count, 1);
 }
 
@@ -280,7 +283,8 @@ static void guc_prep_golden_context(struct xe_guc_ads *ads)
 			continue;
 
 		ads_blob_write(ads, ads.eng_state_size[guc_class],
-			       guc_ads_golden_ctxt_size(ads) - LRC_SKIP_SIZE(xe));
+			       guc_ads_golden_ctxt_size(ads) -
+			       LRC_SKIP_SIZE(xe));
 		ads_blob_write(ads, ads.golden_context_lrca[guc_class],
 			       xe_bo_ggtt_addr(ads->bo) +
 			       guc_ads_golden_ctxt_offset(ads));

@@ -113,7 +113,8 @@ static u32 guc_ctl_log_params_flags(struct xe_guc *guc)
 		LOG_FLAG |
 		((CRASH_BUFFER_SIZE / LOG_UNIT - 1) << GUC_LOG_CRASH_SHIFT) |
 		((DEBUG_BUFFER_SIZE / LOG_UNIT - 1) << GUC_LOG_DEBUG_SHIFT) |
-		((CAPTURE_BUFFER_SIZE / CAPTURE_UNIT - 1) << GUC_LOG_CAPTURE_SHIFT) |
+		((CAPTURE_BUFFER_SIZE / CAPTURE_UNIT - 1) <<
+		 GUC_LOG_CAPTURE_SHIFT) |
 		(offset << GUC_LOG_BUF_ADDR_SHIFT);
 
 	#undef LOG_UNIT
@@ -563,14 +564,15 @@ retry:
 		for (i = 0; i < len; ++i)
 			xe_mmio_write32(gt, MEDIA_SOFT_SCRATCH(i).reg,
 					request[i]);
-
-		xe_mmio_read32(gt, MEDIA_SOFT_SCRATCH(MEDIA_SOFT_SCRATCH_COUNT - 1).reg);
+#define LAST_INDEX	MEDIA_SOFT_SCRATCH_COUNT - 1
+		xe_mmio_read32(gt, MEDIA_SOFT_SCRATCH(LAST_INDEX).reg);
 	} else {
 		for (i = 0; i < len; ++i)
 			xe_mmio_write32(gt, GEN11_SOFT_SCRATCH(i).reg,
 					request[i]);
-
-		xe_mmio_read32(gt, GEN11_SOFT_SCRATCH(GEN11_SOFT_SCRATCH_COUNT - 1).reg);
+#undef LAST_INDEX
+#define LAST_INDEX	GEN11_SOFT_SCRATCH_COUNT - 1
+		xe_mmio_read32(gt, GEN11_SOFT_SCRATCH(LAST_INDEX).reg);
 	}
 
 	xe_guc_notify(guc);
@@ -591,8 +593,10 @@ timeout:
 	if (FIELD_GET(GUC_HXG_MSG_0_TYPE, header) ==
 	    GUC_HXG_TYPE_NO_RESPONSE_BUSY) {
 #define done ({ header = xe_mmio_read32(gt, reply_reg); \
-		FIELD_GET(GUC_HXG_MSG_0_ORIGIN, header) != GUC_HXG_ORIGIN_GUC || \
-		FIELD_GET(GUC_HXG_MSG_0_TYPE, header) != GUC_HXG_TYPE_NO_RESPONSE_BUSY; })
+		FIELD_GET(GUC_HXG_MSG_0_ORIGIN, header) != \
+		GUC_HXG_ORIGIN_GUC || \
+		FIELD_GET(GUC_HXG_MSG_0_TYPE, header) != \
+		GUC_HXG_TYPE_NO_RESPONSE_BUSY; })
 
 		ret = wait_for(done, 1000);
 		if (unlikely(ret))

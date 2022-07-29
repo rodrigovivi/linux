@@ -140,7 +140,8 @@ static inline void xe_bo_unlock_vm_held(struct xe_bo *bo)
 	}
 }
 
-static inline void xe_bo_lock_no_vm(struct xe_bo *bo, struct ww_acquire_ctx *ctx)
+static inline void xe_bo_lock_no_vm(struct xe_bo *bo,
+				    struct ww_acquire_ctx *ctx)
 {
 	if (bo) {
 		XE_BUG_ON(bo->vm || bo->ttm.base.resv != &bo->ttm.base._resv);

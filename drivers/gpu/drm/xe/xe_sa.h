@@ -22,7 +22,8 @@ void xe_sa_bo_free(struct drm_suballoc *sa_bo,
 		   struct dma_fence *fence,
 		   s32 idx);
 
-static inline struct xe_sa_manager *to_xe_sa_manager(struct drm_suballoc_manager *mng)
+static inline struct xe_sa_manager *
+to_xe_sa_manager(struct drm_suballoc_manager *mng)
 {
 	return container_of(mng, struct xe_sa_manager, base);
 }
