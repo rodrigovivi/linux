@@ -272,6 +272,23 @@
  * run after resume before it can be kicked off again. This effectively gives
  * each engine a timeslice.
  *
+ * Handling multiple GTs
+ * =====================
+ *
+ * If a GT has slower access to some regions and the page table structure are in
+ * the slow region, the performance on that GT could adversely be affected. To
+ * work around this we allow a VM page tables to be shadowed in multiple GTs.
+ * When VM is created, a default bind engine and PT table structure are created
+ * on each GT.
+ *
+ * Binds can optionally pass in a mask of GTs where a mapping should be created,
+ * if this mask is zero then default to all the GTs where the VM has page
+ * tables.
+ *
+ * The implementation for this breaks down into a bunch for_each_gt loops in
+ * various places plus exporting a composite fence for multi-GT binds to the
+ * user.
+ *
  * Locking
  * =======
  *

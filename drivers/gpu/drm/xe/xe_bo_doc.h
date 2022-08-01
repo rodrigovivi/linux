@@ -61,6 +61,14 @@
  * VMs which has a mapping of the BO. This allows VMs to lookup and lock all
  * external BOs mapped in the VM as needed.
  *
+ * BO placement
+ * ~~~~~~~~~~~~
+ *
+ * When a user BO is created, a mask of valid placements is passed indicating
+ * which memory regions are considered valid.
+ *
+ * The memory region information is available via query uAPI (TODO: add link).
+ *
  * BO validation
  * =============
  *
