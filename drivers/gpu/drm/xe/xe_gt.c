@@ -18,10 +18,12 @@
 #include "xe_migrate.h"
 #include "xe_mmio.h"
 #include "xe_ring_ops.h"
+#include "xe_reg_sr.h"
 #include "xe_sa.h"
 #include "xe_ttm_gtt_mgr.h"
 #include "xe_ttm_vram_mgr.h"
 #include "xe_uc.h"
+#include "xe_wa.h"
 #include "xe_wopcm.h"
 #include "xe_gt_sysfs.h"
 
@@ -199,6 +201,9 @@ int xe_gt_init_early(struct xe_gt *gt)
 
 	xe_hw_engines_init_early(gt);
 
+	xe_reg_sr_init(&gt->reg_sr, "GT", gt_to_xe(gt));
+	xe_wa_process_gt(gt);
+
 	return 0;
 }
 
@@ -222,6 +227,8 @@ int xe_gt_init(struct xe_gt *gt)
 		goto err_hw_fence_irq;
 
 	setup_private_ppat(gt);
+
+	xe_reg_sr_apply_mmio(&gt->reg_sr, gt);
 
 	if (!xe_gt_is_media_type(gt)) {
 		err = gt_ttm_mgr_init(gt);
@@ -335,6 +342,8 @@ static int gt_reset(struct xe_gt *gt)
 		goto err_out;
 
 	setup_private_ppat(gt);
+
+	xe_reg_sr_apply_mmio(&gt->reg_sr, gt);
 
 	err = xe_wopcm_init(&gt->uc.wopcm);
 	if (err)
