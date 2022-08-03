@@ -14,4 +14,4 @@ struct xe_gt;
 const struct xe_ring_ops *
 xe_ring_ops_get(struct xe_gt *gt, enum xe_engine_class class);
 
-#endif	/* _XE_RING_OPS_H_ */
+#endif

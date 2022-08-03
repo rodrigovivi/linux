@@ -93,4 +93,4 @@ static inline void xe_map_write32(struct xe_device *xe, struct iosys_map *map,
 	iosys_map_wr_field(map__, struct_offset__, struct_type__, field__, val__);	\
 })
 
-#endif /* __XE_MAP_H__ */
+#endif

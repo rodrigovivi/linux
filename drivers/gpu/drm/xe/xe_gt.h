@@ -39,4 +39,4 @@ static inline struct xe_device * gt_to_xe(struct xe_gt *gt)
 	return gt->xe;
 }
 
-#endif	/* _XE_GT_H_ */
+#endif

@@ -41,4 +41,4 @@ static inline u32 xe_sched_job_seqno(struct xe_sched_job *job)
 	return job->fence->seqno;
 }
 
-#endif /* _XE_SCHED_JOB_H_ */
+#endif

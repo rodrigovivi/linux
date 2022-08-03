@@ -18,4 +18,4 @@ to_preempt_fence(struct dma_fence *fence)
 	return container_of(fence, struct xe_preempt_fence, base);
 }
 
-#endif	/* _XE_PREEMPT_FENCE_H_ */
+#endif

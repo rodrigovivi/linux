@@ -12,4 +12,4 @@ struct drm_file;
 int xe_wait_user_fence_ioctl(struct drm_device *dev, void *data,
 			     struct drm_file *file);
 
-#endif /* _XE_WAIT_USER_FENCE_H_ */
+#endif

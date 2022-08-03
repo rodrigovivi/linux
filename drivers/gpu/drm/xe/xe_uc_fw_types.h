@@ -98,4 +98,4 @@ struct xe_uc_fw {
 	u32 private_data_size;
 };
 
-#endif	/* _XE_UC_FW_TYPES_H_ */
+#endif

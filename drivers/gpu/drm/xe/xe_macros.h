@@ -17,4 +17,4 @@
 			    "Ioctl argument check failed at %s:%d: %s", \
 			    __FILE__, __LINE__, #cond), 1))
 
-#endif /* _XE_MACROS_H_ */
+#endif

@@ -9,4 +9,4 @@
 int xe_register_pci_driver(void);
 void xe_unregister_pci_driver(void);
 
-#endif /* _XE_PCI_H_ */
+#endif

@@ -15,4 +15,4 @@ struct xe_ttm_gtt_mgr {
 	struct ttm_resource_manager manager;
 };
 
-#endif	/* _XE_TTM_GTT_MGR_TYPES_H_ */
+#endif

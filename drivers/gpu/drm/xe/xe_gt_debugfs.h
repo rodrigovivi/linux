@@ -10,4 +10,4 @@ struct xe_gt;
 
 void xe_gt_debugfs_register(struct xe_gt *gt);
 
-#endif	/* _XE_GT_DEBUGFS_H_ */
+#endif
