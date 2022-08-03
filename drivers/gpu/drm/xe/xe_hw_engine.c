@@ -344,11 +344,14 @@ static int hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
 			  enum xe_hw_engine_id id)
 {
 	struct xe_device *xe = gt_to_xe(gt);
-	const struct engine_info *info = &engine_infos[id];
+	const struct engine_info *info;
 	int err;
 
-	if (WARN_ON(id >= ARRAY_SIZE(engine_infos) || info->name == NULL))
+	if (WARN_ON(id >= ARRAY_SIZE(engine_infos) ||
+		    engine_infos[id].name == NULL))
 		return -EINVAL;
+
+	info = &engine_infos[id];
 
 	XE_BUG_ON(hwe->gt);
 
