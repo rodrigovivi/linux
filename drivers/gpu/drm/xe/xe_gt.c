@@ -196,6 +196,8 @@ int xe_gt_init_early(struct xe_gt *gt)
 {
 	xe_force_wake_init(gt, gt_to_fw(gt));
 
+	xe_hw_engines_init_early(gt);
+
 	return 0;
 }
 
