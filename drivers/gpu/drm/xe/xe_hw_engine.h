@@ -22,4 +22,4 @@ static inline bool xe_hw_engine_is_valid(struct xe_hw_engine *hwe)
 	return hwe->name;
 }
 
-#endif /* _XE_ENGINE_H_ */
+#endif

@@ -92,4 +92,4 @@ extern struct ttm_device_funcs xe_ttm_funcs;
 
 struct ttm_buffer_object *xe_vm_ttm_bo(struct xe_vm *vm);
 
-#endif /* _XE_VM_H_ */
+#endif

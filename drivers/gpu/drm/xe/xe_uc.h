@@ -16,4 +16,4 @@ int xe_uc_start(struct xe_uc *uc);
 int xe_uc_suspend(struct xe_uc *uc);
 int xe_uc_resume(struct xe_uc *uc);
 
-#endif	/* _XE_UC_H_ */
+#endif

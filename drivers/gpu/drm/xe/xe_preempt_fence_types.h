@@ -30,4 +30,4 @@ struct xe_preempt_fence {
 	struct work_struct preempt_work;
 };
 
-#endif	/* _XE_PREEMPT_FENCE_TYPES_H_ */
+#endif

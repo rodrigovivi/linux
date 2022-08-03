@@ -25,4 +25,4 @@ struct xe_ggtt {
 	struct drm_mm mm;
 };
 
-#endif	/* _XE_GGTT_TYPES_H_ */
+#endif

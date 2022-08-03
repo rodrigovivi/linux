@@ -76,4 +76,4 @@ struct xe_guc_ct {
 #endif
 };
 
-#endif	/* _XE_GUC_CT_TYPES_H_ */
+#endif

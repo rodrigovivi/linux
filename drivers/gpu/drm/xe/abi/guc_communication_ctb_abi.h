@@ -186,4 +186,4 @@ static_assert(sizeof(struct guc_ct_buffer_desc) == 64);
 #define GUC_CT_MSG_ACTION_SHIFT			16
 #define GUC_CT_MSG_ACTION_MASK			0xFFFF
 
-#endif /* _ABI_GUC_COMMUNICATION_CTB_ABI_H */
+#endif

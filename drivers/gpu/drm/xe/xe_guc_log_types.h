@@ -18,4 +18,4 @@ struct xe_guc_log {
 	struct xe_bo *bo;
 };
 
-#endif	/* _XE_GUC_LOG_TYPES_H_ */
+#endif

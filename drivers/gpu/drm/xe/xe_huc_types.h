@@ -16,4 +16,4 @@ struct xe_huc {
 	struct xe_uc_fw fw;
 };
 
-#endif	/* _XE_HUC_TYPES_H_ */
+#endif

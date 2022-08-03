@@ -11,4 +11,4 @@ struct xe_uc;
 
 void xe_uc_debugfs_register(struct xe_uc *uc, struct dentry *parent);
 
-#endif	/* _XE_UC_DEBUGFS_H_ */
+#endif

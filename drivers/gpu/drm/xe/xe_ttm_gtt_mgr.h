@@ -13,4 +13,4 @@ struct xe_gt;
 int xe_ttm_gtt_mgr_init(struct xe_gt *gt, struct xe_ttm_gtt_mgr *mgr,
 			u64 gtt_size);
 
-#endif	/* _XE_TTGM_GTT_MGR_H_ */
+#endif

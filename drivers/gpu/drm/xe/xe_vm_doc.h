@@ -399,4 +399,4 @@
  *
  */
 
-#endif	/* _XE_VM_DOC_H_ */
+#endif

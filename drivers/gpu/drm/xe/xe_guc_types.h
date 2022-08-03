@@ -58,4 +58,4 @@ struct xe_guc {
 	u32 params[GUC_CTL_MAX_DWORDS];
 };
 
-#endif	/* _XE_GUC_TYPES_H_ */
+#endif

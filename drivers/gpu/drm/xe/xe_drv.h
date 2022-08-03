@@ -21,4 +21,4 @@
 #define DRIVER_MINOR		1
 #define DRIVER_PATCHLEVEL	0
 
-#endif /* _XE_DRV_H_ */
+#endif

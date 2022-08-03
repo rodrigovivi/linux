@@ -11,4 +11,4 @@ struct xe_device;
 int xe_bo_evict_all(struct xe_device *xe);
 int xe_bo_restore_all(struct xe_device *xe);
 
-#endif /* _XE_BO_EVICT_H_ */
+#endif

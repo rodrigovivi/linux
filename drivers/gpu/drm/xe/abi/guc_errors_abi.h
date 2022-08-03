@@ -34,4 +34,4 @@ enum xe_guc_load_status {
 	XE_GUC_LOAD_STATUS_READY                            = 0xF0,
 };
 
-#endif /* _ABI_GUC_ERRORS_ABI_H */
+#endif

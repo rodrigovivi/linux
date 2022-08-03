@@ -16,4 +16,4 @@ struct xe_guc_ads {
 	struct xe_bo *bo;
 };
 
-#endif	/* _XE_GUC_ADS_TYPES_H_ */
+#endif

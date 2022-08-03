@@ -11,4 +11,4 @@ struct drm_file;
 
 int xe_query_ioctl(struct drm_device *dev, void *data, struct drm_file *file);
 
-#endif /* _XE_QUERY_H_ */
+#endif

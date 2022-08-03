@@ -12,4 +12,4 @@ struct dma_buf *xe_gem_prime_export(struct drm_gem_object *obj, int flags);
 struct drm_gem_object *xe_gem_prime_import(struct drm_device *dev,
 					   struct dma_buf *dma_buf);
 
-#endif	/* _XE_DMA_BUF_H_ */
+#endif

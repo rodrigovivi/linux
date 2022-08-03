@@ -51,4 +51,4 @@ static inline u16 xe_engine_class_to_guc_class(enum xe_engine_class class)
 	}
 }
 
-#endif	/* _XE_GUC_H_ */
+#endif

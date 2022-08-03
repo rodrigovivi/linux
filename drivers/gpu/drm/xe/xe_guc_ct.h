@@ -55,4 +55,4 @@ xe_guc_ct_send_block_no_fail(struct xe_guc_ct *ct, const u32 *action, u32 len)
 void xe_guc_ct_selftest(struct xe_guc_ct *ct, struct drm_printer *p);
 #endif
 
-#endif	/* _XE_GUC_CT_H_ */
+#endif

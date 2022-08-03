@@ -69,4 +69,4 @@ struct xe_hw_fence {
 	struct list_head irq_link;
 };
 
-#endif /* _XE_HW_FENCE_TYPES_H_ */
+#endif

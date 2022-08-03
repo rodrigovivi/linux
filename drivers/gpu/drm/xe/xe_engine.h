@@ -51,4 +51,4 @@ int xe_engine_destroy_ioctl(struct drm_device *dev, void *data,
 int xe_engine_set_property_ioctl(struct drm_device *dev, void *data,
 				 struct drm_file *file);
 
-#endif /* _XE_ENGINE_H_ */
+#endif

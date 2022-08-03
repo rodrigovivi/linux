@@ -319,4 +319,4 @@ enum  {
 #define GUC_KLV_VF_CFG_BEGIN_CONTEXT_ID_KEY	0x8a0b
 #define GUC_KLV_VF_CFG_BEGIN_CONTEXT_ID_LEN	1u
 
-#endif /* _ABI_GUC_KLVS_ABI_H */
+#endif

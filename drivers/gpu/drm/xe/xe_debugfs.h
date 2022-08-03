@@ -10,4 +10,4 @@ struct xe_device;
 
 void xe_debugfs_register(struct xe_device *xe);
 
-#endif	/* _XE_DEBUGFS_H_ */
+#endif

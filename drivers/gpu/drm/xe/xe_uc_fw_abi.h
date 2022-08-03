@@ -78,4 +78,4 @@ struct uc_css_header {
 } __packed;
 static_assert(sizeof(struct uc_css_header) == 128);
 
-#endif /* _XE_UC_FW_ABI_H */
+#endif
