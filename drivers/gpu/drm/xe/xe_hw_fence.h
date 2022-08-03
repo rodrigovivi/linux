@@ -24,4 +24,4 @@ void xe_hw_fence_ctx_finish(struct xe_hw_fence_ctx *ctx);
 struct xe_hw_fence *xe_hw_fence_create(struct xe_hw_fence_ctx *ctx,
 				       struct iosys_map seqno_map);
 
-#endif /* _XE_HW_FENCE_H_ */
+#endif

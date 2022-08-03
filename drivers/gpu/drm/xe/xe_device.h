@@ -127,4 +127,4 @@ static inline void xe_device_mem_access_wa_put(struct xe_device *xe)
 	XE_WARN_ON(ret);
 }
 
-#endif /* _XE_DEVICE_H_ */
+#endif

@@ -35,4 +35,4 @@ xe_force_wake_assert_held(struct xe_force_wake *fw,
 	XE_BUG_ON(!(fw->awake_domains & domain));
 }
 
-#endif	/* _XE_FORCE_WAKE_H_ */
+#endif

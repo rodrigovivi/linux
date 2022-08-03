@@ -51,4 +51,4 @@ struct xe_guc_engine {
 	u16 id;
 };
 
-#endif	/* _XE_GUC_ENGINE_TYPES_H_ */
+#endif

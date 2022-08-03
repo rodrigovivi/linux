@@ -39,4 +39,4 @@ s32 xe_lrc_start_seqno(struct xe_lrc *lrc);
 u32 xe_lrc_parallel_ggtt_addr(struct xe_lrc *lrc);
 struct iosys_map xe_lrc_parallel_map(struct xe_lrc *lrc);
 
-#endif /* _XE_LRC_H_ */
+#endif

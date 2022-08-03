@@ -16,4 +16,4 @@ int xe_huc_auth(struct xe_huc *huc);
 void xe_huc_sanitize(struct xe_huc *huc);
 void xe_huc_print_info(struct xe_huc *huc, struct drm_printer *p);
 
-#endif	/* _XE_HUC_H_ */
+#endif

@@ -422,7 +422,7 @@ DEFINE_EVENT(xe_vm, xe_vm_rebind_worker_exit,
 	     TP_ARGS(vm)
 );
 
-#endif /* _XE_TRACE_H_ */
+#endif
 
 /* This part must be outside protection */
 #undef TRACE_INCLUDE_PATH

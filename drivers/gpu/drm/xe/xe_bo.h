@@ -211,4 +211,4 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 int xe_gem_mmap_offset_ioctl(struct drm_device *dev, void *data,
 			     struct drm_file *file);
 
-#endif /* _XE_BO_H_ */
+#endif
