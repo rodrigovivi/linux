@@ -11,6 +11,7 @@
 #include "xe_force_wake_types.h"
 #include "xe_hw_engine_types.h"
 #include "xe_hw_fence_types.h"
+#include "xe_reg_sr_types.h"
 #include "xe_sa_types.h"
 #include "xe_uc_types.h"
 
@@ -71,6 +72,11 @@ struct xe_gt {
 		/** @adj_offset: offect to add to MMIO address when adjusting */
 		u32 adj_offset;
 	} mmio;
+
+	/**
+	 * @reg_sr: table with registers to be restored on GT init/resume/reset
+	 */
+	struct xe_reg_sr reg_sr;
 
 	/**
 	 * @mem: memory management info for GT, multiple GTs can point to same
