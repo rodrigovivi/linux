@@ -28,7 +28,7 @@ subdir-ccflags-y += $(call cc-disable-warning, sign-compare)
 subdir-ccflags-y += $(call cc-disable-warning, sometimes-uninitialized)
 subdir-ccflags-y += $(call cc-disable-warning, initializer-overrides)
 subdir-ccflags-y += $(call cc-disable-warning, frame-address)
-subdir-ccflags-$(CONFIG_DRM_I915_WERROR) += -Werror
+subdir-ccflags-$(CONFIG_DRM_XE_WERROR) += -Werror
 
 # Fine grained warnings disable
 CFLAGS_xe_pci.o = $(call cc-disable-warning, override-init)
