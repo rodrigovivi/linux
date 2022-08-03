@@ -11,4 +11,4 @@
 int xe_guc_ads_init(struct xe_guc_ads *ads);
 void xe_guc_ads_populate(struct xe_guc_ads *ads);
 
-#endif	/* _XE_GUC_ADS_H_ */
+#endif /* _XE_GUC_ADS_H_ */

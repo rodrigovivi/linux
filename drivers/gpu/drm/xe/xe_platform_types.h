@@ -17,4 +17,4 @@ enum xe_platform {
 	XE_ALDERLAKE_S,
 };
 
-#endif	/* _XE_PLATFORM_INFO_TYPES_H_ */
+#endif /* _XE_PLATFORM_INFO_TYPES_H_ */

@@ -44,4 +44,4 @@ xe_guc_log_get_level(struct xe_guc_log *log)
 	return log->level;
 }
 
-#endif	/* _XE_GUC_LOG_H_ */
+#endif /* _XE_GUC_LOG_H_ */

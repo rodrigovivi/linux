@@ -247,4 +247,4 @@ enum xe_guc_recv_message {
 	XE_GUC_RECV_MSG_EXCEPTION = BIT(30),
 };
 
-#endif
+#endif /* _XE_GUC_FWIF_H */

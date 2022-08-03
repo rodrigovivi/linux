@@ -16,4 +16,4 @@ struct xe_sa_manager {
 	void *cpu_ptr;
 };
 
-#endif
+#endif /* _XE_SA_TYPES_H_ */

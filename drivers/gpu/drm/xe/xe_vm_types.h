@@ -254,4 +254,4 @@ struct xe_vm {
 	} preempt;
 };
 
-#endif	/* _XE_VM_TYPES_H_ */
+#endif /* _XE_VM_TYPES_H_ */

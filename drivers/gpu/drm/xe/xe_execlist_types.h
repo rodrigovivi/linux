@@ -46,4 +46,4 @@ struct xe_execlist_engine {
 	struct list_head active_link;
 };
 
-#endif	/* _XE_EXECLIST_TYPES_H_ */
+#endif /* _XE_EXECLIST_TYPES_H_ */

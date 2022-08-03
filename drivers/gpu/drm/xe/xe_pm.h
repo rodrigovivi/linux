@@ -11,4 +11,4 @@ struct xe_device;
 int xe_pm_suspend(struct xe_device *xe);
 int xe_pm_resume(struct xe_device *xe);
 
-#endif
+#endif /* _XE_PM_H_ */

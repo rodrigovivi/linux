@@ -18,4 +18,4 @@ struct xe_ttm_vram_mgr {
 	spinlock_t lock;
 };
 
-#endif	/* _XE_TTM_VRAM_MGR_TYPES_H_ */
+#endif /* _XE_TTM_VRAM_MGR_TYPES_H_ */

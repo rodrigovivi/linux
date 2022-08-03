@@ -41,4 +41,4 @@ struct xe_lrc {
 	struct xe_hw_fence_ctx fence_ctx;
 };
 
-#endif	/* _XE_LRC_TYPES_H_ */
+#endif /* _XE_LRC_TYPES_H_ */

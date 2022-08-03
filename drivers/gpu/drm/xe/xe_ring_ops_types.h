@@ -19,4 +19,4 @@ struct xe_ring_ops {
 	void (*emit_job)(struct xe_sched_job *job);
 };
 
-#endif	/* _XE_RING_OPS_TYPES_H_ */
+#endif /* _XE_RING_OPS_TYPES_H_ */

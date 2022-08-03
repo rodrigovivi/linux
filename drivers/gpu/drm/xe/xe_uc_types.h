@@ -22,4 +22,4 @@ struct xe_uc {
 	struct xe_wopcm wopcm;
 };
 
-#endif	/* _XE_UC_TYPES_H_ */
+#endif /* _XE_UC_TYPES_H_ */

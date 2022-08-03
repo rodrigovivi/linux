@@ -36,4 +36,4 @@ struct xe_sched_job {
 	u64 batch_addr[0];
 };
 
-#endif	/* _XE_SCHED_JOB_TYPES_H_ */
+#endif /* _XE_SCHED_JOB_TYPES_H_ */

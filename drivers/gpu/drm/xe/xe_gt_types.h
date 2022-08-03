@@ -117,4 +117,4 @@ struct xe_gt {
 	struct xe_migrate *migrate;
 };
 
-#endif	/* _XE_GT_TYPES_H_ */
+#endif /* _XE_GT_TYPES_H_ */

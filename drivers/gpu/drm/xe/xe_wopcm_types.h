@@ -23,4 +23,4 @@ struct xe_wopcm {
 	} guc;
 };
 
-#endif	/* _XE_WOPCM_TYPES_H_ */
+#endif /* _XE_WOPCM_TYPES_H_ */

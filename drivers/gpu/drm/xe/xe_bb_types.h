@@ -17,4 +17,4 @@ struct xe_bb {
 	u32 len; /* in dwords */
 };
 
-#endif
+#endif /* _XE_BB_TYPES_H_ */

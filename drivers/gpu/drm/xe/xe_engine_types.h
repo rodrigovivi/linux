@@ -168,4 +168,4 @@ struct xe_engine_ops {
 	void (*resume)(struct xe_engine *e);
 };
 
-#endif	/* _XE_ENGINE_TYPES_H_ */
+#endif /* _XE_ENGINE_TYPES_H_ */

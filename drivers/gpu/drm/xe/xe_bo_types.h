@@ -45,4 +45,4 @@ struct xe_bo {
 	struct list_head pinned_link;
 };
 
-#endif	/* _XE_BO_TYPES_H_ */
+#endif /* _XE_BO_TYPES_H_ */

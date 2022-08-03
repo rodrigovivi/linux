@@ -49,4 +49,4 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 
 void xe_migrate_wait(struct xe_migrate *m);
 
-#endif
+#endif /* __XE_MIGRATE__ */

@@ -37,4 +37,4 @@ static inline void *xe_sa_bo_cpu_addr(struct drm_suballoc *sa)
 	return to_xe_sa_manager(sa->manager)->cpu_ptr + sa->soffset;
 }
 
-#endif
+#endif /* _XE_SA_H_ */

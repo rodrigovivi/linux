@@ -175,4 +175,4 @@ static inline u32 xe_uc_fw_get_upload_size(struct xe_uc_fw *uc_fw)
 	return __xe_uc_fw_get_upload_size(uc_fw);
 }
 
-#endif	/* _XE_UC_FW_H_ */
+#endif /* _XE_UC_FW_H_ */

@@ -43,4 +43,4 @@ static inline struct xe_device * gt_to_xe(struct xe_gt *gt)
 	return container_of(gt, struct xe_device, gt);
 }
 
-#endif	/* _XE_GT_H_ */
+#endif /* _XE_GT_H_ */

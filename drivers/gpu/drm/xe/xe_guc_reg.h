@@ -144,4 +144,4 @@ struct guc_doorbell_info {
 #define GUC_INTR_SW_INT_1		BIT(1)
 #define GUC_INTR_SW_INT_0		BIT(0)
 
-#endif
+#endif /* _XE_GUC_REG_H_ */

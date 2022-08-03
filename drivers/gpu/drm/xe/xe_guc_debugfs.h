@@ -11,4 +11,4 @@ struct xe_guc;
 
 void xe_guc_debugfs_register(struct xe_guc *guc, struct dentry *parent);
 
-#endif	/* _XE_GUC_DEBUGFS_H_ */
+#endif /* _XE_GUC_DEBUGFS_H_ */

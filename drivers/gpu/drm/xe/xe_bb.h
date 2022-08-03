@@ -20,4 +20,4 @@ struct xe_sched_job *xe_bb_create_migration_job(struct xe_engine *kernel_eng, st
 						u64 batch_ofs, u32 second_idx);
 void xe_bb_free(struct xe_bb *bb, struct dma_fence *fence);
 
-#endif
+#endif /* _XE_BB_H_ */

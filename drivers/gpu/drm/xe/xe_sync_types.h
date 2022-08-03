@@ -19,4 +19,4 @@ struct xe_sync_entry {
 	u32 flags;
 };
 
-#endif
+#endif /* _XE_SYNC_TYPES_H_ */

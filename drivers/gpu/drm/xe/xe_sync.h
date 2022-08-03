@@ -19,4 +19,4 @@ bool xe_sync_entry_signal(struct xe_sync_entry *sync,
 			  struct dma_fence *fence);
 void xe_sync_entry_cleanup(struct xe_sync_entry *sync);
 
-#endif
+#endif /* _XE_SYNC_H_ */
