@@ -340,23 +340,19 @@ void xe_hw_engine_enable_ring(struct xe_hw_engine *hwe)
 	hw_engine_mmio_read32(hwe, RING_MI_MODE(0).reg);
 }
 
-static int hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
-			  enum xe_hw_engine_id id)
+static void hw_engine_init_early(struct xe_gt *gt, struct xe_hw_engine *hwe,
+				 enum xe_hw_engine_id id)
 {
 	struct xe_device *xe = gt_to_xe(gt);
 	const struct engine_info *info;
-	int err;
 
 	if (WARN_ON(id >= ARRAY_SIZE(engine_infos) ||
 		    engine_infos[id].name == NULL))
-		return -EINVAL;
+		return;
 
 	info = &engine_infos[id];
 
 	XE_BUG_ON(hwe->gt);
-
-	if (!(gt->info.engine_mask & BIT(id)))
-		return 0;
 
 	hwe->gt = gt;
 	hwe->class = info->class;
@@ -365,6 +361,19 @@ static int hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
 	hwe->domain = info->domain;
 	hwe->name = info->name;
 	hwe->fence_irq = &gt->fence_irq[info->class];
+}
+
+static int hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
+			  enum xe_hw_engine_id id)
+{
+	struct xe_device *xe = gt_to_xe(gt);
+	int err;
+
+	if (id >= ARRAY_SIZE(engine_infos) || engine_infos[id].name == NULL)
+		return -EINVAL;
+
+	if (!(gt->info.engine_mask & BIT(id)))
+		return 0;
 
 	hwe->hwsp = xe_bo_create_locked(xe, gt, NULL, SZ_4K, ttm_bo_type_kernel,
 					XE_BO_CREATE_VRAM_IF_DGFX(gt) |
@@ -494,11 +503,21 @@ static void read_fuses(struct xe_gt *gt)
 	/* TODO: compute engines */
 }
 
+int xe_hw_engines_init_early(struct xe_gt *gt)
+{
+	int i;
+
+	read_fuses(gt);
+
+	for (i = 0; i < ARRAY_SIZE(gt->hw_engines); i++)
+		hw_engine_init_early(gt, &gt->hw_engines[i], i);
+
+	return 0;
+}
+
 int xe_hw_engines_init(struct xe_gt *gt)
 {
 	int i, err;
-
-	read_fuses(gt);
 
 	for (i = 0; i < ARRAY_SIZE(gt->hw_engines); i++) {
 		err = hw_engine_init(gt, &gt->hw_engines[i], i);
