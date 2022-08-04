@@ -149,4 +149,4 @@ struct xe_file {
 	} engine;
 };
 
-#endif	/* _XE_DEVICE_TYPES_H_ */
+#endif

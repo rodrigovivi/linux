@@ -89,4 +89,4 @@ struct xe_hw_engine {
 	void (*irq_handler)(struct xe_hw_engine *, u16);
 };
 
-#endif /* _XE_HW_ENGINE_TYPES_H_ */
+#endif

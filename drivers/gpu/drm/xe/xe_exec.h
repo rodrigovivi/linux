@@ -11,4 +11,4 @@ struct drm_file;
 
 int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file);
 
-#endif /* _XE_EXEC_H_ */
+#endif

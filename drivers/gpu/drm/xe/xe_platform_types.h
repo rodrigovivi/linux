@@ -26,4 +26,4 @@ enum xe_subplatform {
 	XE_SUBPLATFORM_DG2_G12,
 };
 
-#endif	/* _XE_PLATFORM_INFO_TYPES_H_ */
+#endif

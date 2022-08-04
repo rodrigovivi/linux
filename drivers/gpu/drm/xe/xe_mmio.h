@@ -91,4 +91,4 @@ static inline int xe_mmio_wait32(struct xe_gt *gt,
 int xe_mmio_ioctl(struct drm_device *dev, void *data,
 		  struct drm_file *file);
 
-#endif /* _XE_MMIO_H_ */
+#endif

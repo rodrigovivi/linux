@@ -231,4 +231,4 @@ enum intel_guc_msg_type {
 	INTEL_GUC_MSG_TYPE_RESPONSE = 0xF,
 };
 
-#endif /* _ABI_GUC_MESSAGES_ABI_H */
+#endif

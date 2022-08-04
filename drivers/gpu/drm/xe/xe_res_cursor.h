@@ -104,4 +104,4 @@ static inline void xe_res_next(struct xe_res_cursor *cur, u64 size)
 	cur->size = min(node->size << PAGE_SHIFT, cur->remaining);
 }
 
-#endif /* __XE_RES_CURSOR_H__ */
+#endif

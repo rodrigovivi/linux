@@ -81,4 +81,4 @@ struct xe_force_wake {
 	struct xe_force_wake_domain domains[XE_FW_DOMAIN_ID_COUNT];
 };
 
-#endif	/* _XE_FORCE_WAKE_TYPES_H_ */
+#endif
