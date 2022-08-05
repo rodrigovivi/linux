@@ -27,8 +27,11 @@
 #define __XE_RES_CURSOR_H__
 
 #include <drm/drm_mm.h>
-#include <drm/ttm/ttm_resource.h>
+#include <drm/ttm/ttm_placement.h>
 #include <drm/ttm/ttm_range_manager.h>
+#include <drm/ttm/ttm_resource.h>
+
+#include "xe_macros.h"
 
 /* state back for walking over vram_mgr and gtt_mgr allocations */
 struct xe_res_cursor {

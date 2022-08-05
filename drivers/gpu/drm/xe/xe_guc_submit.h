@@ -6,6 +6,9 @@
 #ifndef _XE_GUC_SUBMIT_H_
 #define _XE_GUC_SUBMIT_H_
 
+#include <linux/types.h>
+
+struct drm_printer;
 struct xe_engine;
 struct xe_guc;
 

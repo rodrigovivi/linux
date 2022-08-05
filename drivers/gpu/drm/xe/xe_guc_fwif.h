@@ -6,6 +6,8 @@
 #ifndef _XE_GUC_FWIF_H
 #define _XE_GUC_FWIF_H
 
+#include <linux/bits.h>
+
 #include "abi/guc_actions_abi.h"
 #include "abi/guc_actions_slpc_abi.h"
 #include "abi/guc_errors_abi.h"
