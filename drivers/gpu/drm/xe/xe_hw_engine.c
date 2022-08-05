@@ -16,7 +16,9 @@
 #include "xe_lrc.h"
 #include "xe_macros.h"
 #include "xe_mmio.h"
+#include "xe_reg_sr.h"
 #include "xe_sched_job.h"
+#include "xe_wa.h"
 
 #include "../i915/gt/intel_engine_regs.h"
 #include "../i915/i915_reg.h"
@@ -363,6 +365,9 @@ static void hw_engine_init_early(struct xe_gt *gt, struct xe_hw_engine *hwe,
 	hwe->domain = info->domain;
 	hwe->name = info->name;
 	hwe->fence_irq = &gt->fence_irq[info->class];
+
+	xe_reg_sr_init(&hwe->reg_sr, hwe->name, gt_to_xe(gt));
+	xe_wa_process_engine(hwe);
 }
 
 static int hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
@@ -373,6 +378,8 @@ static int hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
 
 	XE_BUG_ON(id >= ARRAY_SIZE(engine_infos) || !engine_infos[id].name);
 	XE_BUG_ON(!(gt->info.engine_mask & BIT(id)));
+
+	xe_reg_sr_apply_mmio(&hwe->reg_sr, gt);
 
 	hwe->hwsp = xe_bo_create_locked(xe, gt, NULL, SZ_4K, ttm_bo_type_kernel,
 					XE_BO_CREATE_VRAM_IF_DGFX(gt) |
