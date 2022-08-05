@@ -8,6 +8,7 @@
 
 #include "xe_force_wake_types.h"
 #include "xe_lrc_types.h"
+#include "xe_reg_sr_types.h"
 
 /* See "Engine ID Definition" struct in the Icelake PRM */
 enum xe_engine_class {
@@ -75,6 +76,10 @@ struct xe_hw_engine {
 	u16 logical_instance;
 	/** @mmio_base: MMIO base address of this hw engine*/
 	u32 mmio_base;
+	/**
+	 * @reg_sr: table with registers to be restored on GT init/resume/reset
+	 */
+	struct xe_reg_sr reg_sr;
 	/** @domain: force wake domain of this hw engine */
 	enum xe_force_wake_domains domain;
 	/** @hwsp: hardware status page buffer object */
