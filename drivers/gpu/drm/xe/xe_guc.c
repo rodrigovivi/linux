@@ -717,9 +717,6 @@ int xe_guc_stop(struct xe_guc *guc)
 	if (ret)
 		return ret;
 
-	ret = xe_guc_pc_start(&guc->pc);
-	XE_WARN_ON(ret);
-
 	return 0;
 }
 
@@ -730,6 +727,9 @@ int xe_guc_start(struct xe_guc *guc)
 	ret = xe_guc_submit_start(guc);
 	if (ret)
 		return ret;
+
+	ret = xe_guc_pc_start(&guc->pc);
+	XE_WARN_ON(ret);
 
 	return 0;
 }
