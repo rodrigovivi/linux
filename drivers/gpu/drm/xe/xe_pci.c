@@ -127,8 +127,8 @@ static const struct xe_device_desc dg1_desc = {
 	.media_ver = 12, \
 	.media_rel = 50
 
-static const u16 dg2_g10_ids[] = { XE_DG2_G10_IDS(NOP), 0 };
-static const u16 dg2_g11_ids[] = { XE_DG2_G11_IDS(NOP), 0 };
+static const u16 dg2_g10_ids[] = { XE_DG2_G10_IDS(NOP), XE_ATS_M150_IDS(NOP), 0 };
+static const u16 dg2_g11_ids[] = { XE_DG2_G11_IDS(NOP), XE_ATS_M75_IDS(NOP), 0 };
 static const u16 dg2_g12_ids[] = { XE_DG2_G12_IDS(NOP), 0 };
 
 static const struct xe_device_desc ats_m_desc = {
