@@ -346,8 +346,10 @@ static void hw_engine_init_early(struct xe_gt *gt, struct xe_hw_engine *hwe,
 	struct xe_device *xe = gt_to_xe(gt);
 	const struct engine_info *info;
 
-	if (WARN_ON(id >= ARRAY_SIZE(engine_infos) ||
-		    engine_infos[id].name == NULL))
+	if (WARN_ON(id >= ARRAY_SIZE(engine_infos) || !engine_infos[id].name))
+		return;
+
+	if (!(gt->info.engine_mask & BIT(id)))
 		return;
 
 	info = &engine_infos[id];
@@ -369,11 +371,8 @@ static int hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
 	struct xe_device *xe = gt_to_xe(gt);
 	int err;
 
-	if (id >= ARRAY_SIZE(engine_infos) || engine_infos[id].name == NULL)
-		return -EINVAL;
-
-	if (!(gt->info.engine_mask & BIT(id)))
-		return 0;
+	XE_BUG_ON(id >= ARRAY_SIZE(engine_infos) || !engine_infos[id].name);
+	XE_BUG_ON(!(gt->info.engine_mask & BIT(id)));
 
 	hwe->hwsp = xe_bo_create_locked(xe, gt, NULL, SZ_4K, ttm_bo_type_kernel,
 					XE_BO_CREATE_VRAM_IF_DGFX(gt) |
@@ -517,10 +516,12 @@ int xe_hw_engines_init_early(struct xe_gt *gt)
 
 int xe_hw_engines_init(struct xe_gt *gt)
 {
-	int i, err;
+	int err;
+	struct xe_hw_engine *hwe;
+	enum xe_hw_engine_id id;
 
-	for (i = 0; i < ARRAY_SIZE(gt->hw_engines); i++) {
-		err = hw_engine_init(gt, &gt->hw_engines[i], i);
+	for_each_hw_engine(hwe, gt, id) {
+		err = hw_engine_init(gt, hwe, id);
 		if (err)
 			return err;
 	}
