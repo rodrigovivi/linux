@@ -8,6 +8,7 @@
 #include <drm/drm_device.h>
 #include <drm/drm_file.h>
 #include <drm/xe_drm.h>
+#include <linux/nospec.h>
 
 #include "xe_device.h"
 #include "xe_gt.h"
@@ -275,6 +276,7 @@ static int engine_user_ext_set_property(struct xe_device *xe,
 	u64 __user *address = u64_to_user_ptr(extension);
 	struct drm_xe_ext_engine_set_property ext;
 	int err;
+	u32 idx;
 
 	err = __copy_from_user(&ext, address, sizeof(ext));
 	if (XE_IOCTL_ERR(xe, err))
@@ -284,8 +286,8 @@ static int engine_user_ext_set_property(struct xe_device *xe,
 			 ARRAY_SIZE(engine_set_property_funcs)))
 		return -EINVAL;
 
-	return engine_set_property_funcs[ext.property](xe, e, ext.value,
-						       create);
+	idx = array_index_nospec(ext.property, ARRAY_SIZE(engine_set_property_funcs));
+	return engine_set_property_funcs[idx](xe, e, ext.value,  create);
 }
 
 typedef int (*xe_engine_user_extension_fn)(struct xe_device *xe,
@@ -304,6 +306,7 @@ static int engine_user_extensions(struct xe_device *xe, struct xe_engine *e,
 	u64 __user *address = u64_to_user_ptr(extensions);
 	struct xe_user_extension ext;
 	int err;
+	u32 idx;
 
 	if (XE_IOCTL_ERR(xe, ext_number >= MAX_USER_EXTENSIONS))
 		return -E2BIG;
@@ -316,7 +319,9 @@ static int engine_user_extensions(struct xe_device *xe, struct xe_engine *e,
 			 ARRAY_SIZE(engine_user_extension_funcs)))
 		return -EINVAL;
 
-	err = engine_user_extension_funcs[ext.name](xe, e, extensions, create);
+	idx = array_index_nospec(ext.name,
+				 ARRAY_SIZE(engine_user_extension_funcs));
+	err = engine_user_extension_funcs[idx](xe, e, extensions, create);
 	if (XE_IOCTL_ERR(xe, err))
 		return err;
 
@@ -339,14 +344,19 @@ static struct xe_hw_engine *
 find_hw_engine(struct xe_device *xe,
 	       struct drm_xe_engine_class_instance eci)
 {
+	u32 idx;
+
 	if (eci.engine_class > ARRAY_SIZE(user_to_xe_engine_class))
 		return NULL;
 
 	if (eci.gt_id >= xe->info.tile_count)
 		return NULL;
 
+	idx = array_index_nospec(eci.engine_class,
+				 ARRAY_SIZE(user_to_xe_engine_class));
+
 	return xe_gt_hw_engine(xe_device_get_gt(xe, eci.gt_id),
-			       user_to_xe_engine_class[eci.engine_class],
+			       user_to_xe_engine_class[idx],
 			       eci.engine_instance, true);
 }
 
@@ -570,6 +580,7 @@ int xe_engine_set_property_ioctl(struct drm_device *dev, void *data,
 	struct drm_xe_engine_set_property *args = data;
 	struct xe_engine *e;
 	int ret;
+	u32 idx;
 
 	e = xe_engine_lookup(xef, args->engine_id);
 	if (XE_IOCTL_ERR(xe, !e))
@@ -581,8 +592,9 @@ int xe_engine_set_property_ioctl(struct drm_device *dev, void *data,
 		goto out;
 	}
 
-	ret = engine_set_property_funcs[args->property](xe, e, args->value,
-							false);
+	idx = array_index_nospec(args->property,
+				 ARRAY_SIZE(engine_set_property_funcs));
+	ret = engine_set_property_funcs[idx](xe, e, args->value, false);
 	if (XE_IOCTL_ERR(xe, ret))
 		goto out;
 
