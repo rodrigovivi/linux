@@ -13,7 +13,26 @@
 #include "xe_mmio.h"
 #include "i915_reg_defs.h"
 #include "../i915/i915_reg.h"
+
 #include "../i915/intel_mchbar_regs.h"
+/* For GEN6_RP_STATE_CAP.reg to be merged when the definition moves to Xe */
+#define   RP0_MASK	REG_GENMASK(7, 0)
+#define   RP1_MASK	REG_GENMASK(15, 8)
+#define   RPN_MASK	REG_GENMASK(23, 16)
+
+#define GEN10_FREQ_INFO_REC	_MMIO(MCHBAR_MIRROR_BASE_SNB + 0x5ef0)
+#define   RPE_MASK		REG_GENMASK(15, 8)
+
+#include "../i915/gt/intel_gt_regs.h"
+/* For GEN6_RPNSWREQ.reg to be merged when the definition moves to Xe */
+#define   REQ_RATIO_MASK	REG_GENMASK(31, 23)
+
+#define GEN12_RPSTAT1		_MMIO(0x1381b4)
+#define   GEN12_CAGF_MASK	REG_GENMASK(19, 11)
+
+#define GT_FREQUENCY_MULTIPLIER	50
+#define GEN9_FREQ_SCALER	3
+
 
 /**
  * DOC: GuC Power Conservation (PC)
@@ -30,18 +49,26 @@
  * Xe driver enables SLPC with all of its defaults features and frequency
  * selection, which varies per platform.
  *
- * Currently Xe driver is not providing any API for frequency tuning. This
- * shall be implemented soon.
- *
  * Render-C states managements under GuCRC is currently disabled by default
  * in all platforms and Xe is not yet enabling it.
+ *
+ * Frequency management:
+ * =====================
+ *
+ * GuC PC provides a sysfs API for frequency management:
+ *
+ * device/gt#/freq_* *read-only* files:
+ * - freq_act: The actual resolved frequency decided by PCODE.
+ * - freq_cur: The current one requested by GuC PC to the Hardware.
+ * - freq_rpn: The Render Performance (RP) N level, which is the minimal one.
+ * - freq_rpe: The Render Performance (RP) E level, which is the efficient one.
+ * - freq_rp0: The Render Performance (RP) 0 level, which is the maximum one.
+ *
+ * device/gt#/freq_* *read-write* files:
+ * - freq_min: GuC PC min request.
+ * - freq_max: GuC PC max request.
+ *             If max <= min, then freq_min becomes a fixed frequency request.
  */
-
-#define GEN12_RPSTAT1			_MMIO(0x1381b4)
-#define   GEN12_CAGF_MASK		REG_GENMASK(19, 11)
-
-#define GT_FREQUENCY_MULTIPLIER	50
-#define GEN9_FREQ_SCALER	3
 
 static struct xe_guc *
 pc_to_guc(struct xe_guc_pc *pc)
@@ -83,6 +110,12 @@ pc_to_maps(struct xe_guc_pc *pc)
 	(FIELD_PREP(HOST2GUC_PC_SLPC_REQUEST_MSG_1_EVENT_ID, id) | \
 	 FIELD_PREP(HOST2GUC_PC_SLPC_REQUEST_MSG_1_EVENT_ARGC, count))
 
+static bool pc_is_running(struct xe_guc_pc *pc)
+{
+	return slpc_shared_data_read(pc, header.global_state) ==
+		SLPC_GLOBAL_STATE_RUNNING;
+}
+
 static int pc_action_reset(struct xe_guc_pc *pc)
 {
 	struct  xe_guc_ct *ct = &pc_to_guc(pc)->ct;
@@ -121,10 +154,87 @@ static int pc_action_query_task_state(struct xe_guc_pc *pc)
 	return ret;
 }
 
+static int pc_action_set_param(struct xe_guc_pc *pc, u8 id, u32 value)
+{
+	struct xe_guc_ct *ct = &pc_to_guc(pc)->ct;
+	int ret;
+	u32 action[] = {
+		GUC_ACTION_HOST2GUC_PC_SLPC_REQUEST,
+		SLPC_EVENT(SLPC_EVENT_PARAMETER_SET, 2),
+		id,
+		value,
+	};
+
+	XE_WARN_ON(!pc_is_running(pc));
+
+	ret = xe_guc_ct_send(ct, action, ARRAY_SIZE(action), 0, 0);
+	if (ret)
+		drm_err(&pc_to_xe(pc)->drm, "GuC PC set param failed: %pe",
+			ERR_PTR(ret));
+
+	return ret;
+}
+
 static u32 decode_freq(u32 raw)
 {
 	return DIV_ROUND_CLOSEST(raw * GT_FREQUENCY_MULTIPLIER,
 				 GEN9_FREQ_SCALER);
+}
+
+static u32 pc_get_min_freq(struct xe_guc_pc *pc)
+{
+	u32 freq;
+
+	freq = FIELD_GET(SLPC_MIN_UNSLICE_FREQ_MASK,
+			 slpc_shared_data_read(pc, task_state_data.freq));
+
+	return decode_freq(freq);
+}
+
+static int pc_set_min_freq(struct xe_guc_pc *pc, u32 freq)
+{
+	/*
+	 * Let's only check for the rpn-rp0 range. If max < min,
+	 * min becomes a fixed request.
+	 */
+	if (freq < pc->rpn_freq || freq > pc->rp0_freq)
+		return -EINVAL;
+
+	/*
+	 * GuC policy is to elevate minimum frequency to the efficient levels
+	 * Our goal is to have the admin choices respected.
+	 */
+	pc_action_set_param(pc, SLPC_PARAM_IGNORE_EFFICIENT_FREQUENCY,
+			    freq < pc->rpe_freq);
+
+	return pc_action_set_param(pc,
+				   SLPC_PARAM_GLOBAL_MIN_GT_UNSLICE_FREQ_MHZ,
+				   freq);
+}
+
+static int pc_get_max_freq(struct xe_guc_pc *pc)
+{
+	u32 freq;
+
+	freq = FIELD_GET(SLPC_MAX_UNSLICE_FREQ_MASK,
+			 slpc_shared_data_read(pc, task_state_data.freq));
+
+	return decode_freq(freq);
+}
+
+static int pc_set_max_freq(struct xe_guc_pc *pc, u32 freq)
+{
+	/*
+	 * Let's only check for the rpn-rp0 range. If max < min,
+	 * min becomes a fixed request.
+	 * Also, overclocking is not supported.
+	 */
+	if (freq < pc->rpn_freq || freq > pc->rp0_freq)
+		return -EINVAL;
+
+	return pc_action_set_param(pc,
+				   SLPC_PARAM_GLOBAL_MAX_GT_UNSLICE_FREQ_MHZ,
+				   freq);
 }
 
 static ssize_t freq_act_show(struct device *dev,
@@ -140,48 +250,163 @@ static ssize_t freq_act_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(freq_act);
 
+static ssize_t freq_cur_show(struct device *dev,
+			     struct device_attribute *attr, char *buf)
+{
+	struct kobject *kobj = &dev->kobj;
+	struct xe_gt *gt = kobj_to_gt(kobj);
+	u32 freq;
+
+	freq = xe_mmio_read32(gt, GEN6_RPNSWREQ.reg);
+	freq = REG_FIELD_GET(REQ_RATIO_MASK, freq);
+	return sysfs_emit(buf, "%d\n", decode_freq(freq));
+}
+static DEVICE_ATTR_RO(freq_cur);
+
+static ssize_t freq_rp0_show(struct device *dev,
+			     struct device_attribute *attr, char *buf)
+{
+	struct xe_guc_pc *pc = dev_to_pc(dev);
+
+	return sysfs_emit(buf, "%d\n", pc->rp0_freq);
+}
+static DEVICE_ATTR_RO(freq_rp0);
+
+static ssize_t freq_rpe_show(struct device *dev,
+			     struct device_attribute *attr, char *buf)
+{
+	struct xe_guc_pc *pc = dev_to_pc(dev);
+
+	return sysfs_emit(buf, "%d\n", pc->rpe_freq);
+}
+static DEVICE_ATTR_RO(freq_rpe);
+
+static ssize_t freq_rpn_show(struct device *dev,
+			     struct device_attribute *attr, char *buf)
+{
+	struct xe_guc_pc *pc = dev_to_pc(dev);
+
+	return sysfs_emit(buf, "%d\n", pc->rpn_freq);
+}
+static DEVICE_ATTR_RO(freq_rpn);
+
 static ssize_t freq_min_show(struct device *dev,
 			     struct device_attribute *attr, char *buf)
 {
 	struct xe_guc_pc *pc = dev_to_pc(dev);
-	u32 freq;
 	ssize_t ret;
 
 	ret = pc_action_query_task_state(pc);
 	if (ret)
 		return ret;
 
-	freq = FIELD_GET(SLPC_MIN_UNSLICE_FREQ_MASK,
-			 slpc_shared_data_read(pc, task_state_data.freq));
-
-	return sysfs_emit(buf, "%d\n", decode_freq(freq));
+	return sysfs_emit(buf, "%d\n", pc_get_min_freq(pc));
 }
-static DEVICE_ATTR_RO(freq_min);
+
+static ssize_t freq_min_store(struct device *dev, struct device_attribute *attr,
+			      const char *buff, size_t count)
+{
+	struct xe_guc_pc *pc = dev_to_pc(dev);
+	u32 freq;
+	ssize_t ret;
+
+	ret = kstrtou32(buff, 0, &freq);
+	if (ret)
+		return ret;
+
+	ret = pc_set_min_freq(pc, freq);
+	if (ret)
+		return ret;
+
+	return count;
+}
+static DEVICE_ATTR_RW(freq_min);
 
 static ssize_t freq_max_show(struct device *dev,
 			     struct device_attribute *attr, char *buf)
 {
 	struct xe_guc_pc *pc = dev_to_pc(dev);
-	u32 freq;
 	ssize_t ret;
 
 	ret = pc_action_query_task_state(pc);
 	if (ret)
 		return ret;
 
-	freq = FIELD_GET(SLPC_MAX_UNSLICE_FREQ_MASK,
-			 slpc_shared_data_read(pc, task_state_data.freq));
-
-	return sysfs_emit(buf, "%d\n", decode_freq(freq));
+	return sysfs_emit(buf, "%d\n", pc_get_max_freq(pc));
 }
-static DEVICE_ATTR_RO(freq_max);
+
+static ssize_t freq_max_store(struct device *dev, struct device_attribute *attr,
+			      const char *buff, size_t count)
+{
+	struct xe_guc_pc *pc = dev_to_pc(dev);
+	u32 freq;
+	ssize_t ret;
+
+	ret = kstrtou32(buff, 0, &freq);
+	if (ret)
+		return ret;
+
+	ret = pc_set_max_freq(pc, freq);
+	if (ret)
+		return ret;
+
+	return count;
+}
+static DEVICE_ATTR_RW(freq_max);
 
 static const struct attribute *pc_attrs[] = {
 	&dev_attr_freq_act.attr,
+	&dev_attr_freq_cur.attr,
+	&dev_attr_freq_rp0.attr,
+	&dev_attr_freq_rpe.attr,
+	&dev_attr_freq_rpn.attr,
 	&dev_attr_freq_min.attr,
 	&dev_attr_freq_max.attr,
 	NULL
 };
+
+static void pc_init_rp_values(struct xe_guc_pc *pc)
+{
+	struct xe_gt *gt = pc_to_gt(pc);
+	u32 reg;
+
+	reg = xe_mmio_read32(gt, GEN6_RP_STATE_CAP.reg);
+	pc->rp0_freq = REG_FIELD_GET(RP0_MASK, reg) * GT_FREQUENCY_MULTIPLIER;
+	pc->rpn_freq = REG_FIELD_GET(RPN_MASK, reg) * GT_FREQUENCY_MULTIPLIER;
+
+	reg = xe_mmio_read32(gt, GEN10_FREQ_INFO_REC.reg);
+	pc->rpe_freq = REG_FIELD_GET(RPE_MASK, reg) * GT_FREQUENCY_MULTIPLIER;
+}
+
+static int pc_adjust_freq_bounds(struct xe_guc_pc *pc)
+{
+	int ret;
+
+	ret = pc_action_query_task_state(pc);
+	if (ret)
+		return ret;
+
+	/*
+	 * GuC defaults to some RPmax that is not actually achievable without
+	 * overclocking. Let's adjust it to the Hardware RP0, which is the
+	 * regular maximum
+	 */
+	if (pc_get_max_freq(pc) > pc->rp0_freq)
+		pc_set_max_freq(pc, pc->rp0_freq);
+
+	/*
+	 * Same thing happens for Server platforms where min is listed as
+	 * RPMax
+	 */
+	if (pc_get_min_freq(pc) > pc->rp0_freq)
+		pc_set_min_freq(pc, pc->rp0_freq);
+
+	/* This shouldn't ever happen */
+	XE_WARN_ON(pc_get_min_freq(pc) < pc->rpn_freq ||
+		   pc_get_max_freq(pc) < pc->rpn_freq);
+
+	return 0;
+}
 
 static void pc_fini(struct drm_device *drm, void *arg)
 {
@@ -234,7 +459,20 @@ int xe_guc_pc_init(struct xe_guc_pc *pc)
  */
 int xe_guc_pc_start(struct xe_guc_pc *pc)
 {
+	int ret;
+
 	XE_WARN_ON(!xe_device_guc_submission_enabled(pc_to_xe(pc)));
 
-	return pc_action_reset(pc);
+	pc_init_rp_values(pc);
+
+	ret = pc_action_reset(pc);
+	if (ret)
+		return ret;
+
+	if (wait_for(pc_is_running(pc), 5)) {
+		drm_err(&pc_to_xe(pc)->drm, "GuC PC Start failed\n");
+		return -EIO;
+	}
+
+	return pc_adjust_freq_bounds(pc);
 }
