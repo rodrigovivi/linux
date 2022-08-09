@@ -931,21 +931,20 @@ static int g2h_read(struct xe_guc_ct *ct, u32 *msg)
 /* Returns less than zero on error, 0 on done, 1 on more available */
 static int dequeue_one_g2h(struct xe_guc_ct *ct)
 {
-	u32 msg[GUC_CTB_HXG_MSG_MAX_LEN];
 	int len;
 	int ret;
 
 	lockdep_assert_held(&ct->lock);
 
-	len = g2h_read(ct, msg);
+	len = g2h_read(ct, ct->msg);
 	if (len <= 0)
 		return len;
 
-	ret = parse_g2h_msg(ct, msg, len);
+	ret = parse_g2h_msg(ct, ct->msg, len);
 	if (unlikely(ret < 0))
 		return ret;
 
-	ret = process_g2h_msg(ct, msg, len);
+	ret = process_g2h_msg(ct, ct->msg, len);
 	if (unlikely(ret < 0))
 		return ret;
 
