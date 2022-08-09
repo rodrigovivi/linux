@@ -12,6 +12,8 @@
 #include <linux/wait.h>
 #include <linux/xarray.h>
 
+#include "abi/guc_communication_ctb_abi.h"
+
 #define XE_GUC_CT_SELFTEST
 
 struct xe_bo;
@@ -74,6 +76,8 @@ struct xe_guc_ct {
 	/** @suppress_irq_handler: force flow control to sender */
 	bool suppress_irq_handler;
 #endif
+	/** @msg: Message buffer */
+	u32 msg[GUC_CTB_MSG_MAX_LEN];
 };
 
 #endif
