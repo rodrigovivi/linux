@@ -8,6 +8,8 @@
 
 #include "xe_ttm_vram_mgr_types.h"
 
+enum dma_data_direction;
+struct xe_device;
 struct xe_gt;
 
 int xe_ttm_vram_mgr_init(struct xe_gt *gt, struct xe_ttm_vram_mgr *mgr);
