@@ -15,6 +15,7 @@
 #include "xe_mmio.h"
 #include "xe_platform_types.h"
 #include "../i915/gt/intel_gt_regs.h"
+#include "../i915/gt/intel_engine_regs.h"
 
 /* Slack of a few additional entries per engine */
 #define ADS_REGSET_EXTRA_MAX	8
@@ -352,6 +353,9 @@ static unsigned int guc_mmio_regset_write(struct xe_guc_ads *ads,
 		u32 flags;
 		bool skip;
 	} *e, extra_regs[] = {
+		{ .reg = RING_MODE_GEN7(hwe->mmio_base).reg,		},
+		{ .reg = RING_HWS_PGA(hwe->mmio_base).reg,		},
+		{ .reg = RING_IMR(hwe->mmio_base).reg,			},
 		/*
 		 * TODO: support setting it on first compute/render instance
 		 * only after there is support for fused-off compute engines
