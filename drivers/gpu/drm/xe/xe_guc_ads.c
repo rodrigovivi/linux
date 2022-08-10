@@ -239,40 +239,6 @@ static u32 engine_enable_mask(struct xe_gt *gt, enum xe_engine_class class)
 	return mask;
 }
 
-static void fill_regset_pvc(struct xe_guc_ads *ads)
-{
-	/* FIXME:
-	 * PVC need that regset for GEN12_RCU_MODE or CCS won't
-	 * work. We currently have 1 Page allocate for this, so
-	 * we add our register now.
-	 * Adding minimal support for now - will need to be
-	 * re-worked once we add full regset list
-	 */
-#define XE_MAX_PVC_REGSET 10
-	struct iosys_map map =
-		IOSYS_MAP_INIT_OFFSET(ads_to_map(ads),
-				      guc_ads_regset_offset(ads));
-	struct guc_mmio_reg regset[XE_MAX_PVC_REGSET], *reg;
-	u32 addr_ggtt = xe_bo_ggtt_addr(ads->bo);
-	u32 items = 0;
-
-	reg = &regset[items++];
-	reg->offset = GEN12_RCU_MODE.reg;
-	reg->value = 0x0;
-	reg->flags = 0x3;
-	reg->mask = 0x0;
-
-	XE_BUG_ON(items >= XE_MAX_PVC_REGSET);
-
-	xe_map_memcpy_to(ads_to_xe(ads), &map, 0, regset,
-			 items * sizeof(struct guc_mmio_reg));
-	addr_ggtt += guc_ads_regset_offset(ads);
-	ads_blob_write(ads, ads.reg_state_list[GUC_COMPUTE_CLASS][0].address,
-		       addr_ggtt);
-	ads_blob_write(ads, ads.reg_state_list[GUC_COMPUTE_CLASS][0].count, 1);
-}
-
-
 static void fill_engine_enable_masks(struct xe_gt *gt,
 				     struct iosys_map *info_map)
 {
@@ -361,8 +327,89 @@ static void guc_capture_list_init(struct xe_guc_ads *ads)
 	}
 }
 
+static void guc_mmio_regset_write_one(struct xe_guc_ads *ads,
+				      struct iosys_map *regset_map,
+				      u32 reg, u32 flags,
+				      unsigned int n_entry)
+{
+	struct guc_mmio_reg entry = {
+		.offset = reg,
+		.flags = flags,
+		/* TODO: steering */
+	};
+
+	xe_map_memcpy_to(ads_to_xe(ads), regset_map, n_entry * sizeof(entry),
+			 &entry, sizeof(entry));
+}
+
+static unsigned int guc_mmio_regset_write(struct xe_guc_ads *ads,
+					  struct iosys_map *regset_map,
+					  struct xe_hw_engine *hwe)
+{
+	unsigned count = 0;
+	const struct {
+		u32 reg;
+		u32 flags;
+		bool skip;
+	} *e, extra_regs[] = {
+		/*
+		 * TODO: support setting it on first compute/render instance
+		 * only after there is support for fused-off compute engines
+		 */
+		{ .reg = GEN12_RCU_MODE.reg, .flags = 0x3,
+		  .skip = ads_to_xe(ads)->info.platform != XE_PVC ||
+			  hwe->class != XE_ENGINE_CLASS_COMPUTE ||
+			  hwe->instance != 0				},
+	};
+
+	BUILD_BUG_ON(ARRAY_SIZE(extra_regs) > ADS_REGSET_EXTRA_MAX);
+
+	for (e = extra_regs; e < extra_regs + ARRAY_SIZE(extra_regs); e++) {
+		if (e->skip)
+			continue;
+
+		guc_mmio_regset_write_one(ads, regset_map,
+					  e->reg, e->flags, count++);
+	}
+
+	return count;
+}
+
 static void guc_mmio_reg_state_init(struct xe_guc_ads *ads)
 {
+	size_t regset_offset = guc_ads_regset_offset(ads);
+	struct xe_gt *gt = ads_to_gt(ads);
+	struct xe_hw_engine *hwe;
+	enum xe_hw_engine_id id;
+	u32 addr = xe_bo_ggtt_addr(ads->bo) + regset_offset;
+	struct iosys_map regset_map = IOSYS_MAP_INIT_OFFSET(ads_to_map(ads),
+							    regset_offset);
+
+	for_each_hw_engine(hwe, gt, id) {
+		unsigned int count;
+		u8 gc;
+
+		/*
+		 * 1. Write all MMIO entries for this engine to the table. No
+		 * need to worry about fused-off engines and when there are
+		 * entries in the regset: the reg_state_list has been zero'ed
+		 * by xe_guc_ads_populate()
+		 */
+		count = guc_mmio_regset_write(ads, &regset_map, hwe);
+		if (!count)
+			continue;
+
+		/*
+		 * 2. Record in the header (ads.reg_state_list) the address
+		 * location and number of entries
+		 */
+		gc = xe_engine_class_to_guc_class(hwe->class);
+		ads_blob_write(ads, ads.reg_state_list[gc][hwe->instance].address, addr);
+		ads_blob_write(ads, ads.reg_state_list[gc][hwe->instance].count, count);
+
+		addr += count * sizeof(struct guc_mmio_reg);
+		iosys_map_incr(&regset_map, count * sizeof(struct guc_mmio_reg));
+	}
 }
 
 void xe_guc_ads_populate(struct xe_guc_ads *ads)
@@ -382,9 +429,6 @@ void xe_guc_ads_populate(struct xe_guc_ads *ads)
 	guc_prep_golden_context(ads);
 	guc_mapping_table_init(gt, &info_map);
 	guc_capture_list_init(ads);
-
-	if (xe->info.platform == XE_PVC)
-		fill_regset_pvc(ads);
 
 	if (GRAPHICS_VER(xe) >= 12 && !IS_DGFX(xe)) {
 		u32 distdbreg =
