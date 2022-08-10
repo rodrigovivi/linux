@@ -363,17 +363,6 @@ static void guc_capture_list_init(struct xe_guc_ads *ads)
 
 static void guc_mmio_reg_state_init(struct xe_guc_ads *ads)
 {
-	int i, j;
-	u32 addr = xe_bo_ggtt_addr(ads->bo) + guc_ads_regset_offset(ads);
-
-	/* FIXME: Populate a proper reg state list */
-	for (i = 0; i < GUC_MAX_ENGINE_CLASSES; ++i) {
-		for (j = 0; j < GUC_MAX_INSTANCES_PER_CLASS; ++j) {
-			ads_blob_write(ads, ads.reg_state_list[i][j].address,
-				       addr);
-			ads_blob_write(ads, ads.reg_state_list[i][j].count, 0);
-		}
-	}
 }
 
 void xe_guc_ads_populate(struct xe_guc_ads *ads)
