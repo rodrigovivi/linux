@@ -347,6 +347,8 @@ static unsigned int guc_mmio_regset_write(struct xe_guc_ads *ads,
 					  struct iosys_map *regset_map,
 					  struct xe_hw_engine *hwe)
 {
+	struct xe_reg_sr_entry *entry;
+	unsigned long idx;
 	unsigned count = 0;
 	const struct {
 		u32 reg;
@@ -367,6 +369,12 @@ static unsigned int guc_mmio_regset_write(struct xe_guc_ads *ads,
 	};
 
 	BUILD_BUG_ON(ARRAY_SIZE(extra_regs) > ADS_REGSET_EXTRA_MAX);
+
+	xa_for_each(&hwe->reg_sr.xa, idx, entry) {
+		u32 flags = entry->masked_reg ? GUC_REGSET_MASKED : 0;
+
+		guc_mmio_regset_write_one(ads, regset_map, idx, flags, count++);
+	}
 
 	for (e = extra_regs; e < extra_regs + ARRAY_SIZE(extra_regs); e++) {
 		if (e->skip)
