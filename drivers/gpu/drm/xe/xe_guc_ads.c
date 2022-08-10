@@ -16,6 +16,9 @@
 #include "xe_platform_types.h"
 #include "../i915/gt/intel_gt_regs.h"
 
+/* Slack of a few additional entries per engine */
+#define ADS_REGSET_EXTRA_MAX	8
+
 static struct xe_guc *
 ads_to_guc(struct xe_guc_ads *ads)
 {
@@ -101,8 +104,9 @@ struct __guc_ads_blob {
 
 static size_t guc_ads_regset_size(struct xe_guc_ads *ads)
 {
-	/* FIXME: Allocate a proper regset list */
-	return PAGE_ALIGN(PAGE_SIZE);
+	XE_BUG_ON(!ads->regset_size);
+
+	return ads->regset_size;
 }
 
 static size_t guc_ads_golden_ctxt_size(struct xe_guc_ads *ads)
@@ -170,12 +174,31 @@ static void guc_ads_fini(struct drm_device *drm, void *arg)
 	xe_bo_unpin_map_no_vm(ads->bo);
 }
 
+static size_t calculate_regset_size(struct xe_gt *gt)
+{
+	struct xe_reg_sr_entry *sr_entry;
+	unsigned long sr_idx;
+	struct xe_hw_engine *hwe;
+	enum xe_hw_engine_id id;
+	unsigned int count = 0;
+
+	for_each_hw_engine(hwe, gt, id)
+		xa_for_each(&hwe->reg_sr.xa, sr_idx, sr_entry)
+			count++;
+
+	count += ADS_REGSET_EXTRA_MAX * XE_NUM_HW_ENGINES;
+
+	return count * sizeof(struct guc_mmio_reg);
+}
+
 int xe_guc_ads_init(struct xe_guc_ads *ads)
 {
 	struct xe_device *xe = ads_to_xe(ads);
 	struct xe_gt *gt = ads_to_gt(ads);
 	struct xe_bo *bo;
 	int err;
+
+	ads->regset_size = calculate_regset_size(gt);
 
 	bo = xe_bo_create_pin_map(xe, gt, NULL, guc_ads_size(ads),
 				  ttm_bo_type_kernel,
@@ -366,10 +389,10 @@ void xe_guc_ads_populate(struct xe_guc_ads *ads)
 	xe_map_memset(ads_to_xe(ads), ads_to_map(ads), 0, 0, guc_ads_size(ads));
 	guc_policies_init(ads);
 	fill_engine_enable_masks(gt, &info_map);
+	guc_mmio_reg_state_init(ads);
 	guc_prep_golden_context(ads);
 	guc_mapping_table_init(gt, &info_map);
 	guc_capture_list_init(ads);
-	guc_mmio_reg_state_init(ads);
 
 	if (xe->info.platform == XE_PVC)
 		fill_regset_pvc(ads);
