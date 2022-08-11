@@ -472,13 +472,23 @@ static const struct attribute *pc_attrs[] = {
 static void pc_init_rp_values(struct xe_guc_pc *pc)
 {
 	struct xe_gt *gt = pc_to_gt(pc);
+	struct xe_device *xe = gt_to_xe(gt);
 	u32 reg;
 
-	reg = xe_mmio_read32(gt, GEN6_RP_STATE_CAP.reg);
+	if (xe->info.platform == XE_PVC)
+		reg = xe_mmio_read32(gt, PVC_RP_STATE_CAP.reg);
+	else
+		reg = xe_mmio_read32(gt, GEN6_RP_STATE_CAP.reg);
 	pc->rp0_freq = REG_FIELD_GET(RP0_MASK, reg) * GT_FREQUENCY_MULTIPLIER;
 	pc->rpn_freq = REG_FIELD_GET(RPN_MASK, reg) * GT_FREQUENCY_MULTIPLIER;
 
-	reg = xe_mmio_read32(gt, GEN10_FREQ_INFO_REC.reg);
+	/*
+	 * For PVC we still need to use fused RP1 as the approximation for RPe
+	 * For other platforms than PVC we get the resolved RPe directly from
+	 * PCODE at a different register
+	 */
+	if (xe->info.platform != XE_PVC)
+		reg = xe_mmio_read32(gt, GEN10_FREQ_INFO_REC.reg);
 	pc->rpe_freq = REG_FIELD_GET(RPE_MASK, reg) * GT_FREQUENCY_MULTIPLIER;
 }
 
@@ -585,9 +595,10 @@ int xe_guc_pc_init(struct xe_guc_pc *pc)
  */
 int xe_guc_pc_start(struct xe_guc_pc *pc)
 {
+	struct xe_device *xe = pc_to_xe(pc);
 	int ret;
 
-	XE_WARN_ON(!xe_device_guc_submission_enabled(pc_to_xe(pc)));
+	XE_WARN_ON(!xe_device_guc_submission_enabled(xe));
 
 	pc_init_rp_values(pc);
 
@@ -603,6 +614,11 @@ int xe_guc_pc_start(struct xe_guc_pc *pc)
 	ret = pc_adjust_freq_bounds(pc);
 	if (ret)
 		return ret;
+
+	if (xe->info.platform == XE_PVC) {
+		pc_gucrc_disable(pc);
+		return 0;
+	}
 
 	return pc_action_setup_gucrc(pc, XE_GUCRC_FIRMWARE_CONTROL);
 }
