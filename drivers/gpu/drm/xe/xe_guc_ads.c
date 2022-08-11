@@ -347,6 +347,8 @@ static unsigned int guc_mmio_regset_write(struct xe_guc_ads *ads,
 					  struct iosys_map *regset_map,
 					  struct xe_hw_engine *hwe)
 {
+	struct xe_hw_engine *hwe_rcs_reset_domain =
+		xe_gt_any_hw_engine_by_reset_domain(hwe->gt, XE_ENGINE_CLASS_RENDER);
 	struct xe_reg_sr_entry *entry;
 	unsigned long idx;
 	unsigned count = 0;
@@ -358,14 +360,8 @@ static unsigned int guc_mmio_regset_write(struct xe_guc_ads *ads,
 		{ .reg = RING_MODE_GEN7(hwe->mmio_base).reg,		},
 		{ .reg = RING_HWS_PGA(hwe->mmio_base).reg,		},
 		{ .reg = RING_IMR(hwe->mmio_base).reg,			},
-		/*
-		 * TODO: support setting it on first compute/render instance
-		 * only after there is support for fused-off compute engines
-		 */
 		{ .reg = GEN12_RCU_MODE.reg, .flags = 0x3,
-		  .skip = ads_to_xe(ads)->info.platform != XE_PVC ||
-			  hwe->class != XE_ENGINE_CLASS_COMPUTE ||
-			  hwe->instance != 0				},
+		  .skip = hwe != hwe_rcs_reset_domain			},
 	};
 
 	BUILD_BUG_ON(ARRAY_SIZE(extra_regs) > ADS_REGSET_EXTRA_MAX);
