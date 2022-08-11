@@ -84,7 +84,6 @@ struct intel_audio_funcs;
 struct intel_cdclk_config;
 struct intel_cdclk_state;
 struct intel_cdclk_vals;
-struct intel_color_funcs;
 struct intel_connector;
 struct intel_dp;
 struct intel_encoder;
@@ -480,9 +479,6 @@ struct drm_i915_private {
 	struct workqueue_struct *modeset_wq;
 	/* unbound hipri wq for page flips/plane updates */
 	struct workqueue_struct *flip_wq;
-
-	/* Display internal color functions */
-	const struct intel_color_funcs *color_funcs;
 
 	/* PCH chipset type */
 	enum intel_pch pch_type;
