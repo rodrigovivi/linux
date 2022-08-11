@@ -24,6 +24,13 @@ int xe_gt_resume(struct xe_gt *gt);
 void xe_gt_reset_async(struct xe_gt *gt);
 void xe_gt_migrate_wait(struct xe_gt *gt);
 
+/**
+ * xe_gt_any_hw_engine_by_reset_domain: scan the list of engines and return the
+ * first that matches the same reset domain as @class
+ */
+struct xe_hw_engine *
+xe_gt_any_hw_engine_by_reset_domain(struct xe_gt *gt, enum xe_engine_class class);
+
 struct xe_hw_engine *xe_gt_hw_engine(struct xe_gt *gt,
 				     enum xe_engine_class class,
 				     u16 instance,
