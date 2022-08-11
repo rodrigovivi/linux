@@ -480,3 +480,26 @@ struct xe_hw_engine *xe_gt_hw_engine(struct xe_gt *gt,
 
 	return NULL;
 }
+
+struct xe_hw_engine *xe_gt_any_hw_engine_by_reset_domain(struct xe_gt *gt,
+							 enum xe_engine_class class)
+{
+	struct xe_hw_engine *hwe;
+	enum xe_hw_engine_id id;
+
+	for_each_hw_engine(hwe, gt, id) {
+		switch (class) {
+		case XE_ENGINE_CLASS_RENDER:
+		case XE_ENGINE_CLASS_COMPUTE:
+			if (hwe->class == XE_ENGINE_CLASS_RENDER ||
+			    hwe->class == XE_ENGINE_CLASS_COMPUTE)
+				return hwe;
+			break;
+		default:
+			if (hwe->class == class)
+				return hwe;
+		}
+	}
+
+	return NULL;
+}
