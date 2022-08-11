@@ -59,7 +59,7 @@
 
 static void skl_sagv_disable(struct drm_i915_private *dev_priv);
 
-struct drm_i915_clock_gating_funcs {
+struct intel_clock_gating_funcs {
 	void (*init_clock_gating)(struct drm_i915_private *i915);
 };
 
@@ -8053,7 +8053,7 @@ static void i830_init_clock_gating(struct drm_i915_private *dev_priv)
 
 void intel_init_clock_gating(struct drm_i915_private *dev_priv)
 {
-	dev_priv->clock_gating_funcs->init_clock_gating(dev_priv);
+	dev_priv->display.funcs.clock_gating->init_clock_gating(dev_priv);
 }
 
 void intel_suspend_hw(struct drm_i915_private *dev_priv)
@@ -8069,7 +8069,7 @@ static void nop_init_clock_gating(struct drm_i915_private *dev_priv)
 }
 
 #define CG_FUNCS(platform)						\
-static const struct drm_i915_clock_gating_funcs platform##_clock_gating_funcs = { \
+static const struct intel_clock_gating_funcs platform##_clock_gating_funcs = { \
 	.init_clock_gating = platform##_init_clock_gating,		\
 }
 
@@ -8113,58 +8113,58 @@ CG_FUNCS(nop);
 void intel_init_clock_gating_hooks(struct drm_i915_private *dev_priv)
 {
 	if (IS_PONTEVECCHIO(dev_priv))
-		dev_priv->clock_gating_funcs = &pvc_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &pvc_clock_gating_funcs;
 	else if (IS_DG2(dev_priv))
-		dev_priv->clock_gating_funcs = &dg2_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &dg2_clock_gating_funcs;
 	else if (IS_XEHPSDV(dev_priv))
-		dev_priv->clock_gating_funcs = &xehpsdv_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &xehpsdv_clock_gating_funcs;
 	else if (IS_ALDERLAKE_P(dev_priv))
-		dev_priv->clock_gating_funcs = &adlp_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &adlp_clock_gating_funcs;
 	else if (IS_DG1(dev_priv))
-		dev_priv->clock_gating_funcs = &dg1_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &dg1_clock_gating_funcs;
 	else if (GRAPHICS_VER(dev_priv) == 12)
-		dev_priv->clock_gating_funcs = &gen12lp_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &gen12lp_clock_gating_funcs;
 	else if (GRAPHICS_VER(dev_priv) == 11)
-		dev_priv->clock_gating_funcs = &icl_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &icl_clock_gating_funcs;
 	else if (IS_COFFEELAKE(dev_priv) || IS_COMETLAKE(dev_priv))
-		dev_priv->clock_gating_funcs = &cfl_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &cfl_clock_gating_funcs;
 	else if (IS_SKYLAKE(dev_priv))
-		dev_priv->clock_gating_funcs = &skl_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &skl_clock_gating_funcs;
 	else if (IS_KABYLAKE(dev_priv))
-		dev_priv->clock_gating_funcs = &kbl_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &kbl_clock_gating_funcs;
 	else if (IS_BROXTON(dev_priv))
-		dev_priv->clock_gating_funcs = &bxt_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &bxt_clock_gating_funcs;
 	else if (IS_GEMINILAKE(dev_priv))
-		dev_priv->clock_gating_funcs = &glk_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &glk_clock_gating_funcs;
 	else if (IS_BROADWELL(dev_priv))
-		dev_priv->clock_gating_funcs = &bdw_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &bdw_clock_gating_funcs;
 	else if (IS_CHERRYVIEW(dev_priv))
-		dev_priv->clock_gating_funcs = &chv_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &chv_clock_gating_funcs;
 	else if (IS_HASWELL(dev_priv))
-		dev_priv->clock_gating_funcs = &hsw_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &hsw_clock_gating_funcs;
 	else if (IS_IVYBRIDGE(dev_priv))
-		dev_priv->clock_gating_funcs = &ivb_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &ivb_clock_gating_funcs;
 	else if (IS_VALLEYVIEW(dev_priv))
-		dev_priv->clock_gating_funcs = &vlv_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &vlv_clock_gating_funcs;
 	else if (GRAPHICS_VER(dev_priv) == 6)
-		dev_priv->clock_gating_funcs = &gen6_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &gen6_clock_gating_funcs;
 	else if (GRAPHICS_VER(dev_priv) == 5)
-		dev_priv->clock_gating_funcs = &ilk_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &ilk_clock_gating_funcs;
 	else if (IS_G4X(dev_priv))
-		dev_priv->clock_gating_funcs = &g4x_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &g4x_clock_gating_funcs;
 	else if (IS_I965GM(dev_priv))
-		dev_priv->clock_gating_funcs = &i965gm_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &i965gm_clock_gating_funcs;
 	else if (IS_I965G(dev_priv))
-		dev_priv->clock_gating_funcs = &i965g_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &i965g_clock_gating_funcs;
 	else if (GRAPHICS_VER(dev_priv) == 3)
-		dev_priv->clock_gating_funcs = &gen3_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &gen3_clock_gating_funcs;
 	else if (IS_I85X(dev_priv) || IS_I865G(dev_priv))
-		dev_priv->clock_gating_funcs = &i85x_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &i85x_clock_gating_funcs;
 	else if (GRAPHICS_VER(dev_priv) == 2)
-		dev_priv->clock_gating_funcs = &i830_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &i830_clock_gating_funcs;
 	else {
 		MISSING_CASE(INTEL_DEVID(dev_priv));
-		dev_priv->clock_gating_funcs = &nop_clock_gating_funcs;
+		dev_priv->display.funcs.clock_gating = &nop_clock_gating_funcs;
 	}
 }
 

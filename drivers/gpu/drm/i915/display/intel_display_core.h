@@ -10,6 +10,7 @@
 
 struct intel_atomic_state;
 struct intel_cdclk_funcs;
+struct intel_clock_gating_funcs;
 struct intel_crtc;
 struct intel_crtc_state;
 struct intel_dpll_funcs;
@@ -44,6 +45,9 @@ struct intel_display {
 
 		/* irq display functions */
 		const struct intel_hotplug_funcs *hotplug;
+
+		/* pm private clock gating functions */
+		const struct intel_clock_gating_funcs *clock_gating;
 	} funcs;
 };
 

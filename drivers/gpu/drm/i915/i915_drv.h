@@ -78,7 +78,6 @@
 #include "intel_wopcm.h"
 
 struct dpll;
-struct drm_i915_clock_gating_funcs;
 struct drm_i915_gem_object;
 struct drm_i915_private;
 struct intel_atomic_state;
@@ -501,9 +500,6 @@ struct drm_i915_private {
 	struct workqueue_struct *modeset_wq;
 	/* unbound hipri wq for page flips/plane updates */
 	struct workqueue_struct *flip_wq;
-
-	/* pm private clock gating functions */
-	const struct drm_i915_clock_gating_funcs *clock_gating_funcs;
 
 	/* pm display functions */
 	const struct drm_i915_wm_disp_funcs *wm_disp;
