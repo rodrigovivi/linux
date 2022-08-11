@@ -27,12 +27,14 @@
 /* For GEN6_RPNSWREQ.reg to be merged when the definition moves to Xe */
 #define   REQ_RATIO_MASK	REG_GENMASK(31, 23)
 
+/* For GEN6_GT_CORE_STATUS.reg to be merged when the definition moves to Xe */
+#define   RCN_MASK	REG_GENMASK(2, 0)
+
 #define GEN12_RPSTAT1		_MMIO(0x1381b4)
 #define   GEN12_CAGF_MASK	REG_GENMASK(19, 11)
 
 #define GT_FREQUENCY_MULTIPLIER	50
 #define GEN9_FREQ_SCALER	3
-
 
 /**
  * DOC: GuC Power Conservation (PC)
@@ -46,16 +48,12 @@
  * connected power conservation features in the GuC firmware. The firmware
  * exposes a programming interface to the host for the control of SLPC.
  *
- * Xe driver enables SLPC with all of its defaults features and frequency
- * selection, which varies per platform.
- *
- * Render-C states managements under GuCRC is currently disabled by default
- * in all platforms and Xe is not yet enabling it.
- *
  * Frequency management:
  * =====================
  *
- * GuC PC provides a sysfs API for frequency management:
+ * Xe driver enables SLPC with all of its defaults features and frequency
+ * selection, which varies per platform.
+ * Xe's GuC PC provides a sysfs API for frequency management:
  *
  * device/gt#/freq_* *read-only* files:
  * - freq_act: The actual resolved frequency decided by PCODE.
@@ -68,6 +66,18 @@
  * - freq_min: GuC PC min request.
  * - freq_max: GuC PC max request.
  *             If max <= min, then freq_min becomes a fixed frequency request.
+ *
+ * Render-C States:
+ * ================
+ *
+ * Render-C states is also a GuC PC feature that is now enabled in Xe for
+ * all platforms.
+ * Xe's GuC PC provides a sysfs API for Render-C States:
+ *
+ * device/gt#/rc* *read-only* files:
+ * - rc_status: Provide the actual immediate status of Render-C: (rc0 or rc6)
+ * - rc6_residency: Provide the rc6_residency counter in units of 1.28 uSec.
+ *                  Prone to overflows.
  */
 
 static struct xe_guc *
@@ -175,6 +185,22 @@ static int pc_action_set_param(struct xe_guc_pc *pc, u8 id, u32 value)
 	return ret;
 }
 
+static int pc_action_setup_gucrc(struct xe_guc_pc *pc, u32 mode)
+{
+	struct xe_guc_ct *ct = &pc_to_guc(pc)->ct;
+	u32 action[] = {
+		XE_GUC_ACTION_SETUP_PC_GUCRC,
+		mode,
+	};
+	int ret;
+
+	ret = xe_guc_ct_send(ct, action, ARRAY_SIZE(action), 0, 0);
+	if (ret)
+		drm_err(&pc_to_xe(pc)->drm, "GuC RC enable failed: %pe",
+			ERR_PTR(ret));
+	return ret;
+}
+
 static u32 decode_freq(u32 raw)
 {
 	return DIV_ROUND_CLOSEST(raw * GT_FREQUENCY_MULTIPLIER,
@@ -243,10 +269,22 @@ static ssize_t freq_act_show(struct device *dev,
 	struct kobject *kobj = &dev->kobj;
 	struct xe_gt *gt = kobj_to_gt(kobj);
 	u32 freq;
+	ssize_t ret;
+
+	/*
+	 * When in RC6, actual frequency is 0. Let's block RC6 so we are able
+	 * to verify that our freq requests are really happening.
+	 */
+	ret = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
+	if (ret)
+		return ret;
 
 	freq = xe_mmio_read32(gt, GEN12_RPSTAT1.reg);
 	freq = REG_FIELD_GET(GEN12_CAGF_MASK, freq);
-	return sysfs_emit(buf, "%d\n", decode_freq(freq));
+	ret = sysfs_emit(buf, "%d\n", decode_freq(freq));
+
+	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
+	return ret;
 }
 static DEVICE_ATTR_RO(freq_act);
 
@@ -256,10 +294,22 @@ static ssize_t freq_cur_show(struct device *dev,
 	struct kobject *kobj = &dev->kobj;
 	struct xe_gt *gt = kobj_to_gt(kobj);
 	u32 freq;
+	ssize_t ret;
+
+	/*
+	 * GuC SLPC plays with cur freq request when GuCRC is enabled
+	 * Block RC6 for a more reliable read.
+	 */
+	ret = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
+	if (ret)
+		return ret;
 
 	freq = xe_mmio_read32(gt, GEN6_RPNSWREQ.reg);
 	freq = REG_FIELD_GET(REQ_RATIO_MASK, freq);
-	return sysfs_emit(buf, "%d\n", decode_freq(freq));
+	ret = sysfs_emit(buf, "%d\n", decode_freq(freq));
+
+	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
+	return ret;
 }
 static DEVICE_ATTR_RO(freq_cur);
 
@@ -294,13 +344,25 @@ static ssize_t freq_min_show(struct device *dev,
 			     struct device_attribute *attr, char *buf)
 {
 	struct xe_guc_pc *pc = dev_to_pc(dev);
+	struct xe_gt *gt = pc_to_gt(pc);
 	ssize_t ret;
+
+	/*
+	 * GuC SLPC plays with min freq request when GuCRC is enabled
+	 * Block RC6 for a more reliable read.
+	 */
+	ret = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
+	if (ret)
+		return ret;
 
 	ret = pc_action_query_task_state(pc);
 	if (ret)
 		return ret;
 
-	return sysfs_emit(buf, "%d\n", pc_get_min_freq(pc));
+	ret = sysfs_emit(buf, "%d\n", pc_get_min_freq(pc));
+
+	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
+	return ret;
 }
 
 static ssize_t freq_min_store(struct device *dev, struct device_attribute *attr,
@@ -354,6 +416,46 @@ static ssize_t freq_max_store(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR_RW(freq_max);
 
+static ssize_t rc_status_show(struct device *dev,
+			      struct device_attribute *attr, char *buff)
+{
+	struct xe_guc_pc *pc = dev_to_pc(dev);
+	struct xe_gt *gt = pc_to_gt(pc);
+	u32 reg;
+
+	reg = xe_mmio_read32(gt, GEN6_GT_CORE_STATUS.reg);
+
+	switch (REG_FIELD_GET(RCN_MASK, reg)) {
+	case GEN6_RC6:
+		return sysfs_emit(buff, "rc6\n");
+	case GEN6_RC0:
+		return sysfs_emit(buff, "rc0\n");
+	default:
+		return -ENOENT;
+	}
+}
+static DEVICE_ATTR_RO(rc_status);
+
+static ssize_t rc6_residency_show(struct device *dev,
+				  struct device_attribute *attr, char *buff)
+{
+	struct xe_guc_pc *pc = dev_to_pc(dev);
+	struct xe_gt *gt = pc_to_gt(pc);
+	u32 reg;
+	ssize_t ret;
+
+	ret = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
+	if (ret)
+		return ret;
+
+	reg = xe_mmio_read32(gt, GEN6_GT_GFX_RC6.reg);
+	ret = sysfs_emit(buff, "%u\n", reg);
+
+	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
+	return ret;
+}
+static DEVICE_ATTR_RO(rc6_residency);
+
 static const struct attribute *pc_attrs[] = {
 	&dev_attr_freq_act.attr,
 	&dev_attr_freq_cur.attr,
@@ -362,6 +464,8 @@ static const struct attribute *pc_attrs[] = {
 	&dev_attr_freq_rpn.attr,
 	&dev_attr_freq_min.attr,
 	&dev_attr_freq_max.attr,
+	&dev_attr_rc_status.attr,
+	&dev_attr_rc6_residency.attr,
 	NULL
 };
 
@@ -408,10 +512,32 @@ static int pc_adjust_freq_bounds(struct xe_guc_pc *pc)
 	return 0;
 }
 
+static int pc_gucrc_disable(struct xe_guc_pc *pc)
+{
+	struct xe_gt *gt = pc_to_gt(pc);
+	int ret;
+
+	ret = pc_action_setup_gucrc(pc, XE_GUCRC_HOST_CONTROL);
+	if (ret)
+		return ret;
+
+	ret = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
+	if (ret)
+		return ret;
+
+	xe_mmio_write32(gt, GEN9_PG_ENABLE.reg, 0);
+	xe_mmio_write32(gt, GEN6_RC_CONTROL.reg, 0);
+	xe_mmio_write32(gt, GEN6_RC_STATE.reg, 0);
+
+	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
+	return 0;
+}
+
 static void pc_fini(struct drm_device *drm, void *arg)
 {
 	struct xe_guc_pc *pc = arg;
 
+	XE_WARN_ON(pc_gucrc_disable(pc));
 	sysfs_remove_files(pc_to_gt(pc)->sysfs, pc_attrs);
 	xe_bo_unpin_map_no_vm(pc->bo);
 }
@@ -474,5 +600,9 @@ int xe_guc_pc_start(struct xe_guc_pc *pc)
 		return -EIO;
 	}
 
-	return pc_adjust_freq_bounds(pc);
+	ret = pc_adjust_freq_bounds(pc);
+	if (ret)
+		return ret;
+
+	return pc_action_setup_gucrc(pc, XE_GUCRC_FIRMWARE_CONTROL);
 }
