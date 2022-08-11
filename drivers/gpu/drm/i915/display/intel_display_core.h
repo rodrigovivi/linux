@@ -15,6 +15,7 @@ struct intel_clock_gating_funcs;
 struct intel_crtc;
 struct intel_crtc_state;
 struct intel_dpll_funcs;
+struct intel_fdi_funcs;
 struct intel_hotplug_funcs;
 struct intel_initial_plane_config;
 
@@ -69,6 +70,9 @@ struct intel_display {
 
 		/* pm display functions */
 		const struct intel_wm_funcs *wm;
+
+		/* fdi display functions */
+		const struct intel_fdi_funcs *fdi;
 	} funcs;
 };
 

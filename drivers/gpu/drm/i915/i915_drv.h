@@ -89,7 +89,6 @@ struct intel_connector;
 struct intel_dp;
 struct intel_encoder;
 struct intel_fbdev;
-struct intel_fdi_funcs;
 struct intel_gmbus;
 struct intel_limit;
 struct intel_overlay;
@@ -481,9 +480,6 @@ struct drm_i915_private {
 	struct workqueue_struct *modeset_wq;
 	/* unbound hipri wq for page flips/plane updates */
 	struct workqueue_struct *flip_wq;
-
-	/* fdi display functions */
-	const struct intel_fdi_funcs *fdi_funcs;
 
 	/* Display internal color functions */
 	const struct intel_color_funcs *color_funcs;
