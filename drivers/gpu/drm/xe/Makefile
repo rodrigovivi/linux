@@ -73,6 +73,8 @@ xe-y += xe_bb.o \
 	xe_pm.o \
 	xe_preempt_fence.o \
 	xe_query.o \
+	xe_reg_sr.o \
+	xe_rtp.o \
 	xe_ring_ops.o \
 	xe_sa.o \
 	xe_sched_job.o \
@@ -86,6 +88,7 @@ xe-y += xe_bb.o \
 	xe_uc_fw.o \
 	xe_vm.o \
 	xe_wait_user_fence.o \
+	xe_wa.o \
 	xe_wopcm.o
 
 obj-$(CONFIG_DRM_XE) += xe.o
