@@ -543,11 +543,54 @@ static int pc_gucrc_disable(struct xe_guc_pc *pc)
 	return 0;
 }
 
+/**
+ * xe_guc_pc_start - Start GuC's Power Conservation component
+ * @pc: Xe_GuC_PC instance
+ */
+int xe_guc_pc_start(struct xe_guc_pc *pc)
+{
+	struct xe_device *xe = pc_to_xe(pc);
+	int ret;
+
+	XE_WARN_ON(!xe_device_guc_submission_enabled(xe));
+
+	pc_init_rp_values(pc);
+
+	ret = pc_action_reset(pc);
+	if (ret)
+		return ret;
+
+	if (wait_for(pc_is_running(pc), 5)) {
+		drm_err(&pc_to_xe(pc)->drm, "GuC PC Start failed\n");
+		return -EIO;
+	}
+
+	ret = pc_adjust_freq_bounds(pc);
+	if (ret)
+		return ret;
+
+	if (xe->info.platform == XE_PVC) {
+		pc_gucrc_disable(pc);
+		return 0;
+	}
+
+	return pc_action_setup_gucrc(pc, XE_GUCRC_FIRMWARE_CONTROL);
+}
+
+/**
+ * xe_guc_pc_stop - Stop GuC's Power Conservation component
+ * @pc: Xe_GuC_PC instance
+ */
+int xe_guc_pc_stop(struct xe_guc_pc *pc)
+{
+	return pc_gucrc_disable(pc);
+}
+
 static void pc_fini(struct drm_device *drm, void *arg)
 {
 	struct xe_guc_pc *pc = arg;
 
-	XE_WARN_ON(pc_gucrc_disable(pc));
+	XE_WARN_ON(xe_guc_pc_stop(pc));
 	sysfs_remove_files(pc_to_gt(pc)->sysfs, pc_attrs);
 	xe_bo_unpin_map_no_vm(pc->bo);
 }
@@ -587,38 +630,4 @@ int xe_guc_pc_init(struct xe_guc_pc *pc)
 		return err;
 
 	return 0;
-}
-
-/**
- * xe_guc_pc_start - Start GuC's Power Conservation component
- * @pc: Xe_GuC_PC instance
- */
-int xe_guc_pc_start(struct xe_guc_pc *pc)
-{
-	struct xe_device *xe = pc_to_xe(pc);
-	int ret;
-
-	XE_WARN_ON(!xe_device_guc_submission_enabled(xe));
-
-	pc_init_rp_values(pc);
-
-	ret = pc_action_reset(pc);
-	if (ret)
-		return ret;
-
-	if (wait_for(pc_is_running(pc), 5)) {
-		drm_err(&pc_to_xe(pc)->drm, "GuC PC Start failed\n");
-		return -EIO;
-	}
-
-	ret = pc_adjust_freq_bounds(pc);
-	if (ret)
-		return ret;
-
-	if (xe->info.platform == XE_PVC) {
-		pc_gucrc_disable(pc);
-		return 0;
-	}
-
-	return pc_action_setup_gucrc(pc, XE_GUCRC_FIRMWARE_CONTROL);
 }
