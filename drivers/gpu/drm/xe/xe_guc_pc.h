@@ -10,5 +10,6 @@
 
 int xe_guc_pc_init(struct xe_guc_pc *pc);
 int xe_guc_pc_start(struct xe_guc_pc *pc);
+int xe_guc_pc_stop(struct xe_guc_pc *pc);
 
 #endif /* _XE_GUC_PC_H_ */

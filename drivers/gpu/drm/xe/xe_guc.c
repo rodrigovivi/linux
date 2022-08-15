@@ -711,6 +711,10 @@ int xe_guc_stop(struct xe_guc *guc)
 {
 	int ret;
 
+	ret = xe_guc_pc_stop(&guc->pc);
+	if (ret)
+		return ret;
+
 	xe_guc_ct_disable(&guc->ct);
 
 	ret = xe_guc_submit_stop(guc);
