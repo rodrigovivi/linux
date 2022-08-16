@@ -7,6 +7,7 @@
 #define _XE_GUC_PC_TYPES_H_
 
 #include <linux/types.h>
+#include <linux/mutex.h>
 
 /**
  * struct xe_guc_pc - GuC Power Conservation (PC)
@@ -20,6 +21,12 @@ struct xe_guc_pc {
 	u32 rpe_freq;
 	/** @rpn_freq: HW RPN frequency - The Minimum one */
 	u32 rpn_freq;
+	/** @user_requested_min: Stash the minimum requested freq by user */
+	u32 user_requested_min;
+	/** @user_requested_max: Stash the maximum requested freq by user */
+	u32 user_requested_max;
+	/** @lock: Let's protect the user requested frequencies from races */
+	struct mutex lock;
 };
 
 #endif	/* _XE_GUC_PC_TYPES_H_ */
