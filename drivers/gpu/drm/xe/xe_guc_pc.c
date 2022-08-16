@@ -10,6 +10,7 @@
 #include "xe_gt_types.h"
 #include "xe_gt_sysfs.h"
 #include "xe_guc_ct.h"
+#include "xe_map.h"
 #include "xe_mmio.h"
 #include "i915_reg_defs.h"
 #include "../i915/i915_reg.h"
@@ -114,7 +115,12 @@ pc_to_maps(struct xe_guc_pc *pc)
 }
 
 #define slpc_shared_data_read(pc_, field_) \
-	iosys_map_rd_field(pc_to_maps(pc_), 0, struct slpc_shared_data, field_)
+	xe_map_rd_field(pc_to_xe(pc_), pc_to_maps(pc_), 0, \
+			struct slpc_shared_data, field_)
+
+#define slpc_shared_data_write(pc_, field_, val_) \
+	xe_map_wr_field(pc_to_xe(pc_), pc_to_maps(pc_), 0, \
+			struct slpc_shared_data, field_, val_)
 
 #define SLPC_EVENT(id, count) \
 	(FIELD_PREP(HOST2GUC_PC_SLPC_REQUEST_MSG_1_EVENT_ID, id) | \
@@ -376,11 +382,17 @@ static ssize_t freq_min_store(struct device *dev, struct device_attribute *attr,
 	if (ret)
 		return ret;
 
+	mutex_lock(&pc->lock);
+
 	ret = pc_set_min_freq(pc, freq);
 	if (ret)
-		return ret;
+		goto out;
 
-	return count;
+	pc->user_requested_min = freq;
+
+out:
+	mutex_unlock(&pc->lock);
+	return ret ?: count;
 }
 static DEVICE_ATTR_RW(freq_min);
 
@@ -408,11 +420,16 @@ static ssize_t freq_max_store(struct device *dev, struct device_attribute *attr,
 	if (ret)
 		return ret;
 
+	mutex_lock(&pc->lock);
 	ret = pc_set_max_freq(pc, freq);
 	if (ret)
-		return ret;
+		goto out;
 
-	return count;
+	pc->user_requested_max = freq;
+
+out:
+	mutex_unlock(&pc->lock);
+	return ret ?: count;
 }
 static DEVICE_ATTR_RW(freq_max);
 
@@ -522,6 +539,29 @@ static int pc_adjust_freq_bounds(struct xe_guc_pc *pc)
 	return 0;
 }
 
+static int pc_adjust_requested_freq(struct xe_guc_pc *pc)
+{
+	int ret = 0;
+
+	mutex_lock(&pc->lock);
+
+	if (pc->user_requested_min != 0) {
+		ret = pc_set_min_freq(pc, pc->user_requested_min);
+		if (ret)
+			goto out;
+	}
+
+	if (pc->user_requested_max != 0) {
+		ret = pc_set_max_freq(pc, pc->user_requested_max);
+		if (ret)
+			goto out;
+	}
+
+out:
+	mutex_unlock(&pc->lock);
+	return ret;
+}
+
 static int pc_gucrc_disable(struct xe_guc_pc *pc)
 {
 	struct xe_gt *gt = pc_to_gt(pc);
@@ -550,11 +590,15 @@ static int pc_gucrc_disable(struct xe_guc_pc *pc)
 int xe_guc_pc_start(struct xe_guc_pc *pc)
 {
 	struct xe_device *xe = pc_to_xe(pc);
+	u32 size = PAGE_ALIGN(sizeof(struct slpc_shared_data));
 	int ret;
 
 	XE_WARN_ON(!xe_device_guc_submission_enabled(xe));
 
 	pc_init_rp_values(pc);
+
+	memset(pc->bo->vmap.vaddr, 0, size);
+	slpc_shared_data_write(pc, header.size, size);
 
 	ret = pc_action_reset(pc);
 	if (ret)
@@ -566,6 +610,10 @@ int xe_guc_pc_start(struct xe_guc_pc *pc)
 	}
 
 	ret = pc_adjust_freq_bounds(pc);
+	if (ret)
+		return ret;
+
+	ret = pc_adjust_requested_freq(pc);
 	if (ret)
 		return ret;
 
@@ -604,18 +652,14 @@ int xe_guc_pc_init(struct xe_guc_pc *pc)
 	struct xe_gt *gt = pc_to_gt(pc);
 	struct xe_device *xe = gt_to_xe(gt);
 	struct xe_bo *bo;
-	struct slpc_shared_data *data;
 	u32 size = PAGE_ALIGN(sizeof(struct slpc_shared_data));
 	int err;
 
-	data = kzalloc(size, GFP_KERNEL);
-	data->header.size = size;
+	bo = xe_bo_create_pin_map(xe, gt, NULL, size,
+				  ttm_bo_type_kernel,
+				  XE_BO_CREATE_VRAM_IF_DGFX(gt) |
+				  XE_BO_CREATE_GGTT_BIT);
 
-	bo = xe_bo_create_from_data(xe, gt, data, size,
-				    ttm_bo_type_kernel,
-				    XE_BO_CREATE_VRAM_IF_DGFX(gt) |
-				    XE_BO_CREATE_GGTT_BIT);
-	kfree(data);
 	if (IS_ERR(bo))
 		return PTR_ERR(bo);
 
