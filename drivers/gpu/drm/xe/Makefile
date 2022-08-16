@@ -68,6 +68,7 @@ xe-y += xe_bb.o \
 	xe_lrc.o \
 	xe_migrate.o \
 	xe_mmio.o \
+	xe_mocs.o \
 	xe_module.o \
 	xe_pci.o \
 	xe_pm.o \

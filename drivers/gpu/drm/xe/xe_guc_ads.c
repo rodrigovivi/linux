@@ -187,7 +187,7 @@ static size_t calculate_regset_size(struct xe_gt *gt)
 		xa_for_each(&hwe->reg_sr.xa, sr_idx, sr_entry)
 			count++;
 
-	count += ADS_REGSET_EXTRA_MAX * XE_NUM_HW_ENGINES;
+	count += (ADS_REGSET_EXTRA_MAX + GEN9_LNCFCMOCS_REG_COUNT) * XE_NUM_HW_ENGINES;
 
 	return count * sizeof(struct guc_mmio_reg);
 }
@@ -363,6 +363,7 @@ static unsigned int guc_mmio_regset_write(struct xe_guc_ads *ads,
 		{ .reg = GEN12_RCU_MODE.reg, .flags = 0x3,
 		  .skip = hwe != hwe_rcs_reset_domain			},
 	};
+	u32 i;
 
 	BUILD_BUG_ON(ARRAY_SIZE(extra_regs) > ADS_REGSET_EXTRA_MAX);
 
@@ -379,6 +380,13 @@ static unsigned int guc_mmio_regset_write(struct xe_guc_ads *ads,
 		guc_mmio_regset_write_one(ads, regset_map,
 					  e->reg, e->flags, count++);
 	}
+
+	for (i = 0; i < GEN9_LNCFCMOCS_REG_COUNT; i++) {
+		guc_mmio_regset_write_one(ads, regset_map,
+					  GEN9_LNCFCMOCS(i).reg, 0, count++);
+	}
+
+	XE_BUG_ON(ads->regset_size < (count * sizeof(struct guc_mmio_reg)));
 
 	return count;
 }
