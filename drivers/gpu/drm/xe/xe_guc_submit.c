@@ -23,6 +23,7 @@
 #include "xe_lrc.h"
 #include "xe_macros.h"
 #include "xe_map.h"
+#include "xe_mocs.h"
 #include "xe_ring_ops_types.h"
 #include "xe_sched_job.h"
 #include "xe_trace.h"
@@ -1249,6 +1250,7 @@ static void guc_engine_resume(struct xe_engine *e)
 
 	XE_BUG_ON(!engine_suspended(e) || e->guc->suspend_fence);
 
+	xe_mocs_init_engine(e);
 	guc_engine_add_msg(e, msg, RESUME);
 }
 

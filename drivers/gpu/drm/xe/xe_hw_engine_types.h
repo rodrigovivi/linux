@@ -92,6 +92,8 @@ struct xe_hw_engine {
 	struct xe_hw_fence_irq *fence_irq;
 	/** @irq_handler: IRQ handler to run when hw engine IRQ is received */
 	void (*irq_handler)(struct xe_hw_engine *, u16);
+	/** @engine_id: id  for this hw engine */
+	enum xe_hw_engine_id engine_id;
 };
 
 #endif

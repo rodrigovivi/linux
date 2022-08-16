@@ -17,6 +17,7 @@
 #include "xe_hw_fence.h"
 #include "xe_migrate.h"
 #include "xe_mmio.h"
+#include "xe_mocs.h"
 #include "xe_ring_ops.h"
 #include "xe_reg_sr.h"
 #include "xe_sa.h"
@@ -244,6 +245,7 @@ int xe_gt_init(struct xe_gt *gt)
 	err = xe_uc_init(&gt->uc);
 	XE_WARN_ON(err);
 
+	xe_mocs_init(gt);
 	err = xe_execlist_init(gt);
 	if (err)
 		goto err_force_wake;
@@ -356,6 +358,7 @@ static int gt_reset(struct xe_gt *gt)
 	if (err)
 		goto err_out;
 
+	xe_mocs_init(gt);
 	err = xe_uc_start(&gt->uc);
 	if (err)
 		goto err_out;
@@ -440,6 +443,7 @@ int xe_gt_resume(struct xe_gt *gt)
 	err = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 	if (err)
 		goto err_msg;
+
 
 	err = xe_uc_resume(&gt->uc);
 	if (err)
