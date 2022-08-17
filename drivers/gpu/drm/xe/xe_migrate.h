@@ -31,7 +31,8 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 				   struct xe_bo *bo,
 				   u32 value);
 
-typedef void (*xe_migrate_populatefn_t)(void *pos, u32 ofs, u32 num_qwords,
+typedef void (*xe_migrate_populatefn_t)(struct xe_gt *gt,
+					void *pos, u32 ofs, u32 num_qwords,
 					struct xe_vm_pgtable_update *update,
 					void *arg);
 

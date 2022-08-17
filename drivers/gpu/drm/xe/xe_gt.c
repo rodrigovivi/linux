@@ -31,8 +31,7 @@
 
 #include "../i915/gt/intel_gt_regs.h"
 
-static struct xe_gt *
-find_full_gt(struct xe_gt *gt)
+struct xe_gt *xe_find_full_gt(struct xe_gt *gt)
 {
 	struct xe_gt *search;
 	u8 id;
@@ -70,7 +69,7 @@ int xe_gt_alloc(struct xe_device *xe, struct xe_gt *gt)
 		if (!gt->mem.gtt_mgr)
 			return -ENOMEM;
 	} else {
-		struct xe_gt *full_gt = find_full_gt(gt);
+		struct xe_gt *full_gt = xe_find_full_gt(gt);
 
 		gt->mem.ggtt = full_gt->mem.ggtt;
 		gt->mem.vram_mgr = full_gt->mem.vram_mgr;
@@ -297,7 +296,7 @@ int xe_gt_init(struct xe_gt *gt)
 		if (IS_ERR(gt->migrate))
 			goto err_force_wake;
 	} else {
-		gt->migrate = find_full_gt(gt)->migrate;
+		gt->migrate = xe_find_full_gt(gt)->migrate;
 	}
 
 	xe_device_mem_access_wa_put(gt_to_xe(gt));

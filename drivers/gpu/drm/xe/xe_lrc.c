@@ -882,7 +882,7 @@ static void *empty_lrc_data(struct xe_hw_engine *hwe)
 
 static void xe_lrc_set_ppgtt(struct xe_lrc *lrc, struct xe_vm *vm)
 {
-	u64 desc = xe_vm_pdp4_descriptor(vm);
+	u64 desc = xe_vm_pdp4_descriptor(vm, lrc->full_gt);
 
 	xe_lrc_write_ctx_reg(lrc, CTX_PDP0_UDW, upper_32_bits(desc));
 	xe_lrc_write_ctx_reg(lrc, CTX_PDP0_LDW, lower_32_bits(desc));
@@ -906,6 +906,11 @@ int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 				      XE_BO_CREATE_GGTT_BIT);
 	if (IS_ERR(lrc->bo))
 		return PTR_ERR(lrc->bo);
+
+	if (xe_gt_is_media_type(hwe->gt))
+		lrc->full_gt = xe_find_full_gt(hwe->gt);
+	else
+		lrc->full_gt = hwe->gt;
 
 	/*
 	 * FIXME: Perma-pinning LRC as we don't yet support moving GGTT address

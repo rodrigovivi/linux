@@ -10,6 +10,8 @@
 #include <linux/kref.h>
 #include <linux/mmu_notifier.h>
 
+#include "xe_device_types.h"
+
 struct xe_bo;
 struct xe_vm;
 
@@ -141,17 +143,19 @@ struct xe_vm {
 	struct kref refcount;
 
 	/* engine used for (un)binding vma's */
-	struct xe_engine *eng;
+	struct xe_engine *eng[XE_MAX_GT];
+
+	/** @number_gts: number of GTs where mappings need to be created */
+	u8 number_gts;
 
 	struct dma_resv resv;
 
 	u64 size;
 	struct rb_root vmas;
 
-	struct xe_pt *pt_root;
-
-	struct xe_bo *scratch_bo;
-	struct xe_pt *scratch_pt[XE_VM_MAX_LEVEL];
+	struct xe_pt *pt_root[XE_MAX_GT];
+	struct xe_bo *scratch_bo[XE_MAX_GT];
+	struct xe_pt *scratch_pt[XE_MAX_GT][XE_VM_MAX_LEVEL];
 
 	/** @flags: flags for this VM, statically setup a creation time */
 #define XE_VM_FLAGS_64K			BIT(0)
@@ -159,7 +163,14 @@ struct xe_vm {
 #define XE_VM_FLAG_ASYNC_BIND_OPS	BIT(2)
 #define XE_VM_FLAG_MIGRATION		BIT(3)
 #define XE_VM_FLAG_SCRATCH_PAGE		BIT(4)
+#define XE_VM_FLAG_GT_ID(flags)		((flags >> 5) & 0x3)
+#define XE_VM_FLAG_SET_GT_ID(gt)	(gt->info.id << 5)
 	unsigned long flags;
+
+	/** @composite_fence_ctx: context composite fence */
+	u64 composite_fence_ctx;
+	/** @composite_fence_seqno: seqno for composite fence */
+	u32 composite_fence_seqno;
 
 	/**
 	 * @lock: outer most lock, protects objects of anything attached to this

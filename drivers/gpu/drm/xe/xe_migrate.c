@@ -82,9 +82,11 @@ static u64 xe_migrate_vram_ofs(u64 addr)
 	return addr + (256ULL << xe_pt_shift(2));
 }
 
-static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
+static int xe_migrate_prepare_vm(struct xe_gt *gt, struct xe_migrate *m,
+				 struct xe_vm *vm)
 {
-	u32 num_entries = NUM_PT_SLOTS, num_level = vm->pt_root->level;
+	u8 id = gt->info.id;
+	u32 num_entries = NUM_PT_SLOTS, num_level = vm->pt_root[id]->level;
 	u32 map_ofs, level, i;
 	struct xe_bo *bo, *batch = m->gt->kernel_bb_pool.bo;
 	struct xe_device *xe = gt_to_xe(m->gt);
@@ -109,7 +111,7 @@ static int xe_migrate_prepare_vm(struct xe_migrate *m, struct xe_vm *vm)
 		return PTR_ERR(bo);
 
 	entry = gen8_pde_encode(bo, bo->size - GEN8_PAGE_SIZE, XE_CACHE_WB);
-	xe_pt_write(xe, &vm->pt_root->bo->vmap, 0, entry);
+	xe_pt_write(xe, &vm->pt_root[id]->bo->vmap, 0, entry);
 
 #if 0
 	/* XXX: allow for 1 GiB pages? */
@@ -246,12 +248,13 @@ struct xe_migrate *xe_migrate_init(struct xe_gt *gt)
 	m->gt = gt;
 
 	/* Special layout, prepared below.. */
-	vm = xe_vm_create(xe, XE_VM_FLAG_MIGRATION);
+	vm = xe_vm_create(xe, XE_VM_FLAG_MIGRATION |
+			  XE_VM_FLAG_SET_GT_ID(gt));
 	if (IS_ERR(vm))
 		return ERR_CAST(vm);
 
 	xe_vm_lock(vm, &ww, 0, false);
-	err = xe_migrate_prepare_vm(m, vm);
+	err = xe_migrate_prepare_vm(gt, m, vm);
 	xe_vm_unlock(vm, &ww);
 	if (err) {
 		xe_vm_close_and_put(vm);
@@ -731,7 +734,7 @@ err:
 	return fence;
 }
 
-static void write_pgtable(struct xe_bb *bb, u64 ppgtt_ofs,
+static void write_pgtable(struct xe_gt *gt, struct xe_bb *bb, u64 ppgtt_ofs,
 			  struct xe_vm_pgtable_update *update,
 			  xe_migrate_populatefn_t populatefn, void *arg)
 {
@@ -769,7 +772,7 @@ static void write_pgtable(struct xe_bb *bb, u64 ppgtt_ofs,
 			(chunk * 2 + 1);
 		bb->cs[bb->len++] = lower_32_bits(addr);
 		bb->cs[bb->len++] = upper_32_bits(addr);
-		populatefn(bb->cs + bb->len, ofs, chunk, update, arg);
+		populatefn(gt, bb->cs + bb->len, ofs, chunk, update, arg);
 
 		bb->len += chunk * 2;
 		ofs += chunk;
@@ -869,7 +872,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 		addr = xe_migrate_vm_addr(ppgtt_ofs, 0) +
 			(page_ofs / sizeof(u64)) * GEN8_PAGE_SIZE;
 		for (i = 0; i < num_updates; i++)
-			write_pgtable(bb, addr + i * GEN8_PAGE_SIZE,
+			write_pgtable(m->gt, bb, addr + i * GEN8_PAGE_SIZE,
 				      &updates[i], populatefn, arg);
 	} else {
 		/* phys pages, no preamble required */
@@ -878,7 +881,8 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 
 		emit_arb_clear(bb);
 		for (i = 0; i < num_updates; i++)
-			write_pgtable(bb, 0, &updates[i], populatefn, arg);
+			write_pgtable(m->gt, bb, 0, &updates[i], populatefn,
+				      arg);
 	}
 
 	if (!eng)
@@ -923,9 +927,6 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 
 	if (!eng)
 		mutex_unlock(&m->job_mutex);
-
-	for (i = 0; i < num_syncs; i++)
-		xe_sync_entry_signal(&syncs[i], job, fence);
 
 	xe_bb_free(bb, fence);
 	drm_suballoc_free(sa_bo, fence, -1);
@@ -998,7 +999,7 @@ static int run_sanity_job(struct xe_migrate *m, struct xe_device *xe,
 }
 
 static void
-sanity_populate_cb(void *dst, u32 qword_ofs, u32 num_qwords,
+sanity_populate_cb(struct xe_gt *gt, void *dst, u32 qword_ofs, u32 num_qwords,
 		   struct xe_vm_pgtable_update *update,
 		   void *arg)
 {
@@ -1202,6 +1203,7 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 	u64 retval, expected;
 	struct xe_bb *bb;
 	int err;
+	u8 id = m->gt->info.id;
 
 	err = xe_bo_vmap(bo);
 	if (err) {
@@ -1258,7 +1260,7 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 	}
 
 	drm_dbg(&xe->drm, "Starting tests, top level PT addr: %llx, special pagetable base addr: %llx\n",
-		xe_bo_main_addr(m->eng->vm->pt_root->bo, GEN8_PAGE_SIZE),
+		xe_bo_main_addr(m->eng->vm->pt_root[id]->bo, GEN8_PAGE_SIZE),
 		xe_bo_main_addr(m->pt_bo, GEN8_PAGE_SIZE));
 
 	/* First part of the test, are we updating our pagetable bo with a new entry? */
