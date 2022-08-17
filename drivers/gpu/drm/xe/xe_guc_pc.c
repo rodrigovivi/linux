@@ -655,6 +655,8 @@ int xe_guc_pc_init(struct xe_guc_pc *pc)
 	u32 size = PAGE_ALIGN(sizeof(struct slpc_shared_data));
 	int err;
 
+	mutex_init(&pc->lock);
+
 	bo = xe_bo_create_pin_map(xe, gt, NULL, size,
 				  ttm_bo_type_kernel,
 				  XE_BO_CREATE_VRAM_IF_DGFX(gt) |
