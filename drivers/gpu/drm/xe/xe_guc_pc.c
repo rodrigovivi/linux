@@ -375,21 +375,31 @@ static ssize_t freq_min_show(struct device *dev,
 	struct xe_gt *gt = pc_to_gt(pc);
 	ssize_t ret;
 
+	mutex_lock(&pc->freq_lock);
+	if (!pc->freq_ready) {
+		/* Might be in the middle of a gt reset */
+		ret = -EAGAIN;
+		goto out;
+	}
+
 	/*
 	 * GuC SLPC plays with min freq request when GuCRC is enabled
 	 * Block RC6 for a more reliable read.
 	 */
 	ret = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 	if (ret)
-		return ret;
+		goto out;
 
 	ret = pc_action_query_task_state(pc);
 	if (ret)
-		return ret;
+		goto fw;
 
 	ret = sysfs_emit(buf, "%d\n", pc_get_min_freq(pc));
 
+fw:
 	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
+out:
+	mutex_unlock(&pc->freq_lock);
 	return ret;
 }
 
@@ -404,7 +414,12 @@ static ssize_t freq_min_store(struct device *dev, struct device_attribute *attr,
 	if (ret)
 		return ret;
 
-	mutex_lock(&pc->lock);
+	mutex_lock(&pc->freq_lock);
+	if (!pc->freq_ready) {
+		/* Might be in the middle of a gt reset */
+		ret = -EAGAIN;
+		goto out;
+	}
 
 	ret = pc_set_min_freq(pc, freq);
 	if (ret)
@@ -413,7 +428,7 @@ static ssize_t freq_min_store(struct device *dev, struct device_attribute *attr,
 	pc->user_requested_min = freq;
 
 out:
-	mutex_unlock(&pc->lock);
+	mutex_unlock(&pc->freq_lock);
 	return ret ?: count;
 }
 static DEVICE_ATTR_RW(freq_min);
@@ -424,11 +439,22 @@ static ssize_t freq_max_show(struct device *dev,
 	struct xe_guc_pc *pc = dev_to_pc(dev);
 	ssize_t ret;
 
+	mutex_lock(&pc->freq_lock);
+	if (!pc->freq_ready) {
+		/* Might be in the middle of a gt reset */
+		ret = -EAGAIN;
+		goto out;
+	}
+
 	ret = pc_action_query_task_state(pc);
 	if (ret)
-		return ret;
+		goto out;
 
-	return sysfs_emit(buf, "%d\n", pc_get_max_freq(pc));
+	ret = sysfs_emit(buf, "%d\n", pc_get_max_freq(pc));
+
+out:
+	mutex_unlock(&pc->freq_lock);
+	return ret;
 }
 
 static ssize_t freq_max_store(struct device *dev, struct device_attribute *attr,
@@ -442,7 +468,13 @@ static ssize_t freq_max_store(struct device *dev, struct device_attribute *attr,
 	if (ret)
 		return ret;
 
-	mutex_lock(&pc->lock);
+	mutex_lock(&pc->freq_lock);
+	if (!pc->freq_ready) {
+		/* Might be in the middle of a gt reset */
+		ret = -EAGAIN;
+		goto out;
+	}
+
 	ret = pc_set_max_freq(pc, freq);
 	if (ret)
 		goto out;
@@ -450,7 +482,7 @@ static ssize_t freq_max_store(struct device *dev, struct device_attribute *attr,
 	pc->user_requested_max = freq;
 
 out:
-	mutex_unlock(&pc->lock);
+	mutex_unlock(&pc->freq_lock);
 	return ret ?: count;
 }
 static DEVICE_ATTR_RW(freq_max);
@@ -535,6 +567,8 @@ static int pc_adjust_freq_bounds(struct xe_guc_pc *pc)
 {
 	int ret;
 
+	lockdep_assert_held(&pc->freq_lock);
+
 	ret = pc_action_query_task_state(pc);
 	if (ret)
 		return ret;
@@ -565,22 +599,20 @@ static int pc_adjust_requested_freq(struct xe_guc_pc *pc)
 {
 	int ret = 0;
 
-	mutex_lock(&pc->lock);
+	lockdep_assert_held(&pc->freq_lock);
 
 	if (pc->user_requested_min != 0) {
 		ret = pc_set_min_freq(pc, pc->user_requested_min);
 		if (ret)
-			goto out;
+			return ret;
 	}
 
 	if (pc->user_requested_max != 0) {
 		ret = pc_set_max_freq(pc, pc->user_requested_max);
 		if (ret)
-			goto out;
+			return ret;
 	}
 
-out:
-	mutex_unlock(&pc->lock);
 	return ret;
 }
 
@@ -613,7 +645,7 @@ int xe_guc_pc_start(struct xe_guc_pc *pc)
 {
 	struct xe_device *xe = pc_to_xe(pc);
 	u32 size = PAGE_ALIGN(sizeof(struct slpc_shared_data));
-	int ret;
+	int err;
 
 	XE_WARN_ON(!xe_device_guc_submission_enabled(xe));
 
@@ -622,22 +654,31 @@ int xe_guc_pc_start(struct xe_guc_pc *pc)
 	memset(pc->bo->vmap.vaddr, 0, size);
 	slpc_shared_data_write(pc, header.size, size);
 
-	ret = pc_action_reset(pc);
-	if (ret)
-		return ret;
+	err = pc_action_reset(pc);
+	if (err)
+		return err;
 
 	if (wait_for(pc_is_in_state(pc, SLPC_GLOBAL_STATE_RUNNING), 5)) {
 		drm_err(&pc_to_xe(pc)->drm, "GuC PC Start failed\n");
 		return -EIO;
 	}
 
-	ret = pc_adjust_freq_bounds(pc);
-	if (ret)
-		return ret;
+	mutex_lock(&pc->freq_lock);
 
-	ret = pc_adjust_requested_freq(pc);
-	if (ret)
-		return ret;
+	err = pc_adjust_freq_bounds(pc);
+	if (err)
+		goto err;
+
+	err = pc_adjust_requested_freq(pc);
+	if (err)
+		goto err;
+
+	/*
+	 * The frequencies are really ready for use only after the user
+	 * requested ones got restored.
+	 */
+	pc->freq_ready = true;
+	mutex_unlock(&pc->freq_lock);
 
 	if (xe->info.platform == XE_PVC) {
 		pc_gucrc_disable(pc);
@@ -645,6 +686,10 @@ int xe_guc_pc_start(struct xe_guc_pc *pc)
 	}
 
 	return pc_action_setup_gucrc(pc, XE_GUCRC_FIRMWARE_CONTROL);
+
+err:
+	mutex_unlock(&pc->freq_lock);
+	return err;
 }
 
 /**
@@ -658,6 +703,10 @@ int xe_guc_pc_stop(struct xe_guc_pc *pc)
 	ret = pc_gucrc_disable(pc);
 	if (ret)
 		return ret;
+
+	mutex_lock(&pc->freq_lock);
+	pc->freq_ready = false;
+	mutex_unlock(&pc->freq_lock);
 
 	ret = pc_action_shutdown(pc);
 	if (ret)
@@ -692,7 +741,7 @@ int xe_guc_pc_init(struct xe_guc_pc *pc)
 	u32 size = PAGE_ALIGN(sizeof(struct slpc_shared_data));
 	int err;
 
-	mutex_init(&pc->lock);
+	mutex_init(&pc->freq_lock);
 
 	bo = xe_bo_create_pin_map(xe, gt, NULL, size,
 				  ttm_bo_type_kernel,
