@@ -126,10 +126,9 @@ pc_to_maps(struct xe_guc_pc *pc)
 	(FIELD_PREP(HOST2GUC_PC_SLPC_REQUEST_MSG_1_EVENT_ID, id) | \
 	 FIELD_PREP(HOST2GUC_PC_SLPC_REQUEST_MSG_1_EVENT_ARGC, count))
 
-static bool pc_is_running(struct xe_guc_pc *pc)
+static bool pc_is_in_state(struct xe_guc_pc *pc, enum slpc_global_state state)
 {
-	return slpc_shared_data_read(pc, header.global_state) ==
-		SLPC_GLOBAL_STATE_RUNNING;
+	return slpc_shared_data_read(pc, header.global_state) == state;
 }
 
 static int pc_action_reset(struct xe_guc_pc *pc)
@@ -150,6 +149,25 @@ static int pc_action_reset(struct xe_guc_pc *pc)
 	return ret;
 }
 
+static int pc_action_shutdown(struct xe_guc_pc *pc)
+{
+	struct  xe_guc_ct *ct = &pc_to_guc(pc)->ct;
+	int ret;
+	u32 action[] = {
+		GUC_ACTION_HOST2GUC_PC_SLPC_REQUEST,
+		SLPC_EVENT(SLPC_EVENT_SHUTDOWN, 2),
+		xe_bo_ggtt_addr(pc->bo),
+		0,
+	};
+
+	ret = xe_guc_ct_send(ct, action, ARRAY_SIZE(action), 0, 0);
+	if (ret)
+		drm_err(&pc_to_xe(pc)->drm, "GuC PC shutdown %pe",
+			ERR_PTR(ret));
+
+	return ret;
+}
+
 static int pc_action_query_task_state(struct xe_guc_pc *pc)
 {
 	struct xe_guc_ct *ct = &pc_to_guc(pc)->ct;
@@ -160,6 +178,9 @@ static int pc_action_query_task_state(struct xe_guc_pc *pc)
 		xe_bo_ggtt_addr(pc->bo),
 		0,
 	};
+
+	if (!pc_is_in_state(pc, SLPC_GLOBAL_STATE_RUNNING))
+		return -EAGAIN;
 
 	/* Blocking here to ensure the results are ready before reading them */
 	ret = xe_guc_ct_send_block(ct, action, ARRAY_SIZE(action));
@@ -181,7 +202,8 @@ static int pc_action_set_param(struct xe_guc_pc *pc, u8 id, u32 value)
 		value,
 	};
 
-	XE_WARN_ON(!pc_is_running(pc));
+	if (!pc_is_in_state(pc, SLPC_GLOBAL_STATE_RUNNING))
+		return -EAGAIN;
 
 	ret = xe_guc_ct_send(ct, action, ARRAY_SIZE(action), 0, 0);
 	if (ret)
@@ -604,7 +626,7 @@ int xe_guc_pc_start(struct xe_guc_pc *pc)
 	if (ret)
 		return ret;
 
-	if (wait_for(pc_is_running(pc), 5)) {
+	if (wait_for(pc_is_in_state(pc, SLPC_GLOBAL_STATE_RUNNING), 5)) {
 		drm_err(&pc_to_xe(pc)->drm, "GuC PC Start failed\n");
 		return -EIO;
 	}
@@ -631,7 +653,22 @@ int xe_guc_pc_start(struct xe_guc_pc *pc)
  */
 int xe_guc_pc_stop(struct xe_guc_pc *pc)
 {
-	return pc_gucrc_disable(pc);
+	int ret;
+
+	ret = pc_gucrc_disable(pc);
+	if (ret)
+		return ret;
+
+	ret = pc_action_shutdown(pc);
+	if (ret)
+		return ret;
+
+	if (wait_for(pc_is_in_state(pc, SLPC_GLOBAL_STATE_NOT_RUNNING), 5)) {
+		drm_err(&pc_to_xe(pc)->drm, "GuC PC Shutdown failed\n");
+		return -EIO;
+	}
+
+	return 0;
 }
 
 static void pc_fini(struct drm_device *drm, void *arg)
