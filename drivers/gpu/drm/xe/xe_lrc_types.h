@@ -20,6 +20,9 @@ struct xe_lrc {
 	 */
 	struct xe_bo *bo;
 
+	/** @gt: full GT which this LRC belongs to */
+	struct xe_gt *full_gt;
+
 	/** @flags: LRC flags */
 	u32 flags;
 #define XE_LRC_PINNED BIT(1)

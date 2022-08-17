@@ -5,6 +5,8 @@
 
 #include "xe_vm.h"
 
+#include <linux/dma-fence-array.h>
+
 #include <drm/ttm/ttm_execbuf_util.h>
 #include <drm/ttm/ttm_tt.h>
 #include <drm/xe_drm.h>
@@ -131,20 +133,26 @@ u64 gen8_pte_encode(struct xe_vma *vma, struct xe_bo *bo,
 	return pte;
 }
 
-static u64 __xe_vm_empty_pte(struct xe_vm *vm, unsigned int level)
+static u64 __xe_vm_empty_pte(struct xe_gt *gt, struct xe_vm *vm,
+			     unsigned int level)
 {
-	if (!vm->scratch_bo)
+	u8 id = gt->info.id;
+
+	XE_BUG_ON(xe_gt_is_media_type(gt));
+
+	if (!vm->scratch_bo[id])
 		return 0;
 
 	if (level == 0)
-		return gen8_pte_encode(NULL, vm->scratch_bo, 0, XE_CACHE_WB, 0,
-				       level);
+		return gen8_pte_encode(NULL, vm->scratch_bo[id], 0, XE_CACHE_WB,
+				       0, level);
 	else
-		return gen8_pde_encode(vm->scratch_pt[level - 1]->bo, 0,
+		return gen8_pde_encode(vm->scratch_pt[id][level - 1]->bo, 0,
 				       XE_CACHE_WB);
 }
 
-static struct xe_pt *xe_pt_create(struct xe_vm *vm, unsigned int level)
+static struct xe_pt *xe_pt_create(struct xe_vm *vm, struct xe_gt *gt,
+				  unsigned int level)
 {
 	struct xe_pt *pt;
 	struct xe_bo *bo;
@@ -156,9 +164,9 @@ static struct xe_pt *xe_pt_create(struct xe_vm *vm, unsigned int level)
 	if (!pt)
 		return ERR_PTR(-ENOMEM);
 
-	bo = xe_bo_create_pin_map(vm->xe, to_gt(vm->xe), vm, SZ_4K,
+	bo = xe_bo_create_pin_map(vm->xe, gt, vm, SZ_4K,
 				  ttm_bo_type_kernel,
-				  XE_BO_CREATE_VRAM_IF_DGFX(to_gt(vm->xe)) |
+				  XE_BO_CREATE_VRAM_IF_DGFX(gt) |
 				  XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT |
 				  XE_BO_CREATE_PINNED_BIT);
 	if (IS_ERR(bo)) {
@@ -177,7 +185,8 @@ err_kfree:
 	return ERR_PTR(err);
 }
 
-static int xe_pt_populate_empty(struct xe_vm *vm, struct xe_pt *pt)
+static int xe_pt_populate_empty(struct xe_gt *gt, struct xe_vm *vm,
+				struct xe_pt *pt)
 {
 	struct iosys_map *map = &pt->bo->vmap;
 	u64 empty;
@@ -185,7 +194,9 @@ static int xe_pt_populate_empty(struct xe_vm *vm, struct xe_pt *pt)
 	int numpte = GEN8_PDES;
 	int flags = 0;
 
-	if (!vm->scratch_bo) {
+	XE_BUG_ON(xe_gt_is_media_type(gt));
+
+	if (!vm->scratch_bo[gt->info.id]) {
 		/*
 		 * FIXME: Some memory is allocated already allocated to zero?
 		 * Find out which memory that is and avoid this memset...
@@ -197,7 +208,7 @@ static int xe_pt_populate_empty(struct xe_vm *vm, struct xe_pt *pt)
 			flags = GEN12_PDE_64K;
 		}
 
-		empty = __xe_vm_empty_pte(vm, pt->level) | flags;
+		empty = __xe_vm_empty_pte(gt, vm, pt->level) | flags;
 		for (i = 0; i < numpte; i++)
 			xe_pt_write(vm->xe, map, i, empty);
 	}
@@ -263,8 +274,9 @@ static bool vma_uses_64k_pages(struct xe_vma *vma)
 	return vma->bo && vma->bo->flags & XE_BO_INTERNAL_64K;
 }
 
-static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
-				  u64 start, u64 end, bool rebind, u32 idx)
+static int xe_pt_populate_for_vma(struct xe_gt *gt, struct xe_vma *vma,
+				  struct xe_pt *pt, u64 start, u64 end,
+				  bool rebind, u32 idx)
 {
 	u32 start_ofs = xe_pt_idx(start, pt->level);
 	u32 last_ofs = xe_pt_idx(end - 1, pt->level);
@@ -278,6 +290,9 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 	u32 numpdes = GEN8_PDES;
 	u32 flags = 0;
 	u64 bo_offset = vma->bo_offset + (start - vma->start);
+	u8 id = gt->info.id;
+
+	XE_BUG_ON(xe_gt_is_media_type(gt));
 
 	if (vma_uses_64k_pages(vma)) {
 		if (page_size < SZ_64K)
@@ -308,13 +323,14 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 
 			if (!xe_pte_hugepage_possible(vma, pt->level, cur,
 						      cur_end))
-				pte = xe_pt_create(vm, pt->level - 1);
+				pte = xe_pt_create(vm, gt,
+						   pt->level - 1);
 
 			if (IS_ERR(pte))
 				return PTR_ERR(pte);
 
 			if (pte) {
-				err = xe_pt_populate_for_vma(vma, pte,
+				err = xe_pt_populate_for_vma(gt, vma, pte,
 							     cur, cur_end,
 							     rebind, i);
 				if (err)
@@ -334,7 +350,7 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 	}
 
 	if (init) {
-		if (!vma->vm->scratch_bo) {
+		if (!vma->vm->scratch_bo[id]) {
 			/*
 			 * FIXME: Some memory is allocated already allocated to
 			 * zero? Find out which memory that is and avoid this
@@ -342,11 +358,11 @@ static int xe_pt_populate_for_vma(struct xe_vma *vma, struct xe_pt *pt,
 			 */
 			xe_map_memset(vma->vm->xe, map, 0, 0, SZ_4K);
 		} else {
-			u32 init_flags = (vma->vm->scratch_bo) ? flags : 0;
-			u64 empty = __xe_vm_empty_pte(vma->vm, pt->level) |
+			u32 init_flags = (vma->vm->scratch_bo[id]) ? flags : 0;
+			u64 empty = __xe_vm_empty_pte(gt, vma->vm, pt->level) |
 				init_flags;
 
-			empty = __xe_vm_empty_pte(vma->vm, pt->level) |
+			empty = __xe_vm_empty_pte(gt, vma->vm, pt->level) |
 				init_flags;
 			for (i = 0; i < start_ofs; i++)
 				xe_pt_write(vm->xe, map, i, empty);
@@ -1131,12 +1147,42 @@ static void xe_vm_remove_vma(struct xe_vm *vm, struct xe_vma *vma)
 	rb_erase(&vma->vm_node, &vm->vmas);
 }
 
+static int create_scratch(struct xe_device *xe, struct xe_gt *gt,
+			  struct xe_vm *vm)
+{
+	int i, err;
+	u8 id = gt->info.id;
+
+	vm->scratch_bo[id] = xe_bo_create(xe, gt, vm, SZ_4K,
+					  ttm_bo_type_kernel,
+					  XE_BO_CREATE_VRAM_IF_DGFX(gt) |
+					  XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT |
+					  XE_BO_CREATE_PINNED_BIT);
+	if (IS_ERR(vm->scratch_bo[id]))
+		return PTR_ERR(vm->scratch_bo[id]);
+	xe_bo_pin(vm->scratch_bo[id]);
+
+	for (i = 0; i < vm->pt_root[id]->level; i++) {
+		vm->scratch_pt[id][i] = xe_pt_create(vm, gt, i);
+		if (IS_ERR(vm->scratch_pt[id][i]))
+			return PTR_ERR(vm->scratch_pt[id][i]);
+
+		err = xe_pt_populate_empty(gt, vm, vm->scratch_pt[id][i]);
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+
 static void async_op_work_func(struct work_struct *w);
 
 struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 {
 	struct xe_vm *vm;
 	int err, i = 0;
+	struct xe_gt *gt;
+	u8 id;
 
 	vm = kzalloc(sizeof(*vm), GFP_KERNEL);
 	if (!vm)
@@ -1176,37 +1222,30 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 	if (IS_DGFX(xe) && xe->info.vram_flags & XE_VRAM_FLAGS_NEED64K)
 		vm->flags |= XE_VM_FLAGS_64K;
 
-	vm->pt_root = xe_pt_create(vm, xe->info.vm_max_level);
-	if (IS_ERR(vm->pt_root)) {
-		err = PTR_ERR(vm->pt_root);
-		goto err_unlock;
+	for_each_gt(gt, xe, id) {
+		if (xe_gt_is_media_type(gt))
+			continue;
+
+		if (flags & XE_VM_FLAG_MIGRATION &&
+		    gt->info.id != XE_VM_FLAG_GT_ID(flags))
+			continue;
+
+		vm->pt_root[id] = xe_pt_create(vm, gt, xe->info.vm_max_level);
+		if (IS_ERR(vm->pt_root[id])) {
+			err = PTR_ERR(vm->pt_root[id]);
+			vm->pt_root[id] = NULL;
+			goto err_destroy_root;
+		}
 	}
 
 	if (flags & XE_VM_FLAG_SCRATCH_PAGE) {
-		vm->scratch_bo =
-			xe_bo_create(xe, to_gt(xe), vm, SZ_4K,
-				     ttm_bo_type_kernel,
-				     XE_BO_CREATE_VRAM_IF_DGFX(to_gt(xe)) |
-				     XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT |
-				     XE_BO_CREATE_PINNED_BIT);
-		if (IS_ERR(vm->scratch_bo)) {
-			err = PTR_ERR(vm->scratch_bo);
-			goto err_destroy_root;
-		}
-		xe_bo_pin(vm->scratch_bo);
+		for_each_gt(gt, xe, id) {
+			if (!vm->pt_root[id])
+				continue;
 
-		for (i = 0; i < vm->pt_root->level; i++) {
-			vm->scratch_pt[i] = xe_pt_create(vm, i);
-			if (IS_ERR(vm->scratch_pt[i])) {
-				err = PTR_ERR(vm->scratch_pt[i]);
+			err = create_scratch(xe, gt, vm);
+			if (err)
 				goto err_scratch_pt;
-			}
-
-			err = xe_pt_populate_empty(vm, vm->scratch_pt[i]);
-			if (err) {
-				xe_pt_destroy(vm->scratch_pt[i], vm->flags);
-				goto err_scratch_pt;
-			}
 		}
 	}
 
@@ -1221,41 +1260,64 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 	}
 
 	/* Fill pt_root after allocating scratch tables */
-	err = xe_pt_populate_empty(vm, vm->pt_root);
-	if (err)
-		goto err_scratch_pt;
+	for_each_gt(gt, xe, id) {
+		if (!vm->pt_root[id])
+			continue;
 
+		err = xe_pt_populate_empty(gt, vm, vm->pt_root[id]);
+		if (err)
+			goto err_scratch_pt;
+	}
 	dma_resv_unlock(&vm->resv);
 
 	/* Kernel migration VM shouldn't have a circular loop.. */
 	if (!(flags & XE_VM_FLAG_MIGRATION)) {
-		struct xe_vm *migrate_vm =
-			xe_migrate_get_vm(to_gt(xe)->migrate);
-		struct xe_engine *eng;
+		for_each_gt(gt, xe, id) {
+			struct xe_vm *migrate_vm;
+			struct xe_engine *eng;
 
-		eng = xe_engine_create_class(xe, to_gt(xe), migrate_vm,
-					     XE_ENGINE_CLASS_COPY,
-					     ENGINE_FLAG_VM);
-		xe_vm_put(migrate_vm);
-		if (IS_ERR(eng)) {
-			xe_vm_close_and_put(vm);
-			return ERR_CAST(eng);
+			if (!vm->pt_root[id])
+				continue;
+
+			migrate_vm = xe_migrate_get_vm(gt->migrate);
+			eng = xe_engine_create_class(xe, gt, migrate_vm,
+						     XE_ENGINE_CLASS_COPY,
+						     ENGINE_FLAG_VM);
+			xe_vm_put(migrate_vm);
+			if (IS_ERR(eng)) {
+				xe_vm_close_and_put(vm);
+				return ERR_CAST(eng);
+			}
+			vm->eng[id] = eng;
+			vm->number_gts++;
 		}
-		vm->eng = eng;
 	}
+
+	if (vm->number_gts > 1)
+		vm->composite_fence_ctx = dma_fence_context_alloc(1);
 
 	trace_xe_vm_create(vm);
 
 	return vm;
 
 err_scratch_pt:
-	while (i)
-		xe_pt_destroy(vm->scratch_pt[--i], vm->flags);
-	xe_bo_unpin(vm->scratch_bo);
-	xe_bo_put(vm->scratch_bo);
+	for_each_gt(gt, xe, id) {
+		if (!vm->pt_root[id])
+			continue;
+
+		i = vm->pt_root[id]->level;
+		while (i)
+			if (vm->scratch_pt[id][--i])
+				xe_pt_destroy(vm->scratch_pt[id][i],
+					      vm->flags);
+		xe_bo_unpin(vm->scratch_bo[id]);
+		xe_bo_put(vm->scratch_bo[id]);
+	}
 err_destroy_root:
-	xe_pt_destroy(vm->pt_root, vm->flags);
-err_unlock:
+	for_each_gt(gt, xe, id) {
+		if (vm->pt_root[id])
+			xe_pt_destroy(vm->pt_root[id], vm->flags);
+	}
 	dma_resv_unlock(&vm->resv);
 err_put:
 	dma_resv_fini(&vm->resv);
@@ -1300,6 +1362,9 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 {
 	struct rb_root contested = RB_ROOT;
 	struct ww_acquire_ctx ww;
+	struct xe_device *xe = vm->xe;
+	struct xe_gt *gt;
+	u8 id;
 
 	XE_BUG_ON(vm->preempt.num_engines);
 
@@ -1309,10 +1374,12 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 	if (xe_vm_in_compute_mode(vm))
 		flush_work(&vm->preempt.rebind_work);
 
-	if (vm->eng) {
-		xe_engine_kill(vm->eng);
-		xe_engine_put(vm->eng);
-		vm->eng = NULL;
+	for_each_gt(gt, xe, id) {
+		if (vm->eng[id]) {
+			xe_engine_kill(vm->eng[id]);
+			xe_engine_put(vm->eng[id]);
+			vm->eng[id] = NULL;
+		}
 	}
 
 	down_write(&vm->lock);
@@ -1338,13 +1405,15 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 	 * install a fence to resv. Hence it's safe to
 	 * destroy the pagetables immediately.
 	 */
-	if (vm->scratch_bo) {
-		u32 i;
+	for_each_gt(gt, xe, id) {
+		if (vm->scratch_bo[id]) {
+			u32 i;
 
-		xe_bo_unpin(vm->scratch_bo);
-		xe_bo_put(vm->scratch_bo);
-		for (i = 0; i < vm->pt_root->level; i++)
-			xe_pt_destroy(vm->scratch_pt[i], vm->flags);
+			xe_bo_unpin(vm->scratch_bo[id]);
+			xe_bo_put(vm->scratch_bo[id]);
+			for (i = 0; i < vm->pt_root[id]->level; i++)
+				xe_pt_destroy(vm->scratch_pt[id][i], vm->flags);
+		}
 	}
 	xe_vm_unlock(vm, &ww);
 
@@ -1377,6 +1446,8 @@ void xe_vm_free(struct kref *ref)
 {
 	struct xe_vm *vm = container_of(ref, struct xe_vm, refcount);
 	struct ww_acquire_ctx ww;
+	struct xe_gt *gt;
+	u8 id;
 
 	/* xe_vm_close_and_put was not called? */
 	XE_WARN_ON(vm->size);
@@ -1390,8 +1461,12 @@ void xe_vm_free(struct kref *ref)
 	 * can be moved to xe_vm_close_and_put.
 	 */
 	xe_vm_lock(vm, &ww, 0, false);
-	xe_pt_destroy(vm->pt_root, vm->flags);
-	vm->pt_root = NULL;
+	for_each_gt(gt, vm->xe, id) {
+		if (vm->pt_root[id]) {
+			xe_pt_destroy(vm->pt_root[id], vm->flags);
+			vm->pt_root[id] = NULL;
+		}
+	}
 	xe_vm_unlock(vm, &ww);
 
 	trace_xe_vm_free(vm);
@@ -1414,9 +1489,12 @@ struct xe_vm *xe_vm_lookup(struct xe_file *xef, u32 id)
 	return vm;
 }
 
-u64 xe_vm_pdp4_descriptor(struct xe_vm *vm)
+u64 xe_vm_pdp4_descriptor(struct xe_vm *vm, struct xe_gt *full_gt)
 {
-	return gen8_pde_encode(vm->pt_root->bo, 0, XE_CACHE_WB);
+	XE_BUG_ON(xe_gt_is_media_type(full_gt));
+
+	return gen8_pde_encode(vm->pt_root[full_gt->info.id]->bo, 0,
+			       XE_CACHE_WB);
 }
 
 static inline void
@@ -1438,12 +1516,15 @@ xe_vm_printk(const char *prefix, struct xe_vm *vm)
 }
 
 static void
-xe_migrate_clear_pgtable_callback(void *ptr, u32 qword_ofs, u32 num_qwords,
+xe_migrate_clear_pgtable_callback(struct xe_gt *gt,
+				  void *ptr, u32 qword_ofs, u32 num_qwords,
 				  struct xe_vm_pgtable_update *update,
 				  void *arg)
 {
 	struct xe_vma *vma = arg;
-	u64 empty = __xe_vm_empty_pte(vma->vm, update->pt->level);
+	u64 empty = __xe_vm_empty_pte(gt, vma->vm, update->pt->level);
+
+	XE_BUG_ON(xe_gt_is_media_type(gt));
 
 	memset64(ptr, empty, num_qwords);
 }
@@ -1625,34 +1706,34 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 }
 
 static void
-xe_pt_prepare_unbind(struct xe_vma *vma,
+xe_pt_prepare_unbind(struct xe_gt *gt, struct xe_vma *vma,
 		     struct xe_vm_pgtable_update *entries,
 		     u32 *num_entries)
 {
+	XE_BUG_ON(xe_gt_is_media_type(gt));
+
 	*num_entries = 0;
-	__xe_pt_prepare_unbind(vma, vma->vm->pt_root, NULL,
+	__xe_pt_prepare_unbind(vma, vma->vm->pt_root[gt->info.id], NULL,
 			       vma->start, vma->end + 1,
 			       num_entries, entries);
 	XE_BUG_ON(!*num_entries);
 }
 
 static struct dma_fence *
-xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
-		 struct xe_sync_entry *syncs, u32 num_syncs)
+__xe_vm_unbind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
+		   struct xe_sync_entry *syncs, u32 num_syncs)
 {
 	struct xe_vm_pgtable_update entries[XE_VM_MAX_LEVEL * 2 + 1];
 	struct xe_vm *vm = vma->vm;
-	struct xe_gt *gt = to_gt(vm->xe);
 	u32 num_entries;
 	struct dma_fence *fence = NULL;
 	u32 i;
 
 	xe_bo_assert_held(vma->bo);
 	xe_vm_assert_held(vm);
+	XE_BUG_ON(xe_gt_is_media_type(gt));
 
-	trace_xe_vma_unbind(vma);
-
-	xe_pt_prepare_unbind(vma, entries, &num_entries);
+	xe_pt_prepare_unbind(gt, vma, entries, &num_entries);
 	XE_BUG_ON(num_entries > ARRAY_SIZE(entries));
 
 	vm_dbg(&vm->xe->drm, "%u entries to update\n", num_entries);
@@ -1683,7 +1764,8 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 	 * lower level, because it needs to be more conservative.
 	 */
 	fence = xe_migrate_update_pgtables(gt->migrate,
-					   vm, NULL, e ? e : vm->eng,
+					   vm, NULL, e ? e :
+					   vm->eng[gt->info.id],
 					   entries, num_entries,
 					   syncs, num_syncs,
 					   xe_migrate_clear_pgtable_callback,
@@ -1703,15 +1785,82 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 	return fence;
 }
 
+static struct dma_fence *
+xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
+		 struct xe_sync_entry *syncs, u32 num_syncs)
+{
+	struct xe_gt *gt;
+	struct dma_fence *fence;
+	struct dma_fence **fences = NULL;
+	struct dma_fence_array *cf = NULL;
+	struct xe_vm *vm = vma->vm;
+	int cur_fence = 0, i;
+	int err;
+	u8 id;
+
+	trace_xe_vma_unbind(vma);
+
+	if (vm->number_gts > 1) {
+		fences = kmalloc_array(vm->number_gts, sizeof(*fences),
+				       GFP_KERNEL);
+		if (!fences)
+			return ERR_PTR(-ENOMEM);
+	}
+
+	for_each_gt(gt, vm->xe, id) {
+		if (!vm->pt_root[id])
+			continue;
+
+		fence = __xe_vm_unbind_vma(gt, vma, e, syncs, num_syncs);
+		if (IS_ERR(fence)) {
+			err = PTR_ERR(fence);
+			goto err_fences;
+		}
+		if (fences)
+			fences[cur_fence++] = fence;
+	}
+
+	if (fences) {
+		cf = dma_fence_array_create(vm->number_gts, fences,
+					    vm->composite_fence_ctx,
+					    vm->composite_fence_seqno++,
+					    false);
+		if (!cf) {
+			--vm->composite_fence_seqno;
+			err = -ENOMEM;
+			goto err_fences;
+		}
+	}
+
+	for (i = 0; i < num_syncs; i++)
+		xe_sync_entry_signal(&syncs[i], NULL, cf ? &cf->base : fence);
+
+	return cf ? &cf->base : fence;
+
+err_fences:
+	if (fences) {
+		while (cur_fence) {
+			/* FIXME: Rewind the previous binds? */
+			dma_fence_put(fences[--cur_fence]);
+		}
+		kfree(fences);
+	}
+
+	return ERR_PTR(err);
+}
+
 static void
-xe_vm_populate_pgtable(void *data, u32 qword_ofs, u32 num_qwords,
-		       struct xe_vm_pgtable_update *update, void *arg)
+xe_vm_populate_pgtable(struct xe_gt *gt, void *data, u32 qword_ofs,
+		       u32 num_qwords, struct xe_vm_pgtable_update *update,
+		       void *arg)
 {
 	u32 page_size = 1 << xe_pt_shift(update->pt->level);
 	u64 bo_offset;
 	struct xe_pt **ptes = update->pt_entries;
 	u64 *ptr = data;
 	u32 i;
+
+	XE_BUG_ON(xe_gt_is_media_type(gt));
 
 	if (update->pt->level == 0 && update->flags & GEN12_PDE_64K)
 		page_size = SZ_64K;
@@ -1780,10 +1929,9 @@ static void xe_pt_commit_bind(struct xe_vma *vma,
 }
 
 static int
-__xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
-		     u64 start, u64 end,
-		     u32 *num_entries, struct xe_vm_pgtable_update *entries,
-		     bool rebind)
+__xe_pt_prepare_bind(struct xe_gt *gt, struct xe_vma *vma, struct xe_pt *pt,
+		     u64 start, u64 end, u32 *num_entries,
+		     struct xe_vm_pgtable_update *entries, bool rebind)
 {
 	struct xe_device *xe = vma->vm->xe;
 	u32 my_added_pte = 0;
@@ -1837,7 +1985,7 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 			vm_dbg(&xe->drm, "\t%u: Descending to first subentry %u level %u [%llx...%llx)\n",
 			       pt->level, start_ofs,
 			       pt->level - 1, start, start_end);
-			err = __xe_pt_prepare_bind(vma,
+			err = __xe_pt_prepare_bind(gt, vma,
 						   pt_dir->entries[start_ofs++],
 						   start, start_end,
 						   num_entries, entries,
@@ -1871,7 +2019,8 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 				/* We will directly a PTE to object */
 				entry = NULL;
 			} else {
-				entry = xe_pt_create(vma->vm, pt->level - 1);
+				entry = xe_pt_create(vma->vm, gt,
+						     pt->level - 1);
 				if (IS_ERR(entry)) {
 					err = PTR_ERR(entry);
 					goto unwind;
@@ -1880,8 +2029,9 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 			pte[i] = entry;
 
 			if (entry) {
-				err = xe_pt_populate_for_vma(vma, entry, cur,
-							     cur_end, rebind,
+				err = xe_pt_populate_for_vma(gt, vma, entry,
+							     cur, cur_end,
+							     rebind,
 							     start_ofs + i);
 				if (err) {
 					xe_pt_destroy(entry, vma->vm->flags);
@@ -1900,7 +2050,7 @@ __xe_pt_prepare_bind(struct xe_vma *vma, struct xe_pt *pt,
 			vm_dbg(&xe->drm, "\t%u: Descending to last subentry %u level %u [%llx...%llx)\n",
 			       pt->level, last_ofs, pt->level - 1, cur, end);
 
-			err = __xe_pt_prepare_bind(vma,
+			err = __xe_pt_prepare_bind(gt, vma,
 						   pt_dir->entries[last_ofs],
 						   cur, end, num_entries,
 						   entries, rebind);
@@ -1941,7 +2091,7 @@ done:
 }
 
 static int
-xe_pt_prepare_bind(struct xe_vma *vma,
+xe_pt_prepare_bind(struct xe_gt *gt, struct xe_vma *vma,
 		   struct xe_vm_pgtable_update *entries, u32 *num_entries,
 		   bool rebind)
 {
@@ -1951,7 +2101,8 @@ xe_pt_prepare_bind(struct xe_vma *vma,
 	       vma->start, vma->end);
 
 	*num_entries = 0;
-	err = __xe_pt_prepare_bind(vma, vma->vm->pt_root, vma->start, vma->end +
+	err = __xe_pt_prepare_bind(gt, vma, vma->vm->pt_root[gt->info.id],
+				   vma->start, vma->end +
 				   1, num_entries, entries, rebind);
 	if (!err)
 		BUG_ON(!*num_entries);
@@ -1962,23 +2113,21 @@ xe_pt_prepare_bind(struct xe_vma *vma,
 }
 
 static struct dma_fence *
-xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
-	       struct xe_sync_entry *syncs, u32 num_syncs,
-	       bool rebind)
+__xe_vm_bind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
+		 struct xe_sync_entry *syncs, u32 num_syncs,
+		 bool rebind)
 {
 	struct xe_vm_pgtable_update entries[XE_VM_MAX_LEVEL * 2 + 1];
 	struct xe_vm *vm = vma->vm;
-	struct xe_gt *gt = to_gt(vm->xe);
 	u32 num_entries, i;
 	struct dma_fence *fence;
 	int err;
 
 	xe_bo_assert_held(vma->bo);
 	xe_vm_assert_held(vm);
+	XE_BUG_ON(xe_gt_is_media_type(gt));
 
-	trace_xe_vma_bind(vma);
-
-	err = xe_pt_prepare_bind(vma, entries, &num_entries, rebind);
+	err = xe_pt_prepare_bind(gt, vma, entries, &num_entries, rebind);
 	if (err)
 		goto err;
 	XE_BUG_ON(num_entries > ARRAY_SIZE(entries));
@@ -2007,7 +2156,7 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 
 	fence = xe_migrate_update_pgtables(gt->migrate,
 					   vm, vma->bo,
-					   e ? e: vm->eng,
+					   e ? e: vm->eng[gt->info.id],
 					   entries, num_entries,
 					   syncs, num_syncs,
 					   xe_vm_populate_pgtable, vma);
@@ -2025,7 +2174,7 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 
 		if (!rebind && vma->last_munmap_rebind &&
 		    xe_vm_in_compute_mode(vm))
-			queue_work(to_gt(vm->xe)->ordered_wq,
+			queue_work(vm->xe->ordered_wq,
 				   &vm->preempt.rebind_work);
 
 		/* This vma is live (again?) now */
@@ -2046,6 +2195,71 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 	return fence;
 
 err:
+	return ERR_PTR(err);
+}
+
+static struct dma_fence *
+xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
+	       struct xe_sync_entry *syncs, u32 num_syncs,
+	       bool rebind)
+{
+	struct xe_gt *gt;
+	struct dma_fence *fence;
+	struct dma_fence **fences = NULL;
+	struct dma_fence_array *cf = NULL;
+	struct xe_vm *vm = vma->vm;
+	int cur_fence = 0, i;
+	int err;
+	u8 id;
+
+	trace_xe_vma_bind(vma);
+
+	if (vm->number_gts > 1) {
+		fences = kmalloc_array(vm->number_gts, sizeof(*fences),
+				       GFP_KERNEL);
+		if (!fences)
+			return ERR_PTR(-ENOMEM);
+	}
+
+	for_each_gt(gt, vm->xe, id) {
+		if (!vm->pt_root[id])
+			continue;
+
+		fence = __xe_vm_bind_vma(gt, vma, e, syncs, num_syncs, rebind);
+		if (IS_ERR(fence)) {
+			err = PTR_ERR(fence);
+			goto err_fences;
+		}
+		if (fences)
+			fences[cur_fence++] = fence;
+	}
+
+	if (fences) {
+		cf = dma_fence_array_create(vm->number_gts, fences,
+					    vm->composite_fence_ctx,
+					    vm->composite_fence_seqno++,
+					    false);
+		if (!cf) {
+			--vm->composite_fence_seqno;
+			err = -ENOMEM;
+			goto err_fences;
+		}
+	}
+
+	for (i = 0; i < num_syncs; i++)
+		xe_sync_entry_signal(&syncs[i], NULL, cf ? &cf->base : fence);
+
+	return cf ? &cf->base : fence;
+
+err_fences:
+	if (fences) {
+		while (cur_fence) {
+			/* FIXME: Rewind the previous binds? */
+			dma_fence_put(fences[--cur_fence]);
+		}
+		kfree(fences);
+	}
+
 	return ERR_PTR(err);
 }
 
@@ -2348,7 +2562,7 @@ int xe_vm_create_ioctl(struct drm_device *dev, void *data,
 
 #if IS_ENABLED(CONFIG_DRM_XE_DEBUG_MEM)
 	/* Warning: Security issue - never enable by default */
-	args->reserved[0] = xe_bo_main_addr(vm->pt_root->bo, GEN8_PAGE_SIZE);
+	args->reserved[0] = xe_bo_main_addr(vm->pt_root[0]->bo, GEN8_PAGE_SIZE);
 #endif
 
 	return 0;
@@ -2405,7 +2619,11 @@ static int __vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 
 struct ttm_buffer_object *xe_vm_ttm_bo(struct xe_vm *vm)
 {
-	return &vm->pt_root->bo->ttm;
+	int idx = vm->flags & XE_VM_FLAG_MIGRATION ?
+		XE_VM_FLAG_GT_ID(vm->flags) : 0;
+
+	/* Safe to use index 0 as all BO in the VM share a single dma-resv lock */
+	return &vm->pt_root[idx]->bo->ttm;
 }
 
 static void xe_vm_tv_populate(struct xe_vm *vm, struct ttm_validate_buffer *tv)
@@ -3305,7 +3523,7 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 
 			/* Rebinds may have been blocked, give worker a kick */
 			if (xe_vm_in_compute_mode(vm))
-				queue_work(to_gt(vm->xe)->ordered_wq,
+				queue_work(vm->xe->ordered_wq,
 					   &vm->preempt.rebind_work);
 		}
 

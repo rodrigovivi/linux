@@ -50,7 +50,7 @@ static inline bool xe_vm_is_closed(struct xe_vm *vm)
 
 #define xe_vm_assert_held(vm) dma_resv_assert_held(&(vm)->resv)
 
-u64 xe_vm_pdp4_descriptor(struct xe_vm *vm);
+u64 xe_vm_pdp4_descriptor(struct xe_vm *vm, struct xe_gt *full_gt);
 
 int xe_vm_create_ioctl(struct drm_device *dev, void *data,
 		       struct drm_file *file);
