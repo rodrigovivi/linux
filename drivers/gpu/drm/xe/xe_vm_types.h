@@ -41,6 +41,9 @@ struct xe_vma {
 	/** @bo_offset: offset into BO if not a userptr, unused for userptr */
 	u64 bo_offset;
 
+	/** @gt_mask: GT mask of where to create binding for this VMA */
+	u64 gt_mask;
+
 	/** @destroyed: VMA is destroyed */
 	bool destroyed;
 
@@ -144,9 +147,6 @@ struct xe_vm {
 
 	/* engine used for (un)binding vma's */
 	struct xe_engine *eng[XE_MAX_GT];
-
-	/** @number_gts: number of GTs where mappings need to be created */
-	u8 number_gts;
 
 	struct dma_resv resv;
 

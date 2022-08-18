@@ -1003,7 +1003,8 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 				    struct xe_bo *bo,
 				    u64 bo_offset_or_userptr,
 				    u64 start, u64 end,
-				    bool read_only)
+				    bool read_only,
+				    u64 gt_mask)
 {
 	struct xe_vma *vma;
 
@@ -1025,6 +1026,11 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 	vma->end = end;
 	if (read_only)
 		vma->pte_flags = PTE_READ_ONLY;
+
+	if (gt_mask)
+		vma->gt_mask = gt_mask;
+	else
+		vma->gt_mask = BIT(vm->xe->info.tile_count) - 1;
 
 	if (bo) {
 		xe_bo_assert_held(bo);
@@ -1180,7 +1186,7 @@ static void async_op_work_func(struct work_struct *w);
 struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 {
 	struct xe_vm *vm;
-	int err, i = 0;
+	int err, i = 0, number_gts = 0;
 	struct xe_gt *gt;
 	u8 id;
 
@@ -1289,11 +1295,11 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 				return ERR_CAST(eng);
 			}
 			vm->eng[id] = eng;
-			vm->number_gts++;
+			number_gts++;
 		}
 	}
 
-	if (vm->number_gts > 1)
+	if (number_gts > 1)
 		vm->composite_fence_ctx = dma_fence_context_alloc(1);
 
 	trace_xe_vm_create(vm);
@@ -1795,20 +1801,21 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 	struct dma_fence_array *cf = NULL;
 	struct xe_vm *vm = vma->vm;
 	int cur_fence = 0, i;
+	int number_gts = hweight_long(vma->gt_mask);
 	int err;
 	u8 id;
 
 	trace_xe_vma_unbind(vma);
 
-	if (vm->number_gts > 1) {
-		fences = kmalloc_array(vm->number_gts, sizeof(*fences),
+	if (number_gts > 1) {
+		fences = kmalloc_array(number_gts, sizeof(*fences),
 				       GFP_KERNEL);
 		if (!fences)
 			return ERR_PTR(-ENOMEM);
 	}
 
 	for_each_gt(gt, vm->xe, id) {
-		if (!vm->pt_root[id])
+		if (!(vma->gt_mask & BIT(id)))
 			continue;
 
 		fence = __xe_vm_unbind_vma(gt, vma, e, syncs, num_syncs);
@@ -1821,7 +1828,7 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 	}
 
 	if (fences) {
-		cf = dma_fence_array_create(vm->number_gts, fences,
+		cf = dma_fence_array_create(number_gts, fences,
 					    vm->composite_fence_ctx,
 					    vm->composite_fence_seqno++,
 					    false);
@@ -2209,20 +2216,21 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 	struct dma_fence_array *cf = NULL;
 	struct xe_vm *vm = vma->vm;
 	int cur_fence = 0, i;
+	int number_gts = hweight_long(vma->gt_mask);
 	int err;
 	u8 id;
 
 	trace_xe_vma_bind(vma);
 
-	if (vm->number_gts > 1) {
-		fences = kmalloc_array(vm->number_gts, sizeof(*fences),
+	if (number_gts > 1) {
+		fences = kmalloc_array(number_gts, sizeof(*fences),
 				       GFP_KERNEL);
 		if (!fences)
 			return ERR_PTR(-ENOMEM);
 	}
 
 	for_each_gt(gt, vm->xe, id) {
-		if (!vm->pt_root[id])
+		if (!(vma->gt_mask & BIT(id)))
 			continue;
 
 		fence = __xe_vm_bind_vma(gt, vma, e, syncs, num_syncs, rebind);
@@ -2235,7 +2243,7 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 	}
 
 	if (fences) {
-		cf = dma_fence_array_create(vm->number_gts, fences,
+		cf = dma_fence_array_create(number_gts, fences,
 					    vm->composite_fence_ctx,
 					    vm->composite_fence_seqno++,
 					    false);
@@ -3214,7 +3222,8 @@ static struct xe_vma *vm_unbind_lookup_vmas(struct xe_vm *vm,
 					  first->userptr.ptr,
 					  first->start,
 					  lookup->start - 1,
-					  (first->pte_flags & PTE_READ_ONLY));
+					  (first->pte_flags & PTE_READ_ONLY),
+					  first->gt_mask);
 		if (first->bo)
 			xe_bo_unlock(first->bo, &ww);
 		if (!new_first) {
@@ -3247,7 +3256,8 @@ static struct xe_vma *vm_unbind_lookup_vmas(struct xe_vm *vm,
 					 last->userptr.ptr + chunk,
 					 last->start + chunk,
 					 last->end,
-					 (last->pte_flags & PTE_READ_ONLY));
+					 (last->pte_flags & PTE_READ_ONLY),
+					 last->gt_mask);
 		if (last->bo)
 			xe_bo_unlock(last->bo, &ww);
 		if (!new_last) {
@@ -3305,7 +3315,8 @@ unwind:
 static struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm,
 					       struct xe_bo *bo,
 					       u64 bo_offset_or_userptr,
-					       u64 addr, u64 range, u32 op)
+					       u64 addr, u64 range, u32 op,
+					       u64 gt_mask)
 {
 	struct ww_acquire_ctx ww;
 	struct xe_vma *vma, lookup;
@@ -3325,7 +3336,8 @@ static struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm,
 			return ERR_PTR(err);
 		vma = xe_vma_create(vm, bo, bo_offset_or_userptr, addr,
 				    addr + range - 1,
-				    op & XE_VM_BIND_FLAG_READONLY);
+				    op & XE_VM_BIND_FLAG_READONLY,
+				    gt_mask);
 		xe_bo_unlock(bo, &ww);
 		if (!vma)
 			return ERR_PTR(-ENOMEM);
@@ -3348,7 +3360,8 @@ static struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm,
 
 		vma = xe_vma_create(vm, NULL, bo_offset_or_userptr, addr,
 				    addr + range - 1,
-				    op & XE_VM_BIND_FLAG_READONLY);
+				    op & XE_VM_BIND_FLAG_READONLY,
+				    gt_mask);
 		if (!vma)
 			return ERR_PTR(-ENOMEM);
 
@@ -3549,6 +3562,16 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 			err = -EINVAL;
 			goto put_engine;
 		}
+
+		if (bind_ops[i].gt_mask) {
+			u64 valid_gts = BIT(xe->info.tile_count) - 1;
+
+			if (XE_IOCTL_ERR(xe, bind_ops[i].gt_mask &
+					 ~valid_gts)) {
+				err = -EINVAL;
+				goto put_engine;
+			}
+		}
 	}
 
 	bos = kzalloc(sizeof(*bos) * args->num_binds, GFP_KERNEL);
@@ -3634,9 +3657,10 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		u64 addr = bind_ops[i].addr;
 		u32 op = bind_ops[i].op;
 		u64 obj_offset = bind_ops[i].obj_offset;
+		u64 gt_mask = bind_ops[i].gt_mask;
 
 		vmas[i] = vm_bind_ioctl_lookup_vma(vm, bos[i], obj_offset,
-						   addr, range, op);
+						   addr, range, op, gt_mask);
 		if (IS_ERR(vmas[i])) {
 			err = PTR_ERR(vmas[i]);
 			vmas[i] = NULL;
