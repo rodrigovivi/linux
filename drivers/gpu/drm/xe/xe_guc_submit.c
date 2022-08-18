@@ -678,7 +678,10 @@ guc_engine_run_job(struct drm_sched_job *drm_job)
 	if (e->flags & ENGINE_FLAG_COMPUTE_MODE && !xe_sched_job_is_error(job))
 		xe_sched_job_set_error(job, -ENOTSUPP);
 
-	return dma_fence_get(job->fence);
+	if (test_and_set_bit(JOB_FLAG_SUBMIT, &job->fence->flags))
+		return job->fence;
+	else
+		return dma_fence_get(job->fence);
 }
 
 static void guc_engine_free_job(struct drm_sched_job *drm_job)
