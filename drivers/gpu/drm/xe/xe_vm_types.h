@@ -184,6 +184,13 @@ struct xe_vm {
 	/** @rebind_fence: rebind fence from execbuf */
 	struct dma_fence *rebind_fence;
 
+	/**
+	 * @destroy_work: worker to destroy VM, needed as a dma_fence signaling
+	 * from an irq context can be last put and the destroy needs to be able
+	 * to sleep.
+	 */
+	struct work_struct destroy_work;
+
 	/** @extobj: bookkeeping for external objects */
 	struct {
 		/** @enties: number of external BOs attached this VM */
