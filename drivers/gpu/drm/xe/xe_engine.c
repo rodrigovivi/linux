@@ -47,6 +47,7 @@ static struct xe_engine *__xe_engine_create(struct xe_device *xe,
 	e->ops = gt->engine_ops;
 	INIT_LIST_HEAD(&e->persitent.link);
 	INIT_LIST_HEAD(&e->compute.link);
+	INIT_LIST_HEAD(&e->multi_gt_link);
 
 	/* FIXME: Wire up to configurable default value */
 	e->sched_props.timeslice_us = 1 * 1000;
@@ -125,6 +126,13 @@ struct xe_engine *xe_engine_create_class(struct xe_device *xe, struct xe_gt *gt,
 void xe_engine_destroy(struct kref *ref)
 {
 	struct xe_engine *e = container_of(ref, struct xe_engine, refcount);
+	struct xe_engine *engine, *next;
+
+	if (!(e->flags & ENGINE_FLAG_BIND_ENGINE_CHILD)) {
+		list_for_each_entry_safe(engine, next, &e->multi_gt_list,
+					 multi_gt_link)
+			xe_engine_put(engine);
+	}
 
 	e->ops->fini(e);
 }
@@ -440,14 +448,13 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 	struct drm_xe_engine_class_instance __user *user_eci =
 		u64_to_user_ptr(args->instances);
 	struct xe_hw_engine *hwe;
-	struct xe_vm *vm, *migrate_vm = NULL;
+	struct xe_vm *vm, *migrate_vm;
 	struct xe_gt *gt;
-	struct xe_engine *e;
+	struct xe_engine *e = NULL;
 	u32 logical_mask;
 	u32 id;
 	int len;
 	int err;
-	bool bind_engine;
 
 	if (XE_IOCTL_ERR(xe, args->flags))
 		return -EINVAL;
@@ -465,38 +472,67 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, eci[0].gt_id >= xe->info.tile_count))
 	       return -EINVAL;
 
-	gt = xe_device_get_gt(xe, eci[0].gt_id);
-	bind_engine = eci[0].engine_class == DRM_XE_ENGINE_CLASS_VM_BIND;
-	if (bind_engine)
-		logical_mask = bind_engine_logical_mask(xe, gt, eci,
-							args->width,
-							args->num_placements);
-	else
+	if (eci[0].engine_class == DRM_XE_ENGINE_CLASS_VM_BIND) {
+		for_each_gt(gt, xe, id) {
+			struct xe_engine *new;
+
+			if (xe_gt_is_media_type(gt))
+				continue;
+
+			eci[0].gt_id = gt->info.id;
+			logical_mask = bind_engine_logical_mask(xe, gt, eci,
+								args->width,
+								args->num_placements);
+			if (XE_IOCTL_ERR(xe, !logical_mask))
+				return -EINVAL;
+
+			hwe = find_hw_engine(xe, eci[0]);
+			if (XE_IOCTL_ERR(xe, !hwe))
+				return -EINVAL;
+
+			migrate_vm = xe_migrate_get_vm(gt->migrate);
+			new = xe_engine_create(xe, migrate_vm, logical_mask,
+					       args->width, hwe,
+					       ENGINE_FLAG_PERSISTENT |
+					       ENGINE_FLAG_VM |
+					       (id ?
+					       ENGINE_FLAG_BIND_ENGINE_CHILD :
+					       0));
+			xe_vm_put(migrate_vm);
+			if (IS_ERR(new)) {
+				err = PTR_ERR(new);
+				if (e)
+					goto put_engine;
+				return err;
+			}
+			if (id == 0)
+				e = new;
+			else
+				list_add_tail(&new->multi_gt_list,
+					      &e->multi_gt_link);
+		}
+	} else {
+		gt = xe_device_get_gt(xe, eci[0].gt_id);
 		logical_mask = calc_validate_logical_mask(xe, gt, eci,
 							  args->width,
 							  args->num_placements);
-	if (XE_IOCTL_ERR(xe, !logical_mask))
-		return -EINVAL;
+		if (XE_IOCTL_ERR(xe, !logical_mask))
+			return -EINVAL;
 
-	hwe = find_hw_engine(xe, eci[0]);
-	if (XE_IOCTL_ERR(xe, !hwe))
-		return -EINVAL;
+		hwe = find_hw_engine(xe, eci[0]);
+		if (XE_IOCTL_ERR(xe, !hwe))
+			return -EINVAL;
 
-	vm = xe_vm_lookup(xef, args->vm_id);
-	if (XE_IOCTL_ERR(xe, !vm))
-		return -ENOENT;
+		vm = xe_vm_lookup(xef, args->vm_id);
+		if (XE_IOCTL_ERR(xe, !vm))
+			return -ENOENT;
 
-	if (bind_engine)
-		migrate_vm = xe_migrate_get_vm(gt->migrate);
-
-	e = xe_engine_create(xe, migrate_vm ?: vm, logical_mask,
-			     args->width, hwe, ENGINE_FLAG_PERSISTENT |
-			     (bind_engine ? ENGINE_FLAG_VM : 0));
-	if (migrate_vm)
-		xe_vm_put(migrate_vm);
-	xe_vm_put(vm);
-	if (IS_ERR(e))
-		return PTR_ERR(e);
+		e = xe_engine_create(xe, vm, logical_mask,
+				     args->width, hwe, ENGINE_FLAG_PERSISTENT);
+		xe_vm_put(vm);
+		if (IS_ERR(e))
+			return PTR_ERR(e);
+	}
 
 	if (args->extensions) {
 		err = engine_user_extensions(xe, e, args->extensions, 0, true);
@@ -529,10 +565,8 @@ put_engine:
 	return err;
 }
 
-void xe_engine_kill(struct xe_engine *e)
+static void engine_kill_compute(struct xe_engine *e)
 {
-	e->ops->kill(e);
-
 	if (!(e->flags & ENGINE_FLAG_COMPUTE_MODE))
 	      return;
 
@@ -542,6 +576,20 @@ void xe_engine_kill(struct xe_engine *e)
 	if (e->compute.pfence)
 		dma_fence_enable_sw_signaling(e->compute.pfence);
 	up_write(&e->vm->lock);
+}
+
+void xe_engine_kill(struct xe_engine *e)
+{
+	struct xe_engine *engine = e, *next;
+
+	list_for_each_entry_safe(engine, next, &engine->multi_gt_list,
+				 multi_gt_link) {
+		e->ops->kill(engine);
+		engine_kill_compute(engine);
+	}
+
+	e->ops->kill(e);
+	engine_kill_compute(e);
 }
 
 int xe_engine_destroy_ioctl(struct drm_device *dev, void *data,
