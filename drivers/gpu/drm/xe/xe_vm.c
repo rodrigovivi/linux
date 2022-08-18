@@ -1182,6 +1182,7 @@ static int create_scratch(struct xe_device *xe, struct xe_gt *gt,
 }
 
 static void async_op_work_func(struct work_struct *w);
+static void vm_destroy_work_func(struct work_struct *w);
 
 struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 {
@@ -1213,6 +1214,8 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 	INIT_LIST_HEAD(&vm->async_ops.pending);
 	INIT_WORK(&vm->async_ops.work, async_op_work_func);
 	spin_lock_init(&vm->async_ops.lock);
+
+	INIT_WORK(&vm->destroy_work, vm_destroy_work_func);
 
 	INIT_LIST_HEAD(&vm->preempt.engines);
 	init_waitqueue_head(&vm->preempt.resume_wq);
@@ -1448,9 +1451,10 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 	xe_vm_put(vm);
 }
 
-void xe_vm_free(struct kref *ref)
+static void vm_destroy_work_func(struct work_struct *w)
 {
-	struct xe_vm *vm = container_of(ref, struct xe_vm, refcount);
+	struct xe_vm *vm =
+		container_of(w, struct xe_vm, destroy_work);
 	struct ww_acquire_ctx ww;
 	struct xe_gt *gt;
 	u8 id;
@@ -1479,6 +1483,15 @@ void xe_vm_free(struct kref *ref)
 	dma_fence_put(vm->rebind_fence);
 	dma_resv_fini(&vm->resv);
 	kfree(vm);
+
+}
+
+void xe_vm_free(struct kref *ref)
+{
+	struct xe_vm *vm = container_of(ref, struct xe_vm, refcount);
+
+	/* To destroy the VM we need to be able to sleep */
+	queue_work(system_unbound_wq, &vm->destroy_work);
 }
 
 struct xe_vm *xe_vm_lookup(struct xe_file *xef, u32 id)
