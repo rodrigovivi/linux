@@ -3522,7 +3522,7 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		}
 		if (XE_IOCTL_ERR(xe, !(e->flags & ENGINE_FLAG_VM))) {
 			err = -EINVAL;
-			goto put_vm;
+			goto put_engine;
 		}
 	}
 
@@ -3548,10 +3548,7 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 					   &vm->preempt.rebind_work);
 		}
 
-		if (e)
-			xe_engine_put(e);
-		xe_vm_put(vm);
-		return err;
+		goto put_engine;
 	}
 
 	if (XE_IOCTL_ERR(xe, !vm->async_ops.error &&
