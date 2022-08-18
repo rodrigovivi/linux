@@ -1816,7 +1816,7 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 
 	for_each_gt(gt, vm->xe, id) {
 		if (!(vma->gt_mask & BIT(id)))
-			continue;
+			goto next;
 
 		fence = __xe_vm_unbind_vma(gt, vma, e, syncs, num_syncs);
 		if (IS_ERR(fence)) {
@@ -1825,6 +1825,10 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 		}
 		if (fences)
 			fences[cur_fence++] = fence;
+
+next:
+		if (e && vm->pt_root[id] && !list_empty(&e->multi_gt_list))
+			e = list_next_entry(e, multi_gt_list);
 	}
 
 	if (fences) {
@@ -2231,7 +2235,7 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 
 	for_each_gt(gt, vm->xe, id) {
 		if (!(vma->gt_mask & BIT(id)))
-			continue;
+			goto next;
 
 		fence = __xe_vm_bind_vma(gt, vma, e, syncs, num_syncs, rebind);
 		if (IS_ERR(fence)) {
@@ -2240,6 +2244,10 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 		}
 		if (fences)
 			fences[cur_fence++] = fence;
+
+next:
+		if (e && vm->pt_root[id] && !list_empty(&e->multi_gt_list))
+			e = list_next_entry(e, multi_gt_list);
 	}
 
 	if (fences) {

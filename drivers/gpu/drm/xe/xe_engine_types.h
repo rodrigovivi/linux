@@ -57,12 +57,20 @@ struct xe_engine {
 #define ENGINE_FLAG_PERSISTENT		BIT(2)
 #define ENGINE_FLAG_COMPUTE_MODE	BIT(3)
 #define ENGINE_FLAG_VM			BIT(4)
+#define ENGINE_FLAG_BIND_ENGINE_CHILD	BIT(5)
 
 	/**
 	 * @flags: flags for this engine, should statically setup aside from ban
 	 * bit
 	 */
 	unsigned long flags;
+
+	union {
+		/** @multi_gt_list: list head for VM bind engines if multi-GT */
+		struct list_head multi_gt_list;
+		/** @multi_gt_list: link for VM bind engines if multi-GT */
+		struct list_head multi_gt_link;
+	};
 
 	union {
 		/** @execlist: execlist backend specific state for engine */
