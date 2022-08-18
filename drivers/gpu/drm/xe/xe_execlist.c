@@ -15,6 +15,7 @@
 #include "xe_lrc.h"
 #include "xe_macros.h"
 #include "xe_mmio.h"
+#include "xe_mocs.h"
 #include "xe_ring_ops_types.h"
 #include "xe_sched_job.h"
 
@@ -458,7 +459,7 @@ execlist_engine_suspend(struct xe_engine *e)
 
 static void execlist_engine_resume(struct xe_engine *e)
 {
-	/* NIY */
+	xe_mocs_init_engine(e);
 }
 
 static const struct xe_engine_ops execlist_engine_ops = {

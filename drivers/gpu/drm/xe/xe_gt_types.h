@@ -140,6 +140,15 @@ struct xe_gt {
 
 	/** @sysfs: sysfs' kobj used by xe_gt_sysfs */
 	struct kobject *sysfs;
+
+	/** @mocs: info */
+	struct {
+		/** @uc_index: UC index */
+		u8 uc_index;
+		/** @wb_index: WB index, only used on L3_CCS platforms */
+		u8 wb_index;
+	} mocs;
+
 };
 
 #endif
