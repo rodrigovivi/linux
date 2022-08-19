@@ -461,6 +461,8 @@ static void read_fuses(struct xe_gt *gt)
 	u32 bcs_mask;
 	int i, j;
 
+	xe_force_wake_assert_held(gt_to_fw(gt), XE_FW_GT);
+
 	/*
 	 * FIXME: Hack job, thinking we should have table of vfuncs for each
 	 * class which picks the correct vfunc based on IP version.
