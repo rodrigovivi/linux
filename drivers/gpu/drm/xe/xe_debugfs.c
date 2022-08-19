@@ -23,6 +23,7 @@ static int info(struct seq_file *m, void *data)
 	u8 id;
 
 	drm_printf(&p, "graphics_verx100 %d\n", xe->info.graphics_verx100);
+	drm_printf(&p, "media_verx100 %d\n", xe->info.media_verx100);
 	drm_printf(&p, "is_dgfx %s\n", xe->info.is_dgfx ? "yes" : "no");
 	drm_printf(&p, "platform %d\n", xe->info.platform);
 	drm_printf(&p, "devid 0x%x\n", xe->info.devid);
