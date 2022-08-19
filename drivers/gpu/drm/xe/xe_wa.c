@@ -3,9 +3,13 @@
  * Copyright © 2022 Intel Corporation
  */
 
+#include "xe_wa.h"
+
 #include <linux/compiler_types.h>
 
-#include "xe_gt_types.h"
+#include "xe_device_types.h"
+#include "xe_hw_engine_types.h"
+#include "xe_gt.h"
 #include "xe_hw_engine_types.h"
 #include "xe_platform_types.h"
 #include "xe_rtp.h"
@@ -22,8 +26,21 @@
  * - move tables to single compilation units? or single elf section?
  */
 
+static bool match_14011060649(const struct xe_gt *gt,
+			      const struct xe_hw_engine *hwe)
+{
+	const struct xe_device *xe = gt_to_xe((struct xe_gt *)gt);
+
+	return MEDIA_VER(xe) == 12 && hwe->instance % 2 == 0;
+}
+
 static const struct xe_rtp_entry gt_was[] = {
-	/* TODO: 14011060649 */
+	{ XE_RTP_NAME("14011060649"),
+	  XE_RTP_RULES(ENGINE_CLASS(VIDEO_DECODE),
+		       FUNC(match_14011060649)),
+	  XE_RTP_SET(VDBOX_CGCTL3F10(0), IECPUNIT_CLKGATE_DIS,
+		     XE_RTP_FLAG(FOREACH_ENGINE))
+	},
 	{ XE_RTP_NAME("16010515920"),
 	  XE_RTP_RULES(SUBPLATFORM(DG2, G10),
 		       STEP(A0, B0),
