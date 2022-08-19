@@ -159,7 +159,7 @@ static void apply_one_mmio(struct xe_gt *gt, u32 reg,
 	if (entry->masked_reg)
 		val = (entry->clr_bits ?: entry->set_bits << 16);
 	else if (entry->clr_bits + 1)
-		val = xe_mmio_read32(gt, reg) & entry->clr_bits;
+		val = xe_mmio_read32(gt, reg) & (~entry->clr_bits);
 	else
 		val = 0;
 
