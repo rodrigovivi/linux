@@ -84,6 +84,7 @@ xe-y += xe_bb.o \
 	xe_trace.o \
 	xe_ttm_gtt_mgr.o \
 	xe_ttm_vram_mgr.o \
+	xe_tuning.o \
 	xe_uc.o \
 	xe_uc_debugfs.o \
 	xe_uc_fw.o \

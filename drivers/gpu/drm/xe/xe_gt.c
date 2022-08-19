@@ -24,6 +24,7 @@
 #include "xe_sa.h"
 #include "xe_ttm_gtt_mgr.h"
 #include "xe_ttm_vram_mgr.h"
+#include "xe_tuning.h"
 #include "xe_uc.h"
 #include "xe_wa.h"
 #include "xe_wopcm.h"
@@ -216,6 +217,7 @@ int xe_gt_init_early(struct xe_gt *gt)
 
 	xe_reg_sr_init(&gt->reg_sr, "GT", gt_to_xe(gt));
 	xe_wa_process_gt(gt);
+	xe_tuning_process_gt(gt);
 
 	return 0;
 
