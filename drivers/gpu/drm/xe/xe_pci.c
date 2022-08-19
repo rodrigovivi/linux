@@ -308,7 +308,9 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		return PTR_ERR(xe);
 
 	xe->info.graphics_verx100 = desc->graphics_ver * 100 +
-				   desc->graphics_rel;
+				    desc->graphics_rel;
+	xe->info.media_verx100 = desc->media_ver * 100 +
+				 desc->media_rel;
 	xe->info.is_dgfx = desc->is_dgfx;
 	xe->info.platform = desc->platform;
 	xe->info.dma_mask_size = desc->dma_mask_size;
@@ -344,10 +346,11 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		}
 	}
 
-	drm_dbg(&xe->drm, "%s %s %04x:%04x dgfx:%d gfx100:%d dma_m_s:%d tc:%d",
+	drm_dbg(&xe->drm, "%s %s %04x:%04x dgfx:%d gfx100:%d media100:%d dma_m_s:%d tc:%d",
 		desc->platform_name, spd ? spd->name : "",
 		xe->info.devid, xe->info.revid,
 		xe->info.is_dgfx, xe->info.graphics_verx100,
+		xe->info.media_verx100,
 		xe->info.dma_mask_size, xe->info.tile_count);
 
 	drm_dbg(&xe->drm, "Stepping = (G:%s, M:%s, D:%s)\n",
