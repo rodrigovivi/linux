@@ -36,7 +36,7 @@ static int xe_dma_buf_pin(struct dma_buf_attachment *attach)
 	struct drm_gem_object *obj = attach->dmabuf->priv;
 	struct xe_bo *bo = gem_to_xe_bo(obj);
 
-	xe_bo_pin(bo);
+	xe_bo_pin_external(bo);
 	return 0;
 }
 
@@ -45,7 +45,7 @@ static void xe_dma_buf_unpin(struct dma_buf_attachment *attach)
 	struct drm_gem_object *obj = attach->dmabuf->priv;
 	struct xe_bo *bo = gem_to_xe_bo(obj);
 
-	xe_bo_unpin(bo);
+	xe_bo_unpin_external(bo);
 }
 
 static struct sg_table *xe_dma_buf_map(struct dma_buf_attachment *attach,

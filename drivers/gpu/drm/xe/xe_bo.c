@@ -53,6 +53,11 @@ bool xe_bo_is_vram(struct xe_bo *bo)
 	return resource_is_vram(bo->ttm.resource);
 }
 
+static bool xe_bo_is_user(struct xe_bo *bo)
+{
+	return bo->flags & XE_BO_CREATE_USER_BIT;
+}
+
 static struct xe_gt *
 mem_type_to_gt(struct xe_device *xe, u32 mem_type)
 {
@@ -296,14 +301,15 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 	trace_xe_bo_move(bo);
 	xe_device_mem_access_wa_get(xe);
 
-	if (xe_bo_is_pinned(bo)) {
+	if (xe_bo_is_pinned(bo) && !xe_bo_is_user(bo)) {
 		/*
-		 * Memory that is pinned should only be moved on suspend /
-		 * resume, some of the pinned memory is required for the device
-		 * to resume / use the GPU to move other evicted memory (user
-		 * memory) around. This likely could be optimized a bit futher
-		 * where we find the minimum set of pinned memory required for
-		 * resume but for simplity doing a memcpy for all pinned memory.
+		 * Kernel memory that is pinned should only be moved on suspend
+		 * / resume, some of the pinned memory is required for the
+		 * device to resume / use the GPU to move other evicted memory
+		 * (user memory) around. This likely could be optimized a bit
+		 * futher where we find the minimum set of pinned memory
+		 * required for resume but for simplity doing a memcpy for all
+		 * pinned memory.
 		 */
 		ret = xe_bo_vmap(bo);
 		if (!ret) {
@@ -337,7 +343,7 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 
 rebind:
 	trace_printk("new_mem->mem_type=%d\n", new_mem->mem_type);
-	if (!xe_bo_is_pinned(bo)) {
+	if (!xe_bo_is_pinned(bo) || xe_bo_is_user(bo)) {
 		xe_bo_trigger_rebind(xe, bo);
 		if (ttm_bo->base.dma_buf)
 			dma_buf_move_notify(ttm_bo->base.dma_buf);
@@ -396,7 +402,7 @@ static void xe_ttm_bo_destroy(struct ttm_buffer_object *ttm_bo)
 	if (bo->ggtt_node.size)
 		xe_ggtt_remove_bo(bo->gt->mem.ggtt, bo);
 
-	if (bo->vm && (bo->flags & XE_BO_CREATE_USER_BIT))
+	if (bo->vm && xe_bo_is_user(bo))
 		xe_vm_put(bo->vm);
 
 	kfree(bo);
@@ -459,6 +465,7 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_gt *gt,
 	bo->extobj_tv.num_shared = 1;
 	bo->extobj_tv.bo = &bo->ttm;
 	INIT_LIST_HEAD(&bo->vmas);
+	INIT_LIST_HEAD(&bo->pinned_link);
 
 	drm_gem_private_object_init(&xe->drm, &bo->ttm.base, size);
 
@@ -490,7 +497,7 @@ struct xe_bo *xe_bo_create_locked(struct xe_device *xe, struct xe_gt *gt,
 	if (IS_ERR(bo))
 		return bo;
 
-	if (vm && (flags & XE_BO_CREATE_USER_BIT))
+	if (vm && xe_bo_is_user(bo))
 		xe_vm_get(vm);
 	bo->vm = vm;
 
@@ -600,13 +607,55 @@ static uint64_t vram_region_io_offset(struct xe_bo *bo)
 	return gt->mem.vram.io_start - xe->mem.vram.io_start;
 }
 
+/**
+ * xe_bo_pin_external - pin an external BO
+ * @bo: buffer object to be pinned
+ *
+ * Pin an external (not tied to a VM, can be exported via dma-buf / prime FD)
+ * BO. Unique call compared to xe_bo_pin as this function has it own set of
+ * asserts and code to ensure evict / restore on suspend / resume.
+ *
+ * Returns 0 for success, negative error code otherwise.
+ */
+int xe_bo_pin_external(struct xe_bo *bo)
+{
+	struct xe_device *xe = xe_bo_device(bo);
+	int err;
+
+	XE_BUG_ON(bo->vm);
+	XE_BUG_ON(!xe_bo_is_user(bo));
+
+	if (!xe_bo_is_pinned(bo)) {
+		err = xe_bo_validate(bo, NULL);
+		if (err)
+			return err;
+
+		if (xe_bo_is_vram(bo)) {
+			spin_lock(&xe->pinned.lock);
+			list_add_tail(&bo->pinned_link,
+				      &xe->pinned.external_vram);
+			spin_unlock(&xe->pinned.lock);
+		}
+	}
+
+	ttm_bo_pin(&bo->ttm);
+
+	/*
+	 * FIXME: If we always use the reserve / unreserve functions for locking
+	 * we do not need this.
+	 */
+	ttm_bo_move_to_lru_tail_unlocked(&bo->ttm);
+
+	return 0;
+}
+
 int xe_bo_pin(struct xe_bo *bo)
 {
 	struct xe_device *xe = xe_bo_device(bo);
 	int err;
 
 	/* We currently don't expect user BO to be pinned */
-	XE_BUG_ON(bo->flags & XE_BO_CREATE_USER_BIT);
+	XE_BUG_ON(xe_bo_is_user(bo));
 
 	/* Pinned object must be in GGTT or have pinned flag */
 	XE_BUG_ON(!(bo->flags & (XE_BO_CREATE_PINNED_BIT |
@@ -643,8 +692,7 @@ int xe_bo_pin(struct xe_bo *bo)
 		place->lpfn = place->fpfn + (bo->size >> PAGE_SHIFT);
 
 		spin_lock(&xe->pinned.lock);
-		INIT_LIST_HEAD(&bo->pinned_link);
-		list_add_tail(&bo->pinned_link, &xe->pinned.present);
+		list_add_tail(&bo->pinned_link, &xe->pinned.kernel_bo_present);
 		spin_unlock(&xe->pinned.lock);
 	}
 
@@ -659,6 +707,40 @@ int xe_bo_pin(struct xe_bo *bo)
 	return 0;
 }
 
+/**
+ * xe_bo_unpin_external - unpin an external BO
+ * @bo: buffer object to be unpinned
+ *
+ * Unpin an external (not tied to a VM, can be exported via dma-buf / prime FD)
+ * BO. Unique call compared to xe_bo_unpin as this function has it own set of
+ * asserts and code to ensure evict / restore on suspend / resume.
+ *
+ * Returns 0 for success, negative error code otherwise.
+ */
+void xe_bo_unpin_external(struct xe_bo *bo)
+{
+	struct xe_device *xe = xe_bo_device(bo);
+
+	XE_BUG_ON(bo->vm);
+	XE_BUG_ON(!xe_bo_is_pinned(bo));
+	XE_BUG_ON(!xe_bo_is_user(bo));
+
+	if (bo->ttm.pin_count == 1 && !list_empty(&bo->pinned_link)) {
+		spin_lock(&xe->pinned.lock);
+		list_del_init(&bo->pinned_link);
+		spin_unlock(&xe->pinned.lock);
+	}
+
+	__xe_bo_vunmap(bo);	/* FIXME: W/A for blow up in ttm_bo_vunmap */
+	ttm_bo_unpin(&bo->ttm);
+
+	/*
+	 * FIXME: If we always use the reserve / unreserve functions for locking
+	 * we do not need this.
+	 */
+	ttm_bo_move_to_lru_tail_unlocked(&bo->ttm);
+}
+
 void xe_bo_unpin(struct xe_bo *bo)
 {
 	struct xe_device *xe = xe_bo_device(bo);
@@ -671,7 +753,7 @@ void xe_bo_unpin(struct xe_bo *bo)
 		XE_BUG_ON(list_empty(&bo->pinned_link));
 
 		spin_lock(&xe->pinned.lock);
-		list_del(&bo->pinned_link);
+		list_del_init(&bo->pinned_link);
 		spin_unlock(&xe->pinned.lock);
 	}
 
