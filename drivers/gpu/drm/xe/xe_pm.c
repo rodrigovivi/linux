@@ -73,7 +73,7 @@ int xe_pm_resume(struct xe_device *xe)
 	 * This only restores pinned memory which is the memory required for the
 	 * GT(s) to resume.
 	 */
-	err = xe_bo_restore_all(xe);
+	err = xe_bo_restore_kernel(xe);
 	if (err)
 		return err;
 
@@ -81,6 +81,10 @@ int xe_pm_resume(struct xe_device *xe)
 
 	for_each_gt(gt, xe, id)
 		xe_gt_resume(gt);
+
+	err = xe_bo_restore_user(xe);
+	if (err)
+		return err;
 
 	return 0;
 }

@@ -129,7 +129,9 @@
  * suspend must be moved to sysmem in order for their contents to be saved.
  *
  * A simple TTM call (ttm_resource_manager_evict_all) can move all non-pinned
- * (user) BOs to sysmem. It gets a little trickier with kernel BOs.
+ * (user) BOs to sysmem. External BOs that are pinned need to be manually
+ * evicted with a simple loop + ttm_bo_evict call. It gets a little trickier
+ * with kernel BOs.
  *
  * Some kernel BOs are used by the GT migration engine to do moves, thus we
  * can't move all of the BOs via the GT migration engine. For simplity, use a
@@ -139,6 +141,8 @@
  * makes this rather easy but the caveat is the memory must be contiguous. Again
  * for simplity, we enforce that all kernel (pinned) BOs are contiguous and
  * restored to the same physical location.
+ *
+ * Pinned external BOs in VRAM are restored on resume via the GPU.
  *
  * Rebinds after suspend / resume
  * ------------------------------

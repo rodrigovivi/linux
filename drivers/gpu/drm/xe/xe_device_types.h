@@ -115,10 +115,12 @@ struct xe_device {
 	struct {
 		/** @lock: protected pinned BO list state */
 		spinlock_t lock;
-		/** @evicted: pinned BO that are present */
-		struct list_head present;
+		/** @evicted: pinned kernel BO that are present */
+		struct list_head kernel_bo_present;
 		/** @evicted: pinned BO that have been evicted */
 		struct list_head evicted;
+		/** @external_vram: pinned external BO in vram*/
+		struct list_head external_vram;
 	} pinned;
 
 	/** @ufence_wq: user fence wait queue */
