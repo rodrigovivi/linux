@@ -88,9 +88,9 @@ void xe_rtp_process(const struct xe_rtp_entry *entries, struct xe_reg_sr *sr,
 			struct xe_hw_engine *each_hwe;
 			enum xe_hw_engine_id id;
 
-			mmio_base = each_hwe->mmio_base;
-
 			for_each_hw_engine(each_hwe, gt, id) {
+				mmio_base = each_hwe->mmio_base;
+
 				if (rule_matches(gt, each_hwe, entry))
 					rtp_add_sr_entry(entry, gt, mmio_base, sr);
 			}
