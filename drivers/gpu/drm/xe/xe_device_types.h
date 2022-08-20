@@ -19,7 +19,9 @@
 #define XE_BO_INVALID_OFFSET	LONG_MAX
 
 #define GRAPHICS_VER(xe) ((xe)->info.graphics_verx100 / 100)
+#define MEDIA_VER(xe) ((xe)->info.media_verx100 / 100)
 #define GRAPHICS_VERx100(xe) ((xe)->info.graphics_verx100)
+#define MEDIA_VERx100(xe) ((xe)->info.media_verx100)
 #define IS_DGFX(xe) ((xe)->info.is_dgfx)
 
 #define XE_VRAM_FLAGS_NEED64K		BIT(0)
@@ -37,8 +39,10 @@ struct xe_device {
 
 	/** @info: device info */
 	struct {
-		/** @graphics_verx100: graphics version */
+		/** @graphics_verx100: graphics IP version */
 		u32 graphics_verx100;
+		/** @media_verx100: media IP version */
+		u32 media_verx100;
 		/** @is_dgfx: is discrete device */
 		bool is_dgfx;
 		/** @platform: XE platform enum */

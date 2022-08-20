@@ -78,6 +78,10 @@ struct xe_reg_sr;
 #define XE_RTP_RULE_ENGINE_CLASS(cls_)						\
 	_XE_RTP_RULE_ENGINE_CLASS(XE_ENGINE_CLASS_##cls_)
 
+#define XE_RTP_RULE_FUNC(func__)						\
+	{ .match_type = XE_RTP_MATCH_FUNC,					\
+	  .match_func = (func__) }
+
 /**
  * @XE_RTP_WR: Helper to write @val_ to a register, overriding all the bits. The
  * correspondent notation in bspec is:

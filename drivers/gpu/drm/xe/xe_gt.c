@@ -14,19 +14,20 @@
 #include "xe_force_wake.h"
 #include "xe_ggtt.h"
 #include "xe_gt.h"
+#include "xe_gt_sysfs.h"
 #include "xe_hw_fence.h"
 #include "xe_migrate.h"
 #include "xe_mmio.h"
 #include "xe_mocs.h"
-#include "xe_ring_ops.h"
 #include "xe_reg_sr.h"
+#include "xe_ring_ops.h"
 #include "xe_sa.h"
 #include "xe_ttm_gtt_mgr.h"
 #include "xe_ttm_vram_mgr.h"
+#include "xe_tuning.h"
 #include "xe_uc.h"
 #include "xe_wa.h"
 #include "xe_wopcm.h"
-#include "xe_gt_sysfs.h"
 
 #include "../i915/gt/intel_gt_regs.h"
 
@@ -198,14 +199,32 @@ static void gt_reset_worker(struct work_struct *w);
 
 int xe_gt_init_early(struct xe_gt *gt)
 {
+	int err;
+
 	xe_force_wake_init(gt, gt_to_fw(gt));
 
-	xe_hw_engines_init_early(gt);
+	err = xe_force_wake_get(gt_to_fw(gt), XE_FW_GT);
+	if (err)
+		return err;
+
+	err = xe_hw_engines_init_early(gt);
+	if (err)
+		goto err_fw;
+
+	err = xe_force_wake_put(gt_to_fw(gt), XE_FW_GT);
+	if (err)
+		return err;
 
 	xe_reg_sr_init(&gt->reg_sr, "GT", gt_to_xe(gt));
 	xe_wa_process_gt(gt);
+	xe_tuning_process_gt(gt);
 
 	return 0;
+
+err_fw:
+	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FW_GT));
+
+	return err;
 }
 
 int xe_gt_init(struct xe_gt *gt)
@@ -443,7 +462,6 @@ int xe_gt_resume(struct xe_gt *gt)
 	err = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 	if (err)
 		goto err_msg;
-
 
 	err = xe_uc_resume(&gt->uc);
 	if (err)
