@@ -1,0 +1,28 @@
+drm drm-fixes b1fb6b87ed55ced458b322ea10cf0d0ab151e01b
+	Merge tag 'amd-drm-fixes-6.0-2022-08-17' of https://gitlab.freedesktop.org/agd5f/linux into drm-fixes
+drm-misc drm-misc-fixes ea2aa97ca37a9044ade001aef71dbc06318e8d44
+	drm/gem: Fix GEM handle release errors
+drm-intel drm-intel-fixes 1c23f9e627a7b412978b4e852793c5e3c3efc555
+	Linux 6.0-rc2
+drm drm-next 36fa1cb56ac5189c78dacbbb14d452d0c44b86c0
+	Merge tag 'drm-misc-next-fixes-2022-08-10' of git://anongit.freedesktop.org/drm/drm-misc into drm-next
+drm-misc drm-misc-next-fixes 2939deac1fa220bc82b89235f146df1d9b52e876
+	drm/gem: Properly annotate WW context on drm_gem_lock_reservations() error
+drm-intel drm-intel-next-fixes 9d50bff40e3e366886ec37299fc317edf84be0c9
+	drm/i915: pass a pointer for tlb seqno at vma_invalidate_tlb()
+drm-misc drm-misc-next 6d3c900c12d72667341bcff338c252e22728b942
+	drm/ttm: Switch to using the new res callback
+drm-intel drm-intel-next 48bc9d5245a43486559935da5439700ce4fe4a3e
+	drm/i915/dsc/mtl: Enable alternate ICH method
+drm-intel drm-intel-gt-next 54c204c522fd2a887b52c7672b9238903ba59a8b
+	Revert "drm/i915/guc: Add delay to disable scheduling after pin count goes to zero"
+sound-upstream for-linus 7cf3dead1ad70c72edb03e2d98e1f3dcd332cdb2
+	Linux 5.13
+sound-upstream for-next 7cf3dead1ad70c72edb03e2d98e1f3dcd332cdb2
+	Linux 5.13
+drm-intel topic/core-for-CI 27d3412f05c99bf4022fffdd26abccbd6b16d861
+	iommu/vt-d: Fix possible recursive lock in iommu_flush_dev_iotlb()
+drm-misc topic/i915-ttm 1e3944578b749449bd7fa6bf0bae4c3d3f5f1733
+	Merge tag 'amd-drm-next-5.16-2021-09-27' of https://gitlab.freedesktop.org/agd5f/linux into drm-next
+drm topic/nouveau-misc dfc4005f8c172eea359f9db08c3b2b0ff0153699
+	drm/nouveau/disp: move DAC load detection method
