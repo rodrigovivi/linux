@@ -469,7 +469,6 @@ static ssize_t vlv_rpe_freq_mhz_show(struct device *dev,
 /* The below macros generate static structures */
 INTEL_GT_RPS_SYSFS_ATTR_RO(act_freq_mhz);
 INTEL_GT_RPS_SYSFS_ATTR_RO(cur_freq_mhz);
-INTEL_GT_RPS_SYSFS_ATTR_RW(boost_freq_mhz);
 INTEL_GT_RPS_SYSFS_ATTR_RO(RP0_freq_mhz);
 INTEL_GT_RPS_SYSFS_ATTR_RO(RP1_freq_mhz);
 INTEL_GT_RPS_SYSFS_ATTR_RO(RPn_freq_mhz);
@@ -481,7 +480,6 @@ static DEVICE_ATTR_RO(vlv_rpe_freq_mhz);
 #define GEN6_ATTR(s) { \
 		&dev_attr_##s##_act_freq_mhz.attr, \
 		&dev_attr_##s##_cur_freq_mhz.attr, \
-		&dev_attr_##s##_boost_freq_mhz.attr, \
 		&dev_attr_##s##_max_freq_mhz.attr, \
 		&dev_attr_##s##_min_freq_mhz.attr, \
 		&dev_attr_##s##_RP0_freq_mhz.attr, \
@@ -495,6 +493,18 @@ static DEVICE_ATTR_RO(vlv_rpe_freq_mhz);
 
 static const struct attribute * const gen6_rps_attrs[] = GEN6_RPS_ATTR;
 static const struct attribute * const gen6_gt_attrs[]  = GEN6_GT_ATTR;
+
+INTEL_GT_RPS_SYSFS_ATTR_RW(boost_freq_mhz);
+
+#define GEN6_WB_ATTR(s) { \
+		&dev_attr_##s##_boost_freq_mhz.attr, \
+		NULL, \
+	}
+#define GEN6_RPS_WB_ATTR GEN6_WB_ATTR(rps)
+#define GEN6_GT_WB_ATTR GEN6_WB_ATTR(gt)
+
+static const struct attribute * const gen6_rps_wb_attrs[] = GEN6_RPS_WB_ATTR;
+static const struct attribute * const gen6_gt_wb_attrs[]  = GEN6_GT_WB_ATTR;
 
 static ssize_t punit_req_freq_mhz_show(struct device *dev,
 				       struct device_attribute *attr,
@@ -786,6 +796,16 @@ void intel_gt_sysfs_pm_init(struct intel_gt *gt, struct kobject *kobj)
 		drm_warn(&gt->i915->drm,
 			 "failed to create gt%u RPS sysfs files (%pe)",
 			 gt->info.id, ERR_PTR(ret));
+
+	if (intel_rps_waitboost_enabled(&gt->rps)) {
+		ret = is_object_gt(kobj) ?
+			intel_sysfs_rps_init(gt, kobj, gen6_rps_wb_attrs) :
+			intel_sysfs_rps_init(gt, kobj, gen6_gt_wb_attrs);
+		if (ret)
+			drm_warn(&gt->i915->drm,
+				 "failed to create gt%u RPS sysfs files (%pe)",
+				 gt->info.id, ERR_PTR(ret));
+	}
 
 	/* end of the legacy interfaces */
 	if (!is_object_gt(kobj))

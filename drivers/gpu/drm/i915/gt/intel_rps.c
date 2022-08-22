@@ -57,6 +57,16 @@ static bool rps_uses_slpc(struct intel_rps *rps)
 	return intel_uc_uses_guc_slpc(&gt->uc);
 }
 
+bool intel_rps_waitboost_enabled(struct intel_rps *rps)
+{
+	/*
+	 * Let's not disable waitboost for platforms out of the force_probe
+	 * protection, due to the impact in the sysfs boost api.
+	 */
+	return ! (rps_uses_slpc(rps) &&
+		  GRAPHICS_VER_FULL(rps_to_i915(rps)) >= IP_VER(12, 50));
+}
+
 static u32 rps_pm_sanitize_mask(struct intel_rps *rps, u32 mask)
 {
 	return mask & ~rps->pm_intrmsk_mbz;
@@ -993,6 +1003,9 @@ void intel_rps_dec_waiters(struct intel_rps *rps)
 {
 	struct intel_guc_slpc *slpc;
 
+	if (!intel_rps_waitboost_enabled(rps))
+		return;
+
 	if (rps_uses_slpc(rps)) {
 		slpc = rps_to_slpc(rps);
 
@@ -1004,12 +1017,19 @@ void intel_rps_dec_waiters(struct intel_rps *rps)
 
 void intel_rps_boost(struct i915_request *rq)
 {
+	struct intel_rps *rps = &READ_ONCE(rq->engine)->gt->rps;
 	struct intel_guc_slpc *slpc;
+
+	/*
+	 * Ideally this decision was already made before the intel_rps_boost
+	 * gets called, but there's no good and clean way to do this from inside
+	 * the gem component.
+	 */
+	if (!intel_rps_waitboost_enabled(rps))
+		return;
 
 	/* Serializes with i915_request_retire() */
 	if (!test_and_set_bit(I915_FENCE_FLAG_BOOST, &rq->fence.flags)) {
-		struct intel_rps *rps = &READ_ONCE(rq->engine)->gt->rps;
-
 		if (rps_uses_slpc(rps)) {
 			slpc = rps_to_slpc(rps);
 
