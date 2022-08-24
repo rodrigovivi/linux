@@ -2641,6 +2641,7 @@ static int __vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 	case XE_VM_BIND_OP_MAP:
 		return xe_vm_bind(vm, vma, e, bo, syncs, num_syncs, afence);
 	case XE_VM_BIND_OP_UNMAP:
+	case XE_VM_BIND_OP_UNMAP_ALL:
 		return xe_vm_unbind(vm, vma, e, syncs, num_syncs, afence);
 	case XE_VM_BIND_OP_MAP_USERPTR:
 		return xe_vm_bind_userptr(vm, vma, e, syncs, num_syncs, afence);
@@ -2681,7 +2682,8 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 	 * related to xe_evict.evict-mixed-many-threads-small failure. Details
 	 * in issue #39
 	 */
-	if (VM_BIND_OP(bind_op->op) == XE_VM_BIND_OP_UNMAP) {
+	if (VM_BIND_OP(bind_op->op) == XE_VM_BIND_OP_UNMAP ||
+	    VM_BIND_OP(bind_op->op) == XE_VM_BIND_OP_UNMAP_ALL) {
 		int i;
 
 		for (i = 0; i < num_syncs; i++) {
@@ -2865,7 +2867,8 @@ again:
 		} else {
 			trace_xe_vma_flush(op->vma);
 
-			if (VM_BIND_OP(op->bind_op.op) == XE_VM_BIND_OP_UNMAP) {
+			if (VM_BIND_OP(op->bind_op.op) == XE_VM_BIND_OP_UNMAP ||
+			    VM_BIND_OP(op->bind_op.op) == XE_VM_BIND_OP_UNMAP_ALL) {
 				down_write(&vm->lock);
 				xe_vma_destroy(op->vma);
 				up_write(&vm->lock);
@@ -2976,7 +2979,8 @@ static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_vma *vma,
 	 * ref count on each rebind.
 	 */
 
-	XE_BUG_ON(VM_BIND_OP(bind_op->op) != XE_VM_BIND_OP_UNMAP);
+	XE_BUG_ON(VM_BIND_OP(bind_op->op) != XE_VM_BIND_OP_UNMAP &&
+		  VM_BIND_OP(bind_op->op) != XE_VM_BIND_OP_UNMAP_ALL);
 
 	/* Decompose syncs */
 	if (num_syncs) {
@@ -3002,12 +3006,16 @@ static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_vma *vma,
 	list_for_each_entry_safe(__vma, next, &vma->unbind_link, unbind_link) {
 		if (__vma->destroyed) {
 			list_del_init(&__vma->unbind_link);
+			if (bo)
+				drm_gem_object_get(&bo->ttm.base);
 			err = __vm_bind_ioctl_async(xe_vm_get(vm), __vma,
 						    e ? xe_engine_get(e) : NULL,
 						    bo, bind_op, first ?
 						    in_syncs : NULL,
 						    first ? num_in_syncs : 0);
 			if (err) {
+				if (bo)
+					drm_gem_object_put(&bo->ttm.base);
 				xe_vm_put(vm);
 				if (e)
 					xe_engine_put(e);
@@ -3163,6 +3171,8 @@ static int __vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 		    XE_IOCTL_ERR(xe, (vma->start != addr ||
 				 vma->end != addr + range - 1) && !async))
 			return -EINVAL;
+		break;
+	case XE_VM_BIND_OP_UNMAP_ALL:
 		break;
 	default:
 		XE_BUG_ON("NOT POSSIBLE");
@@ -3337,6 +3347,27 @@ unwind:
 	return ERR_PTR(err);
 }
 
+static struct xe_vma *vm_unbind_all_lookup_vmas(struct xe_vm *vm,
+						struct xe_bo *bo)
+{
+	struct xe_vma *first = NULL, *vma;
+
+	lockdep_assert_held(&vm->lock);
+
+	list_for_each_entry(vma, &bo->vmas, bo_link) {
+		if (vma->vm != vm)
+			continue;
+
+		prep_vma_destroy(vm, vma);
+		if (!first)
+			first = vma;
+		else
+			list_add_tail(&vma->unbind_link, &first->unbind_link);
+	}
+
+	return first;
+}
+
 static struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm,
 					       struct xe_bo *bo,
 					       u64 bo_offset_or_userptr,
@@ -3379,6 +3410,17 @@ static struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm,
 		break;
 	case XE_VM_BIND_OP_UNMAP:
 		vma = vm_unbind_lookup_vmas(vm, &lookup);
+		break;
+	case XE_VM_BIND_OP_UNMAP_ALL:
+		XE_BUG_ON(!bo);
+
+		err = xe_bo_lock(bo, &ww, 0, true);
+		if (err)
+			return ERR_PTR(err);
+		vma = vm_unbind_all_lookup_vmas(vm, bo);
+		if (!vma)
+			vma = ERR_PTR(-EINVAL);
+		xe_bo_unlock(bo, &ww);
 		break;
 	case XE_VM_BIND_OP_MAP_USERPTR:
 		XE_BUG_ON(bo);
@@ -3469,11 +3511,23 @@ static int vm_bind_ioctl_check_args(struct xe_device *xe,
 			goto free_bind_ops;
 		}
 
+		if (XE_IOCTL_ERR(xe, !*async &&
+				 VM_BIND_OP(op) == XE_VM_BIND_OP_UNMAP_ALL)) {
+			err = -EINVAL;
+			goto free_bind_ops;
+		}
+
 		if (XE_IOCTL_ERR(xe, VM_BIND_OP(op) >
-				 XE_VM_BIND_OP_RESTART) ||
+				 XE_VM_BIND_OP_UNMAP_ALL) ||
 		    XE_IOCTL_ERR(xe, op & ~SUPPORTED_FLAGS) ||
 		    XE_IOCTL_ERR(xe, !obj &&
 				 VM_BIND_OP(op) == XE_VM_BIND_OP_MAP) ||
+		    XE_IOCTL_ERR(xe, !obj &&
+				 VM_BIND_OP(op) == XE_VM_BIND_OP_UNMAP_ALL) ||
+		    XE_IOCTL_ERR(xe, addr &&
+				 VM_BIND_OP(op) == XE_VM_BIND_OP_UNMAP_ALL) ||
+		    XE_IOCTL_ERR(xe, range &&
+				 VM_BIND_OP(op) == XE_VM_BIND_OP_UNMAP_ALL) ||
 		    XE_IOCTL_ERR(xe, obj &&
 				 VM_BIND_OP(op) == XE_VM_BIND_OP_MAP_USERPTR) ||
 		    XE_IOCTL_ERR(xe, obj &&
@@ -3486,7 +3540,8 @@ static int vm_bind_ioctl_check_args(struct xe_device *xe,
 		    XE_IOCTL_ERR(xe, addr & ~PAGE_MASK) ||
 		    XE_IOCTL_ERR(xe, range & ~PAGE_MASK) ||
 		    XE_IOCTL_ERR(xe, !range && VM_BIND_OP(op) !=
-				 XE_VM_BIND_OP_RESTART)) {
+				 XE_VM_BIND_OP_RESTART &&
+				 VM_BIND_OP(op) != XE_VM_BIND_OP_UNMAP_ALL)) {
 			err = -EINVAL;
 			goto free_bind_ops;
 		}
@@ -3578,8 +3633,7 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		u64 range = bind_ops[i].range;
 		u64 addr = bind_ops[i].addr;
 
-		if (XE_IOCTL_ERR(xe, !range) ||
-		    XE_IOCTL_ERR(xe, range > vm->size) ||
+		if (XE_IOCTL_ERR(xe, range > vm->size) ||
 		    XE_IOCTL_ERR(xe, addr > vm->size - range)) {
 			err = -EINVAL;
 			goto put_engine;
