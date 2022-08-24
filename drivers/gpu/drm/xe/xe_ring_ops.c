@@ -85,6 +85,7 @@ static void __emit_job_gen12(struct xe_sched_job *job, struct xe_lrc *lrc,
 {
 	u32 dw[MAX_JOB_SIZE_DW], i = 0;
 	u32 ppgtt_flag = job->engine->vm ? BIT(8) : 0;
+	struct xe_device *xe = gt_to_xe(job->engine->gt);
 
 #if 1
 	// TODO: Find a way to make flushing conditional?
@@ -109,10 +110,23 @@ static void __emit_job_gen12(struct xe_sched_job *job, struct xe_lrc *lrc,
 		dw[i++] = upper_32_bits(job->user_fence.value);
 	}
 
-	dw[i++] = MI_STORE_DATA_IMM | BIT(22) /* GGTT */ | 2;
-	dw[i++] = xe_lrc_seqno_ggtt_addr(lrc);
-	dw[i++] = 0;
-	dw[i++] = seqno;
+	/* FIXME: vfuncs */
+	if (job->engine->class == XE_ENGINE_CLASS_RENDER ||
+	    job->engine->class == XE_ENGINE_CLASS_COMPUTE) {
+		dw[i++] = GFX_OP_PIPE_CONTROL(6);
+		dw[i++] = (xe->info.platform == XE_PVC ? PIPE_CONTROL_CS_STALL :
+			   PIPE_CONTROL_FLUSH_ENABLE | PIPE_CONTROL_CS_STALL) |
+			PIPE_CONTROL_GLOBAL_GTT_IVB | PIPE_CONTROL_QW_WRITE;
+		dw[i++] = xe_lrc_seqno_ggtt_addr(lrc);
+		dw[i++] = 0;
+		dw[i++] = seqno;
+		dw[i++] = 0; /* We're thrashing one extra dword. */
+	} else {
+		dw[i++] = (MI_FLUSH_DW + 1) | MI_FLUSH_DW_OP_STOREDW;
+		dw[i++] = xe_lrc_seqno_ggtt_addr(lrc) | MI_FLUSH_DW_USE_GTT;
+		dw[i++] = 0;
+		dw[i++] = seqno;
+	}
 
 	dw[i++] = MI_USER_INTERRUPT;
 	dw[i++] = MI_ARB_ON_OFF | MI_ARB_ENABLE;
