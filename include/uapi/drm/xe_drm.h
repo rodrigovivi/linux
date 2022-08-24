@@ -362,10 +362,12 @@ struct drm_xe_vm_bind_op {
 		__u64 userptr;
 	};
 
-	/** @range: Number of bytes from the object to bind to addr */
+	/**
+	 * @range: Number of bytes from the object to bind to addr, MBZ for UNMAP_ALL
+	 */
 	__u64 range;
 
-	/** @addr: Address to operate on */
+	/** @addr: Address to operate on, MBZ for UNMAP_ALL */
 	__u64 addr;
 
 	/**
@@ -381,6 +383,7 @@ struct drm_xe_vm_bind_op {
 #define XE_VM_BIND_OP_UNMAP		0x1
 #define XE_VM_BIND_OP_MAP_USERPTR	0x2
 #define XE_VM_BIND_OP_RESTART		0x3
+#define XE_VM_BIND_OP_UNMAP_ALL		0x4
 
 #define XE_VM_BIND_FLAG_READONLY	(0x1 << 16)
 	/*
