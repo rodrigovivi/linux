@@ -245,6 +245,7 @@ struct drm_xe_gem_create {
 	 * @flags: Flags, currently a mask of memory instances of where BO can
 	 * be placed
 	 */
+#define XE_GEM_CREATE_FLAG_DEFER_BACKING	(0x1 << 24)
 	__u32 flags;
 
 	/**
@@ -327,6 +328,7 @@ struct drm_xe_vm_create {
 #define DRM_XE_VM_CREATE_SCRATCH_PAGE	(0x1 << 0)
 #define DRM_XE_VM_CREATE_COMPUTE_MODE	(0x1 << 1)
 #define DRM_XE_VM_CREATE_ASYNC_BIND_OPS	(0x1 << 2)
+#define DRM_XE_VM_CREATE_FAULT_MODE	(0x1 << 3)
 
 	/** @vm_id: Returned VM ID */
 	__u32 vm_id;
@@ -411,6 +413,12 @@ struct drm_xe_vm_bind_op {
 	 * DRM_XE_VM_CREATE_ASYNC_BIND_OPS and not in an error state.
 	 */
 #define XE_VM_BIND_FLAG_ASYNC		(0x1 << 17)
+	/*
+	 * Valid on a faulting VM only, do the MAP operation immediately rather
+	 * than differing the MAP to the page fault handler.
+	 */
+#define XE_VM_BIND_FLAG_IMMEDIATE	(0x1 << 18)
+
 
 	/** @reserved: Reserved */
 	__u64 reserved[2];
@@ -490,6 +498,9 @@ struct drm_xe_engine_set_property {
 #define XE_ENGINE_PROPERTY_COMPUTE_MODE			3
 #define XE_ENGINE_PROPERTY_PERSISTENCE			4
 #define XE_ENGINE_PROPERTY_JOB_TIMEOUT			5
+#define XE_ENGINE_PROPERTY_ACC_TRIGGER			6
+#define XE_ENGINE_PROPERTY_ACC_NOTIFY			7
+#define XE_ENGINE_PROPERTY_ACC_GRANULARITY		8
 	__u32 property;
 
 	/** @value: property value */
