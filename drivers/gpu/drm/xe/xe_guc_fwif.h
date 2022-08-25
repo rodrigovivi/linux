@@ -224,7 +224,7 @@ struct guc_ads {
 	u32 golden_context_lrca[GUC_MAX_ENGINE_CLASSES];
 	u32 eng_state_size[GUC_MAX_ENGINE_CLASSES];
 	u32 private_data;
-	u32 reserved2;
+	u32 um_init_data;
 	u32 capture_instance[GUC_CAPTURE_LIST_INDEX_MAX][GUC_MAX_ENGINE_CLASSES];
 	u32 capture_class[GUC_CAPTURE_LIST_INDEX_MAX][GUC_MAX_ENGINE_CLASSES];
 	u32 capture_global[GUC_CAPTURE_LIST_INDEX_MAX];
@@ -249,5 +249,49 @@ enum xe_guc_recv_message {
 	XE_GUC_RECV_MSG_CRASH_DUMP_POSTED = BIT(1),
 	XE_GUC_RECV_MSG_EXCEPTION = BIT(30),
 };
+
+/* Page fault structures */
+struct access_counter_desc {
+	u32 dw0;
+#define ACCESS_COUNTER_TYPE	BIT(0)
+#define ACCESS_COUNTER_SUBG_LO	GENMASK(31, 1)
+
+	u32 dw1;
+#define ACCESS_COUNTER_SUBG_HI	BIT(0)
+#define ACCESS_COUNTER_RSVD0	GENMASK(2, 1)
+#define ACCESS_COUNTER_ENG_INSTANCE	GENMASK(8, 3)
+#define ACCESS_COUNTER_ENG_CLASS	GENMASK(11, 9)
+#define ACCESS_COUNTER_ASID	GENMASK(31, 12)
+
+	u32 dw2;
+#define ACCESS_COUNTER_VFID	GENMASK(5, 0)
+#define ACCESS_COUNTER_RSVD1	GENMASK(7, 6)
+#define ACCESS_COUNTER_GRANULARITY	GENMASK(10, 8)
+#define ACCESS_COUNTER_RSVD2	GENMASK(16, 11)
+#define ACCESS_COUNTER_VIRTUAL_ADDR_RANGE_LO	GENMASK(31, 17)
+
+	u32 dw3;
+#define ACCESS_COUNTER_VIRTUAL_ADDR_RANGE_HI	GENMASK(31, 0)
+} __packed;
+
+enum guc_um_queue_type {
+	GUC_UM_HW_QUEUE_PAGE_FAULT = 0,
+	GUC_UM_HW_QUEUE_PAGE_FAULT_RESPONSE,
+	GUC_UM_HW_QUEUE_ACCESS_COUNTER,
+	GUC_UM_HW_QUEUE_MAX
+};
+
+struct guc_um_queue_params {
+	u64 base_dpa;
+	u32 base_ggtt_address;
+	u32 size_in_bytes;
+	u32 rsvd[4];
+} __packed;
+
+struct guc_um_init_params {
+	u64 page_response_timeout_in_us;
+	u32 rsvd[6];
+	struct guc_um_queue_params queue_params[GUC_UM_HW_QUEUE_MAX];
+} __packed;
 
 #endif

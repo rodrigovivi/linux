@@ -44,6 +44,10 @@ ads_to_map(struct xe_guc_ads *ads)
 	return &ads->bo->vmap;
 }
 
+/* UM Queue parameters: */
+#define GUC_UM_QUEUE_SIZE       (SZ_64K)
+#define GUC_PAGE_RES_TIMEOUT_US (-1)
+
 /*
  * The Additional Data Struct (ADS) has pointers for different buffers used by
  * the GuC. One single gem object contains the ADS struct itself (guc_ads) and
@@ -59,6 +63,8 @@ ads_to_map(struct xe_guc_ads *ads)
  *      | guc_gt_system_info                    |
  *      +---------------------------------------+
  *      | guc_engine_usage                      |
+ *      +---------------------------------------+
+ *      | guc_um_init_params                    |
  *      +---------------------------------------+ <== static
  *      | guc_mmio_reg[countA] (engine 0.0)     |
  *      | guc_mmio_reg[countB] (engine 0.1)     |
@@ -75,6 +81,10 @@ ads_to_map(struct xe_guc_ads *ads)
  *      +---------------------------------------+
  *      | padding                               |
  *      +---------------------------------------+ <== 4K aligned
+ *      | UM queues                             |
+ *      +---------------------------------------+
+ *      | padding                               |
+ *      +---------------------------------------+ <== 4K aligned
  *      | private data                          |
  *      +---------------------------------------+
  *      | padding                               |
@@ -85,6 +95,7 @@ struct __guc_ads_blob {
 	struct guc_policies policies;
 	struct guc_gt_system_info system_info;
 	struct guc_engine_usage engine_usage;
+	struct guc_um_init_params um_init_params;
 	/* From here on, location is dynamic! Refer to above diagram. */
 	struct guc_mmio_reg regset[0];
 } __packed;
@@ -122,6 +133,16 @@ static size_t guc_ads_capture_size(struct xe_guc_ads *ads)
 	return PAGE_ALIGN(PAGE_SIZE);
 }
 
+static size_t guc_ads_um_queues_size(struct xe_guc_ads *ads)
+{
+	struct xe_device *xe = ads_to_xe(ads);
+
+	if (!xe->info.supports_usm)
+		return 0;
+
+	return GUC_UM_QUEUE_SIZE * GUC_UM_HW_QUEUE_MAX;
+}
+
 static size_t guc_ads_private_data_size(struct xe_guc_ads *ads)
 {
 	return PAGE_ALIGN(ads_to_guc(ads)->fw.private_data_size);
@@ -152,12 +173,22 @@ static size_t guc_ads_capture_offset(struct xe_guc_ads *ads)
 	return PAGE_ALIGN(offset);
 }
 
+static size_t guc_ads_um_queues_offset(struct xe_guc_ads *ads)
+{
+	u32 offset;
+
+	offset = guc_ads_capture_offset(ads) +
+		 guc_ads_capture_size(ads);
+
+	return PAGE_ALIGN(offset);
+}
+
 static size_t guc_ads_private_data_offset(struct xe_guc_ads *ads)
 {
 	size_t offset;
 
-	offset = guc_ads_capture_offset(ads) +
-		guc_ads_capture_size(ads);
+	offset = guc_ads_um_queues_offset(ads) +
+		guc_ads_um_queues_size(ads);
 
 	return PAGE_ALIGN(offset);
 }
@@ -428,6 +459,29 @@ static void guc_mmio_reg_state_init(struct xe_guc_ads *ads)
 	}
 }
 
+static void guc_um_init_params(struct xe_guc_ads *ads)
+{
+	u32 um_queue_offset = guc_ads_um_queues_offset(ads);
+	u64 base_dpa;
+	u32 base_ggtt;
+	int i;
+
+	base_ggtt = xe_bo_ggtt_addr(ads->bo) + um_queue_offset;
+	base_dpa = xe_bo_main_addr(ads->bo, PAGE_SIZE) + um_queue_offset;
+
+	for (i = 0; i < GUC_UM_HW_QUEUE_MAX; ++i) {
+		ads_blob_write(ads, um_init_params.queue_params[i].base_dpa,
+			       base_dpa + (i * GUC_UM_QUEUE_SIZE));
+		ads_blob_write(ads, um_init_params.queue_params[i].base_ggtt_address,
+			       base_ggtt + (i * GUC_UM_QUEUE_SIZE));
+		ads_blob_write(ads, um_init_params.queue_params[i].size_in_bytes,
+			       GUC_UM_QUEUE_SIZE);
+	}
+
+	ads_blob_write(ads, um_init_params.page_response_timeout_in_us,
+		       GUC_PAGE_RES_TIMEOUT_US);
+}
+
 void xe_guc_ads_populate(struct xe_guc_ads *ads)
 {
 	struct xe_device *xe = ads_to_xe(ads);
@@ -454,6 +508,12 @@ void xe_guc_ads_populate(struct xe_guc_ads *ads)
 			       system_info.generic_gt_sysinfo[GUC_GENERIC_GT_SYSINFO_DOORBELL_COUNT_PER_SQIDI],
 			       ((distdbreg >> GEN12_DOORBELLS_PER_SQIDI_SHIFT)
 				& GEN12_DOORBELLS_PER_SQIDI) + 1);
+	}
+
+	if (xe->info.supports_usm) {
+		guc_um_init_params(ads);
+		ads_blob_write(ads, ads.um_init_data, base +
+			       offsetof(struct __guc_ads_blob, um_init_params));
 	}
 
 	ads_blob_write(ads, ads.scheduler_policies, base +
