@@ -92,4 +92,9 @@ extern struct ttm_device_funcs xe_ttm_funcs;
 
 struct ttm_buffer_object *xe_vm_ttm_bo(struct xe_vm *vm);
 
+static inline bool xe_vm_no_dma_fences(struct xe_vm *vm)
+{
+	return vm->flags & XE_VM_FLAG_COMPUTE_MODE;
+}
+
 #endif
