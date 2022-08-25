@@ -48,4 +48,12 @@ static inline struct xe_device * gt_to_xe(struct xe_gt *gt)
 	return gt->xe;
 }
 
+static inline bool xe_gt_is_usm_hwe(struct xe_gt *gt, struct xe_hw_engine *hwe)
+{
+	struct xe_device *xe = gt_to_xe(gt);
+
+	return xe->info.supports_usm && hwe->class == XE_ENGINE_CLASS_COPY &&
+		hwe->instance == gt->usm.reserved_bcs_instance;
+}
+
 #endif

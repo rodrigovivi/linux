@@ -415,6 +415,10 @@ static int hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
 	if (xe_device_guc_submission_enabled(xe))
 		xe_hw_engine_enable_ring(hwe);
 
+	/* We reserve the highest BCS instance for USM */
+	if (xe->info.supports_usm && hwe->class == XE_ENGINE_CLASS_COPY)
+		gt->usm.reserved_bcs_instance = hwe->instance;
+
 	err = drmm_add_action_or_reset(&xe->drm, hw_engine_fini, hwe);
 	if (err)
 		return err;
@@ -636,4 +640,13 @@ u32 xe_hw_engine_mask_per_class(struct xe_gt *gt,
 			mask |= BIT(engine_infos[id].instance);
 	}
 	return mask;
+}
+
+bool xe_hw_engine_is_reserved(struct xe_hw_engine *hwe)
+{
+	struct xe_gt *gt = hwe->gt;
+	struct xe_device *xe = gt_to_xe(gt);
+
+	return xe->info.supports_usm && hwe->class == XE_ENGINE_CLASS_COPY &&
+		hwe->instance == gt->usm.reserved_bcs_instance;
 }

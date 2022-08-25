@@ -110,6 +110,9 @@ struct xe_engine *xe_engine_create_class(struct xe_device *xe, struct xe_gt *gt,
 	u32 logical_mask = 0;
 
 	for_each_hw_engine(hwe, gt, id) {
+		if (xe_hw_engine_is_reserved(hwe))
+			continue;
+
 		if (hwe->class == class) {
 			logical_mask |= BIT(hwe->logical_instance);
 			if (!hwe0)
@@ -385,10 +388,14 @@ static u32 bind_engine_logical_mask(struct xe_device *xe, struct xe_gt *gt,
 
 	eci[0].engine_class = DRM_XE_ENGINE_CLASS_COPY;
 
-	for_each_hw_engine(hwe, gt, id)
+	for_each_hw_engine(hwe, gt, id) {
+		if (xe_hw_engine_is_reserved(hwe))
+			continue;
+
 		if (hwe->class ==
 		    user_to_xe_engine_class[DRM_XE_ENGINE_CLASS_COPY])
 			logical_mask |= BIT(hwe->logical_instance);
+	}
 
 	return logical_mask;
 }
@@ -411,9 +418,15 @@ static u32 calc_validate_logical_mask(struct xe_device *xe, struct xe_gt *gt,
 		u32 current_mask = 0;
 
 		for (j = 0; j < num_placements; ++j) {
+			struct xe_hw_engine *hwe;
+
 			n = i * num_placements + j;
 
-			if (XE_IOCTL_ERR(xe, !find_hw_engine(xe, eci[n])))
+			hwe = find_hw_engine(xe, eci[n]);
+			if (XE_IOCTL_ERR(xe, !hwe))
+				return 0;
+
+			if (XE_IOCTL_ERR(xe, xe_hw_engine_is_reserved(hwe)))
 				return 0;
 
 			if (XE_IOCTL_ERR(xe, n && eci[n].gt_id != gt_id) ||

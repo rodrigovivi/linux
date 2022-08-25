@@ -31,8 +31,11 @@ static size_t calc_hw_engine_info_size(struct xe_device *xe)
 	int i = 0;
 
 	for_each_gt(gt, xe, gt_id)
-		for_each_hw_engine(hwe, gt, id)
+		for_each_hw_engine(hwe, gt, id) {
+			if (xe_hw_engine_is_reserved(hwe))
+				continue;
 			i++;
+		}
 
 	return i * sizeof(struct drm_xe_engine_class_instance);
 }
@@ -63,6 +66,9 @@ static int query_engines(struct xe_device *xe,
 
 	for_each_gt(gt, xe, gt_id)
 		for_each_hw_engine(hwe, gt, id) {
+			if (xe_hw_engine_is_reserved(hwe))
+				continue;
+
 			hw_engine_info[i].engine_class =
 				xe_to_user_engine_class[hwe->class];
 			hw_engine_info[i].engine_instance =
