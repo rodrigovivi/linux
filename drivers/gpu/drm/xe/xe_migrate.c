@@ -263,8 +263,22 @@ struct xe_migrate *xe_migrate_init(struct xe_gt *gt)
 		return ERR_PTR(err);
 	}
 
-	m->eng = xe_engine_create_class(xe, gt, vm, XE_ENGINE_CLASS_COPY,
-					ENGINE_FLAG_KERNEL);
+	if (xe->info.supports_usm) {
+		struct xe_hw_engine *hwe = xe_gt_hw_engine(gt,
+							   XE_ENGINE_CLASS_COPY,
+							   gt->usm.reserved_bcs_instance,
+							   false);
+		if (!hwe)
+			return ERR_PTR(-EINVAL);
+
+		m->eng = xe_engine_create(xe, vm,
+					  BIT(hwe->logical_instance), 1,
+					  hwe, ENGINE_FLAG_KERNEL);
+	} else {
+		m->eng = xe_engine_create_class(xe, gt, vm,
+						XE_ENGINE_CLASS_COPY,
+						ENGINE_FLAG_KERNEL);
+	}
 	if (IS_ERR(m->eng)) {
 		xe_vm_close_and_put(vm);
 		return ERR_CAST(m->eng);

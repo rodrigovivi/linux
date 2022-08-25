@@ -112,6 +112,15 @@ struct xe_gt {
 		struct work_struct worker;
 	} reset;
 
+	/** @usm: unified shared memory state */
+	struct {
+		/**
+		 * @reserved_bcs_instance: reserved BCS instance used for USM
+		 * operations (e.g. mmigrations, fixing page tables)
+		 */
+		u16 reserved_bcs_instance;
+	} usm;
+
 	/** @ordered_wq: used to serialize GT resets and TDRs */
 	struct workqueue_struct *ordered_wq;
 
