@@ -66,6 +66,8 @@ struct xe_device_desc {
 	u8 vram_flags;
 	u8 max_tiles;
 	u8 vm_max_level;
+
+	bool supports_usm;
 };
 
 #define PLATFORM(x)		\
@@ -199,6 +201,7 @@ static const struct xe_device_desc pvc_desc = {
 	.dma_mask_size = 52,
 	.max_tiles = 2,
 	.vm_max_level = 4,
+	.supports_usm = true,
 };
 
 #define MTL_MEDIA_ENGINES \
@@ -329,6 +332,7 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	xe->info.tile_count = desc->max_tiles;
 	xe->info.vm_max_level = desc->vm_max_level;
 	xe->info.media_ver = desc->media_ver;
+	xe->info.supports_usm = desc->supports_usm;
 
 	spd = subplatform_get(xe, desc);
 	xe->info.subplatform = spd ? spd->subplatform : XE_SUBPLATFORM_NONE;

@@ -67,6 +67,8 @@ struct xe_device {
 		u8 vm_max_level;
 		/** @media_ver: Media version */
 		u8 media_ver;
+		/** @supports_usm: Supports unified shared memory */
+		bool supports_usm;
 		/** @enable_guc: GuC submission enabled */
 		bool enable_guc;
 	} info;
