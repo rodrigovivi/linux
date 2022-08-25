@@ -92,7 +92,7 @@ static void user_fence_cb(struct dma_fence *fence, struct dma_fence_cb *cb)
 int xe_sync_entry_parse(struct xe_device *xe, struct xe_file *xef,
 			struct xe_sync_entry *sync,
 			struct drm_xe_sync __user *sync_user,
-			bool exec, bool compute_mode)
+			bool exec, bool no_dma_fences)
 {
 	struct drm_xe_sync sync_in;
 	int err;
@@ -106,7 +106,7 @@ int xe_sync_entry_parse(struct xe_device *xe, struct xe_file *xef,
 
 	switch (sync_in.flags & SYNC_FLAGS_TYPE_MASK) {
 	case DRM_XE_SYNC_SYNCOBJ:
-		if (XE_IOCTL_ERR(xe, compute_mode))
+		if (XE_IOCTL_ERR(xe, no_dma_fences))
 			return -ENOTSUPP;
 
 		if (XE_IOCTL_ERR(xe, upper_32_bits(sync_in.addr)))
@@ -124,7 +124,7 @@ int xe_sync_entry_parse(struct xe_device *xe, struct xe_file *xef,
 		break;
 
 	case DRM_XE_SYNC_TIMELINE_SYNCOBJ:
-		if (XE_IOCTL_ERR(xe, compute_mode))
+		if (XE_IOCTL_ERR(xe, no_dma_fences))
 			return -ENOTSUPP;
 
 		if (XE_IOCTL_ERR(xe, upper_32_bits(sync_in.addr)))
