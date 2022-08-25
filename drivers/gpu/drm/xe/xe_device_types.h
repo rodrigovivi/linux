@@ -30,6 +30,8 @@
 #define XE_GT1		1
 #define XE_MAX_GT	(XE_GT1 + 1)
 
+#define XE_MAX_ASID	(BIT(20))
+
 /**
  * struct xe_device - Top level struct of XE device
  */
@@ -104,6 +106,16 @@ struct xe_device {
 			void *__iomem mapping;
 		} vram;
 	} mem;
+
+	/** @um: unified memory state */
+	struct {
+		/** @asid: convert a ASID to VM */
+		struct xarray asid_to_vm;
+		/** @next_asid: next ASID, used to cyclical alloc asids */
+		u32 next_asid;
+		/** @lock: protects UM state */
+		struct mutex lock;
+	} usm;
 
 	/** @persitent_engines: engines that are closed but still running */
 	struct {

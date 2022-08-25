@@ -300,6 +300,7 @@ DECLARE_EVENT_CLASS(xe_vma,
 
 		    TP_STRUCT__entry(
 			     __field(u64, vma)
+			     __field(u32, asid)
 			     __field(u64, start)
 			     __field(u64, end)
 			     __field(u64, ptr)
@@ -307,14 +308,15 @@ DECLARE_EVENT_CLASS(xe_vma,
 
 		    TP_fast_assign(
 			   __entry->vma = (u64)vma;
+			   __entry->asid = vma->vm->usm.asid;
 			   __entry->start = vma->start;
 			   __entry->end = vma->end;
 			   __entry->ptr = (u64)vma->userptr.ptr;
 			   ),
 
-		    TP_printk("vma=0x%016llx, start=0x%012llx, end=0x%012llx, ptr=0x%012llx,",
-			      __entry->vma, __entry->start, __entry->end,
-			      __entry->ptr)
+		    TP_printk("vma=0x%016llx, asid=0x%05x, start=0x%012llx, end=0x%012llx, ptr=0x%012llx,",
+			      __entry->vma, __entry->asid, __entry->start,
+			      __entry->end, __entry->ptr)
 )
 
 DEFINE_EVENT(xe_vma, xe_vma_flush,
@@ -383,13 +385,16 @@ DECLARE_EVENT_CLASS(xe_vm,
 
 		    TP_STRUCT__entry(
 			     __field(u64, vm)
+			     __field(u32, asid)
 			     ),
 
 		    TP_fast_assign(
 			   __entry->vm = (u64)vm;
+			   __entry->asid = vm->usm.asid;
 			   ),
 
-		    TP_printk("vm=0x%016llx",  __entry->vm)
+		    TP_printk("vm=0x%016llx, asid=0x%05x",  __entry->vm,
+			      __entry->asid)
 );
 
 DEFINE_EVENT(xe_vm, xe_vm_create,
