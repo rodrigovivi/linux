@@ -580,8 +580,8 @@ put_engine:
 
 static void engine_kill_compute(struct xe_engine *e)
 {
-	if (!(e->flags & ENGINE_FLAG_COMPUTE_MODE))
-	      return;
+	if (!xe_vm_in_compute_mode(e->vm))
+		return;
 
 	down_write(&e->vm->lock);
 	list_del(&e->compute.link);
