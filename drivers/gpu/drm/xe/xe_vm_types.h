@@ -270,6 +270,12 @@ struct xe_vm {
 		 */
 		int resume_go;
 	} preempt;
+
+	/** @um: unified memory state */
+	struct {
+		/** @asid: address space ID, unique to each VM */
+		u32 asid;
+	} usm;
 };
 
 #endif

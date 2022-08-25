@@ -1454,14 +1454,22 @@ static void vm_destroy_work_func(struct work_struct *w)
 	struct xe_vm *vm =
 		container_of(w, struct xe_vm, destroy_work);
 	struct ww_acquire_ctx ww;
+	struct xe_device *xe = vm->xe;
 	struct xe_gt *gt;
 	u8 id;
+	void *lookup;
 
 	/* xe_vm_close_and_put was not called? */
 	XE_WARN_ON(vm->size);
 
-	if (!(vm->flags & XE_VM_FLAG_MIGRATION))
-		xe_device_mem_access_wa_put(vm->xe);
+	if (!(vm->flags & XE_VM_FLAG_MIGRATION)) {
+		xe_device_mem_access_wa_put(xe);
+
+		mutex_lock(&xe->usm.lock);
+		lookup = xa_erase(&xe->usm.asid_to_vm, vm->usm.asid);
+		XE_WARN_ON(lookup != vm);
+		mutex_unlock(&xe->usm.lock);
+	}
 
 	/*
 	 * XXX: We delay destroying the PT root until the VM if freed as PT root
@@ -1469,7 +1477,7 @@ static void vm_destroy_work_func(struct work_struct *w)
 	 * can be moved to xe_vm_close_and_put.
 	 */
 	xe_vm_lock(vm, &ww, 0, false);
-	for_each_gt(gt, vm->xe, id) {
+	for_each_gt(gt, xe, id) {
 		if (vm->pt_root[id]) {
 			xe_pt_destroy(vm->pt_root[id], vm->flags);
 			vm->pt_root[id] = NULL;
@@ -2557,7 +2565,7 @@ int xe_vm_create_ioctl(struct drm_device *dev, void *data,
 	struct xe_file *xef = to_xe_file(file);
 	struct drm_xe_vm_create *args = data;
 	struct xe_vm *vm;
-	u32 id;
+	u32 id, asid;
 	int err;
 	u32 flags = 0;
 
@@ -2590,6 +2598,17 @@ int xe_vm_create_ioctl(struct drm_device *dev, void *data,
 		xe_vm_close_and_put(vm);
 		return err;
 	}
+
+	mutex_lock(&xe->usm.lock);
+	err = xa_alloc_cyclic(&xe->usm.asid_to_vm, &asid, vm,
+			      XA_LIMIT(0, XE_MAX_ASID - 1),
+			      &xe->usm.next_asid, GFP_KERNEL);
+	mutex_unlock(&xe->usm.lock);
+	if (err) {
+		xe_vm_close_and_put(vm);
+		return err;
+	}
+	vm->usm.asid = asid;
 
 	args->vm_id = id;
 

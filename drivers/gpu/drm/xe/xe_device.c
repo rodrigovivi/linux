@@ -171,6 +171,9 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 
 	init_waitqueue_head(&xe->ufence_wq);
 
+	mutex_init(&xe->usm.lock);
+	xa_init_flags(&xe->usm.asid_to_vm, XA_FLAGS_ALLOC1);
+
 	mutex_init(&xe->persitent_engines.lock);
 	INIT_LIST_HEAD(&xe->persitent_engines.list);
 
