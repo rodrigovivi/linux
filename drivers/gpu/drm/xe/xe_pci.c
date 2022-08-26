@@ -5,6 +5,7 @@
 
 #include "xe_pci.h"
 
+#include <linux/device/driver.h>
 #include <linux/module.h>
 #include <linux/pci.h>
 #include <linux/vga_switcheroo.h>
@@ -449,3 +450,39 @@ void xe_unregister_pci_driver(void)
 {
 	pci_unregister_driver(&i915_pci_driver);
 }
+
+#if IS_ENABLED(CONFIG_DRM_XE_KUNIT_TEST)
+static int dev_to_xe_device_fn(struct device *dev, void *data)
+
+{
+	struct drm_device *drm = dev_get_drvdata(dev);
+	int (*xe_fn)(struct xe_device *xe) = data;
+	int ret = 0;
+	int idx;
+
+	if (drm_dev_enter(drm, &idx))
+		ret = xe_fn(to_xe_device(dev_get_drvdata(dev)));
+	drm_dev_exit(idx);
+
+	return ret;
+}
+
+/**
+ * xe_call_for_each_device - Iterate over all devices this driver binds to
+ * @xe_fn: Function to call for each device.
+ *
+ * This function iterated over all devices this driver binds to, and calls
+ * @xe_fn: for each one of them. If the called function returns anything else
+ * than 0, iteration is stopped and the return value is returned by this
+ * function. Across each function call, drm_dev_enter() / drm_dev_exit() is
+ * called for the corresponding drm device.
+ *
+ * Return: Zero or the error code of a call to @xe_fn returning an error
+ * code.
+ */
+int xe_call_for_each_device(xe_device_fn xe_fn)
+{
+	return driver_for_each_device(&i915_pci_driver.driver, NULL,
+				      xe_fn, dev_to_xe_device_fn);
+}
+#endif
