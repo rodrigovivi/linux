@@ -94,6 +94,7 @@ xe-y += xe_bb.o \
 	xe_wopcm.o
 
 obj-$(CONFIG_DRM_XE) += xe.o
+obj-$(CONFIG_DRM_XE_KUNIT_TEST) += tests/
 
 # header test
 always-$(CONFIG_DRM_XE_WERROR) += \
