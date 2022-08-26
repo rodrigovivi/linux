@@ -959,3 +959,87 @@ void xe_bo_unlock(struct xe_bo *bo, struct ww_acquire_ctx *ww)
 	dma_resv_unlock(bo->ttm.base.resv);
 	ww_acquire_fini(ww);
 }
+
+/**
+ * xe_bo_can_migrate - Whether a buffer object likely can be migrated
+ * @bo: The buffer object to migrate
+ * @mem_type: The TTM memory type intended to migrate to
+ *
+ * Check whether the buffer object supports migration to the
+ * given memory type. Note that pinning may affect the ability to migrate as
+ * returned by this function.
+ *
+ * This function is primarily intended as a helper for checking the
+ * possibility to migrate buffer objects and can be called without
+ * the object lock held.
+ *
+ * Return: true if migration is possible, false otherwise.
+ */
+bool xe_bo_can_migrate(struct xe_bo *bo, u32 mem_type)
+{
+	unsigned int cur_place;
+
+	if (bo->ttm.type == ttm_bo_type_kernel)
+		return true;
+
+	if (bo->ttm.type == ttm_bo_type_sg)
+		return false;
+
+	for (cur_place = 0; cur_place < bo->placement.num_placement;
+	     cur_place++) {
+		if (bo->placements[cur_place].mem_type == mem_type)
+			return true;
+	}
+
+	return false;
+}
+
+static void xe_place_from_ttm_type(u32 mem_type, struct ttm_place *place)
+{
+	memset(place, 0, sizeof(*place));
+	place->mem_type = mem_type;
+}
+
+/**
+ * xe_bo_migrate - Migrate an object to the desired region id
+ * @bo: The buffer object to migrate.
+ * @mem_type: The TTM region type to migrate to.
+ *
+ * Attempt to migrate the buffer object to the desired memory region. The
+ * buffer object may not be pinned, and must be locked.
+ * On successful completion, the object memory type will be updated,
+ * but an async migration task may not have completed yet, and to
+ * accomplish that, the object's kernel fences must be signaled with
+ * the object lock held.
+ *
+ * Return: 0 on success. Negative error code on failure. In particular may
+ * return -EINTR or -ERESTARTSYS if signal pending.
+ */
+int xe_bo_migrate(struct xe_bo *bo, u32 mem_type)
+{
+	struct ttm_operation_ctx ctx = {
+		.interruptible = true,
+		.no_wait_gpu = false,
+	};
+	struct ttm_placement placement;
+	struct ttm_place requested;
+
+	xe_bo_assert_held(bo);
+
+	if (bo->ttm.resource->mem_type == mem_type)
+		return 0;
+
+	if (xe_bo_is_pinned(bo))
+		return -EBUSY;
+
+	if (!xe_bo_can_migrate(bo, mem_type))
+		return -EINVAL;
+
+	xe_place_from_ttm_type(mem_type, &requested);
+	placement.num_placement = 1;
+	placement.num_busy_placement = 1;
+	placement.placement = &requested;
+	placement.busy_placement = &requested;
+
+	return ttm_bo_validate(&bo->ttm, &placement, &ctx);
+}

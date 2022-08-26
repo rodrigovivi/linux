@@ -207,6 +207,10 @@ void xe_bo_vunmap(struct xe_bo *bo);
 bool mem_type_is_vram(u32 mem_type);
 bool xe_bo_is_vram(struct xe_bo *bo);
 
+bool xe_bo_can_migrate(struct xe_bo *bo, u32 mem_type);
+
+int xe_bo_migrate(struct xe_bo *bo, u32 mem_type);
+
 extern struct ttm_device_funcs xe_ttm_funcs;
 
 int xe_gem_create_ioctl(struct drm_device *dev, void *data,
