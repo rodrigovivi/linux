@@ -294,4 +294,65 @@ struct guc_um_init_params {
 	struct guc_um_queue_params queue_params[GUC_UM_HW_QUEUE_MAX];
 } __packed;
 
+enum xe_guc_fault_reply_type {
+	PFR_ACCESS = 0,
+	PFR_ENGINE,
+	PFR_VFID,
+	PFR_ALL,
+	PFR_INVALID
+};
+
+enum xe_guc_response_desc_type {
+	TLB_INVALIDATION_DESC = 0,
+	FAULT_RESPONSE_DESC
+};
+
+struct xe_guc_pagefault_desc {
+	u32 dw0;
+#define PFD_FAULT_LEVEL		GENMASK(2, 0)
+#define PFD_SRC_ID		GENMASK(10, 3)
+#define PFD_RSVD_0		GENMASK(17, 11)
+#define XE2_PFD_TRVA_FAULT	BIT(18)
+#define PFD_ENG_INSTANCE	GENMASK(24, 19)
+#define PFD_ENG_CLASS		GENMASK(27, 25)
+#define PFD_PDATA_LO		GENMASK(31, 28)
+
+	u32 dw1;
+#define PFD_PDATA_HI		GENMASK(11, 0)
+#define PFD_PDATA_HI_SHIFT	4
+#define PFD_ASID		GENMASK(31, 12)
+
+	u32 dw2;
+#define PFD_ACCESS_TYPE		GENMASK(1, 0)
+#define PFD_FAULT_TYPE		GENMASK(3, 2)
+#define PFD_VFID		GENMASK(9, 4)
+#define PFD_RSVD_1		GENMASK(11, 10)
+#define PFD_VIRTUAL_ADDR_LO	GENMASK(31, 12)
+#define PFD_VIRTUAL_ADDR_LO_SHIFT 12
+
+	u32 dw3;
+#define PFD_VIRTUAL_ADDR_HI	GENMASK(31, 0)
+#define PFD_VIRTUAL_ADDR_HI_SHIFT 32
+} __packed;
+
+struct xe_guc_pagefault_reply {
+	u32 dw0;
+#define PFR_VALID		BIT(0)
+#define PFR_SUCCESS		BIT(1)
+#define PFR_REPLY		GENMASK(4, 2)
+#define PFR_RSVD_0		GENMASK(9, 5)
+#define PFR_DESC_TYPE		GENMASK(11, 10)
+#define PFR_ASID		GENMASK(31, 12)
+
+	u32 dw1;
+#define PFR_VFID		GENMASK(5, 0)
+#define PFR_RSVD_1		BIT(6)
+#define PFR_ENG_INSTANCE	GENMASK(12, 7)
+#define PFR_ENG_CLASS		GENMASK(15, 13)
+#define PFR_PDATA		GENMASK(31, 16)
+
+	u32 dw2;
+#define PFR_RSVD_2		GENMASK(31, 0)
+} __packed;
+
 #endif

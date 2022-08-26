@@ -139,6 +139,12 @@ enum xe_guc_action {
 	XE_GUC_ACTION_CLIENT_SOFT_RESET = 0x5507,
 	XE_GUC_ACTION_SET_ENG_UTIL_BUFF = 0x550A,
 	XE_GUC_ACTION_NOTIFY_MEMORY_CAT_ERROR = 0x6000,
+	XE_GUC_ACTION_REPORT_PAGE_FAULT_REQ_DESC = 0x6002,
+	XE_GUC_ACTION_PAGE_FAULT_RES_DESC = 0x6003,
+	XE_GUC_ACTION_ACCESS_COUNTER_NOTIFY = 0x6004,
+	XE_GUC_ACTION_TLB_INVALIDATION = 0x7000,
+	XE_GUC_ACTION_TLB_INVALIDATION_DONE = 0x7001,
+	XE_GUC_ACTION_TLB_INVALIDATION_ALL = 0x7002,
 	XE_GUC_ACTION_STATE_CAPTURE_NOTIFICATION = 0x8002,
 	XE_GUC_ACTION_NOTIFY_FLUSH_LOG_BUFFER_TO_FILE = 0x8003,
 	XE_GUC_ACTION_NOTIFY_CRASH_DUMP_POSTED = 0x8004,
@@ -174,5 +180,39 @@ enum xe_guc_sleep_state_status {
 #define GUC_LOG_CONTROL_VERBOSITY_SHIFT	4
 #define GUC_LOG_CONTROL_VERBOSITY_MASK	(0xF << GUC_LOG_CONTROL_VERBOSITY_SHIFT)
 #define GUC_LOG_CONTROL_DEFAULT_LOGGING	(1 << 8)
+
+#define XE_GUC_TLB_INVAL_TYPE_SHIFT 0
+#define XE_GUC_TLB_INVAL_MODE_SHIFT 8
+/* Flush PPC or SMRO caches along with TLB invalidation request */
+#define XE_GUC_TLB_INVAL_FLUSH_CACHE (1 << 31)
+
+enum xe_guc_tlb_invalidation_type {
+	XE_GUC_TLB_INVAL_FULL = 0x0,
+	XE_GUC_TLB_INVAL_PAGE_SELECTIVE = 0x1,
+	XE_GUC_TLB_INVAL_PAGE_SELECTIVE_CTX = 0x2,
+	XE_GUC_TLB_INVAL_GUC = 0x3,
+};
+
+/*
+ * 0: Heavy mode of Invalidation:
+ * The pipeline of the engine(s) for which the invalidation is targeted to is
+ * blocked, and all the in-flight transactions are guaranteed to be Globally
+ * Observed before completing the TLB invalidation
+ * 1: Lite mode of Invalidation:
+ * TLBs of the targeted engine(s) are immediately invalidated.
+ * In-flight transactions are NOT guaranteed to be Globally Observed before
+ * completing TLB invalidation.
+ * Light Invalidation Mode is to be used only when
+ * it can be guaranteed (by SW) that the address translations remain invariant
+ * for the in-flight transactions across the TLB invalidation. In other words,
+ * this mode can be used when the TLB invalidation is intended to clear out the
+ * stale cached translations that are no longer in use. Light Invalidation Mode
+ * is much faster than the Heavy Invalidation Mode, as it does not wait for the
+ * in-flight transactions to be GOd.
+ */
+enum xe_guc_tlb_inval_mode {
+	XE_GUC_TLB_INVAL_MODE_HEAVY = 0x0,
+	XE_GUC_TLB_INVAL_MODE_LITE = 0x1,
+};
 
 #endif

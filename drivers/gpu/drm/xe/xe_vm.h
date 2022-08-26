@@ -46,6 +46,13 @@ static inline bool xe_vm_is_closed(struct xe_vm *vm)
 	return !vm->size;
 }
 
+struct xe_vma *
+xe_vm_find_overlapping_vma(struct xe_vm *vm, const struct xe_vma *vma);
+
+struct dma_fence *
+xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
+	       struct xe_sync_entry *syncs, u32 num_syncs);
+
 #define xe_vm_assert_held(vm) dma_resv_assert_held(&(vm)->resv)
 
 u64 xe_vm_pdp4_descriptor(struct xe_vm *vm, struct xe_gt *full_gt);

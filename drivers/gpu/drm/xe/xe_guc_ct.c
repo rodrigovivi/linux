@@ -14,6 +14,7 @@
 #include "xe_gt.h"
 #include "xe_guc.h"
 #include "xe_guc_ct.h"
+#include "xe_guc_pagefault.h"
 #include "xe_guc_submit.h"
 #include "xe_map.h"
 
@@ -114,11 +115,15 @@ static void guc_ct_fini(struct drm_device *drm, void *arg)
 static void primelockdep(struct xe_guc_ct *ct)
 {
 #if IS_ENABLED(CONFIG_LOCKDEP)
-	bool cookie = dma_fence_begin_signalling();
+	struct xe_device *xe = ct_to_xe(ct);
 
-	might_lock(&ct->lock);
+	if (!xe->info.supports_usm) {
+		bool cookie = dma_fence_begin_signalling();
 
-	dma_fence_end_signalling(cookie);
+		might_lock(&ct->lock);
+
+		dma_fence_end_signalling(cookie);
+	}
 #endif
 }
 
@@ -854,6 +859,9 @@ static int process_g2h_msg(struct xe_guc_ct *ct, u32 *msg, u32 len)
 		ret = xe_guc_engine_memory_cat_error_handler(guc, payload,
 							     adj_len);
 		break;
+	case XE_GUC_ACTION_REPORT_PAGE_FAULT_REQ_DESC:
+		ret = xe_guc_pagefault_handler(guc, payload, adj_len);
+		break;
 	default:
 		drm_err(&xe->drm, "unexpected action 0x%04x\n", action);
 	}
@@ -954,8 +962,12 @@ static int dequeue_one_g2h(struct xe_guc_ct *ct)
 static void g2h_worker_func(struct work_struct *w)
 {
 	struct xe_guc_ct *ct = container_of(w, struct xe_guc_ct, g2h_worker);
-	bool cookie = dma_fence_begin_signalling();
+	struct xe_device *xe = ct_to_xe(ct);
+	bool cookie;
 	int ret;
+
+	if (!xe_device_in_fault_mode(xe))
+		cookie = dma_fence_begin_signalling();
 
 	xe_device_mem_access_wa_get(ct_to_xe(ct));
 	do {
@@ -973,7 +985,8 @@ static void g2h_worker_func(struct work_struct *w)
 	} while (ret == 1);
 	xe_device_mem_access_wa_put(ct_to_xe(ct));
 
-	dma_fence_end_signalling(cookie);
+	if (!xe_device_in_fault_mode(xe))
+		dma_fence_end_signalling(cookie);
 }
 
 static void guc_ct_ctb_print(struct xe_device *xe, struct guc_ctb *ctb,

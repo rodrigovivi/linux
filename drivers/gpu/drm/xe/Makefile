@@ -58,8 +58,9 @@ xe-y += xe_bb.o \
 	xe_guc_ct.o \
 	xe_guc_debugfs.o \
 	xe_guc_log.o \
-	xe_guc_submit.o \
+	xe_guc_pagefault.o \
 	xe_guc_pc.o \
+	xe_guc_submit.o \
 	xe_hw_engine.o \
 	xe_hw_fence.o \
 	xe_huc.o \

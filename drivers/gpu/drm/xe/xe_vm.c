@@ -960,7 +960,7 @@ out_unlock:
 	return err;
 }
 
-static struct dma_fence *
+struct dma_fence *
 xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 	       struct xe_sync_entry *syncs, u32 num_syncs);
 
@@ -1129,7 +1129,7 @@ static int xe_vma_cmp_vma_cb(const void *key, const struct rb_node *node)
 	return 0;
 }
 
-static struct xe_vma *
+struct xe_vma *
 xe_vm_find_overlapping_vma(struct xe_vm *vm, const struct xe_vma *vma)
 {
 	struct rb_node *node;
@@ -1873,6 +1873,11 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 		if (!(vma->gt_mask & BIT(id)) || !(vma->gt_present & BIT(id)))
 			goto next;
 
+		if (xe_gt_is_media_type(gt)) {
+			vma->gt_present &= ~BIT(id);
+			goto next;
+		}
+
 		fence = __xe_vm_unbind_vma(gt, vma, e, syncs, num_syncs);
 		if (IS_ERR(fence)) {
 			err = PTR_ERR(fence);
@@ -2272,7 +2277,7 @@ err:
 	return ERR_PTR(err);
 }
 
-static struct dma_fence *
+struct dma_fence *
 xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 	       struct xe_sync_entry *syncs, u32 num_syncs)
 {
@@ -2298,6 +2303,11 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 	for_each_gt(gt, vm->xe, id) {
 		if (!(vma->gt_mask & BIT(id)))
 			goto next;
+
+		if (xe_gt_is_media_type(gt)) {
+			vma->gt_present |= BIT(gt->info.id);
+			goto next;
+		}
 
 		fence = __xe_vm_bind_vma(gt, vma, e, syncs, num_syncs,
 					 vma->gt_present & BIT(id));
