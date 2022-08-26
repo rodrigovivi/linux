@@ -53,14 +53,17 @@ static int evict_selftest(struct seq_file *m, void *data)
 	unsigned bo_flags = XE_BO_CREATE_USER_BIT |
 		XE_BO_CREATE_VRAM0_BIT | XE_BO_INTERNAL_TEST;
 	struct xe_vm *vm = xe_migrate_get_vm(xe->gt[0].migrate);
+	struct ww_acquire_ctx ww;
 	int err, i;
 
 	if (!IS_DGFX(xe))
 		return 0;
 
 	for (i = 0; i < 2; ++i) {
+		xe_vm_lock(vm, &ww, 0, false);
 		bo = xe_bo_create(xe, NULL, vm, 0x10000, ttm_bo_type_device,
 				  bo_flags);
+		xe_vm_unlock(vm, &ww);
 		if (IS_ERR(bo)) {
 			drm_printf(&p, "bo create err=%ld\n", PTR_ERR(bo));
 			break;
@@ -74,7 +77,9 @@ static int evict_selftest(struct seq_file *m, void *data)
 			goto cleanup_bo;
 		}
 
+		xe_bo_lock(external, &ww, 0, false);
 		err = xe_bo_pin_external(external);
+		xe_bo_unlock(external, &ww);
 		if (err) {
 			drm_printf(&p, "external bo pin err=%d\n", err);
 			goto cleanup_external;
@@ -111,12 +116,18 @@ static int evict_selftest(struct seq_file *m, void *data)
 		}
 
 		if (i) {
+			down_read(&vm->lock);
+			xe_vm_lock(vm, &ww, 0, false);
 			err = xe_bo_validate(bo, bo->vm);
+			xe_vm_unlock(vm, &ww);
+			up_read(&vm->lock);
 			if (err) {
 				drm_printf(&p, "bo valid err=%d\n", err);
 				goto cleanup_all;
 			}
+			xe_bo_lock(external, &ww, 0, false);
 			err = xe_bo_validate(external, NULL);
+			xe_bo_unlock(external, &ww);
 			if (err) {
 				drm_printf(&p, "external bo valid err=%d\n",
 					   err);
@@ -124,13 +135,18 @@ static int evict_selftest(struct seq_file *m, void *data)
 			}
 		}
 
+		xe_bo_lock(external, &ww, 0, false);
 		xe_bo_unpin_external(external);
+		xe_bo_unlock(external, &ww);
+
 		xe_bo_put(external);
 		xe_bo_put(bo);
 		continue;
 
 cleanup_all:
+		xe_bo_lock(external, &ww, 0, false);
 		xe_bo_unpin_external(external);
+		xe_bo_unlock(external, &ww);
 cleanup_external:
 		xe_bo_put(external);
 cleanup_bo:
