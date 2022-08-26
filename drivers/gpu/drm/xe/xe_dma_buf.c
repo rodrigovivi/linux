@@ -13,6 +13,7 @@
 #include <kunit/test.h>
 #include <linux/pci-p2pdma.h>
 
+#include "tests/xe_test.h"
 #include "xe_bo.h"
 #include "xe_device.h"
 #include "xe_dma_buf.h"
@@ -226,9 +227,21 @@ static const struct dma_buf_attach_ops xe_dma_buf_attach_ops = {
 	.move_notify = xe_dma_buf_move_notify
 };
 
+#if IS_ENABLED(CONFIG_DRM_XE_KUNIT_TEST)
+
+struct dma_buf_test_params {
+	const struct dma_buf_attach_ops *attach_ops;
+	bool force_different_devices;
+	u32 mem_mask;
+};
+
+#endif
+
 struct drm_gem_object *xe_gem_prime_import(struct drm_device *dev,
 					   struct dma_buf *dma_buf)
 {
+	XE_TEST_DECLARE(struct dma_buf_test_params *test =
+			xe_cur_kunit_priv();)
 	const struct dma_buf_attach_ops *attach_ops;
 	struct dma_buf_attachment *attach;
 	struct drm_gem_object *obj;
@@ -236,7 +249,8 @@ struct drm_gem_object *xe_gem_prime_import(struct drm_device *dev,
 
 	if (dma_buf->ops == &xe_dmabuf_ops) {
 		obj = dma_buf->priv;
-		if (obj->dev == dev) {
+		if (obj->dev == dev &&
+		    !XE_TEST_ONLY(test && test->force_different_devices)) {
 			/*
 			 * Importing dmabuf exported from out own gem increases
 			 * refcount on gem itself instead of f_count of dmabuf.
@@ -256,6 +270,11 @@ struct drm_gem_object *xe_gem_prime_import(struct drm_device *dev,
 		return ERR_CAST(bo);
 
 	attach_ops = &xe_dma_buf_attach_ops;
+#if IS_ENABLED(CONFIG_DRM_XE_KUNIT_TEST)
+	if (test)
+		attach_ops = test->attach_ops;
+#endif
+
 	attach = dma_buf_dynamic_attach(dma_buf, dev->dev, attach_ops, &bo->ttm.base);
 	if (IS_ERR(attach)) {
 		obj = ERR_CAST(attach);
@@ -277,3 +296,7 @@ out_err:
 
 	return obj;
 }
+
+#if IS_ENABLED(CONFIG_DRM_XE_KUNIT_TEST)
+#include "tests/xe_dma_buf.c"
+#endif
