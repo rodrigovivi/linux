@@ -918,7 +918,7 @@ static int do_rps_boost(struct wait_queue_entry *_wait,
 	 * is reasonable to assume that it will complete before the next
 	 * vblank without our intervention, so leave RPS alone.
 	 */
-	if (!i915_request_started(rq))
+	if (!i915_request_started(rq) && i915_request_needs_boost(rq))
 		intel_rps_boost(rq);
 	i915_request_put(rq);
 

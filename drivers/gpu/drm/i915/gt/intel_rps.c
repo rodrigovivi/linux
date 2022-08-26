@@ -1006,9 +1006,6 @@ void intel_rps_boost(struct i915_request *rq)
 {
 	struct intel_guc_slpc *slpc;
 
-	if (i915_request_signaled(rq) || i915_request_has_waitboost(rq))
-		return;
-
 	/* Serializes with i915_request_retire() */
 	if (!test_and_set_bit(I915_FENCE_FLAG_BOOST, &rq->fence.flags)) {
 		struct intel_rps *rps = &READ_ONCE(rq->engine)->gt->rps;

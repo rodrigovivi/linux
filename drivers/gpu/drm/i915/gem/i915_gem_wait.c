@@ -58,7 +58,8 @@ i915_gem_object_boost(struct dma_resv *resv, unsigned int flags)
 			    dma_resv_usage_rw(flags & I915_WAIT_ALL));
 	dma_resv_for_each_fence_unlocked(&cursor, fence)
 		if (dma_fence_is_i915(fence) &&
-		    !i915_request_started(to_request(fence)))
+		    !i915_request_started(to_request(fence)) &&
+		    i915_request_needs_boost(to_request(fence)))
 			intel_rps_boost(to_request(fence));
 	dma_resv_iter_end(&cursor);
 }

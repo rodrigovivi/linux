@@ -625,9 +625,10 @@ static inline void i915_request_mark_complete(struct i915_request *rq)
 		   (u32 *)&rq->fence.seqno);
 }
 
-static inline bool i915_request_has_waitboost(const struct i915_request *rq)
+static inline bool i915_request_needs_boost(const struct i915_request *rq)
 {
-	return test_bit(I915_FENCE_FLAG_BOOST, &rq->fence.flags);
+	return i915_request_signaled(rq)
+		&& test_bit(I915_FENCE_FLAG_BOOST, &rq->fence.flags);
 }
 
 static inline bool i915_request_has_nopreempt(const struct i915_request *rq)
