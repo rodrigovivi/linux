@@ -192,6 +192,8 @@ int xe_device_probe(struct xe_device *xe)
 	int err;
 	u8 id;
 
+	xe->info.mem_region_mask = 1;
+
 	for_each_gt(gt, xe, id) {
 		err = xe_gt_alloc(xe, gt);
 		if (err)

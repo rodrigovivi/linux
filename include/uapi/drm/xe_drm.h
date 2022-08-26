@@ -150,19 +150,47 @@ struct drm_xe_engine_class_instance {
 	__u16 gt_id;
 };
 
+#define XE_MEM_REGION_CLASS_SYSMEM	0
+#define XE_MEM_REGION_CLASS_VRAM	1
+
 struct drm_xe_query_mem_usage {
 	__u32 num_regions;
 	__u32 pad;
 
 	struct drm_xe_query_mem_region {
-#define XE_QUERY_MEM_REGION_CLASS_SYSMEM	0
-#define XE_QUERY_MEM_REGION_CLASS_LMEM		1
 		__u16 mem_class;
-		__u16 instance;
+		__u16 instance;	/* unique ID even among different classes */
 		__u32 pad;
+		__u32 min_page_size;
+		__u32 max_page_size;
 		__u64 total_size;
 		__u64 used;
+		__u64 reserved[2];
 	} regions[];
+};
+
+struct drm_xe_query_gts {
+	__u32 num_gt;
+	__u32 pad;
+
+	/*
+	 * TODO: Perhaps info about every mem region relative to this GT? e.g.
+	 * bandwidth between this GT and remote region?
+	 */
+
+	struct drm_xe_query_gt {
+#define XE_QUERY_GT_TYPE_MAIN		0
+#define XE_QUERY_GT_TYPE_REMOTE		1
+#define XE_QUERY_GT_TYPE_MEDIA		2
+		__u16 type;
+		__u16 instance;
+		__u32 pad;
+		__u64 features;
+		__u64 native_mem_regions;	/* bit mask of instances from drm_xe_query_mem_usage */
+		__u64 slow_mem_regions;		/* bit mask of instances from drm_xe_query_mem_usage */
+		__u64 inaccessible_mem_regions;	/* bit mask of instances from drm_xe_query_mem_usage */
+		__u64 reserved[2];
+	} gts[];
 };
 
 struct drm_xe_query_config {
@@ -174,8 +202,9 @@ struct drm_xe_query_config {
 	#define XE_QUERY_CONFIG_FLAGS_USE_GUC		(0x1 << 1)
 #define XE_QUERY_CONFIG_MIN_ALIGNEMENT		2
 #define XE_QUERY_CONFIG_GTT_SIZE		3
-#define XE_QUERY_CONFIG_TILE_COUNT		4
-#define XE_QUERY_CONFIG_NUM_PARAM		XE_QUERY_CONFIG_TILE_COUNT + 1
+#define XE_QUERY_CONFIG_GT_COUNT		4
+#define XE_QUERY_CONFIG_MEM_REGION_COUNT	5
+#define XE_QUERY_CONFIG_NUM_PARAM		XE_QUERY_CONFIG_MEM_REGION_COUNT + 1
 	__u64 info[];
 };
 
@@ -189,6 +218,7 @@ struct drm_xe_device_query {
 #define DRM_XE_DEVICE_QUERY_ENGINES	0
 #define DRM_XE_DEVICE_QUERY_MEM_USAGE	1
 #define DRM_XE_DEVICE_QUERY_CONFIG	2
+#define DRM_XE_DEVICE_QUERY_GTS		3
 
 	/** @size: Size of the queried data */
 	__u32 size;
@@ -211,11 +241,11 @@ struct drm_xe_gem_create {
 	 */
 	__u64 size;
 
-	/** @flags: Flags */
+	/**
+	 * @flags: Flags, currently a mask of memory instances of where BO can
+	 * be placed
+	 */
 	__u32 flags;
-
-#define DRM_XE_GEM_CREATE_SYSTEM	0x1
-#define DRM_XE_GEM_CREATE_VRAM		0x2
 
 	/**
 	 * @vm_id: Attached VM, if any

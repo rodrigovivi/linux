@@ -43,6 +43,8 @@ struct xe_device {
 		u32 graphics_verx100;
 		/** @media_verx100: media IP version */
 		u32 media_verx100;
+		/** @mem_region_mask: mask of valid memory regions */
+		u32 mem_region_mask;
 		/** @is_dgfx: is discrete device */
 		bool is_dgfx;
 		/** @platform: XE platform enum */
