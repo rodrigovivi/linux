@@ -160,6 +160,7 @@ static void setup_private_ppat(struct xe_gt *gt)
 
 static int gt_ttm_mgr_init(struct xe_gt *gt)
 {
+	struct xe_device *xe = gt_to_xe(gt);
 	int err;
 	struct sysinfo si;
 	u64 gtt_size;
@@ -174,6 +175,7 @@ static int gt_ttm_mgr_init(struct xe_gt *gt)
 		gtt_size = min(max((XE_DEFAULT_GTT_SIZE_MB << 20),
 				   gt->mem.vram.size),
 			       gtt_size);
+		xe->info.mem_region_mask |= BIT(gt->info.vram_id) << 1;
 	}
 
 	err = xe_ttm_gtt_mgr_init(gt, gt->mem.gtt_mgr, gtt_size);

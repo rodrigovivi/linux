@@ -82,9 +82,11 @@ static int query_engines(struct xe_device *xe,
 static size_t calc_memory_usage_size(struct xe_device *xe)
 {
 	u32 num_managers = 1;
+	int i;
 
-	if (ttm_manager_type(&xe->ttm, XE_PL_VRAM0))
-		num_managers++;
+	for (i = XE_PL_VRAM0; i <= XE_PL_VRAM1; ++i)
+		if (ttm_manager_type(&xe->ttm, i))
+			num_managers++;
 
 	return offsetof(struct drm_xe_query_mem_usage, regions[num_managers]);
 }
@@ -97,7 +99,7 @@ static int query_memory_usage(struct xe_device *xe,
 	struct drm_xe_query_mem_usage __user *query_ptr =
 		u64_to_user_ptr(query->data);
 	struct ttm_resource_manager *man;
-	int ret;
+	int ret, i;
 
 	if (query->size == 0) {
 		query->size = size;
@@ -113,23 +115,33 @@ static int query_memory_usage(struct xe_device *xe,
 	usage->pad = 0;
 
 	man = ttm_manager_type(&xe->ttm, XE_PL_TT);
-	usage->regions[0].mem_class = XE_QUERY_MEM_REGION_CLASS_SYSMEM;
+	usage->regions[0].mem_class = XE_MEM_REGION_CLASS_SYSMEM;
 	usage->regions[0].instance = 0;
 	usage->regions[0].pad = 0;
+	usage->regions[0].min_page_size = PAGE_SIZE;
+	usage->regions[0].max_page_size = PAGE_SIZE;
 	usage->regions[0].total_size = man->size << PAGE_SHIFT;
 	usage->regions[0].used = ttm_resource_manager_usage(man);
+	usage->num_regions = 1;
 
-	man = ttm_manager_type(&xe->ttm, XE_PL_VRAM0);
-	if (man) {
-		usage->regions[1].mem_class = XE_QUERY_MEM_REGION_CLASS_LMEM;
-		usage->regions[1].instance = 0;
-		usage->regions[1].pad = 0;
-		usage->regions[1].total_size = man->size << PAGE_SHIFT;
-		usage->regions[1].used = ttm_resource_manager_usage(man);
-
-		usage->num_regions = 2;
-	} else {
-		usage->num_regions = 1;
+	for (i = XE_PL_VRAM0; i <= XE_PL_VRAM1; ++i) {
+		man = ttm_manager_type(&xe->ttm, i);
+		if (man) {
+			usage->regions[usage->num_regions].mem_class =
+				XE_MEM_REGION_CLASS_VRAM;
+			usage->regions[usage->num_regions].instance =
+				usage->num_regions;
+			usage->regions[usage->num_regions].pad = 0;
+			usage->regions[usage->num_regions].min_page_size =
+				xe->info.vram_flags & XE_VRAM_FLAGS_NEED64K ?
+				SZ_64K : PAGE_SIZE;
+			usage->regions[usage->num_regions].max_page_size =
+				SZ_1G;
+			usage->regions[usage->num_regions].total_size =
+				man->size << PAGE_SHIFT;
+			usage->regions[usage->num_regions++].used =
+				ttm_resource_manager_usage(man);
+		}
 	}
 
 	if (!copy_to_user(query_ptr, usage, size))
@@ -141,8 +153,7 @@ static int query_memory_usage(struct xe_device *xe,
 	return ret;
 }
 
-static int query_config(struct xe_device *xe,
-			 struct drm_xe_device_query *query)
+static int query_config(struct xe_device *xe, struct drm_xe_device_query *query)
 {
 	u32 num_params = XE_QUERY_CONFIG_NUM_PARAM;
 	size_t size =
@@ -174,7 +185,9 @@ static int query_config(struct xe_device *xe,
 	config->info[XE_QUERY_CONFIG_MIN_ALIGNEMENT] =
 		xe->info.vram_flags & XE_VRAM_FLAGS_NEED64K ? SZ_64K : SZ_4K;
 	config->info[XE_QUERY_CONFIG_GTT_SIZE] = to_gt(xe)->mem.ggtt->size;
-	config->info[XE_QUERY_CONFIG_TILE_COUNT] = xe->info.tile_count;
+	config->info[XE_QUERY_CONFIG_GT_COUNT] = xe->info.tile_count;
+	config->info[XE_QUERY_CONFIG_MEM_REGION_COUNT] =
+		hweight_long(xe->info.mem_region_mask);
 
 	if (copy_to_user(query_ptr, config, size)) {
 		kfree(config);
@@ -185,11 +198,60 @@ static int query_config(struct xe_device *xe,
 	return 0;
 }
 
+static int query_gts(struct xe_device *xe, struct drm_xe_device_query *query)
+{
+	struct xe_gt *gt;
+	size_t size = sizeof(struct drm_xe_query_gts) +
+		xe->info.tile_count * sizeof(struct drm_xe_query_gt);
+	struct drm_xe_query_gts __user *query_ptr =
+		u64_to_user_ptr(query->data);
+	struct drm_xe_query_gts *gts;
+	u8 id;
+
+	if (query->size == 0) {
+		query->size = size;
+		return 0;
+	} else if (XE_IOCTL_ERR(xe, query->size != size)) {
+		return -EINVAL;
+	}
+
+	gts = kzalloc(size, GFP_KERNEL);
+	if (XE_IOCTL_ERR(xe, !gts))
+		return -ENOMEM;
+
+	gts->num_gt = xe->info.tile_count;
+	for_each_gt(gt, xe, id) {
+		if (id == 0)
+			gts->gts[id].type = XE_QUERY_GT_TYPE_MAIN;
+		else if (xe_gt_is_media_type(gt))
+			gts->gts[id].type = XE_QUERY_GT_TYPE_MEDIA;
+		else
+			gts->gts[id].type = XE_QUERY_GT_TYPE_REMOTE;
+		gts->gts[id].instance = id;
+		if (!IS_DGFX(xe))
+			gts->gts[id].native_mem_regions = 0x1;
+		else
+			gts->gts[id].native_mem_regions =
+				BIT(gt->info.vram_id) << 1;
+		gts->gts[id].slow_mem_regions = xe->info.mem_region_mask ^
+			gts->gts[id].native_mem_regions;
+	}
+
+	if (copy_to_user(query_ptr, gts, size)) {
+		kfree(gts);
+		return -EFAULT;
+	}
+	kfree(gts);
+
+	return 0;
+}
+
 static int (* const xe_query_funcs[])(struct xe_device *xe,
 				      struct drm_xe_device_query *query) = {
 	query_engines,
 	query_memory_usage,
 	query_config,
+	query_gts,
 };
 
 int xe_query_ioctl(struct drm_device *dev, void *data, struct drm_file *file)

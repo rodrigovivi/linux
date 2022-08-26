@@ -758,12 +758,6 @@ void xe_bo_vunmap(struct xe_bo *bo)
 	__xe_bo_vunmap(bo);
 }
 
-#define ALL_DRM_XE_GEM_CREATE_FLAGS (\
-	DRM_XE_GEM_CREATE_SYSTEM | DRM_XE_GEM_CREATE_VRAM)
-
-#define MEM_DRM_XE_GEM_CREATE_FLAGS (\
-	DRM_XE_GEM_CREATE_SYSTEM | DRM_XE_GEM_CREATE_VRAM)
-
 int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 			struct drm_file *file)
 {
@@ -780,17 +774,12 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, args->extensions))
 		return -EINVAL;
 
-	if (XE_IOCTL_ERR(xe, args->flags & ~ALL_DRM_XE_GEM_CREATE_FLAGS))
+	if (XE_IOCTL_ERR(xe, args->flags & ~xe->info.mem_region_mask))
 		return -EINVAL;
 
 	/* at least one memory type must be specified */
-	if (XE_IOCTL_ERR(xe, !(args->flags & MEM_DRM_XE_GEM_CREATE_FLAGS)))
+	if (XE_IOCTL_ERR(xe, !(args->flags & xe->info.mem_region_mask)))
 		return -EINVAL;
-
-	if (!IS_DGFX(xe)) {
-		if (XE_IOCTL_ERR(xe, args->flags & DRM_XE_GEM_CREATE_VRAM))
-			return -EINVAL;
-	}
 
 	if (XE_IOCTL_ERR(xe, args->handle))
 		return -EINVAL;
@@ -812,11 +801,7 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 		}
 	}
 
-	if (args->flags & DRM_XE_GEM_CREATE_SYSTEM)
-		bo_flags |= XE_BO_CREATE_SYSTEM_BIT;
-	if (args->flags & DRM_XE_GEM_CREATE_VRAM)
-		bo_flags |= XE_BO_CREATE_VRAM0_BIT;
-
+	bo_flags |= args->flags << (ffs(XE_BO_CREATE_SYSTEM_BIT) - 1);
 	bo = xe_bo_create(xe, NULL, vm, args->size, ttm_bo_type_device,
 			  bo_flags);
 	if (vm) {
