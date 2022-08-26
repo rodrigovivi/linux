@@ -224,4 +224,20 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 			struct drm_file *file);
 int xe_gem_mmap_offset_ioctl(struct drm_device *dev, void *data,
 			     struct drm_file *file);
+
+#if IS_ENABLED(CONFIG_DRM_XE_KUNIT_TEST)
+/**
+ * xe_bo_is_mem_type - Whether the bo currently resides in the given
+ * TTM memory type
+ * @bo: The bo to check.
+ * @mem_type The TTM memory type.
+ *
+ * Return: true iff the bo resides in @mem_type, false otherwise.
+ */
+static inline bool xe_bo_is_mem_type(struct xe_bo *bo, u32 mem_type)
+{
+	xe_bo_assert_held(bo);
+	return bo->ttm.resource->mem_type == mem_type;
+}
+#endif
 #endif
