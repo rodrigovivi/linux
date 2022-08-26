@@ -75,9 +75,14 @@
 #define XE_PL_VRAM0		TTM_PL_VRAM
 #define XE_PL_VRAM1		(XE_PL_VRAM0 + 1)
 
-struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_gt *gt,
-				    struct dma_resv *resv, size_t size,
-				    enum ttm_bo_type type, u32 flags);
+struct xe_bo *xe_bo_alloc(void);
+
+void xe_bo_free(struct xe_bo *bo);
+
+struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
+				    struct xe_gt *gt, struct dma_resv *resv,
+				    size_t size, enum ttm_bo_type type,
+				    u32 flags);
 struct xe_bo *xe_bo_create_locked(struct xe_device *xe, struct xe_gt *gt,
 				  struct xe_vm *vm, size_t size,
 				  enum ttm_bo_type type, u32 flags);
@@ -145,7 +150,8 @@ static inline void xe_bo_lock_no_vm(struct xe_bo *bo,
 				    struct ww_acquire_ctx *ctx)
 {
 	if (bo) {
-		XE_BUG_ON(bo->vm || bo->ttm.base.resv != &bo->ttm.base._resv);
+		XE_BUG_ON(bo->vm || (bo->ttm.type != ttm_bo_type_sg &&
+				     bo->ttm.base.resv != &bo->ttm.base._resv));
 		dma_resv_lock(bo->ttm.base.resv, ctx);
 	}
 }
@@ -153,7 +159,8 @@ static inline void xe_bo_lock_no_vm(struct xe_bo *bo,
 static inline void xe_bo_unlock_no_vm(struct xe_bo *bo)
 {
 	if (bo) {
-		XE_BUG_ON(bo->vm || bo->ttm.base.resv != &bo->ttm.base._resv);
+		XE_BUG_ON(bo->vm || (bo->ttm.type != ttm_bo_type_sg &&
+				     bo->ttm.base.resv != &bo->ttm.base._resv));
 		dma_resv_unlock(bo->ttm.base.resv);
 	}
 }
