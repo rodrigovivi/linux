@@ -10,6 +10,9 @@
 
 #include <drm/ttm/ttm_tt.h>
 
+#include <kunit/test.h>
+#include <linux/pci-p2pdma.h>
+
 #include "xe_bo.h"
 #include "xe_device.h"
 #include "xe_dma_buf.h"
@@ -21,6 +24,15 @@ MODULE_IMPORT_NS(DMA_BUF);
 static int xe_dma_buf_attach(struct dma_buf *dmabuf,
 			     struct dma_buf_attachment *attach)
 {
+	struct drm_gem_object *obj = attach->dmabuf->priv;
+
+	if (attach->peer2peer &&
+	    pci_p2pdma_distance(to_pci_dev(obj->dev->dev), attach->dev, false) < 0)
+		attach->peer2peer = false;
+
+	if (!attach->peer2peer && !xe_bo_can_migrate(gem_to_xe_bo(obj), XE_PL_TT))
+		return -EOPNOTSUPP;
+
 	/* TODO: Grab PM ref */
 	return 0;
 }
@@ -36,7 +48,13 @@ static int xe_dma_buf_pin(struct dma_buf_attachment *attach)
 	struct drm_gem_object *obj = attach->dmabuf->priv;
 	struct xe_bo *bo = gem_to_xe_bo(obj);
 
+	/*
+	 * Migrate to TT first to increase the chance of non-p2p clients
+	 * can attach.
+	 */
+	(void)xe_bo_migrate(bo, XE_PL_TT);
 	xe_bo_pin_external(bo);
+
 	return 0;
 }
 
@@ -55,10 +73,19 @@ static struct sg_table *xe_dma_buf_map(struct dma_buf_attachment *attach,
 	struct drm_gem_object *obj = dma_buf->priv;
 	struct xe_bo *bo = gem_to_xe_bo(obj);
 	struct sg_table *sgt;
-	long r;
+	int r = 0;
+
+	if (!attach->peer2peer && !xe_bo_can_migrate(bo, XE_PL_TT))
+		return ERR_PTR(-EOPNOTSUPP);
 
 	if (!xe_bo_is_pinned(bo)) {
-		r = xe_bo_validate(bo, NULL);
+		if (!attach->peer2peer ||
+		    bo->ttm.resource->mem_type == XE_PL_SYSTEM) {
+			if (xe_bo_can_migrate(bo, XE_PL_TT))
+				r = xe_bo_migrate(bo, XE_PL_TT);
+			else
+				r = xe_bo_validate(bo, NULL);
+		}
 		if (r)
 			return ERR_PTR(r);
 	}
@@ -101,7 +128,10 @@ static void xe_dma_buf_unmap(struct dma_buf_attachment *attach,
 			     struct sg_table *sgt,
 			     enum dma_data_direction dir)
 {
-	if (sgt->sgl->page_link) {
+	struct dma_buf *dma_buf = attach->dmabuf;
+	struct xe_bo *bo = gem_to_xe_bo(dma_buf->priv);
+
+	if (!xe_bo_is_vram(bo)) {
 		dma_unmap_sgtable(attach->dev, sgt, dir, 0);
 		sg_free_table(sgt);
 		kfree(sgt);
@@ -113,7 +143,17 @@ static void xe_dma_buf_unmap(struct dma_buf_attachment *attach,
 static int xe_dma_buf_begin_cpu_access(struct dma_buf *dma_buf,
 				       enum dma_data_direction direction)
 {
-	/* TODO: Migrate object CPU if allowed */
+	struct drm_gem_object *obj = dma_buf->priv;
+	struct xe_bo *bo = gem_to_xe_bo(obj);
+	bool reads =  (direction == DMA_BIDIRECTIONAL ||
+		       direction == DMA_FROM_DEVICE);
+
+	if (!reads)
+		return 0;
+
+	xe_bo_lock_no_vm(bo, NULL);
+	(void)xe_bo_migrate(bo, XE_PL_TT);
+	xe_bo_unlock_no_vm(bo);
 
 	return 0;
 }
@@ -148,7 +188,8 @@ struct dma_buf *xe_gem_prime_export(struct drm_gem_object *obj, int flags)
 }
 
 static struct drm_gem_object *
-xe_dma_buf_create_obj(struct drm_device *dev, struct dma_buf *dma_buf)
+xe_dma_buf_init_obj(struct drm_device *dev, struct xe_bo *storage,
+		    struct dma_buf *dma_buf)
 {
 	struct dma_resv *resv = dma_buf->resv;
 	struct xe_device *xe = to_xe_device(dev);
@@ -156,7 +197,7 @@ xe_dma_buf_create_obj(struct drm_device *dev, struct dma_buf *dma_buf)
 	int ret;
 
 	dma_resv_lock(resv, NULL);
-	bo = __xe_bo_create_locked(xe, NULL, resv, dma_buf->size,
+	bo = __xe_bo_create_locked(xe, storage, NULL, resv, dma_buf->size,
 				   ttm_bo_type_sg, XE_BO_CREATE_SYSTEM_BIT);
 	if (IS_ERR(bo)) {
 		ret = PTR_ERR(bo);
@@ -171,13 +212,13 @@ error:
 	return ERR_PTR(ret);
 }
 
-static void
-xe_dma_buf_move_notify(struct dma_buf_attachment *attach)
+static void xe_dma_buf_move_notify(struct dma_buf_attachment *attach)
 {
+	static struct ttm_operation_ctx ctx = {.interruptible = true};
 	struct drm_gem_object *obj = attach->importer_priv;
 	struct xe_bo *bo = gem_to_xe_bo(obj);
 
-	xe_bo_trigger_rebind(xe_bo_device(bo), bo);
+	XE_WARN_ON(ttm_bo_evict(&bo->ttm, &ctx));
 }
 
 static const struct dma_buf_attach_ops xe_dma_buf_attach_ops = {
@@ -188,8 +229,10 @@ static const struct dma_buf_attach_ops xe_dma_buf_attach_ops = {
 struct drm_gem_object *xe_gem_prime_import(struct drm_device *dev,
 					   struct dma_buf *dma_buf)
 {
+	const struct dma_buf_attach_ops *attach_ops;
 	struct dma_buf_attachment *attach;
 	struct drm_gem_object *obj;
+	struct xe_bo *bo;
 
 	if (dma_buf->ops == &xe_dmabuf_ops) {
 		obj = dma_buf->priv;
@@ -203,16 +246,34 @@ struct drm_gem_object *xe_gem_prime_import(struct drm_device *dev,
 		}
 	}
 
-	obj = xe_dma_buf_create_obj(dev, dma_buf);
+	/*
+	 * Don't publish the bo until we have a valid attachment, and a
+	 * valid attachment needs the bo address. So pre-create a bo before
+	 * creating the attachment and publish.
+	 */
+	bo = xe_bo_alloc();
+	if (IS_ERR(bo))
+		return ERR_CAST(bo);
+
+	attach_ops = &xe_dma_buf_attach_ops;
+	attach = dma_buf_dynamic_attach(dma_buf, dev->dev, attach_ops, &bo->ttm.base);
+	if (IS_ERR(attach)) {
+		obj = ERR_CAST(attach);
+		goto out_err;
+	}
+
+	/* Errors here will take care of freeing the bo. */
+	obj = xe_dma_buf_init_obj(dev, bo, dma_buf);
 	if (IS_ERR(obj))
 		return obj;
 
-	attach = dma_buf_dynamic_attach(dma_buf, dev->dev,
-					&xe_dma_buf_attach_ops, obj);
-	if (IS_ERR(attach))
-		return ERR_CAST(attach);
 
 	get_dma_buf(dma_buf);
 	obj->import_attach = attach;
+	return obj;
+
+out_err:
+	xe_bo_free(bo);
+
 	return obj;
 }

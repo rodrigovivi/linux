@@ -125,17 +125,22 @@ static void xe_evict_flags(struct ttm_buffer_object *tbo,
 {
 	struct xe_bo *bo;
 
-	/* Don't handle scatter gather BOs */
-	if (tbo->type == ttm_bo_type_sg) {
-		placement->num_placement = 0;
-		placement->num_busy_placement = 0;
-		return;
-	}
-
 	if (!xe_bo_is_xe_bo(tbo)) {
+		/* Don't handle scatter gather BOs */
+		if (tbo->type == ttm_bo_type_sg) {
+			placement->num_placement = 0;
+			placement->num_busy_placement = 0;
+			return;
+		}
+
 		*placement = sys_placement;
 		return;
 	}
+
+	/*
+	 * For xe, sg bos that are evicted to system just triggers a
+	 * rebind of the sg list upon subsequent validation to XE_PL_TT.
+	 */
 
 	bo = ttm_to_xe_bo(tbo);
 	switch (tbo->resource->mem_type) {
@@ -175,6 +180,27 @@ static struct ttm_tt *xe_ttm_tt_create(struct ttm_buffer_object *ttm_bo,
 	}
 
 	return &tt->ttm;
+}
+
+static int xe_ttm_tt_populate(struct ttm_device *ttm_dev, struct ttm_tt *tt,
+			      struct ttm_operation_ctx *ctx)
+{
+	/*
+	 * dma-bufs are not populated with pages, and the dma-
+	 * addresses are set up when moved to XE_PL_TT.
+	 */
+	if (tt->page_flags & TTM_TT_FLAG_EXTERNAL)
+		return 0;
+
+	return ttm_pool_alloc(&ttm_dev->pool, tt, ctx);
+}
+
+static void xe_ttm_tt_unpopulate(struct ttm_device *ttm_dev, struct ttm_tt *tt)
+{
+	if (tt->page_flags & TTM_TT_FLAG_EXTERNAL)
+		return;
+
+	return ttm_pool_free(&ttm_dev->pool, tt);
 }
 
 static void xe_ttm_tt_destroy(struct ttm_device *ttm_dev, struct ttm_tt *tt)
@@ -239,6 +265,86 @@ void xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo)
 	}
 }
 
+/*
+ * The dma-buf map_attachment() / unmap_attachment() is hooked up here.
+ * Note that unmapping the attachment is deferred to the next
+ * map_attachment time, or to bo destroy (after idling) whichever comes first.
+ * This is to avoid syncing before unmap_attachment(), assuming that the
+ * caller relies on idling the reservation object before moving the
+ * backing store out. Should that assumption not hold, then we will be able
+ * to unconditionally call unmap_attachment() when moving out to system.
+ */
+static int xe_bo_move_dmabuf(struct ttm_buffer_object *ttm_bo,
+			     struct ttm_resource *old_res,
+			     struct ttm_resource *new_res)
+{
+	struct dma_buf_attachment *attach = ttm_bo->base.import_attach;
+	struct sg_table *sg;
+	struct sg_dma_page_iter dma_iter;
+	u64 page;
+
+	XE_BUG_ON(!attach);
+	XE_BUG_ON(!ttm_bo->ttm);
+
+	if (new_res->mem_type == XE_PL_SYSTEM)
+		goto out;
+
+	if (ttm_bo->sg) {
+		dma_buf_unmap_attachment(attach, ttm_bo->sg, DMA_BIDIRECTIONAL);
+		ttm_bo->sg = NULL;
+	}
+
+	sg = dma_buf_map_attachment(attach, DMA_BIDIRECTIONAL);
+	if (IS_ERR(sg))
+		return PTR_ERR(sg);
+
+	ttm_bo->sg = sg;
+	page = 0;
+	for_each_sgtable_dma_page(sg, &dma_iter, 0) {
+		ttm_bo->ttm->dma_address[page++] =
+			sg_page_iter_dma_address(&dma_iter);
+	}
+
+out:
+	ttm_bo_move_null(ttm_bo, new_res);
+
+	return 0;
+}
+
+/**
+ * xe_bo_move_notify - Notify subsystems of a pending move
+ * @bo: The buffer object
+ *
+ * This function notifies subsystems of an upcoming buffer move.
+ * Upon receiving such a notification, subsystems should schedule
+ * halting access to the underlying pages and optionally add a fence
+ * to the buffer object's dma_resv object, that signals when access is
+ * stopped. The caller will wait on all dma_resv fences before
+ * starting the move.
+ *
+ * A subsystem may commence access to the object after obtaining
+ * bindings to the new backing memory under the object lock.
+ */
+static void xe_bo_move_notify(struct xe_bo *bo)
+{
+	struct ttm_buffer_object *ttm_bo = &bo->ttm;
+	struct xe_device *xe = ttm_to_xe_device(ttm_bo->bdev);
+
+	/*
+	 * If this starts to call into many components, consider
+	 * using a notification chain here.
+	 */
+
+	if (xe_bo_is_pinned(bo))
+		return;
+
+	xe_bo_trigger_rebind(xe, bo);
+
+	/* Don't call move_notify() for imported dma-bufs. */
+	if (ttm_bo->base.dma_buf && !ttm_bo->base.import_attach)
+		dma_buf_move_notify(ttm_bo->base.dma_buf);
+}
+
 static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 		      struct ttm_operation_ctx *ctx,
 		      struct ttm_resource *new_mem,
@@ -257,12 +363,30 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 		goto out;
 	}
 
+	if (ttm_bo->type == ttm_bo_type_sg) {
+		xe_bo_move_notify(bo);
+		ret = xe_bo_move_dmabuf(ttm_bo, old_mem, new_mem);
+		goto out;
+	}
+
 	if (old_mem->mem_type == XE_PL_SYSTEM &&
 	    (new_mem->mem_type == XE_PL_TT)) {
 		ttm_bo_move_null(ttm_bo, new_mem);
 		goto out;
 	}
 
+	if (((old_mem->mem_type == XE_PL_SYSTEM && resource_is_vram(new_mem)) ||
+	     (resource_is_vram(old_mem) &&
+	      new_mem->mem_type == XE_PL_SYSTEM))) {
+		hop->fpfn = 0;
+		hop->lpfn = 0;
+		hop->mem_type = XE_PL_TT;
+		hop->flags = TTM_PL_FLAG_TEMPORARY;
+		ret = -EMULTIHOP;
+		goto out;
+	}
+
+	xe_bo_move_notify(bo);
 	if (old_mem->mem_type == XE_PL_TT &&
 	    new_mem->mem_type == XE_PL_SYSTEM) {
 		long timeout = dma_resv_wait_timeout(ttm_bo->base.resv,
@@ -274,17 +398,6 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 			goto out;
 		}
 		ttm_bo_move_null(ttm_bo, new_mem);
-		goto rebind;
-	}
-
-	if (((old_mem->mem_type == XE_PL_SYSTEM && resource_is_vram(new_mem)) ||
-	     (resource_is_vram(old_mem) &&
-	      new_mem->mem_type == XE_PL_SYSTEM))) {
-		hop->fpfn = 0;
-		hop->lpfn = 0;
-		hop->mem_type = XE_PL_TT;
-		hop->flags = TTM_PL_FLAG_TEMPORARY;
-		ret = -EMULTIHOP;
 		goto out;
 	}
 
@@ -340,14 +453,7 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 	}
 
 	xe_device_mem_access_wa_put(xe);
-
-rebind:
 	trace_printk("new_mem->mem_type=%d\n", new_mem->mem_type);
-	if (!xe_bo_is_pinned(bo) || xe_bo_is_user(bo)) {
-		xe_bo_trigger_rebind(xe, bo);
-		if (ttm_bo->base.dma_buf)
-			dma_buf_move_notify(ttm_bo->base.dma_buf);
-	}
 
 out:
 	if (!nounmap)
@@ -381,8 +487,26 @@ static void xe_ttm_bo_release_notify(struct ttm_buffer_object *ttm_bo)
 	__xe_bo_vunmap(bo);
 }
 
+static void xe_ttm_bo_delete_mem_notify(struct ttm_buffer_object *ttm_bo)
+{
+	if (!xe_bo_is_xe_bo(ttm_bo))
+		return;
+
+	/*
+	 * Object is idle and about to be destroyed. Release the
+	 * dma-buf attachment.
+	 */
+	if (ttm_bo->type == ttm_bo_type_sg && ttm_bo->sg) {
+		dma_buf_unmap_attachment(ttm_bo->base.import_attach, ttm_bo->sg,
+					 DMA_BIDIRECTIONAL);
+		ttm_bo->sg = NULL;
+	}
+}
+
 struct ttm_device_funcs xe_ttm_funcs = {
 	.ttm_tt_create = xe_ttm_tt_create,
+	.ttm_tt_populate = xe_ttm_tt_populate,
+	.ttm_tt_unpopulate = xe_ttm_tt_unpopulate,
 	.ttm_tt_destroy = xe_ttm_tt_destroy,
 	.evict_flags = xe_evict_flags,
 	.move = xe_bo_move,
@@ -390,12 +514,15 @@ struct ttm_device_funcs xe_ttm_funcs = {
 	.io_mem_pfn = xe_ttm_io_mem_pfn,
 	.release_notify = xe_ttm_bo_release_notify,
 	.eviction_valuable = ttm_bo_eviction_valuable,
+	.delete_mem_notify = xe_ttm_bo_delete_mem_notify,
 };
 
 static void xe_ttm_bo_destroy(struct ttm_buffer_object *ttm_bo)
 {
 	struct xe_bo *bo = ttm_to_xe_bo(ttm_bo);
 
+	if (bo->ttm.base.import_attach)
+		drm_prime_gem_destroy(&bo->ttm.base, NULL);
 	drm_gem_object_release(&bo->ttm.base);
 
 	WARN_ON(!list_empty(&bo->vmas));
@@ -433,15 +560,50 @@ static const struct drm_gem_object_funcs xe_gem_object_funcs = {
 	.export = xe_gem_prime_export,
 };
 
-struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_gt *gt,
-				    struct dma_resv *resv, size_t size,
-				    enum ttm_bo_type type, u32 flags)
+/**
+ * xe_bo_alloc - Allocate storage for a struct xe_bo
+ *
+ * This funcition is intended to allocate storage to be used for input
+ * to __xe_bo_create_locked(), in the case a pointer to the bo to be
+ * created is needed before the call to __xe_bo_create_locked().
+ * If __xe_bo_create_locked ends up never to be called, then the
+ * storage allocated with this function needs to be freed using
+ * xe_bo_free().
+ *
+ * Return: A pointer to an uninitialized struct xe_bo on success,
+ * ERR_PTR(-ENOMEM) on error.
+ */
+struct xe_bo *xe_bo_alloc(void)
 {
-	struct xe_bo *bo;
+	struct xe_bo *bo = kzalloc(sizeof(*bo), GFP_KERNEL);
+
+	if (!bo)
+		return ERR_PTR(-ENOMEM);
+
+	return bo;
+}
+
+/**
+ * xe_bo_free - Free storage allocated using xe_bo_alloc()
+ * @bo: The buffer object storage.
+ *
+ * Refer to xe_bo_alloc() documentation for valid use-cases.
+ */
+void xe_bo_free(struct xe_bo *bo)
+{
+	kfree(bo);
+}
+
+struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
+				    struct xe_gt *gt, struct dma_resv *resv,
+				    size_t size, enum ttm_bo_type type,
+				    u32 flags)
+{
 	struct ttm_operation_ctx ctx = {
 		.interruptible = true,
 		.no_wait_gpu = false,
 	};
+	struct ttm_placement *placement;
 	int err;
 
 	/* Only kernel objects should set GT */
@@ -452,9 +614,11 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_gt *gt,
 		ctx.resv = resv;
 	}
 
-	bo = kzalloc(sizeof(*bo), GFP_KERNEL);
-	if (!bo)
-		return ERR_PTR(-ENOMEM);
+	if (!bo) {
+		bo = xe_bo_alloc();
+		if (IS_ERR(bo))
+			return bo;
+	}
 
 	if (flags & (XE_BO_CREATE_VRAM0_BIT | XE_BO_CREATE_VRAM1_BIT) &&
 	    !(flags & XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT) &&
@@ -478,9 +642,13 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_gt *gt,
 	if (WARN_ON(err))
 		return ERR_PTR(err);
 
+	/* Defer populating type_sg bos */
+	placement = (type == ttm_bo_type_sg) ? &sys_placement :
+		&bo->placement;
+
 	err = ttm_bo_init_reserved(&xe->ttm, &bo->ttm, type,
 				   DMA_RESV_USAGE_BOOKKEEP,
-				   &bo->placement, SZ_64K >> PAGE_SHIFT,
+				   placement, SZ_64K >> PAGE_SHIFT,
 				   &ctx, NULL, resv, xe_ttm_bo_destroy);
 	if (WARN_ON(err))
 		return ERR_PTR(err);
@@ -497,7 +665,7 @@ struct xe_bo *xe_bo_create_locked(struct xe_device *xe, struct xe_gt *gt,
 
 	if (vm)
 		xe_vm_assert_held(vm);
-	bo = __xe_bo_create_locked(xe, gt, vm ? &vm->resv : NULL, size,
+	bo = __xe_bo_create_locked(xe, NULL, gt, vm ? &vm->resv : NULL, size,
 				   type, flags);
 	if (IS_ERR(bo))
 		return bo;
