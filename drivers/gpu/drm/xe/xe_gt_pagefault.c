@@ -3,13 +3,15 @@
  * Copyright © 2022 Intel Corporation
  */
 
+#include <linux/circ_buf.h>
+
 #include <drm/ttm/ttm_execbuf_util.h>
 
 #include "xe_bo.h"
 #include "xe_gt.h"
 #include "xe_guc.h"
 #include "xe_guc_ct.h"
-#include "xe_guc_pagefault.h"
+#include "xe_gt_pagefault.h"
 #include "xe_trace.h"
 #include "xe_vm.h"
 
@@ -32,12 +34,6 @@ guc_to_gt(struct xe_guc *guc)
 	return container_of(guc, struct xe_gt, uc.guc);
 }
 
-static struct xe_device *
-guc_to_xe(struct xe_guc *guc)
-{
-	return gt_to_xe(guc_to_gt(guc));
-}
-
 static int send_tlb_invalidate(struct xe_guc *guc)
 {
 	u32 action[] = {
@@ -48,13 +44,13 @@ static int send_tlb_invalidate(struct xe_guc *guc)
 		XE_GUC_TLB_INVAL_FLUSH_CACHE,
 	};
 
-	/* FIXME: Not handling G2H credits */
-	return xe_guc_ct_send_g2h_handler(&guc->ct, action, ARRAY_SIZE(action));
+	return xe_guc_ct_send(&guc->ct, action, ARRAY_SIZE(action),
+			      G2H_LEN_DW_TLB_INVALIDATE, 1);
 }
 
-static int handle_pagefault(struct xe_guc *guc, struct pagefault *pf)
+static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 {
-	struct xe_device *xe = guc_to_xe(guc);
+	struct xe_device *xe = gt_to_xe(gt);
 	struct xe_vm *vm;
 	struct xe_vma *vma, lookup;
 	LIST_HEAD(objs);
@@ -122,7 +118,7 @@ static int handle_pagefault(struct xe_guc *guc, struct pagefault *pf)
 	dma_fence_wait(fence, false);
 
 	/* FIXME: Doing a full TLB invalidation for now */
-	ret = send_tlb_invalidate(guc);
+	ret = send_tlb_invalidate(&gt->uc.guc);
 
 unlock_dma_resv:
 	ttm_eu_backoff_reservation(&ww, &objs);
@@ -142,7 +138,7 @@ static int send_pagefault_reply(struct xe_guc *guc,
 		reply->dw1,
 	};
 
-	return xe_guc_ct_send_g2h_handler(&guc->ct, action, ARRAY_SIZE(action));
+	return xe_guc_ct_send(&guc->ct, action, ARRAY_SIZE(action), 0, 0);
 }
 
 static void print_pagefault(struct xe_device *xe, struct pagefault *pf)
@@ -162,39 +158,88 @@ static void print_pagefault(struct xe_device *xe, struct pagefault *pf)
 		 pf->engine_class, pf->engine_instance);
 }
 
-static void get_pagefault(const u32 *msg, struct pagefault *pf)
+#define PF_MSG_LEN_DW	4
+
+static int get_pagefault(struct xe_gt *gt, struct pagefault *pf)
 {
 	const struct xe_guc_pagefault_desc *desc;
+	int ret = 0;
 
-	desc = (const struct xe_guc_pagefault_desc *)msg;
-	pf->fault_level = FIELD_GET(PFD_FAULT_LEVEL, desc->dw0);
-	pf->engine_class = FIELD_GET(PFD_ENG_CLASS, desc->dw0);
-	pf->engine_instance = FIELD_GET(PFD_ENG_INSTANCE, desc->dw0);
-	pf->pdata = FIELD_GET(PFD_PDATA_HI, desc->dw1) << PFD_PDATA_HI_SHIFT;
-	pf->pdata |= FIELD_GET(PFD_PDATA_LO, desc->dw0);
-	pf->asid = FIELD_GET(PFD_ASID, desc->dw1);
-	pf->vfid = FIELD_GET(PFD_VFID, desc->dw2);
-	pf->access_type = FIELD_GET(PFD_ACCESS_TYPE, desc->dw2);
-	pf->fault_type = FIELD_GET(PFD_FAULT_TYPE, desc->dw2);
-	pf->page_addr = (u64)(FIELD_GET(PFD_VIRTUAL_ADDR_HI, desc->dw3)) <<
-		PFD_VIRTUAL_ADDR_HI_SHIFT;
-	pf->page_addr |= FIELD_GET(PFD_VIRTUAL_ADDR_LO, desc->dw2) <<
-		PFD_VIRTUAL_ADDR_LO_SHIFT;
+	spin_lock(&gt->usm.pf_queue.lock);
+	if (gt->usm.pf_queue.head != gt->usm.pf_queue.tail) {
+		desc = (const struct xe_guc_pagefault_desc *)
+			(gt->usm.pf_queue.data + gt->usm.pf_queue.head);
+
+		pf->fault_level = FIELD_GET(PFD_FAULT_LEVEL, desc->dw0);
+		pf->engine_class = FIELD_GET(PFD_ENG_CLASS, desc->dw0);
+		pf->engine_instance = FIELD_GET(PFD_ENG_INSTANCE, desc->dw0);
+		pf->pdata = FIELD_GET(PFD_PDATA_HI, desc->dw1) <<
+			PFD_PDATA_HI_SHIFT;
+		pf->pdata |= FIELD_GET(PFD_PDATA_LO, desc->dw0);
+		pf->asid = FIELD_GET(PFD_ASID, desc->dw1);
+		pf->vfid = FIELD_GET(PFD_VFID, desc->dw2);
+		pf->access_type = FIELD_GET(PFD_ACCESS_TYPE, desc->dw2);
+		pf->fault_type = FIELD_GET(PFD_FAULT_TYPE, desc->dw2);
+		pf->page_addr = (u64)(FIELD_GET(PFD_VIRTUAL_ADDR_HI, desc->dw3)) <<
+			PFD_VIRTUAL_ADDR_HI_SHIFT;
+		pf->page_addr |= FIELD_GET(PFD_VIRTUAL_ADDR_LO, desc->dw2) <<
+			PFD_VIRTUAL_ADDR_LO_SHIFT;
+
+		gt->usm.pf_queue.head = (gt->usm.pf_queue.head + PF_MSG_LEN_DW) %
+			PF_QUEUE_NUM_DW;
+	} else {
+		ret = -1;
+	}
+	spin_unlock(&gt->usm.pf_queue.lock);
+
+	return ret;
+}
+
+static bool pf_queue_full(struct xe_gt *gt)
+{
+	lockdep_assert_held(&gt->usm.pf_queue.lock);
+
+	return CIRC_SPACE(gt->usm.pf_queue.tail, gt->usm.pf_queue.head,
+			  PF_QUEUE_NUM_DW) <= PF_MSG_LEN_DW;
 }
 
 int xe_guc_pagefault_handler(struct xe_guc *guc, u32 *msg, u32 len)
 {
-	struct xe_device *xe = guc_to_xe(guc);
+	struct xe_gt *gt = guc_to_gt(guc);
+	bool full;
+
+	if (unlikely(len != PF_MSG_LEN_DW))
+		return -EPROTO;
+
+	spin_lock(&gt->usm.pf_queue.lock);
+	full = pf_queue_full(guc_to_gt(guc));
+	if (!full) {
+		memcpy(gt->usm.pf_queue.data + gt->usm.pf_queue.tail,
+		       msg, len * sizeof(u32));
+		gt->usm.pf_queue.tail = (gt->usm.pf_queue.tail + len) %
+			PF_QUEUE_NUM_DW;
+		queue_work(system_unbound_wq, &gt->usm.pf_queue.worker);
+	} else {
+		XE_WARN_ON("PF Queue full, shouldn't be possible");
+	}
+	spin_unlock(&gt->usm.pf_queue.lock);
+
+	return full ? -ENOSPC : 0;
+}
+
+static void pf_queue_work_func(struct work_struct *w)
+{
+	struct xe_gt *gt = container_of(w, struct xe_gt, usm.pf_queue.worker);
+	struct xe_device *xe = gt_to_xe(gt);
 	struct xe_guc_pagefault_reply reply = {};
 	struct pagefault pf = {};
 	int ret;
 
-	if (unlikely(len != 4))
-		return -EPROTO;
+	ret = get_pagefault(gt, &pf);
+	if (ret)
+		return;
 
-	get_pagefault(msg, &pf);
-
-	ret = handle_pagefault(guc, &pf);
+	ret = handle_pagefault(gt, &pf);
 	if (unlikely(ret)) {
 		print_pagefault(xe, &pf);
 		pf.fault_unsuccessful = 1;
@@ -212,5 +257,29 @@ int xe_guc_pagefault_handler(struct xe_guc *guc, u32 *msg, u32 len)
 		FIELD_PREP(PFR_ENG_CLASS, pf.engine_class) |
 		FIELD_PREP(PFR_PDATA, pf.pdata);
 
-	return send_pagefault_reply(guc, &reply);
+	send_pagefault_reply(&gt->uc.guc, &reply);
+}
+
+void xe_gt_pagefault_init(struct xe_gt *gt)
+{
+	struct xe_device *xe = gt_to_xe(gt);
+
+	if (!xe->info.supports_usm)
+		return;
+
+	spin_lock_init(&gt->usm.pf_queue.lock);
+	INIT_WORK(&gt->usm.pf_queue.worker, pf_queue_work_func);
+}
+
+void xe_gt_pagefault_reset(struct xe_gt *gt)
+{
+	struct xe_device *xe = gt_to_xe(gt);
+
+	if (!xe->info.supports_usm)
+		return;
+
+	spin_lock(&gt->usm.pf_queue.lock);
+	gt->usm.pf_queue.head = 0;
+	gt->usm.pf_queue.tail = 0;
+	spin_unlock(&gt->usm.pf_queue.lock);
 }

@@ -14,6 +14,7 @@
 #include "xe_force_wake.h"
 #include "xe_ggtt.h"
 #include "xe_gt.h"
+#include "xe_gt_pagefault.h"
 #include "xe_gt_sysfs.h"
 #include "xe_hw_fence.h"
 #include "xe_migrate.h"
@@ -241,6 +242,7 @@ int xe_gt_init(struct xe_gt *gt)
 	}
 
 	xe_gt_sysfs_init(gt);
+	xe_gt_pagefault_init(gt);
 
 	xe_device_mem_access_wa_get(gt_to_xe(gt));
 	err = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
@@ -356,6 +358,8 @@ static int gt_reset(struct xe_gt *gt)
 		return -ENODEV;
 
 	drm_info(&xe->drm, "GT reset started\n");
+
+	xe_gt_pagefault_reset(gt);
 
 	xe_device_mem_access_wa_get(gt_to_xe(gt));
 	err = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);

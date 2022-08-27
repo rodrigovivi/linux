@@ -127,6 +127,30 @@ struct xe_gt {
 		 * operations (e.g. mmigrations, fixing page tables)
 		 */
 		u16 reserved_bcs_instance;
+		/**
+		 * pf_queue: Page fault queue used to sync faults so faults can
+		 * be processed not under the GuC CT lock. The queue is sized so
+		 * it can sync all possible faults (1 per physical engine).
+		 */
+		struct {
+#define PF_QUEUE_NUM_DW	128
+			/** @data: data in the page fault queue */
+			u32 data[PF_QUEUE_NUM_DW];
+			/**
+			 * @head: head pointer in DWs for page fault queue,
+			 * moved by worker which processes faults.
+			 */
+			u16 head;
+			/**
+			 * @tail: tail pointer in DWs for page fault queue,
+			 * moved by G2H handler.
+			 */
+			u16 tail;
+			/** @lock: protects page fault queue */
+			spinlock_t lock;
+			/** @worker: to process page faults */
+			struct work_struct worker;
+		} pf_queue;
 	} usm;
 
 	/** @ordered_wq: used to serialize GT resets and TDRs */
