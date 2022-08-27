@@ -101,8 +101,12 @@ static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 	}
 	trace_xe_vma_pagefault(vma);
 
-	/* TODO: Check for Already bound */
-	XE_WARN_ON(!vma->bo);	/* TODO: userptr */
+retry_userptr:
+	if (xe_vma_is_userptr(vma)) {
+		ret = xe_vma_userptr_pin_pages(vma);
+		if (ret)
+			goto unlock_vm;
+	}
 
 	/* Lock VM and BOs dma-resv */
 	tv_vm.num_shared = xe->info.tile_count;
@@ -142,9 +146,14 @@ static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 	if (ret >= 0)
 		ret = 0;
 
+	if (xe_vma_is_userptr(vma))
+		ret = xe_vma_userptr_needs_repin(vma);
+
 unlock_dma_resv:
 	ttm_eu_backoff_reservation(&ww, &objs);
 unlock_vm:
+	if (ret == -EAGAIN)
+		goto retry_userptr;
 	up_read(&vm->lock);
 	xe_vm_put(vm);
 
