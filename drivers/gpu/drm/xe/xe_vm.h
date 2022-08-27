@@ -110,4 +110,12 @@ extern struct ttm_device_funcs xe_ttm_funcs;
 
 struct ttm_buffer_object *xe_vm_ttm_bo(struct xe_vm *vm);
 
+static inline bool xe_vma_is_userptr(struct xe_vma *vma)
+{
+	return !vma->bo;
+}
+
+int xe_vma_userptr_pin_pages(struct xe_vma *vma);
+int xe_vma_userptr_needs_repin(struct xe_vma *vma);
+
 #endif

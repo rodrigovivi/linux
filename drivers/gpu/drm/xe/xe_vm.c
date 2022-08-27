@@ -69,12 +69,10 @@ u64 gen8_pde_encode(struct xe_bo *bo, u64 bo_offset,
 	return pde;
 }
 
-static bool vma_is_userptr(struct xe_vma *vma);
-
 static dma_addr_t vma_addr(struct xe_vma *vma, u64 offset,
 			   size_t page_size, bool *is_lmem)
 {
-	if (vma_is_userptr(vma)) {
+	if (xe_vma_is_userptr(vma)) {
 		u64 page = offset >> PAGE_SHIFT;
 
 		*is_lmem = false;
@@ -253,7 +251,7 @@ static bool xe_pte_hugepage_possible(struct xe_vma *vma, u32 level, u64 start,
 	if (start + pagesize != end)
 		return false;
 
-	if (vma_is_userptr(vma))
+	if (xe_vma_is_userptr(vma))
 		return false;
 
 	if (!mem_type_is_vram(vma->bo->ttm.resource->mem_type))
@@ -439,15 +437,10 @@ static void xe_pt_destroy(struct xe_pt *pt, u32 flags)
 	kfree(pt);
 }
 
-static bool vma_is_userptr(struct xe_vma *vma)
-{
-	return !vma->bo;
-}
-
 static int __vma_userptr_needs_repin(struct xe_vma *vma)
 {
 	lockdep_assert_held(&vma->vm->userptr.notifier_lock);
-	XE_BUG_ON(!vma_is_userptr(vma));
+	XE_BUG_ON(!xe_vma_is_userptr(vma));
 
 	if (mmu_interval_read_retry(&vma->userptr.notifier,
 				    vma->userptr.notifier_seq))
@@ -456,7 +449,7 @@ static int __vma_userptr_needs_repin(struct xe_vma *vma)
 	return 0;
 }
 
-static int vma_userptr_needs_repin(struct xe_vma *vma)
+int xe_vma_userptr_needs_repin(struct xe_vma *vma)
 {
 	struct xe_vm *vm = vma->vm;
 	int ret;
@@ -468,7 +461,7 @@ static int vma_userptr_needs_repin(struct xe_vma *vma)
 	return ret;
 }
 
-static int vma_userptr_pin_pages(struct xe_vma *vma)
+int xe_vma_userptr_pin_pages(struct xe_vma *vma)
 {
 	struct xe_vm *vm = vma->vm;
 	struct xe_device *xe = vm->xe;
@@ -480,7 +473,7 @@ static int vma_userptr_pin_pages(struct xe_vma *vma)
 	int pinned, ret, i;
 	bool read_only = vma->pte_flags & PTE_READ_ONLY;
 
-	XE_BUG_ON(!vma_is_userptr(vma));
+	XE_BUG_ON(!xe_vma_is_userptr(vma));
 
 retry:
 	if (vma->destroyed)
@@ -540,7 +533,7 @@ out:
 		vma->userptr.notifier_seq = notifier_seq;
 		vma->userptr.dirty = true;
 		trace_xe_vma_userptr_pin_set_dirty(vma);
-		if (vma_userptr_needs_repin(vma) == -EAGAIN)
+		if (xe_vma_userptr_needs_repin(vma) == -EAGAIN)
 			goto retry;
 	}
 
@@ -871,7 +864,7 @@ static void vma_destroy_work_func(struct work_struct *w)
 		container_of(w, struct xe_vma, userptr.destroy_work);
 	struct xe_vm *vm = vma->vm;
 
-	XE_BUG_ON(!vma_is_userptr(vma));
+	XE_BUG_ON(!xe_vma_is_userptr(vma));
 
 	if (!list_empty(&vma->userptr_link)) {
 		down_write(&vm->lock);
@@ -896,7 +889,7 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 	struct dma_fence *fence;
 	long err;
 
-	XE_BUG_ON(!vma_is_userptr(vma));
+	XE_BUG_ON(!xe_vma_is_userptr(vma));
 	trace_xe_vma_userptr_invalidate(vma);
 
 	if (!mmu_notifier_range_blockable(range))
@@ -958,7 +951,7 @@ int xe_vm_userptr_pin(struct xe_vm *vm, bool rebind_worker)
 		return 0;
 
 	list_for_each_entry(vma, &vm->userptr.list, userptr_link) {
-		err = vma_userptr_pin_pages(vma);
+		err = xe_vma_userptr_pin_pages(vma);
 		if (err < 0)
 			return err;
 	}
@@ -1110,7 +1103,7 @@ static void xe_vma_destroy(struct xe_vma *vma)
 	if (!list_empty(&vma->evict_link))
 		list_del(&vma->evict_link);
 
-	if (vma_is_userptr(vma)) {
+	if (xe_vma_is_userptr(vma)) {
 		/* FIXME: Probably don't need a worker here anymore */
 		INIT_WORK(&vma->userptr.destroy_work, vma_destroy_work_func);
 		queue_work(system_unbound_wq, &vma->userptr.destroy_work);
@@ -1439,7 +1432,7 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 		rb_erase(&vma->vm_node, &vm->vmas);
 
 		/* easy case, remove from VMA? */
-		if (vma_is_userptr(vma) || vma->bo->vm) {
+		if (xe_vma_is_userptr(vma) || vma->bo->vm) {
 			xe_vma_destroy(vma);
 			continue;
 		}
@@ -1865,7 +1858,7 @@ __xe_vm_unbind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 				   DMA_RESV_USAGE_BOOKKEEP);
 
 		/* This fence will be installed by caller when doing eviction */
-		if (!vma_is_userptr(vma) && !vma->bo->vm)
+		if (!xe_vma_is_userptr(vma) && !vma->bo->vm)
 			dma_resv_add_fence(vma->bo->ttm.base.resv, fence,
 					   DMA_RESV_USAGE_BOOKKEEP);
 		xe_pt_commit_unbind(vma, entries, num_entries);
@@ -2287,7 +2280,7 @@ __xe_vm_bind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 				   DMA_RESV_USAGE_KERNEL :
 				   DMA_RESV_USAGE_BOOKKEEP);
 
-		if (!vma_is_userptr(vma) && !vma->bo->vm)
+		if (!xe_vma_is_userptr(vma) && !vma->bo->vm)
 			dma_resv_add_fence(vma->bo->ttm.base.resv, fence,
 					   DMA_RESV_USAGE_BOOKKEEP);
 		xe_pt_commit_bind(vma, entries, num_entries, rebind);
@@ -2528,7 +2521,7 @@ static int xe_vm_bind_userptr(struct xe_vm *vm, struct xe_vma *vma,
 	 * to fix page tables
 	 */
 	if (xe_vm_in_compute_mode(vm) &&
-	    vma_userptr_needs_repin(vma) == -EAGAIN) {
+	    xe_vma_userptr_needs_repin(vma) == -EAGAIN) {
 		struct dma_resv_iter cursor;
 		struct dma_fence *fence;
 
@@ -3195,7 +3188,7 @@ static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_vma *vma,
 		list_del_init(&__vma->unbind_link);
 		last = list_empty(&rebind_list);
 
-		if (vma_is_userptr(__vma)) {
+		if (xe_vma_is_userptr(__vma)) {
 			bind_op->op = XE_VM_BIND_FLAG_ASYNC |
 				XE_VM_BIND_OP_MAP_USERPTR;
 		} else {
@@ -3407,7 +3400,7 @@ static struct xe_vma *vm_unbind_lookup_vmas(struct xe_vm *vm,
 			goto unwind;
 		}
 		if (!first->bo) {
-			err = vma_userptr_pin_pages(new_first);
+			err = xe_vma_userptr_pin_pages(new_first);
 			if (err)
 				goto unwind;
 			new_first->userptr.initial_bind = true;
@@ -3441,7 +3434,7 @@ static struct xe_vma *vm_unbind_lookup_vmas(struct xe_vm *vm,
 			goto unwind;
 		}
 		if (!last->bo) {
-			err = vma_userptr_pin_pages(new_last);
+			err = xe_vma_userptr_pin_pages(new_last);
 			if (err)
 				goto unwind;
 			new_last->userptr.initial_bind = true;
@@ -3573,7 +3566,7 @@ static struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm,
 		if (!vma)
 			return ERR_PTR(-ENOMEM);
 
-		err = vma_userptr_pin_pages(vma);
+		err = xe_vma_userptr_pin_pages(vma);
 		if (err) {
 			xe_vma_destroy(vma);
 			return ERR_PTR(err);
