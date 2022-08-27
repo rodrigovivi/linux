@@ -4067,7 +4067,7 @@ int xe_vm_invalidate_vma(struct xe_vma *vma)
 			gt_needs_invalidate |= BIT(id);
 		}
 		if (gt_needs_invalidate & BIT(id)) {
-			seqno[id] = xe_gt_tlb_invalidate(gt);
+			seqno[id] = xe_gt_tlb_invalidation(gt);
 			if (seqno[id] < 0)
 				return seqno[id];
 		}
@@ -4076,7 +4076,7 @@ int xe_vm_invalidate_vma(struct xe_vma *vma)
 
 	for_each_gt(gt, xe, id) {
 		if (gt_needs_invalidate & BIT(id)) {
-			ret = xe_gt_tlb_invalidate_wait(gt, seqno[id]);
+			ret = xe_gt_tlb_invalidation_wait(gt, seqno[id]);
 			if (ret < 0)
 				return ret;
 		}

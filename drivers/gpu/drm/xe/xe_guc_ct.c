@@ -604,6 +604,18 @@ int xe_guc_ct_send(struct xe_guc_ct *ct, const u32 *action, u32 len,
 	return ret;
 }
 
+int xe_guc_ct_send_locked(struct xe_guc_ct *ct, const u32 *action, u32 len,
+			  u32 g2h_len, u32 num_g2h)
+{
+	int ret;
+
+	ret = guc_ct_send_locked(ct, action, len, g2h_len, num_g2h, NULL);
+	if (ret == -EDEADLK)
+		kick_reset(ct);
+
+	return ret;
+}
+
 int xe_guc_ct_send_g2h_handler(struct xe_guc_ct *ct, const u32 *action, u32 len)
 {
 	int ret;
@@ -858,6 +870,10 @@ static int process_g2h_msg(struct xe_guc_ct *ct, u32 *msg, u32 len)
 		break;
 	case XE_GUC_ACTION_REPORT_PAGE_FAULT_REQ_DESC:
 		ret = xe_guc_pagefault_handler(guc, payload, adj_len);
+		break;
+	case XE_GUC_ACTION_TLB_INVALIDATION_DONE:
+		ret = xe_guc_tlb_invalidation_done_handler(guc, payload,
+							   adj_len);
 		break;
 	default:
 		drm_err(&xe->drm, "unexpected action 0x%04x\n", action);

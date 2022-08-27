@@ -128,6 +128,17 @@ struct xe_gt {
 		 */
 		u16 reserved_bcs_instance;
 		/**
+		 * @tlb_invalidation_seqno: TLB invalidation seqno, protected by
+		 * CT lock
+		 */
+#define TLB_INVALIDATION_SEQNO_MAX	0x100000
+		int tlb_invalidation_seqno;
+		/**
+		 * @tlb_invalidation_seqno_recv: last received TLB invalidation
+		 * seqno, protected by CT lock
+		 */
+		int tlb_invalidation_seqno_recv;
+		/**
 		 * pf_queue: Page fault queue used to sync faults so faults can
 		 * be processed not under the GuC CT lock. The queue is sized so
 		 * it can sync all possible faults (1 per physical engine).
