@@ -131,8 +131,12 @@ struct xe_gt {
 		 * pf_queue: Page fault queue used to sync faults so faults can
 		 * be processed not under the GuC CT lock. The queue is sized so
 		 * it can sync all possible faults (1 per physical engine).
+		 * Multiple queues exists for page faults from different VMs are
+		 * be processed in parallel.
 		 */
-		struct {
+		struct pf_queue {
+			/** @gt: back pointer to GT */
+			struct xe_gt *gt;
 #define PF_QUEUE_NUM_DW	128
 			/** @data: data in the page fault queue */
 			u32 data[PF_QUEUE_NUM_DW];
@@ -150,7 +154,8 @@ struct xe_gt {
 			spinlock_t lock;
 			/** @worker: to process page faults */
 			struct work_struct worker;
-		} pf_queue;
+#define NUM_PF_QUEUE	4
+		} pf_queue[NUM_PF_QUEUE];
 	} usm;
 
 	/** @ordered_wq: used to serialize GT resets and TDRs */
