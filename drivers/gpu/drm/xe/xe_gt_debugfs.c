@@ -10,6 +10,7 @@
 #include "xe_force_wake.h"
 #include "xe_gt.h"
 #include "xe_gt_debugfs.h"
+#include "xe_gt_pagefault.h"
 #include "xe_hw_engine.h"
 #include "xe_macros.h"
 #include "xe_uc_debugfs.h"
@@ -55,9 +56,29 @@ static int force_reset(struct seq_file *m, void *data)
 	return 0;
 }
 
+#ifdef CONFIG_DRM_XE_DEBUG
+static int invalidate_tlb(struct seq_file *m, void *data)
+{
+	struct xe_gt *gt = node_to_gt(m->private);
+	int seqno;
+	int ret = 0;
+
+	seqno = xe_gt_tlb_invalidation(gt);
+	XE_WARN_ON(seqno < 0);
+	if (seqno > 0)
+		ret = xe_gt_tlb_invalidation_wait(gt, seqno);
+	XE_WARN_ON(ret < 0);
+
+	return 0;
+}
+#endif
+
 static const struct drm_info_list debugfs_list[] = {
 	{"hw_engines", hw_engines, 0},
 	{"force_reset", force_reset, 0},
+#ifdef CONFIG_DRM_XE_DEBUG
+	{"invalidate_tlb", invalidate_tlb, 0},
+#endif
 };
 
 void xe_gt_debugfs_register(struct xe_gt *gt)
