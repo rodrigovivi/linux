@@ -160,15 +160,15 @@ static void print_pagefault(struct xe_device *xe, struct pagefault *pf)
 
 #define PF_MSG_LEN_DW	4
 
-static int get_pagefault(struct xe_gt *gt, struct pagefault *pf)
+static int get_pagefault(struct pf_queue *pf_queue, struct pagefault *pf)
 {
 	const struct xe_guc_pagefault_desc *desc;
 	int ret = 0;
 
-	spin_lock(&gt->usm.pf_queue.lock);
-	if (gt->usm.pf_queue.head != gt->usm.pf_queue.tail) {
+	spin_lock(&pf_queue->lock);
+	if (pf_queue->head != pf_queue->tail) {
 		desc = (const struct xe_guc_pagefault_desc *)
-			(gt->usm.pf_queue.data + gt->usm.pf_queue.head);
+			(pf_queue->data + pf_queue->head);
 
 		pf->fault_level = FIELD_GET(PFD_FAULT_LEVEL, desc->dw0);
 		pf->engine_class = FIELD_GET(PFD_ENG_CLASS, desc->dw0);
@@ -185,57 +185,61 @@ static int get_pagefault(struct xe_gt *gt, struct pagefault *pf)
 		pf->page_addr |= FIELD_GET(PFD_VIRTUAL_ADDR_LO, desc->dw2) <<
 			PFD_VIRTUAL_ADDR_LO_SHIFT;
 
-		gt->usm.pf_queue.head = (gt->usm.pf_queue.head + PF_MSG_LEN_DW) %
+		pf_queue->head = (pf_queue->head + PF_MSG_LEN_DW) %
 			PF_QUEUE_NUM_DW;
 	} else {
 		ret = -1;
 	}
-	spin_unlock(&gt->usm.pf_queue.lock);
+	spin_unlock(&pf_queue->lock);
 
 	return ret;
 }
 
-static bool pf_queue_full(struct xe_gt *gt)
+static bool pf_queue_full(struct pf_queue *pf_queue)
 {
-	lockdep_assert_held(&gt->usm.pf_queue.lock);
+	lockdep_assert_held(&pf_queue->lock);
 
-	return CIRC_SPACE(gt->usm.pf_queue.tail, gt->usm.pf_queue.head,
-			  PF_QUEUE_NUM_DW) <= PF_MSG_LEN_DW;
+	return CIRC_SPACE(pf_queue->tail, pf_queue->head, PF_QUEUE_NUM_DW) <=
+		PF_MSG_LEN_DW;
 }
 
 int xe_guc_pagefault_handler(struct xe_guc *guc, u32 *msg, u32 len)
 {
 	struct xe_gt *gt = guc_to_gt(guc);
+	struct pf_queue *pf_queue;
+	u32 asid;
 	bool full;
 
 	if (unlikely(len != PF_MSG_LEN_DW))
 		return -EPROTO;
 
-	spin_lock(&gt->usm.pf_queue.lock);
-	full = pf_queue_full(guc_to_gt(guc));
+	asid = FIELD_GET(PFD_ASID, msg[1]);
+	pf_queue = &gt->usm.pf_queue[asid % NUM_PF_QUEUE];
+
+	spin_lock(&pf_queue->lock);
+	full = pf_queue_full(pf_queue);
 	if (!full) {
-		memcpy(gt->usm.pf_queue.data + gt->usm.pf_queue.tail,
-		       msg, len * sizeof(u32));
-		gt->usm.pf_queue.tail = (gt->usm.pf_queue.tail + len) %
-			PF_QUEUE_NUM_DW;
-		queue_work(system_unbound_wq, &gt->usm.pf_queue.worker);
+		memcpy(pf_queue->data + pf_queue->tail, msg, len * sizeof(u32));
+		pf_queue->tail = (pf_queue->tail + len) % PF_QUEUE_NUM_DW;
+		queue_work(system_unbound_wq, &pf_queue->worker);
 	} else {
 		XE_WARN_ON("PF Queue full, shouldn't be possible");
 	}
-	spin_unlock(&gt->usm.pf_queue.lock);
+	spin_unlock(&pf_queue->lock);
 
 	return full ? -ENOSPC : 0;
 }
 
 static void pf_queue_work_func(struct work_struct *w)
 {
-	struct xe_gt *gt = container_of(w, struct xe_gt, usm.pf_queue.worker);
+	struct pf_queue *pf_queue = container_of(w, struct pf_queue, worker);
+	struct xe_gt *gt = pf_queue->gt;
 	struct xe_device *xe = gt_to_xe(gt);
 	struct xe_guc_pagefault_reply reply = {};
 	struct pagefault pf = {};
 	int ret;
 
-	ret = get_pagefault(gt, &pf);
+	ret = get_pagefault(pf_queue, &pf);
 	if (ret)
 		return;
 
@@ -263,23 +267,30 @@ static void pf_queue_work_func(struct work_struct *w)
 void xe_gt_pagefault_init(struct xe_gt *gt)
 {
 	struct xe_device *xe = gt_to_xe(gt);
+	int i;
 
 	if (!xe->info.supports_usm)
 		return;
 
-	spin_lock_init(&gt->usm.pf_queue.lock);
-	INIT_WORK(&gt->usm.pf_queue.worker, pf_queue_work_func);
+	for (i = 0; i < NUM_PF_QUEUE; ++i) {
+		gt->usm.pf_queue[i].gt = gt;
+		spin_lock_init(&gt->usm.pf_queue[i].lock);
+		INIT_WORK(&gt->usm.pf_queue[i].worker, pf_queue_work_func);
+	}
 }
 
 void xe_gt_pagefault_reset(struct xe_gt *gt)
 {
 	struct xe_device *xe = gt_to_xe(gt);
+	int i;
 
 	if (!xe->info.supports_usm)
 		return;
 
-	spin_lock(&gt->usm.pf_queue.lock);
-	gt->usm.pf_queue.head = 0;
-	gt->usm.pf_queue.tail = 0;
-	spin_unlock(&gt->usm.pf_queue.lock);
+	for (i = 0; i < NUM_PF_QUEUE; ++i) {
+		spin_lock(&gt->usm.pf_queue[i].lock);
+		gt->usm.pf_queue[i].head = 0;
+		gt->usm.pf_queue[i].tail = 0;
+		spin_unlock(&gt->usm.pf_queue[i].lock);
+	}
 }
