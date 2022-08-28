@@ -4075,5 +4075,7 @@ int xe_vm_invalidate_vma(struct xe_vma *vma)
 		}
 	}
 
+	vma->usm.invalidated = true;
+
 	return 0;
 }

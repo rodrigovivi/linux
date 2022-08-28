@@ -101,6 +101,10 @@ static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 	}
 	trace_xe_vma_pagefault(vma);
 
+	/* Check if VMA is valid */
+	if (BIT(gt->info.id) & vma->gt_present && !vma->usm.invalidated)
+		goto unlock_vm;
+
 retry_userptr:
 	if (xe_vma_is_userptr(vma)) {
 		ret = xe_vma_userptr_pin_pages(vma);
@@ -148,6 +152,7 @@ retry_userptr:
 
 	if (xe_vma_is_userptr(vma))
 		ret = xe_vma_userptr_needs_repin(vma);
+	vma->usm.invalidated = false;
 
 unlock_dma_resv:
 	ttm_eu_backoff_reservation(&ww, &objs);
