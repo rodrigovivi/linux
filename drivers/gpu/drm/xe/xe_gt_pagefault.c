@@ -125,8 +125,8 @@ static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 	atomic = access_is_atomic(err_code);
 
 	/* Check if VMA is valid */
-	if (BIT(gt->info.id) & vma->gt_present && !vma->usm.invalidated &&
-	    !atomic)
+	if (BIT(gt->info.id) & vma->gt_present &&
+	    !(BIT(gt->info.id) & vma->usm.gt_invalidated) && !atomic)
 		goto unlock_vm;
 
 	/* TODO: Validate fault */
@@ -168,17 +168,19 @@ retry_userptr:
 			goto unlock_dma_resv;
 	}
 
-	/*
-	 * Bind VMA
-	 *
-	 * XXX: For multi-GT we will bind to both GTs, fixup to only bind to the
-	 * GT which took the fault.
-	 */
-	fence = xe_vm_bind_vma(vma, NULL, NULL, 0);
+	/* Bind VMA only to the GT that has faulted */
+	trace_xe_vma_pf_bind(vma);
+	fence = __xe_vm_bind_vma(gt, vma, NULL, NULL, 0,
+				 vma->gt_present & BIT(gt->info.id));
 	if (IS_ERR(fence)) {
 		ret = PTR_ERR(fence);
 		goto unlock_dma_resv;
 	}
+	/*
+	 * XXX: Should we drop the lock before waiting? This only helps if doing
+	 * GPU binds which is currently only down if we have to wait for more
+	 * than 1ms on a move.
+	 */
 	dma_fence_wait(fence, false);
 
 	/* FIXME: Doing a full TLB invalidation for now */
@@ -188,7 +190,7 @@ retry_userptr:
 
 	if (xe_vma_is_userptr(vma))
 		ret = xe_vma_userptr_needs_repin(vma);
-	vma->usm.invalidated = false;
+	vma->usm.gt_invalidated &= ~BIT(gt->info.id);
 
 unlock_dma_resv:
 	ttm_eu_backoff_reservation(&ww, &objs);

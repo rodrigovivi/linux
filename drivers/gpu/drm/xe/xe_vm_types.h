@@ -109,8 +109,8 @@ struct xe_vma {
 
 	/** @usm: unified shared memory state */
 	struct {
-		/** @invalidated: VMA has been invalidated */
-		bool invalidated;
+		/** @gt_invalidated: VMA has been invalidated */
+		u64 gt_invalidated;
 		/** @gt: state for each GT this VMA is mapped in */
 		struct {
 			/** @num_leafs: the number of leaf pages */
