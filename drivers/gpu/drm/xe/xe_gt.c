@@ -242,7 +242,10 @@ int xe_gt_init(struct xe_gt *gt)
 	}
 
 	xe_gt_sysfs_init(gt);
-	xe_gt_pagefault_init(gt);
+
+	err = xe_gt_pagefault_init(gt);
+	if (err)
+		return err;
 
 	xe_device_mem_access_wa_get(gt_to_xe(gt));
 	err = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);

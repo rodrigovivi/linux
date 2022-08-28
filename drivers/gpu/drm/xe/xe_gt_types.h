@@ -138,6 +138,8 @@ struct xe_gt {
 		 * seqno, protected by CT lock
 		 */
 		int tlb_invalidation_seqno_recv;
+		/** @pf_wq: page fault work queue, unbound, high priority */
+		struct workqueue_struct *pf_wq;
 		/**
 		 * pf_queue: Page fault queue used to sync faults so faults can
 		 * be processed not under the GuC CT lock. The queue is sized so

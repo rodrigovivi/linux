@@ -5,6 +5,7 @@
 
 #include <linux/circ_buf.h>
 
+#include <drm/drm_managed.h>
 #include <drm/ttm/ttm_execbuf_util.h>
 
 #include "xe_bo.h"
@@ -258,7 +259,7 @@ int xe_guc_pagefault_handler(struct xe_guc *guc, u32 *msg, u32 len)
 	if (!full) {
 		memcpy(pf_queue->data + pf_queue->tail, msg, len * sizeof(u32));
 		pf_queue->tail = (pf_queue->tail + len) % PF_QUEUE_NUM_DW;
-		queue_work(system_unbound_wq, &pf_queue->worker);
+		queue_work(gt->usm.pf_wq, &pf_queue->worker);
 	} else {
 		XE_WARN_ON("PF Queue full, shouldn't be possible");
 	}
@@ -301,13 +302,13 @@ static void pf_queue_work_func(struct work_struct *w)
 	send_pagefault_reply(&gt->uc.guc, &reply);
 }
 
-void xe_gt_pagefault_init(struct xe_gt *gt)
+int xe_gt_pagefault_init(struct xe_gt *gt)
 {
 	struct xe_device *xe = gt_to_xe(gt);
 	int i;
 
 	if (!xe->info.supports_usm)
-		return;
+		return 0;
 
 	gt->usm.tlb_invalidation_seqno = 1;
 	for (i = 0; i < NUM_PF_QUEUE; ++i) {
@@ -315,6 +316,14 @@ void xe_gt_pagefault_init(struct xe_gt *gt)
 		spin_lock_init(&gt->usm.pf_queue[i].lock);
 		INIT_WORK(&gt->usm.pf_queue[i].worker, pf_queue_work_func);
 	}
+
+	gt->usm.pf_wq = alloc_workqueue("xe_gt_page_fault_work_queue",
+					WQ_UNBOUND | WQ_HIGHPRI,
+					NUM_PF_QUEUE);
+	if (!gt->usm.pf_wq)
+		return -ENOMEM;
+
+	return 0;
 }
 
 void xe_gt_pagefault_reset(struct xe_gt *gt)
