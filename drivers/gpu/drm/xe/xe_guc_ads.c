@@ -523,8 +523,3 @@ void xe_guc_ads_populate(struct xe_guc_ads *ads)
 	ads_blob_write(ads, ads.private_data, base +
 		       guc_ads_private_data_offset(ads));
 }
-
-void xe_guc_ads_fini(struct xe_guc_ads *ads)
-{
-	xe_bo_unpin_map_no_vm(ads->bo);
-}
