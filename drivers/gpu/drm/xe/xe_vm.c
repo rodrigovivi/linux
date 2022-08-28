@@ -984,6 +984,10 @@ out_unlock:
 	return err;
 }
 
+static struct dma_fence *
+xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
+	       struct xe_sync_entry *syncs, u32 num_syncs);
+
 struct dma_fence *xe_vm_rebind(struct xe_vm *vm, bool rebind_worker)
 {
 	struct dma_fence *fence = NULL;
@@ -1032,6 +1036,8 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 				    u64 gt_mask)
 {
 	struct xe_vma *vma;
+	struct xe_gt *gt;
+	u8 id;
 
 	XE_BUG_ON(start >= end);
 	XE_BUG_ON(end >= vm->size);
@@ -1052,10 +1058,13 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 	if (read_only)
 		vma->pte_flags = PTE_READ_ONLY;
 
-	if (gt_mask)
+	if (gt_mask) {
 		vma->gt_mask = gt_mask;
-	else
-		vma->gt_mask = BIT(vm->xe->info.tile_count) - 1;
+	} else {
+		for_each_gt(gt, vm->xe, id)
+			if (!xe_gt_is_media_type(gt))
+				vma->gt_mask |= 0x1 << id;
+	}
 
 	if (vm->xe->info.platform == XE_PVC)
 		vma->use_atomic_access_pte_bit = true;
@@ -1879,7 +1888,7 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 	struct dma_fence_array *cf = NULL;
 	struct xe_vm *vm = vma->vm;
 	int cur_fence = 0, i;
-	int number_gts = hweight_long(vma->gt_mask);
+	int number_gts = hweight_long(vma->gt_present);
 	int err;
 	u8 id;
 
@@ -1893,13 +1902,10 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 	}
 
 	for_each_gt(gt, vm->xe, id) {
-		if (!(vma->gt_mask & BIT(id)) || !(vma->gt_present & BIT(id)))
+		if (!(vma->gt_present & BIT(id)))
 			goto next;
 
-		if (xe_gt_is_media_type(gt)) {
-			vma->gt_present &= ~BIT(id);
-			goto next;
-		}
+		XE_BUG_ON(xe_gt_is_media_type(gt));
 
 		fence = __xe_vm_unbind_vma(gt, vma, e, syncs, num_syncs);
 		if (IS_ERR(fence)) {
@@ -2227,7 +2233,7 @@ xe_pt_prepare_bind(struct xe_gt *gt, struct xe_vma *vma,
 	return err;
 }
 
-static struct dma_fence *
+struct dma_fence *
 __xe_vm_bind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 		 struct xe_sync_entry *syncs, u32 num_syncs,
 		 bool rebind)
@@ -2295,6 +2301,7 @@ __xe_vm_bind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 		/* This vma is live (again?) now */
 		vma->userptr.dirty = false;
 		vma->userptr.initial_bind = true;
+		vma->gt_present |= BIT(gt->info.id);
 
 		/*
 		 * FIXME: workaround for xe_evict.evict-mixed-many-threads-small
@@ -2313,7 +2320,7 @@ err:
 	return ERR_PTR(err);
 }
 
-struct dma_fence *
+static struct dma_fence *
 xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 	       struct xe_sync_entry *syncs, u32 num_syncs)
 {
@@ -2340,18 +2347,13 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 		if (!(vma->gt_mask & BIT(id)))
 			goto next;
 
-		if (xe_gt_is_media_type(gt)) {
-			vma->gt_present |= BIT(gt->info.id);
-			goto next;
-		}
-
+		XE_BUG_ON(xe_gt_is_media_type(gt));
 		fence = __xe_vm_bind_vma(gt, vma, e, syncs, num_syncs,
 					 vma->gt_present & BIT(id));
 		if (IS_ERR(fence)) {
 			err = PTR_ERR(fence);
 			goto err_fences;
 		}
-		vma->gt_present |= BIT(id);
 
 		if (fences)
 			fences[cur_fence++] = fence;
@@ -4077,7 +4079,7 @@ int xe_vm_invalidate_vma(struct xe_vma *vma)
 		}
 	}
 
-	vma->usm.invalidated = true;
+	vma->usm.gt_invalidated = vma->gt_mask;
 
 	return 0;
 }

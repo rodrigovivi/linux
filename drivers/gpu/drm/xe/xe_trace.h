@@ -344,6 +344,11 @@ DEFINE_EVENT(xe_vma, xe_vma_bind,
 	     TP_ARGS(vma)
 );
 
+DEFINE_EVENT(xe_vma, xe_vma_pf_bind,
+	     TP_PROTO(struct xe_vma *vma),
+	     TP_ARGS(vma)
+);
+
 DEFINE_EVENT(xe_vma, xe_vma_unbind,
 	     TP_PROTO(struct xe_vma *vma),
 	     TP_ARGS(vma)

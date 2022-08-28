@@ -50,8 +50,9 @@ struct xe_vma *
 xe_vm_find_overlapping_vma(struct xe_vm *vm, const struct xe_vma *vma);
 
 struct dma_fence *
-xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
-	       struct xe_sync_entry *syncs, u32 num_syncs);
+__xe_vm_bind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
+		 struct xe_sync_entry *syncs, u32 num_syncs,
+		 bool rebind);
 
 #define xe_vm_assert_held(vm) dma_resv_assert_held(&(vm)->resv)
 
