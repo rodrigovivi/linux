@@ -162,7 +162,16 @@
 
 /* PVC */
 #define XE_PVC_XT_IDS(MACRO__, ...)		\
-	MACRO__(0x0BD5, ## __VA_ARGS__)
+	MACRO__(0x0BD5, ## __VA_ARGS__),	\
+	MACRO__(0x0BD6, ## __VA_ARGS__),	\
+	MACRO__(0x0BD7, ## __VA_ARGS__),	\
+	MACRO__(0x0BD8, ## __VA_ARGS__),	\
+	MACRO__(0x0BD9, ## __VA_ARGS__),	\
+	MACRO__(0x0BDA, ## __VA_ARGS__),	\
+	MACRO__(0x0BDB, ## __VA_ARGS__),	\
+	MACRO__(0x0BE0, ## __VA_ARGS__),	\
+	MACRO__(0x0BE1, ## __VA_ARGS__),	\
+	MACRO__(0x0BE5, ## __VA_ARGS__)
 
 #define XE_PVC_IDS(MACRO__, ...)		\
 	XE_PVC_XT_IDS(MACRO__, ## __VA_ARGS__)
