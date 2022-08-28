@@ -29,6 +29,14 @@ struct pagefault {
 	u8 fault_unsuccessful;
 };
 
+enum page_fault_type {
+	FAULT_READ_NOT_PRESENT = 0x0,
+	FAULT_WRITE_NOT_PRESENT = 0x1,
+	FAULT_ATOMIC_NOT_PRESENT = 0x2,
+	FAULT_WRITE_ACCESS_VIOLATION = 0x5,
+	FAULT_ATOMIC_ACCESS_VIOLATION = 0xa,
+};
+
 static struct xe_gt *
 guc_to_gt(struct xe_guc *guc)
 {
@@ -69,8 +77,18 @@ static int send_tlb_invalidation(struct xe_guc *guc)
 	return ret;
 }
 
+static inline bool access_is_atomic(enum page_fault_type err_code)
+{
+	if (err_code == FAULT_ATOMIC_NOT_PRESENT ||
+	    err_code == FAULT_ATOMIC_ACCESS_VIOLATION)
+		return true;
+
+	return false;
+}
+
 static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 {
+	enum page_fault_type err_code;
 	struct xe_device *xe = gt_to_xe(gt);
 	struct xe_vm *vm;
 	struct xe_vma *vma, lookup;
@@ -80,6 +98,7 @@ static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 	struct ww_acquire_ctx ww;
 	struct dma_fence *fence;
 	int ret = 0;
+	bool atomic;
 
 	/* ASID to VM */
 	mutex_lock(&xe->usm.lock);
@@ -102,9 +121,15 @@ static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 	}
 	trace_xe_vma_pagefault(vma);
 
+	err_code = (pf->fault_type << 2) | pf->access_type;
+	atomic = access_is_atomic(err_code);
+
 	/* Check if VMA is valid */
-	if (BIT(gt->info.id) & vma->gt_present && !vma->usm.invalidated)
+	if (BIT(gt->info.id) & vma->gt_present && !vma->usm.invalidated &&
+	    !atomic)
 		goto unlock_vm;
+
+	/* TODO: Validate fault */
 
 retry_userptr:
 	if (xe_vma_is_userptr(vma)) {
@@ -126,8 +151,18 @@ retry_userptr:
 	if (ret)
 		goto unlock_vm;
 
-	/* Create backing store if needed */
-	if (vma->bo) {
+	if (atomic) {
+		if (!vma->bo) {
+			ret = -EACCES;
+			goto unlock_dma_resv;
+		}
+
+		/* Migrate to VRAM, move should invalidate the VMA first */
+		ret = xe_bo_migrate(vma->bo, XE_PL_VRAM0 + gt->info.vram_id);
+		if (ret)
+			goto unlock_dma_resv;
+	} else if (vma->bo) {
+		/* Create backing store if needed */
 		ret = xe_bo_validate(vma->bo, vm);
 		if (ret)
 			goto unlock_dma_resv;
