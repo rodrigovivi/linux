@@ -14,6 +14,7 @@ int xe_guc_ct_init(struct xe_guc_ct *ct);
 int xe_guc_ct_enable(struct xe_guc_ct *ct);
 void xe_guc_ct_disable(struct xe_guc_ct *ct);
 void xe_guc_ct_print(struct xe_guc_ct *ct, struct drm_printer *p);
+void xe_guc_ct_fast_path(struct xe_guc_ct *ct);
 
 static inline void xe_guc_ct_irq_handler(struct xe_guc_ct *ct)
 {
@@ -25,6 +26,7 @@ static inline void xe_guc_ct_irq_handler(struct xe_guc_ct *ct)
 	if (ct->enabled)
 		queue_work(system_unbound_wq, &ct->g2h_worker);
 #endif
+	xe_guc_ct_fast_path(ct);
 }
 
 /* Basic CT send / receives */

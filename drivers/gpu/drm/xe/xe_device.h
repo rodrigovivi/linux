@@ -127,6 +127,21 @@ static inline void xe_device_mem_access_wa_put(struct xe_device *xe)
 	XE_WARN_ON(ret);
 }
 
+static inline bool xe_device_mem_access_wa_check(struct xe_device *xe)
+{
+	struct xe_gt *gt;
+	u8 id;
+
+	if (xe->info.platform != XE_PVC || xe->info.tile_count == 1)
+		return true;
+
+	for_each_gt(gt, xe, id)
+		if (!(gt_to_fw(gt)->awake_domains & XE_FW_GT))
+			return false;
+
+	return true;
+}
+
 static inline bool xe_device_in_fault_mode(struct xe_device *xe)
 {
 	return xe->usm.num_vm_in_fault_mode != 0;

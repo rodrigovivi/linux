@@ -196,7 +196,7 @@ static int get_pagefault(struct pf_queue *pf_queue, struct pagefault *pf)
 	const struct xe_guc_pagefault_desc *desc;
 	int ret = 0;
 
-	spin_lock(&pf_queue->lock);
+	spin_lock_irq(&pf_queue->lock);
 	if (pf_queue->head != pf_queue->tail) {
 		desc = (const struct xe_guc_pagefault_desc *)
 			(pf_queue->data + pf_queue->head);
@@ -221,7 +221,7 @@ static int get_pagefault(struct pf_queue *pf_queue, struct pagefault *pf)
 	} else {
 		ret = -1;
 	}
-	spin_unlock(&pf_queue->lock);
+	spin_unlock_irq(&pf_queue->lock);
 
 	return ret;
 }
@@ -238,6 +238,7 @@ int xe_guc_pagefault_handler(struct xe_guc *guc, u32 *msg, u32 len)
 {
 	struct xe_gt *gt = guc_to_gt(guc);
 	struct pf_queue *pf_queue;
+	unsigned long flags;
 	u32 asid;
 	bool full;
 
@@ -247,7 +248,7 @@ int xe_guc_pagefault_handler(struct xe_guc *guc, u32 *msg, u32 len)
 	asid = FIELD_GET(PFD_ASID, msg[1]);
 	pf_queue = &gt->usm.pf_queue[asid % NUM_PF_QUEUE];
 
-	spin_lock(&pf_queue->lock);
+	spin_lock_irqsave(&pf_queue->lock, flags);
 	full = pf_queue_full(pf_queue);
 	if (!full) {
 		memcpy(pf_queue->data + pf_queue->tail, msg, len * sizeof(u32));
@@ -256,7 +257,7 @@ int xe_guc_pagefault_handler(struct xe_guc *guc, u32 *msg, u32 len)
 	} else {
 		XE_WARN_ON("PF Queue full, shouldn't be possible");
 	}
-	spin_unlock(&pf_queue->lock);
+	spin_unlock_irqrestore(&pf_queue->lock, flags);
 
 	return full ? -ENOSPC : 0;
 }
@@ -320,10 +321,10 @@ void xe_gt_pagefault_reset(struct xe_gt *gt)
 		return;
 
 	for (i = 0; i < NUM_PF_QUEUE; ++i) {
-		spin_lock(&gt->usm.pf_queue[i].lock);
+		spin_lock_irq(&gt->usm.pf_queue[i].lock);
 		gt->usm.pf_queue[i].head = 0;
 		gt->usm.pf_queue[i].tail = 0;
-		spin_unlock(&gt->usm.pf_queue[i].lock);
+		spin_unlock_irq(&gt->usm.pf_queue[i].lock);
 	}
 }
 
