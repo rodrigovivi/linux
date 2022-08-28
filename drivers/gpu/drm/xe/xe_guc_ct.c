@@ -135,6 +135,7 @@ int xe_guc_ct_init(struct xe_guc_ct *ct)
 	XE_BUG_ON(guc_ct_size() % PAGE_SIZE);
 
 	mutex_init(&ct->lock);
+	spin_lock_init(&ct->fast_lock);
 	xa_init(&ct->fence_lookup);
 	ct->fence_context = dma_fence_context_alloc(1);
 	INIT_WORK(&ct->g2h_worker, g2h_worker_func);
@@ -362,22 +363,31 @@ static void h2g_reserve_space(struct xe_guc_ct *ct, u32 cmd_len)
 
 static void g2h_reserve_space(struct xe_guc_ct *ct, u32 g2h_len, u32 num_g2h)
 {
-	lockdep_assert_held(&ct->lock);
 	XE_BUG_ON(g2h_len > ct->ctbs.g2h.space);
 
-	ct->ctbs.g2h.space -= g2h_len;
-	if (g2h_len)
+	if (g2h_len) {
+		spin_lock_irq(&ct->fast_lock);
+		ct->ctbs.g2h.space -= g2h_len;
 		ct->g2h_outstanding += num_g2h;
+		spin_unlock_irq(&ct->fast_lock);
+	}
 }
 
-static void g2h_release_space(struct xe_guc_ct *ct, u32 g2h_len)
+static void __g2h_release_space(struct xe_guc_ct *ct, u32 g2h_len)
 {
-	lockdep_assert_held(&ct->lock);
+	lockdep_assert_held(&ct->fast_lock);
 	XE_WARN_ON(ct->ctbs.g2h.space + g2h_len >
 		   ct->ctbs.g2h.size - ct->ctbs.g2h.resv_space);
 
 	ct->ctbs.g2h.space += g2h_len;
 	--ct->g2h_outstanding;
+}
+
+static void g2h_release_space(struct xe_guc_ct *ct, u32 g2h_len)
+{
+	spin_lock_irq(&ct->fast_lock);
+	__g2h_release_space(ct, g2h_len);
+	spin_unlock_irq(&ct->fast_lock);
 }
 
 static int h2g_write(struct xe_guc_ct *ct, const u32 *action, u32 len,
@@ -886,15 +896,14 @@ static int process_g2h_msg(struct xe_guc_ct *ct, u32 *msg, u32 len)
 	return 0;
 }
 
-static int g2h_read(struct xe_guc_ct *ct, u32 *msg)
+static int g2h_read(struct xe_guc_ct *ct, u32 *msg, bool fast_path)
 {
 	struct xe_device *xe = ct_to_xe(ct);
 	struct guc_ctb *g2h = &ct->ctbs.g2h;
-	u32 tail;
-	u32 len;
+	u32 tail, head, len;
 	s32 avail;
 
-	lockdep_assert_held(&ct->lock);
+	lockdep_assert_held(&ct->fast_lock);
 
 	if (!ct->enabled)
 		return -ENODEV;
@@ -923,30 +932,95 @@ static int g2h_read(struct xe_guc_ct *ct, u32 *msg)
 		return -EPROTO;
 	}
 
-	g2h->head = (g2h->head + 1) % g2h->size;
+	head = (g2h->head + 1) % g2h->size;
 	avail = len - 1;
 
 	/* Read G2H message */
-	if (avail + g2h->head > g2h->size) {
-		u32 avail_til_wrap = g2h->size - g2h->head;
+	if (avail + head > g2h->size) {
+		u32 avail_til_wrap = g2h->size - head;
 
 		xe_map_memcpy_from(xe, msg + 1,
-				   &g2h->cmds, sizeof(u32) * g2h->head,
+				   &g2h->cmds, sizeof(u32) * head,
 				   avail_til_wrap * sizeof(u32));
 		xe_map_memcpy_from(xe, msg + 1 + avail_til_wrap,
 				   &g2h->cmds, 0,
 				   (avail - avail_til_wrap) * sizeof(u32));
 	} else {
 		xe_map_memcpy_from(xe, msg + 1,
-				   &g2h->cmds, sizeof(u32) * g2h->head,
+				   &g2h->cmds, sizeof(u32) * head,
 				   avail * sizeof(u32));
 	}
 
+	if (fast_path) {
+		if (FIELD_GET(GUC_HXG_MSG_0_TYPE, msg[1]) != GUC_HXG_TYPE_EVENT)
+			return 0;
+
+		switch (FIELD_GET(GUC_HXG_EVENT_MSG_0_ACTION, msg[1])) {
+		case XE_GUC_ACTION_TLB_INVALIDATION_DONE:
+		case XE_GUC_ACTION_REPORT_PAGE_FAULT_REQ_DESC:
+			break;	/* Process these in fast-path */
+		default:
+			return 0;
+		}
+	}
+
 	/* Update local / descriptor header */
-	g2h->head = (g2h->head + avail) % g2h->size;
+	g2h->head = (head + avail) % g2h->size;
 	desc_write(xe, g2h, head, g2h->head);
 
 	return len;
+}
+
+static void g2h_fast_path(struct xe_guc_ct *ct, u32 *msg, u32 len)
+{
+	struct xe_device *xe = ct_to_xe(ct);
+	struct xe_guc *guc = ct_to_guc(ct);
+	u32 action = FIELD_GET(GUC_HXG_EVENT_MSG_0_ACTION, msg[1]);
+	u32 *payload = msg + GUC_CTB_HXG_MSG_MIN_LEN;
+	u32 adj_len = len - GUC_CTB_HXG_MSG_MIN_LEN;
+	int ret = 0;
+
+	switch (action) {
+	case XE_GUC_ACTION_REPORT_PAGE_FAULT_REQ_DESC:
+		ret = xe_guc_pagefault_handler(guc, payload, adj_len);
+		break;
+	case XE_GUC_ACTION_TLB_INVALIDATION_DONE:
+		__g2h_release_space(ct, len);
+		ret = xe_guc_tlb_invalidation_done_handler(guc, payload,
+							   adj_len);
+		break;
+	default:
+		XE_WARN_ON("NOT_POSSIBLE");
+	}
+
+	if (ret)
+		drm_err(&xe->drm, "action 0x%04x failed processing, ret=%d\n",
+			action, ret);
+}
+
+/**
+ * xe_guc_ct_fast_path - process critical G2H in the IRQ handler
+ * @ct: GuC CT object
+ *
+ * Anything related to page faults is critical for performance, process these
+ * critical G2H in the IRQ. This is safe as these handlers either just wake up
+ * waiters or queue another worker.
+ */
+void xe_guc_ct_fast_path(struct xe_guc_ct *ct)
+{
+	struct xe_device *xe = ct_to_xe(ct);
+	int len;
+
+	if (!xe_device_in_fault_mode(xe) || !xe_device_mem_access_wa_check(xe))
+		return;
+
+	spin_lock(&ct->fast_lock);
+	do {
+		len = g2h_read(ct, ct->fast_msg, true);
+		if (len > 0)
+			g2h_fast_path(ct, ct->fast_msg, len);
+	} while (len > 0);
+	spin_unlock(&ct->fast_lock);
 }
 
 /* Returns less than zero on error, 0 on done, 1 on more available */
@@ -957,7 +1031,9 @@ static int dequeue_one_g2h(struct xe_guc_ct *ct)
 
 	lockdep_assert_held(&ct->lock);
 
-	len = g2h_read(ct, ct->msg);
+	spin_lock_irq(&ct->fast_lock);
+	len = g2h_read(ct, ct->msg, false);
+	spin_unlock_irq(&ct->fast_lock);
 	if (len <= 0)
 		return len;
 

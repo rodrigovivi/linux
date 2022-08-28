@@ -51,6 +51,8 @@ struct xe_guc_ct {
 	struct xe_bo *bo;
 	/** @lock: protects everything in CT layer */
 	struct mutex lock;
+	/** @fast_lock: protects G2H channel and credits */
+	spinlock_t fast_lock;
 	/** @ctbs: buffers for sending and receiving commands */
 	struct {
 		/** @send: Host to GuC (H2G, send) channel */
@@ -78,6 +80,8 @@ struct xe_guc_ct {
 #endif
 	/** @msg: Message buffer */
 	u32 msg[GUC_CTB_MSG_MAX_LEN];
+	/** @fast_msg: Message buffer */
+	u32 fast_msg[GUC_CTB_MSG_MAX_LEN];
 };
 
 #endif
