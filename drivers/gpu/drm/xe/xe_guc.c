@@ -712,8 +712,7 @@ int xe_guc_stop(struct xe_guc *guc)
 	int ret;
 
 	ret = xe_guc_pc_stop(&guc->pc);
-	if (ret)
-		return ret;
+	XE_WARN_ON(ret);
 
 	xe_guc_ct_disable(&guc->ct);
 
