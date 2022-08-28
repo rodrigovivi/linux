@@ -100,8 +100,11 @@ u64 gen8_pte_encode(struct xe_vma *vma, struct xe_bo *bo,
 	if (unlikely(flags & PTE_READ_ONLY))
 		pte &= ~GEN8_PAGE_RW;
 
-	if (is_lmem)
+	if (is_lmem) {
 		pte |= GEN12_PPGTT_PTE_LM;
+		if (vma && vma->use_atomic_access_pte_bit)
+			pte |= GEN12_USM_PPGTT_PTE_AE;
+	}
 
 	/* FIXME: I don't think the PPAT handling is correct for MTL */
 
@@ -1053,6 +1056,9 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 		vma->gt_mask = gt_mask;
 	else
 		vma->gt_mask = BIT(vm->xe->info.tile_count) - 1;
+
+	if (vm->xe->info.platform == XE_PVC)
+		vma->use_atomic_access_pte_bit = true;
 
 	if (bo) {
 		xe_bo_assert_held(bo);

@@ -66,6 +66,9 @@ struct xe_vma {
 	 */
 	bool last_munmap_rebind;
 
+	/** @use_atomic_access_pte_bit: Set atomic access bit in PTE */
+	bool use_atomic_access_pte_bit;
+
 	union {
 		/** @bo_link: link into BO if not a userptr */
 		struct list_head bo_link;
