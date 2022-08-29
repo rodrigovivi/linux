@@ -42,10 +42,6 @@ struct xe_pt_dir {
 	struct xe_pt *entries[GEN8_PDES];
 };
 
-struct xe_pt_0 {
-	struct xe_pt pt;
-};
-
 static struct xe_pt_dir *as_xe_pt_dir(struct xe_pt *pt)
 {
 	return container_of(pt, struct xe_pt_dir, pt);
@@ -286,7 +282,7 @@ static int xe_pt_populate_for_vma(struct xe_gt *gt, struct xe_vma *vma,
 	bool init = !pt->num_live;
 	u32 i;
 	int err;
-	u32 page_size = 1 << xe_pt_shift(pt->level);
+	u64 page_size = 1 << xe_pt_shift(pt->level);
 	u32 numpdes = GEN8_PDES;
 	u32 flags = 0;
 	u64 bo_offset = vma->bo_offset + (start - vma->start);
@@ -306,7 +302,7 @@ static int xe_pt_populate_for_vma(struct xe_gt *gt, struct xe_vma *vma,
 		}
 	}
 
-	vm_dbg(&vm->xe->drm, "\t\t%u: %d..%d F:0x%x 0x%x %d\n", pt->level,
+	vm_dbg(&vm->xe->drm, "\t\t%u: %d..%d F:0x%x 0x%llx %d\n", pt->level,
 	       start_ofs, last_ofs, flags, page_size, idx);
 
 	if (pt->level) {
@@ -1671,7 +1667,7 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 					       entries);
 			if (rem) {
 				if (!my_removed_pte)
-					first_ofs = start_ofs;
+					first_ofs = start_ofs - 1;
 				my_removed_pte++;
 			}
 			cur = cur_end;
@@ -1758,7 +1754,7 @@ __xe_vm_unbind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 	vm_dbg(&vm->xe->drm, "%u entries to update\n", num_entries);
 	for (i = 0; i < num_entries; i++) {
 		struct xe_vm_pgtable_update *entry = &entries[i];
-		u32 page_size = 1 << xe_pt_shift(entry->pt->level);
+		u64 page_size = 1 << xe_pt_shift(entry->pt->level);
 		u64 end;
 		u64 start;
 		u64 len;
@@ -1878,7 +1874,7 @@ xe_vm_populate_pgtable(struct xe_gt *gt, void *data, u32 qword_ofs,
 		       u32 num_qwords, struct xe_vm_pgtable_update *update,
 		       void *arg)
 {
-	u32 page_size = 1 << xe_pt_shift(update->pt->level);
+	u64 page_size = 1 << xe_pt_shift(update->pt->level);
 	u64 bo_offset;
 	struct xe_pt **ptes = update->pt_entries;
 	u64 *ptr = data;
@@ -2159,7 +2155,7 @@ __xe_vm_bind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 	vm_dbg(&vm->xe->drm, "%u entries to update\n", num_entries);
 	for (i = 0; i < num_entries; i++) {
 		struct xe_vm_pgtable_update *entry = &entries[i];
-		u32 page_size = xe_pt_shift(entry->pt->level);
+		u64 page_size = xe_pt_shift(entry->pt->level);
 		u64 start;
 		u64 len;
 		u64 end;
