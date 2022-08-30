@@ -75,13 +75,18 @@ static void user_fence_worker(struct work_struct *w)
 	user_fence_put(ufence);
 }
 
+static void kick_ufence(struct user_fence *ufence, struct dma_fence *fence)
+{
+	INIT_WORK(&ufence->worker, user_fence_worker);
+	queue_work(ufence->xe->ordered_wq, &ufence->worker);
+	dma_fence_put(fence);
+}
+
 static void user_fence_cb(struct dma_fence *fence, struct dma_fence_cb *cb)
 {
 	struct user_fence *ufence = container_of(cb, struct user_fence, cb);
 
-	INIT_WORK(&ufence->worker, user_fence_worker);
-	queue_work(system_unbound_wq, &ufence->worker);
-	dma_fence_put(fence);
+	kick_ufence(ufence, fence);
 }
 
 int xe_sync_entry_parse(struct xe_device *xe, struct xe_file *xef,
@@ -227,7 +232,9 @@ bool xe_sync_entry_signal(struct xe_sync_entry *sync, struct xe_sched_job *job,
 		user_fence_get(sync->ufence);
 		err = dma_fence_add_callback(fence, &sync->ufence->cb,
 					     user_fence_cb);
-		if (err) {
+		if (err == -ENOENT) {
+			kick_ufence(sync->ufence, fence);
+		} else if (err) {
 			XE_WARN_ON("failed to add user fence");
 			user_fence_put(sync->ufence);
 			dma_fence_put(fence);

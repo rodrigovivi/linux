@@ -164,7 +164,7 @@ static bool xe_hw_fence_enable_signaling(struct dma_fence *dma_fence)
 	struct xe_hw_fence_irq *irq = xe_hw_fence_irq(fence);
 
 	dma_fence_get(dma_fence);
-	list_add(&fence->irq_link, &irq->pending);
+	list_add_tail(&fence->irq_link, &irq->pending);
 
 	/* SW completed (no HW IRQ) so kick handler to signal fence */
 	if (dma_fence->error)
