@@ -80,7 +80,7 @@ static void user_fence_cb(struct dma_fence *fence, struct dma_fence_cb *cb)
 	struct user_fence *ufence = container_of(cb, struct user_fence, cb);
 
 	INIT_WORK(&ufence->worker, user_fence_worker);
-	queue_work(system_unbound_wq, &ufence->worker);
+	queue_work(ufence->xe->ordered_wq, &ufence->worker);
 	dma_fence_put(fence);
 }
 
