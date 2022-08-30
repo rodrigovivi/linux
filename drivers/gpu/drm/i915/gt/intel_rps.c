@@ -1977,6 +1977,9 @@ void gen5_rps_irq_handler(struct intel_rps *rps)
 
 void intel_rps_init_early(struct intel_rps *rps)
 {
+	if (rps_uses_slpc(rps))
+		return;
+
 	mutex_init(&rps->lock);
 	mutex_init(&rps->power.mutex);
 
