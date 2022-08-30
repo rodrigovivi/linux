@@ -3655,7 +3655,7 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	if (err)
 		goto free_syncs;
 
-	/* Do some error checing first to make the unwind easier */
+	/* Do some error checking first to make the unwind easier */
 	for (i = 0; i < args->num_binds; ++i) {
 		u64 range = bind_ops[i].range;
 		u64 addr = bind_ops[i].addr;
@@ -3663,7 +3663,7 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 
 		err = __vm_bind_ioctl_lookup_vma(vm, bos[i], addr, range, op);
 		if (err)
-			goto free_syncs;
+			goto release_vm_lock;
 	}
 
 	for (i = 0; i < args->num_binds; ++i) {
@@ -3774,6 +3774,7 @@ destroy_vmas:
 			xe_vma_destroy(vmas[i]);
 		}
 	}
+release_vm_lock:
 	up_write(&vm->lock);
 free_syncs:
 	while (num_syncs--) {
