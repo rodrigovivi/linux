@@ -1166,6 +1166,9 @@ xe_vm_find_overlapping_vma(struct xe_vm *vm, const struct xe_vma *vma)
 {
 	struct rb_node *node;
 
+	if (xe_vm_is_closed(vm))
+		return NULL;
+
 	XE_BUG_ON(vma->end >= vm->size);
 	lockdep_assert_held(&vm->lock);
 
