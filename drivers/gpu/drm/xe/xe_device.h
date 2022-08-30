@@ -40,6 +40,8 @@ void xe_device_add_persitent_engines(struct xe_device *xe, struct xe_engine *e);
 void xe_device_remove_persitent_engines(struct xe_device *xe,
 					struct xe_engine *e);
 
+void xe_device_wmb(struct xe_device *xe);
+
 static inline struct xe_file *to_xe_file(const struct drm_file *file)
 {
 	return file->driver_priv;
