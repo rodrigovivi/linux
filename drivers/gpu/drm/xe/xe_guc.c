@@ -522,15 +522,6 @@ void xe_guc_notify(struct xe_guc *guc)
 	xe_mmio_write32(gt, guc->notify_reg, GUC_SEND_TRIGGER);
 }
 
-void xe_guc_wb(struct xe_guc *guc)
-{
-	struct xe_device *xe = guc_to_xe(guc);
-	struct xe_gt *gt = guc_to_gt(guc);
-
-	if (IS_DGFX(xe))
-		xe_mmio_write32(gt, GEN11_SOFT_SCRATCH(0).reg, 0);
-}
-
 int xe_guc_auth_huc(struct xe_guc *guc, u32 rsa_addr)
 {
 	u32 action[] = {

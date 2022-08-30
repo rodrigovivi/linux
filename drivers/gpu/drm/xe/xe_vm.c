@@ -4064,6 +4064,7 @@ int xe_vm_invalidate_vma(struct xe_vma *vma)
 			gt_needs_invalidate |= BIT(id);
 		}
 		if (gt_needs_invalidate & BIT(id)) {
+			xe_device_wmb(xe);
 			seqno[id] = xe_gt_tlb_invalidation(gt);
 			if (seqno[id] < 0)
 				return seqno[id];

@@ -440,7 +440,7 @@ static int h2g_write(struct xe_guc_ct *ct, const u32 *action, u32 len,
 
 	/* Write H2G ensuring visable before descriptor update */
 	xe_map_memcpy_to(xe, &map, 0, cmd, cmd_len * sizeof(u32));
-	xe_guc_wb(ct_to_guc(ct));
+	xe_device_wmb(ct_to_xe(ct));
 
 	/* Update local copies */
 	h2g->tail = (tail + cmd_len) % h2g->size;

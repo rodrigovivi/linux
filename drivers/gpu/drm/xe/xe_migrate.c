@@ -859,6 +859,7 @@ xe_migrate_update_pgtables_cpu(struct xe_migrate *m,
 	}
 
 	trace_xe_vm_cpu_bind(vm);
+	xe_device_wmb(vm->xe);
 
 	return dma_fence_get_stub();
 }

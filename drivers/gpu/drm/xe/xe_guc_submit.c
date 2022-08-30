@@ -598,7 +598,7 @@ static void wq_item_append(struct xe_engine *e)
 	e->guc->wqi_tail += wqi_size;
 	XE_BUG_ON(e->guc->wqi_tail > WQ_SIZE);
 
-	xe_guc_wb(engine_to_guc(e));
+	xe_device_wmb(xe);
 
 	map = xe_lrc_parallel_map(e->lrc);
 	parallel_write(xe, map, wq_desc.tail, e->guc->wqi_tail);
