@@ -637,6 +637,31 @@ static int pc_gucrc_disable(struct xe_guc_pc *pc)
 	return 0;
 }
 
+static int pc_init_freqs(struct xe_guc_pc *pc)
+{
+	int ret;
+
+	mutex_lock(&pc->freq_lock);
+
+	ret = pc_adjust_freq_bounds(pc);
+	if (ret)
+		goto out;
+
+	ret = pc_adjust_requested_freq(pc);
+	if (ret)
+		goto out;
+
+	/*
+	 * The frequencies are really ready for use only after the user
+	 * requested ones got restored.
+	 */
+	pc->freq_ready = true;
+
+out:
+	mutex_unlock(&pc->freq_lock);
+	return ret;
+}
+
 /**
  * xe_guc_pc_start - Start GuC's Power Conservation component
  * @pc: Xe_GuC_PC instance
@@ -644,8 +669,9 @@ static int pc_gucrc_disable(struct xe_guc_pc *pc)
 int xe_guc_pc_start(struct xe_guc_pc *pc)
 {
 	struct xe_device *xe = pc_to_xe(pc);
+	struct xe_gt *gt = pc_to_gt(pc);
 	u32 size = PAGE_ALIGN(sizeof(struct slpc_shared_data));
-	int err;
+	int ret;
 
 	XE_WARN_ON(!xe_device_guc_submission_enabled(xe));
 
@@ -654,42 +680,35 @@ int xe_guc_pc_start(struct xe_guc_pc *pc)
 	memset(pc->bo->vmap.vaddr, 0, size);
 	slpc_shared_data_write(pc, header.size, size);
 
-	err = pc_action_reset(pc);
-	if (err)
-		return err;
+	ret = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
+	if (ret)
+		return ret;
+
+	ret = pc_action_reset(pc);
+	if (ret)
+		goto out;
 
 	if (wait_for(pc_is_in_state(pc, SLPC_GLOBAL_STATE_RUNNING), 5)) {
 		drm_err(&pc_to_xe(pc)->drm, "GuC PC Start failed\n");
-		return -EIO;
+		ret = -EIO;
+		goto out;
 	}
 
-	mutex_lock(&pc->freq_lock);
-
-	err = pc_adjust_freq_bounds(pc);
-	if (err)
-		goto err;
-
-	err = pc_adjust_requested_freq(pc);
-	if (err)
-		goto err;
-
-	/*
-	 * The frequencies are really ready for use only after the user
-	 * requested ones got restored.
-	 */
-	pc->freq_ready = true;
-	mutex_unlock(&pc->freq_lock);
+	ret = pc_init_freqs(pc);
+	if (ret)
+		goto out;
 
 	if (xe->info.platform == XE_PVC) {
 		pc_gucrc_disable(pc);
-		return 0;
+		ret = 0;
+		goto out;
 	}
 
-	return pc_action_setup_gucrc(pc, XE_GUCRC_FIRMWARE_CONTROL);
+	ret = pc_action_setup_gucrc(pc, XE_GUCRC_FIRMWARE_CONTROL);
 
-err:
-	mutex_unlock(&pc->freq_lock);
-	return err;
+out:
+	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
+	return ret;
 }
 
 /**
