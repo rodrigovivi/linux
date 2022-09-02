@@ -91,8 +91,8 @@ static bool compatible_entries(const struct xe_reg_sr_entry *e1,
 	 * Don't allow overwriting values: clr_bits/set_bits should be disjoint
 	 * when operating in the same register
 	 */
-	if (e1->clr_bits ^ e2->clr_bits || e1->clr_bits ^ e2->set_bits ||
-	    e1->set_bits ^ e2->set_bits || e1->set_bits ^ e2->clr_bits)
+	if (e1->clr_bits & e2->clr_bits || e1->set_bits & e2->set_bits ||
+	    e1->clr_bits & e2->set_bits || e1->set_bits & e2->clr_bits)
 		return false;
 
 	if (e1->masked_reg != e2->masked_reg)
