@@ -147,6 +147,10 @@ struct xe_reg_sr;
 	.regval = { .reg = (reg_), .clr_bits = (mask_bits_), .set_bits = (val_),\
 		    .read_mask = (mask_bits_), ##__VA_ARGS__ }
 
+#define XE_RTP_FIELD_SET_NO_READ_MASK(reg_, mask_bits_, val_, ...)		\
+	.regval = { .reg = (reg_), .clr_bits = (mask_bits_), .set_bits = (val_),\
+		    .read_mask = 0, ##__VA_ARGS__ }
+
 /**
  * @XE_RTP_NAME: Helper to set the name in xe_rtp_entry
  *
