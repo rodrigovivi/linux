@@ -33,7 +33,8 @@ struct xe_rtp_regval {
 enum {
 	XE_RTP_MATCH_PLATFORM,
 	XE_RTP_MATCH_SUBPLATFORM,
-	XE_RTP_MATCH_VERSION,
+	XE_RTP_MATCH_GRAPHICS_VERSION,
+	XE_RTP_MATCH_MEDIA_VERSION,
 	XE_RTP_MATCH_STEP,
 	XE_RTP_MATCH_ENGINE_CLASS,
 	XE_RTP_MATCH_NOT_ENGINE_CLASS,
@@ -50,7 +51,7 @@ struct xe_rtp_rule {
 			u8 platform;
 			u8 subplatform;
 		};
-		/* MATCH_VERSION */
+		/* MATCH_GRAPHICS_VERSION / MATCH_MEDIA_VERSION */
 		struct {
 			u32 ver_start;
 			u32 ver_end;

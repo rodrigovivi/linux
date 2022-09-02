@@ -30,10 +30,12 @@ static bool rule_matches(struct xe_gt *gt,
 			match = xe->info.platform == r->platform &&
 				xe->info.subplatform == r->subplatform;
 			break;
-		case XE_RTP_MATCH_VERSION:
-			/* TODO: match media/display */
-			match = xe->info.graphics_verx100 >= r->ver_start &&
-				xe->info.graphics_verx100 < r->ver_end;
+		case XE_RTP_MATCH_GRAPHICS_VERSION:
+			/* TODO: match display */
+			match = xe->info.graphics_verx100 == r->ver_start;
+			break;
+		case XE_RTP_MATCH_MEDIA_VERSION:
+			match = xe->info.media_verx100 == r->ver_start;
 			break;
 		case XE_RTP_MATCH_STEP:
 			/* TODO: match media/display */

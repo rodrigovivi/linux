@@ -29,14 +29,13 @@
 static bool match_14011060649(const struct xe_gt *gt,
 			      const struct xe_hw_engine *hwe)
 {
-	const struct xe_device *xe = gt_to_xe((struct xe_gt *)gt);
-
-	return MEDIA_VER(xe) == 12 && hwe->instance % 2 == 0;
+	return hwe->instance % 2 == 0;
 }
 
 static const struct xe_rtp_entry gt_was[] = {
 	{ XE_RTP_NAME("14011060649"),
-	  XE_RTP_RULES(ENGINE_CLASS(VIDEO_DECODE),
+	  XE_RTP_RULES(MEDIA_VERSION(1200),
+		       ENGINE_CLASS(VIDEO_DECODE),
 		       FUNC(match_14011060649)),
 	  XE_RTP_SET(VDBOX_CGCTL3F10(0), IECPUNIT_CLKGATE_DIS,
 		     XE_RTP_FLAG(FOREACH_ENGINE))
