@@ -11,6 +11,7 @@ enum xe_platform {
 	XE_PLATFORM_UNINITIALIZED = 0,
 	/* gen12 */
 	XE_TIGERLAKE,
+	XE_ROCKETLAKE,
 	XE_DG1,
 	XE_DG2,
 	XE_PVC,

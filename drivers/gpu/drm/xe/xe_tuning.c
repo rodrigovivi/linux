@@ -19,6 +19,15 @@ static const struct xe_rtp_entry gt_tunings[] = {
 	{}
 };
 
+static const struct xe_rtp_entry context_tunings[] = {
+	{ XE_RTP_NAME("1604555607"),
+	  XE_RTP_RULES(GRAPHICS_VERSION(1200)),
+	  XE_RTP_FIELD_SET_NO_READ_MASK(FF_MODE2, FF_MODE2_TDS_TIMER_MASK,
+					FF_MODE2_TDS_TIMER_128)
+	},
+	{}
+};
+
 void xe_tuning_process_gt(struct xe_gt *gt)
 {
 	xe_rtp_process(gt_tunings, &gt->reg_sr, gt, NULL);
