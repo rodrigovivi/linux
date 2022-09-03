@@ -108,14 +108,15 @@ static inline struct xe_bo *gem_to_xe_bo(const struct drm_gem_object *obj)
 static inline struct xe_bo *xe_bo_get(struct xe_bo *bo)
 {
 	if (bo)
-		ttm_bo_get(&bo->ttm);
+		drm_gem_object_get(&bo->ttm.base);
+
 	return bo;
 }
 
 static inline void xe_bo_put(struct xe_bo *bo)
 {
 	if (bo)
-		ttm_bo_put(&bo->ttm);
+		drm_gem_object_put(&bo->ttm.base);
 }
 
 static inline void xe_bo_assert_held(struct xe_bo *bo)
@@ -210,5 +211,4 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 			struct drm_file *file);
 int xe_gem_mmap_offset_ioctl(struct drm_device *dev, void *data,
 			     struct drm_file *file);
-
 #endif

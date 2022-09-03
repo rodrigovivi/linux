@@ -370,6 +370,7 @@ static void xe_ttm_bo_release_notify(struct ttm_buffer_object *ttm_bo)
 	if (!xe_bo_is_xe_bo(ttm_bo))
 		return;
 
+	XE_WARN_ON(kref_read(&ttm_bo->base.refcount));
 	bo = ttm_to_xe_bo(ttm_bo);
 	__xe_bo_vunmap(bo);
 }
@@ -406,14 +407,18 @@ static void xe_gem_object_free(struct drm_gem_object *obj)
 {
 	/* Our BO reference counting scheme works as follows:
 	 *
-	 * The ttm_buffer_object and the drm_gem_object each have their own
-	 * kref.  We treat the ttm_buffer_object.kref as the "real" reference
-	 * count.  The drm_gem_object implicitly owns a reference to the
-	 * ttm_buffer_object and, when drm_gem_object.refcount hits zero, we
-	 * drop that reference here.  When ttm_buffer_object.kref hits zero,
-	 * xe_ttm_bo_destroy() is invoked to do the actual free.
+	 * The gem object kref is typically used throughout the driver,
+	 * and the gem object holds a ttm_buffer_object refcount, so
+	 * that when the last gem object reference is put, which is when
+	 * we end up in this function, we put also that ttm_buffer_object
+	 * refcount. Anything using gem interfaces is then no longer
+	 * allowed to access the object in a way that requires a gem
+	 * refcount, including locking the object.
+	 *
+	 * driver ttm callbacks is allowed to use the ttm_buffer_object
+	 * refcount directly if needed.
 	 */
-	xe_bo_put(gem_to_xe_bo(obj));
+	ttm_bo_put(container_of(obj, struct ttm_buffer_object, base));
 }
 
 static const struct drm_gem_object_funcs xe_gem_object_funcs = {
