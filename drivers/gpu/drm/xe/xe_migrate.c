@@ -623,6 +623,7 @@ static int emit_clear(struct xe_bb *bb, u64 src_ofs, u32 size, u32 pitch,
 
 struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 				   struct xe_bo *bo,
+				   struct ttm_resource *dst,
 				   u32 value)
 {
 	struct xe_gt *gt = m->gt;
@@ -630,7 +631,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 	struct dma_fence *fence = NULL;
 	u64 size = bo->size;
 	struct xe_res_cursor src_it;
-	struct ttm_resource *src = bo->ttm.resource;
+	struct ttm_resource *src = dst;
 	int err;
 	int pass = 0;
 
@@ -1058,7 +1059,7 @@ static void test_copy(struct xe_migrate *m, struct xe_bo *bo)
 		goto free_sysmem;
 
 	xe_map_memset(xe, &sysmem->vmap, 0, 0xd0, sysmem->size);
-	fence = xe_migrate_clear(m, sysmem, 0xc0c0c0c0);
+	fence = xe_migrate_clear(m, sysmem, sysmem->ttm.resource, 0xc0c0c0c0);
 	if (!sanity_fence_failed(xe, fence, big ? "Clearing sysmem big bo" :
 				 "Clearing sysmem small bo")) {
                 retval = xe_map_rd(xe, &sysmem->vmap, 0, u64);
@@ -1313,7 +1314,7 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 	/* Clear a small bo */
 	xe_map_memset(xe, &tiny->vmap, 0, 0x22, tiny->size);
 	expected = 0x224488ff;
-	fence = xe_migrate_clear(m, tiny, expected);
+	fence = xe_migrate_clear(m, tiny, tiny->ttm.resource, expected);
 	if (sanity_fence_failed(xe, fence, "Clearing small bo"))
 		goto out;
 
@@ -1329,7 +1330,7 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 	/* Clear a big bo with a fixed value */
 	xe_map_memset(xe, &big->vmap, 0, 0x11, big->size);
 	expected = 0x11223344U;
-	fence = xe_migrate_clear(m, big, expected);
+	fence = xe_migrate_clear(m, big, big->ttm.resource, expected);
 	if (sanity_fence_failed(xe, fence, "Clearing big bo"))
 		goto out;
 

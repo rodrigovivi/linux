@@ -353,15 +353,13 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 	struct xe_device *xe = ttm_to_xe_device(ttm_bo->bdev);
 	struct xe_bo *bo = ttm_to_xe_bo(ttm_bo);
 	struct ttm_resource *old_mem = ttm_bo->resource;
+	struct ttm_tt *ttm = ttm_bo->ttm;
 	struct xe_gt *gt = NULL;
 	struct dma_fence *fence;
-	int ret = 0;
+	bool move_lacks_source;
 	bool nounmap = false;
-
-	if (old_mem->mem_type == XE_PL_SYSTEM && !ttm_bo->ttm) {
-		ttm_bo_move_null(ttm_bo, new_mem);
-		goto out;
-	}
+	bool needs_clear;
+	int ret = 0;
 
 	if (ttm_bo->type == ttm_bo_type_sg) {
 		xe_bo_move_notify(bo);
@@ -369,20 +367,16 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 		goto out;
 	}
 
-	if (old_mem->mem_type == XE_PL_SYSTEM &&
-	    (new_mem->mem_type == XE_PL_TT)) {
-		ttm_bo_move_null(ttm_bo, new_mem);
-		goto out;
-	}
+	move_lacks_source = !resource_is_vram(old_mem) &&
+		(!ttm || !ttm_tt_is_populated(ttm));
 
-	if (((old_mem->mem_type == XE_PL_SYSTEM && resource_is_vram(new_mem)) ||
-	     (resource_is_vram(old_mem) &&
-	      new_mem->mem_type == XE_PL_SYSTEM))) {
-		hop->fpfn = 0;
-		hop->lpfn = 0;
-		hop->mem_type = XE_PL_TT;
-		hop->flags = TTM_PL_FLAG_TEMPORARY;
-		ret = -EMULTIHOP;
+	needs_clear = (ttm && ttm->page_flags & TTM_TT_FLAG_ZERO_ALLOC) ||
+		(!ttm && ttm_bo->type == ttm_bo_type_device);
+
+	if ((move_lacks_source && !needs_clear) ||
+	    (old_mem->mem_type == XE_PL_SYSTEM &&
+	     new_mem->mem_type == XE_PL_TT)) {
+		ttm_bo_move_null(ttm_bo, new_mem);
 		goto out;
 	}
 
@@ -398,6 +392,18 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 			goto out;
 		}
 		ttm_bo_move_null(ttm_bo, new_mem);
+		goto out;
+	}
+
+	if (!move_lacks_source &&
+	    ((old_mem->mem_type == XE_PL_SYSTEM && resource_is_vram(new_mem)) ||
+	     (resource_is_vram(old_mem) &&
+	      new_mem->mem_type == XE_PL_SYSTEM))) {
+		hop->fpfn = 0;
+		hop->lpfn = 0;
+		hop->mem_type = XE_PL_TT;
+		hop->flags = TTM_PL_FLAG_TEMPORARY;
+		ret = -EMULTIHOP;
 		goto out;
 	}
 
@@ -441,7 +447,10 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 			}
 		}
 	} else {
-		fence = xe_migrate_copy(gt->migrate, bo, old_mem, new_mem);
+		if (move_lacks_source)
+			fence = xe_migrate_clear(gt->migrate, bo, new_mem, 0);
+		else
+			fence = xe_migrate_copy(gt->migrate, bo, old_mem, new_mem);
 		if (IS_ERR(fence)) {
 			ret = PTR_ERR(fence);
 			xe_device_mem_access_wa_put(xe);
