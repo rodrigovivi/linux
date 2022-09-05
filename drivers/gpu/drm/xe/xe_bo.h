@@ -172,7 +172,6 @@ static inline void xe_bo_unlock_no_vm(struct xe_bo *bo)
 	}
 }
 
-int xe_bo_populate(struct xe_bo *bo);
 int xe_bo_pin_external(struct xe_bo *bo);
 int xe_bo_pin(struct xe_bo *bo);
 void xe_bo_unpin_external(struct xe_bo *bo);
