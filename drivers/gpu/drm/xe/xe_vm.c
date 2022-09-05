@@ -2501,10 +2501,6 @@ static int xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma, struct xe_engine *e,
 		err = xe_bo_validate(bo, vm);
 		if (err)
 			return err;
-
-		err = xe_bo_populate(bo);
-		if (err)
-			return err;
 	}
 
 	return __xe_vm_bind(vm, vma, e, syncs, num_syncs, afence);
