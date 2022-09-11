@@ -40,7 +40,9 @@
  * A user BO is created via the DRM_IOCTL_XE_GEM_CREATE IOCTL. Once it is
  * created the BO can be mmap'd (via DRM_IOCTL_XE_GEM_MMAP_OFFSET) for user
  * access and it can be bound for GPU access (via DRM_IOCTL_XE_VM_BIND). All
- * user BOs are evictable and user BOs are never pinned by XE.
+ * user BOs are evictable and user BOs are never pinned by XE. The allocation of
+ * the backing store can be defered from creation time until first use which is
+ * either mmap, bind, or pagefault.
  *
  * Private BOs
  * ~~~~~~~~~~~
@@ -119,7 +121,8 @@
  * the BO is used again. Every VMA is added to an evicted list of its VM when
  * the BO is moved. This is safe because of the VM locking structure (TODO: link
  * to VM locking doc). On the next use of a VM (exec or compute mode rebind
- * worker) the evicted VMA list is checked and rebinds are triggered.
+ * worker) the evicted VMA list is checked and rebinds are triggered. In the
+ * case of faulting VM, the rebind is done in the page fault handler.
  *
  * Suspend / resume eviction of VRAM
  * ---------------------------------
