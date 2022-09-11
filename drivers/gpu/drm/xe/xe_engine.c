@@ -63,7 +63,7 @@ static struct xe_engine *__xe_engine_create(struct xe_device *xe,
 	}
 
 	for (i = 0; i < width; ++i) {
-		err = xe_lrc_init(e->lrc + i, hwe, vm, SZ_16K);
+		err = xe_lrc_init(e->lrc + i, hwe, e, vm, SZ_16K);
 		if (err)
 			goto err_lrc;
 	}
@@ -269,6 +269,48 @@ static int engine_set_job_timeout(struct xe_device *xe, struct xe_engine *e,
 	return e->ops->set_job_timeout(e, value);
 }
 
+static int engine_set_acc_trigger(struct xe_device *xe, struct xe_engine *e,
+				  u64 value, bool create)
+{
+	if (XE_IOCTL_ERR(xe, !create))
+		return -EINVAL;
+
+	if (XE_IOCTL_ERR(xe, !xe->info.supports_usm))
+		return -EINVAL;
+
+	e->usm.acc_trigger = value;
+
+	return 0;
+}
+
+static int engine_set_acc_notify(struct xe_device *xe, struct xe_engine *e,
+				 u64 value, bool create)
+{
+	if (XE_IOCTL_ERR(xe, !create))
+		return -EINVAL;
+
+	if (XE_IOCTL_ERR(xe, !xe->info.supports_usm))
+		return -EINVAL;
+
+	e->usm.acc_notify = value;
+
+	return 0;
+}
+
+static int engine_set_acc_granularity(struct xe_device *xe, struct xe_engine *e,
+				      u64 value, bool create)
+{
+	if (XE_IOCTL_ERR(xe, !create))
+		return -EINVAL;
+
+	if (XE_IOCTL_ERR(xe, !xe->info.supports_usm))
+		return -EINVAL;
+
+	e->usm.acc_granularity = value;
+
+	return 0;
+}
+
 typedef int (*xe_engine_set_property_fn)(struct xe_device *xe,
 					 struct xe_engine *e,
 					 u64 value, bool create);
@@ -280,6 +322,9 @@ static const xe_engine_set_property_fn engine_set_property_funcs[] = {
 	[XE_ENGINE_PROPERTY_COMPUTE_MODE] = engine_set_compute_mode,
 	[XE_ENGINE_PROPERTY_PERSISTENCE] = engine_set_persistence,
 	[XE_ENGINE_PROPERTY_JOB_TIMEOUT] = engine_set_job_timeout,
+	[XE_ENGINE_PROPERTY_ACC_TRIGGER] = engine_set_acc_trigger,
+	[XE_ENGINE_PROPERTY_ACC_NOTIFY] = engine_set_acc_notify,
+	[XE_ENGINE_PROPERTY_ACC_GRANULARITY] = engine_set_acc_granularity,
 };
 
 static int engine_user_ext_set_property(struct xe_device *xe,

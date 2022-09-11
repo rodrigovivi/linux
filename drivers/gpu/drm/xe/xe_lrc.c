@@ -7,6 +7,7 @@
 
 #include "xe_bo.h"
 #include "xe_device.h"
+#include "xe_engine_types.h"
 #include "xe_gt.h"
 #include "xe_map.h"
 #include "xe_hw_fence.h"
@@ -888,10 +889,13 @@ static void xe_lrc_set_ppgtt(struct xe_lrc *lrc, struct xe_vm *vm)
 	xe_lrc_write_ctx_reg(lrc, CTX_PDP0_LDW, lower_32_bits(desc));
 }
 
-#define PVC_CTX_ASID                         (0x2e + 1)
+#define PVC_CTX_ASID		(0x2e + 1)
+#define PVC_CTX_ACC_CTR_THOLD	(0x2a + 1)
+#define ACC_GRANULARITY_S       20
+#define ACC_NOTIFY_S            16
 
 int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
-		struct xe_vm *vm, u32 ring_size)
+		struct xe_engine *e, struct xe_vm *vm, u32 ring_size)
 {
 	struct xe_device *xe = gt_to_xe(hwe->gt);
 	struct iosys_map map;
@@ -954,8 +958,14 @@ int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 	xe_lrc_write_ctx_reg(lrc, CTX_RING_TAIL, lrc->ring.tail);
 	xe_lrc_write_ctx_reg(lrc, CTX_RING_CTL,
 			     RING_CTL_SIZE(lrc->ring.size) | RING_VALID);
-	if (xe->info.supports_usm && vm)
-		xe_lrc_write_ctx_reg(lrc, PVC_CTX_ASID, vm->usm.asid);
+	if (xe->info.supports_usm && vm) {
+		xe_lrc_write_ctx_reg(lrc, PVC_CTX_ASID,
+				     (e->usm.acc_granularity <<
+				      ACC_GRANULARITY_S) | vm->usm.asid);
+		xe_lrc_write_ctx_reg(lrc, PVC_CTX_ACC_CTR_THOLD,
+				     (e->usm.acc_notify << ACC_NOTIFY_S) |
+				     e->usm.acc_trigger);
+	}
 
 	lrc->desc = GEN8_CTX_VALID;
 	lrc->desc |= INTEL_LEGACY_64B_CONTEXT << GEN8_CTX_ADDRESSING_MODE_SHIFT;

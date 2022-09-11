@@ -400,7 +400,7 @@ static int hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
 
 	xe_bo_unlock_no_vm(hwe->hwsp);
 
-	err = xe_lrc_init(&hwe->kernel_lrc, hwe, NULL, SZ_16K);
+	err = xe_lrc_init(&hwe->kernel_lrc, hwe, NULL, NULL, SZ_16K);
 	if (err)
 		goto err_hwsp;
 
