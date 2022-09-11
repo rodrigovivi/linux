@@ -132,6 +132,16 @@ struct xe_engine {
 		spinlock_t lock;
 	} compute;
 
+	/** @usm: unified shared memory state */
+	struct {
+		/** @acc_trigger: access counter trigger */
+		u32 acc_trigger;
+		/** @acc_notify: access counter notify */
+		u32 acc_notify;
+		/** @acc_granularity: access counter granularity */
+		u32 acc_granularity;
+	} usm;
+
 	/** @ops: submission backend engine operations */
 	const struct xe_engine_ops *ops;
 
