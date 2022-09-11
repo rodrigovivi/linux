@@ -334,6 +334,11 @@ DEFINE_EVENT(xe_vma, xe_vma_pagefault,
 	     TP_ARGS(vma)
 );
 
+DEFINE_EVENT(xe_vma, xe_vma_acc,
+	     TP_PROTO(struct xe_vma *vma),
+	     TP_ARGS(vma)
+);
+
 DEFINE_EVENT(xe_vma, xe_vma_fail,
 	     TP_PROTO(struct xe_vma *vma),
 	     TP_ARGS(vma)

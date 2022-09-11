@@ -37,6 +37,17 @@ enum page_fault_type {
 	FAULT_ATOMIC_ACCESS_VIOLATION = 0xa,
 };
 
+struct acc {
+	u64 va_range_base;
+	u32 asid;
+	u32 sub_granularity;
+	u8 granularity;
+	u8 vfid;
+	u8 access_type;
+	u8 engine_class;
+	u8 engine_instance;
+};
+
 static struct xe_gt *
 guc_to_gt(struct xe_guc *guc)
 {
@@ -348,6 +359,8 @@ static void pf_queue_work_func(struct work_struct *w)
 	send_pagefault_reply(&gt->uc.guc, &reply);
 }
 
+static void acc_queue_work_func(struct work_struct *w);
+
 int xe_gt_pagefault_init(struct xe_gt *gt)
 {
 	struct xe_device *xe = gt_to_xe(gt);
@@ -362,11 +375,21 @@ int xe_gt_pagefault_init(struct xe_gt *gt)
 		spin_lock_init(&gt->usm.pf_queue[i].lock);
 		INIT_WORK(&gt->usm.pf_queue[i].worker, pf_queue_work_func);
 	}
+	for (i = 0; i < NUM_ACC_QUEUE; ++i) {
+		gt->usm.acc_queue[i].gt = gt;
+		spin_lock_init(&gt->usm.acc_queue[i].lock);
+		INIT_WORK(&gt->usm.acc_queue[i].worker, acc_queue_work_func);
+	}
 
 	gt->usm.pf_wq = alloc_workqueue("xe_gt_page_fault_work_queue",
-					WQ_UNBOUND | WQ_HIGHPRI,
-					NUM_PF_QUEUE);
+					WQ_UNBOUND | WQ_HIGHPRI, NUM_PF_QUEUE);
 	if (!gt->usm.pf_wq)
+		return -ENOMEM;
+
+	gt->usm.acc_wq = alloc_workqueue("xe_gt_access_counter_work_queue",
+					 WQ_UNBOUND | WQ_HIGHPRI,
+					 NUM_ACC_QUEUE);
+	if (!gt->usm.acc_wq)
 		return -ENOMEM;
 
 	return 0;
@@ -385,6 +408,13 @@ void xe_gt_pagefault_reset(struct xe_gt *gt)
 		gt->usm.pf_queue[i].head = 0;
 		gt->usm.pf_queue[i].tail = 0;
 		spin_unlock_irq(&gt->usm.pf_queue[i].lock);
+	}
+
+	for (i = 0; i < NUM_ACC_QUEUE; ++i) {
+		spin_lock(&gt->usm.acc_queue[i].lock);
+		gt->usm.acc_queue[i].head = 0;
+		gt->usm.acc_queue[i].tail = 0;
+		spin_unlock(&gt->usm.acc_queue[i].lock);
 	}
 }
 
@@ -445,4 +475,204 @@ int xe_guc_tlb_invalidation_done_handler(struct xe_guc *guc, u32 *msg, u32 len)
 	wake_up_all(&guc->ct.wq);
 
 	return 0;
+}
+
+static inline int granularity_in_byte(int val)
+{
+	switch (val) {
+	case 0:
+		return SZ_128K;
+	case 1:
+		return SZ_2M;
+	case 2:
+		return SZ_16M;
+	case 3:
+		return SZ_64M;
+	default:
+		return 0;
+	}
+}
+
+static inline int sub_granularity_in_byte(int val)
+{
+	return (granularity_in_byte(val) / 32);
+}
+
+static void print_acc(struct xe_device *xe, struct acc *acc)
+{
+	drm_warn(&xe->drm, "Access counter request:\n"
+		 "\tType: %s\n"
+		 "\tASID: %d\n"
+		 "\tVFID: %d\n"
+		 "\tEngine: %d:%d\n"
+		 "\tGranularity: 0x%x KB Region/ %d KB sub-granularity\n"
+		 "\tSub_Granularity Vector: 0x%08x\n"
+		 "\tVA Range base: 0x%016llx\n",
+		 acc->access_type ? "AC_NTFY_VAL" : "AC_TRIG_VAL",
+		 acc->asid, acc->vfid, acc->engine_class, acc->engine_instance,
+		 granularity_in_byte(acc->granularity) / SZ_1K,
+		 sub_granularity_in_byte(acc->granularity) / SZ_1K,
+		 acc->sub_granularity, acc->va_range_base);
+}
+
+static struct xe_vma *get_acc_vma(struct xe_vm *vm, struct acc *acc)
+{
+	u64 page_va = acc->va_range_base + (ffs(acc->sub_granularity) - 1) *
+		sub_granularity_in_byte(acc->granularity);
+	struct xe_vma lookup;
+
+	lookup.start = page_va;
+	lookup.end = lookup.start + SZ_4K - 1;
+
+	return xe_vm_find_overlapping_vma(vm, &lookup);
+}
+
+static int handle_acc(struct xe_gt *gt, struct acc *acc)
+{
+	struct xe_device *xe = gt_to_xe(gt);
+	struct xe_vm *vm;
+	struct xe_vma *vma;
+	struct xe_bo *bo;
+	LIST_HEAD(objs);
+	LIST_HEAD(dups);
+	struct ttm_validate_buffer tv_bo, tv_vm;
+	struct ww_acquire_ctx ww;
+	int ret = 0;
+
+	/* We only support ACC_TRIGGER at the moment */
+	if (acc->access_type != ACC_TRIGGER)
+		return -EINVAL;
+
+	/* ASID to VM */
+	mutex_lock(&xe->usm.lock);
+	vm = xa_load(&xe->usm.asid_to_vm, acc->asid);
+	if (vm)
+		xe_vm_get(vm);
+	mutex_unlock(&xe->usm.lock);
+	if (!vm)
+		return -EINVAL;
+
+	down_read(&vm->lock);
+
+	/* Lookup VMA */
+	vma = get_acc_vma(vm, acc);
+	if (!vma) {
+		ret = -EINVAL;
+		goto unlock_vm;
+	}
+
+	trace_xe_vma_acc(vma);
+
+	/* Userptr can't be migrated, nothing to do */
+	if (xe_vma_is_userptr(vma))
+		goto unlock_vm;
+
+	/* Lock VM and BOs dma-resv */
+	bo = vma->bo;
+	tv_vm.num_shared = xe->info.tile_count;
+	tv_vm.bo = xe_vm_ttm_bo(vm);
+	list_add(&tv_vm.head, &objs);
+	tv_bo.bo = &bo->ttm;
+	tv_bo.num_shared = xe->info.tile_count;
+	list_add(&tv_bo.head, &objs);
+	ret = ttm_eu_reserve_buffers(&ww, &objs, false, &dups);
+	if (ret)
+		goto unlock_vm;
+
+	/* Migrate to VRAM, move should invalidate the VMA first */
+	ret = xe_bo_migrate(bo, XE_PL_VRAM0 + gt->info.vram_id);
+
+	ttm_eu_backoff_reservation(&ww, &objs);
+unlock_vm:
+	up_read(&vm->lock);
+	xe_vm_put(vm);
+
+	return ret;
+}
+
+#define make_u64(hi__, low__)  ((u64)(hi__) << 32 | (u64)(low__))
+
+static int get_acc(struct acc_queue *acc_queue, struct acc *acc)
+{
+	const struct xe_guc_acc_desc *desc;
+	int ret = 0;
+
+	spin_lock(&acc_queue->lock);
+	if (acc_queue->head != acc_queue->tail) {
+		desc = (const struct xe_guc_acc_desc *)
+			(acc_queue->data + acc_queue->head);
+
+		acc->granularity = FIELD_GET(ACC_GRANULARITY, desc->dw2);
+		acc->sub_granularity = FIELD_GET(ACC_SUBG_HI, desc->dw1) << 31 |
+			FIELD_GET(ACC_SUBG_LO, desc->dw0);
+		acc->engine_class = FIELD_GET(ACC_ENG_CLASS, desc->dw1);
+		acc->engine_instance = FIELD_GET(ACC_ENG_INSTANCE, desc->dw1);
+		acc->asid =  FIELD_GET(ACC_ASID, desc->dw1);
+		acc->vfid =  FIELD_GET(ACC_VFID, desc->dw2);
+		acc->access_type = FIELD_GET(ACC_TYPE, desc->dw0);
+		acc->va_range_base = make_u64(desc->dw3 & ACC_VIRTUAL_ADDR_RANGE_HI,
+					      desc->dw2 & ACC_VIRTUAL_ADDR_RANGE_LO);
+	} else {
+		ret = -1;
+	}
+	spin_unlock(&acc_queue->lock);
+
+	return ret;
+}
+
+static void acc_queue_work_func(struct work_struct *w)
+{
+	struct acc_queue *acc_queue = container_of(w, struct acc_queue, worker);
+	struct xe_gt *gt = acc_queue->gt;
+	struct xe_device *xe = gt_to_xe(gt);
+	struct acc acc = {};
+	int ret;
+
+	ret = get_acc(acc_queue, &acc);
+	if (ret)
+		return;
+
+	ret = handle_acc(gt, &acc);
+	if (unlikely(ret)) {
+		print_acc(xe, &acc);
+		drm_warn(&xe->drm, "ACC: Unsuccessful %d\n", ret);
+	}
+}
+
+#define ACC_MSG_LEN_DW	4
+
+static bool acc_queue_full(struct acc_queue *acc_queue)
+{
+	lockdep_assert_held(&acc_queue->lock);
+
+	return CIRC_SPACE(acc_queue->tail, acc_queue->head, ACC_QUEUE_NUM_DW) <=
+		ACC_MSG_LEN_DW;
+}
+
+int xe_guc_access_counter_notify_handler(struct xe_guc *guc, u32 *msg, u32 len)
+{
+	struct xe_gt *gt = guc_to_gt(guc);
+	struct acc_queue *acc_queue;
+	u32 asid;
+	bool full;
+
+	if (unlikely(len != ACC_MSG_LEN_DW))
+		return -EPROTO;
+
+	asid = FIELD_GET(ACC_ASID, msg[1]);
+	acc_queue = &gt->usm.acc_queue[asid % NUM_ACC_QUEUE];
+
+	spin_lock(&acc_queue->lock);
+	full = acc_queue_full(acc_queue);
+	if (!full) {
+		memcpy(acc_queue->data + acc_queue->tail, msg,
+		       len * sizeof(u32));
+		acc_queue->tail = (acc_queue->tail + len) % ACC_QUEUE_NUM_DW;
+		queue_work(gt->usm.acc_wq, &acc_queue->worker);
+	} else {
+		drm_warn(&gt_to_xe(gt)->drm, "ACC Queue full, dropping ACC");
+	}
+	spin_unlock(&acc_queue->lock);
+
+	return full ? -ENOSPC : 0;
 }
