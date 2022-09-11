@@ -67,6 +67,13 @@
  *	update page level 3a PTE[511] to BO2 phys addres (GPU)
  *	update page level 3b PTE[0] to BO2 phys addres + 0x1000 (GPU)
  *
+ * GPU bypass
+ * ~~~~~~~~~~
+ *
+ * In the above example the steps using the GPU can be converted to CPU if the
+ * bind can be done immediately (all in-fences satisfied, VM dma-resv kernel
+ * slot is idle).
+ *
  * Address space
  * -------------
  *
@@ -247,7 +254,7 @@
  *
  *	<----------------------------------------------------------------------|
  *	Check if VM is closed, if so bail out                                  |
- *	Lock global VM lock in read mode                                       |
+ *	Lock VM global lock in read mode                                       |
  *	Pin userptrs (also finds userptr invalidated since last rebind worker) |
  *	Lock VM dma-resv and external BOs dma-resv                             |
  *	Validate BOs that have been evicted                                    |
@@ -288,6 +295,116 @@
  * The implementation for this breaks down into a bunch for_each_gt loops in
  * various places plus exporting a composite fence for multi-GT binds to the
  * user.
+ *
+ * Fault mode (unified shared memory)
+ * ==================================
+ *
+ * A VM in fault mode can be enabled on devices that support page faults. If
+ * page faults are enabled, using dma fences can potentially induce a deadlock:
+ * A pending page fault can hold up the GPU work which holds up the dma fence
+ * signaling, and memory allocation is usually required to resolve a page
+ * fault, but memory allocation is not allowed to gate dma fence signaling. As
+ * such, dma fences are not allowed when VM is in fault mode. Because dma-fences
+ * are not allowed, long running workloads and ULLS are enabled on a faulting
+ * VM.
+ *
+ * Defered VM binds
+ * ----------------
+ *
+ * By default, on a faulting VM binds just allocate the VMA and the actual
+ * updating of the page tables is defered to the page fault handler. This
+ * behavior can be overridden by setting the flag XE_VM_BIND_FLAG_IMMEDIATE in
+ * the VM bind which will then do the bind immediately.
+ *
+ * Page fault handler
+ * ------------------
+ *
+ * Page faults are received in the G2H worker under the CT lock which is in the
+ * path of dma fences (no memory allocations are allowed, faults require memory
+ * allocations) thus we cannot process faults under the CT lock. Another issue
+ * is faults issue TLB invalidations which require G2H credits and we cannot
+ * allocate G2H credits in the G2H handlers without deadlocking. Lastly, we do
+ * not want the CT lock to be an outer lock of the VM global lock (VM global
+ * lock required to fault processing).
+ *
+ * To work around the above issue with processing faults in the G2H worker, we
+ * sink faults to a buffer which is large enough to sink all possible faults on
+ * the GT (1 per hardware engine) and kick a worker to process the faults. Since
+ * the page faults G2H are already received in a worker, kicking another worker
+ * adds more latency to a critical performance path. We add a fast path in the
+ * G2H irq handler which looks at first G2H and if it is a page fault we sink
+ * the fault to the buffer and kick the worker to process the fault. TLB
+ * invalidation responses are also in the critical path so these can also be
+ * processed in this fast path.
+ *
+ * Multiple buffers and workers are used and hashed over based on the ASID so
+ * faults from different VMs can be processed in parallel.
+ *
+ * The page fault handler itself is rather simple, flow is below.
+ *
+ * .. code-block::
+ *
+ *	Lookup VM from ASID in page fault G2H
+ *	Lock VM global lock in read mode
+ *	Lookup VMA from address in page fault G2H
+ *	Check if VMA is valid, if not bail
+ *	Check if VMA's BO has backing store, if not allocate
+ *	<----------------------------------------------------------------------|
+ *	If userptr, pin pages                                                  |
+ *	Lock VM & BO dma-resv locks                                            |
+ *	If atomic fault, migrate to VRAM, else validate BO location            |
+ *	Issue rebind                                                           |
+ *	Wait on rebind to complete                                             |
+ *	Issue blocking TLB invalidation                                        |
+ *	Check if userptr invalidated since pin                                 |
+ *		Drop VM & BO dma-resv locks                                    |
+ *		Retry ----------------------------------------------------------
+ *	Unlock all
+ *	Send page fault response to GuC
+ *
+ * Access counters
+ * ---------------
+ *
+ * Access counters can be configured to trigger a G2H indicating the device is
+ * accessing VMAs in system memory frequently as hint to migrate those VMAs to
+ * VRAM.
+ *
+ * Same as the page fault handler, access counters G2H cannot be processed the
+ * G2H worker under the CT lock. Again we use a buffer to sink access counter
+ * G2H. Unlike page faults there is no upper bound so if the buffer is full we
+ * simply drop the G2H. Access counters are a best case optimization and it is
+ * safe to drop these unlike page faults.
+ *
+ * The access counter handler itself is rather simple flow is below.
+ *
+ * .. code-block::
+ *
+ *	Lookup VM from ASID in access counter G2H
+ *	Lock VM global lock in read mode
+ *	Lookup VMA from address in access counter G2H
+ *	If userptr, bail nothing to do
+ *	Lock VM & BO dma-resv locks
+ *	Issue migration to VRAM
+ *	Unlock all
+ *
+ * Notice no rebind is issued in the access counter handler as the rebind will
+ * be issued on next page fault.
+ *
+ * Cavets with eviction / user pointer invalidation
+ * ------------------------------------------------
+ *
+ * In the case of eviction and user pointer invalidation on a faulting VM, there
+ * is no need to issue a rebind rather we just need to blow away the page tables
+ * for the VMAs and the page fault handler will rebind the VMAs when they fault.
+ * The cavet is to update / read the page table structure the VM global lock is
+ * neeeed. In both the case of eviction and user pointer invalidation locks are
+ * held which make acquiring the VM global lock impossible. To work around this
+ * every VMA maintains a list of leaf page table entries which should be written
+ * to zero to blow away the VMA's page tables. After writing zero to these
+ * entries a blocking TLB invalidate is issued. At this point it is safe for the
+ * kernel to move the VMA's memory around. This is a necessary lockless
+ * algorithm and is safe as leafs cannot be changed while either an eviction or
+ * userptr invalidation is occurring.
  *
  * Locking
  * =======
@@ -414,6 +531,16 @@
  *
  * Support large pages for sysmem and userptr.
  *
+ * Update page faults to handle BOs are page level grainularity (e.g. part of BO
+ * could be in system memory while another part could be in VRAM).
+ *
+ * Page fault handler likely we be optimized a bit more (e.g. Rebinds always
+ * wait on the dma-resv kernel slots of VM or BO, technically we only have to
+ * wait the BO moving. If using a job to do the rebind, we could not block in
+ * the page fault handler rather attach a callback to fence of the rebind job to
+ * signal page fault complete. Our handling of short circuting for atomic faults
+ * for bound VMAs could be better. etc...). We can tune all of this once we have
+ * benchmarks / performance number from workloads up and running.
  */
 
 #endif
