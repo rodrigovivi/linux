@@ -885,6 +885,10 @@ static int process_g2h_msg(struct xe_guc_ct *ct, u32 *msg, u32 len)
 		ret = xe_guc_tlb_invalidation_done_handler(guc, payload,
 							   adj_len);
 		break;
+	case XE_GUC_ACTION_ACCESS_COUNTER_NOTIFY:
+		ret = xe_guc_access_counter_notify_handler(guc, payload,
+							   adj_len);
+		break;
 	default:
 		drm_err(&xe->drm, "unexpected action 0x%04x\n", action);
 	}

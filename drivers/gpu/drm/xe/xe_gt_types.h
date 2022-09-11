@@ -140,6 +140,8 @@ struct xe_gt {
 		int tlb_invalidation_seqno_recv;
 		/** @pf_wq: page fault work queue, unbound, high priority */
 		struct workqueue_struct *pf_wq;
+		/** @acc_wq: access counter work queue, unbound, high priority */
+		struct workqueue_struct *acc_wq;
 		/**
 		 * pf_queue: Page fault queue used to sync faults so faults can
 		 * be processed not under the GuC CT lock. The queue is sized so
@@ -169,6 +171,32 @@ struct xe_gt {
 			struct work_struct worker;
 #define NUM_PF_QUEUE	4
 		} pf_queue[NUM_PF_QUEUE];
+		/**
+		 * acc_queue: Same as page fault queue, cannot process access
+		 * counters under CT lock.
+		 */
+		struct acc_queue {
+			/** @gt: back pointer to GT */
+			struct xe_gt *gt;
+#define ACC_QUEUE_NUM_DW	128
+			/** @data: data in the page fault queue */
+			u32 data[ACC_QUEUE_NUM_DW];
+			/**
+			 * @head: head pointer in DWs for page fault queue,
+			 * moved by worker which processes faults.
+			 */
+			u16 head;
+			/**
+			 * @tail: tail pointer in DWs for page fault queue,
+			 * moved by G2H handler.
+			 */
+			u16 tail;
+			/** @lock: protects page fault queue */
+			spinlock_t lock;
+			/** @worker: to process access counters */
+			struct work_struct worker;
+#define NUM_ACC_QUEUE	4
+		} acc_queue[NUM_ACC_QUEUE];
 	} usm;
 
 	/** @ordered_wq: used to serialize GT resets and TDRs */

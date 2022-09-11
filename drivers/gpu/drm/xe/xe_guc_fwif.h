@@ -356,4 +356,29 @@ struct xe_guc_pagefault_reply {
 #define PFR_RSVD_2		GENMASK(31, 0)
 } __packed;
 
+struct xe_guc_acc_desc {
+	u32 dw0;
+#define ACC_TYPE	BIT(0)
+#define ACC_TRIGGER	0
+#define ACC_NOTIFY	1
+#define ACC_SUBG_LO	GENMASK(31, 1)
+
+	u32 dw1;
+#define ACC_SUBG_HI	BIT(0)
+#define ACC_RSVD0	GENMASK(2, 1)
+#define ACC_ENG_INSTANCE	GENMASK(8, 3)
+#define ACC_ENG_CLASS	GENMASK(11, 9)
+#define ACC_ASID	GENMASK(31, 12)
+
+	u32 dw2;
+#define ACC_VFID	GENMASK(5, 0)
+#define ACC_RSVD1	GENMASK(7, 6)
+#define ACC_GRANULARITY	GENMASK(10, 8)
+#define ACC_RSVD2	GENMASK(16, 11)
+#define ACC_VIRTUAL_ADDR_RANGE_LO	GENMASK(31, 17)
+
+	u32 dw3;
+#define ACC_VIRTUAL_ADDR_RANGE_HI	GENMASK(31, 0)
+} __packed;
+
 #endif
