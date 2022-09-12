@@ -2514,14 +2514,9 @@ static int xe_vm_bind_userptr(struct xe_vm *vm, struct xe_vma *vma,
 			      struct xe_engine *e, struct xe_sync_entry *syncs,
 			      u32 num_syncs, struct async_op_fence *afence)
 {
-	struct ww_acquire_ctx ww;
 	int err;
 
-	err = xe_vm_lock(vm, &ww, 1, true);
-	if (!err) {
-		err = __xe_vm_bind(vm, vma, e, syncs, num_syncs, afence);
-		xe_vm_unlock(vm, &ww);
-	}
+	err = __xe_vm_bind(vm, vma, e, syncs, num_syncs, afence);
 	if (err)
 		return err;
 
@@ -2802,6 +2797,10 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 			 struct xe_sync_entry *syncs, u32 num_syncs,
 			 struct async_op_fence *afence)
 {
+	LIST_HEAD(objs);
+	LIST_HEAD(dups);
+	struct ttm_validate_buffer tv_bo, tv_vm;
+	struct ww_acquire_ctx ww;
 	int err, i;
 
 	lockdep_assert_held(&vm->lock);
@@ -2843,42 +2842,30 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 		}
 	}
 
-	if (!(VM_BIND_OP(bind_op->op) == XE_VM_BIND_OP_MAP_USERPTR)) {
-		LIST_HEAD(objs);
-		LIST_HEAD(dups);
-		struct ttm_validate_buffer tv_bo, tv_vm;
-		struct ww_acquire_ctx ww;
-		struct xe_bo *bo = vma->bo;
+	xe_vm_tv_populate(vm, &tv_vm);
+	list_add_tail(&tv_vm.head, &objs);
+	if (vma->bo) {
+		/*
+		 * An unbind can drop the last reference to the BO and
+		 * the BO is needed for ttm_eu_backoff_reservation so
+		 * take a reference here.
+		 */
+		drm_gem_object_get(&vma->bo->ttm.base);
 
-		xe_vm_tv_populate(vm, &tv_vm);
-		list_add_tail(&tv_vm.head, &objs);
-
-		if (bo) {
-			/*
-			 * An unbind can drop the last reference to the BO and
-			 * the BO is needed for ttm_eu_backoff_reservation so
-			 * take a reference here.
-			 */
-			drm_gem_object_get(&bo->ttm.base);
-
-			tv_bo.bo = &bo->ttm;
-			tv_bo.num_shared = 1;
-			list_add(&tv_bo.head, &objs);
-		}
-
-		err = ttm_eu_reserve_buffers(&ww, &objs, true, &dups);
-		if (!err) {
-			err = __vm_bind_ioctl(vm, vma, e, bo,
-					      bind_op->op, syncs, num_syncs,
-					      afence);
-			ttm_eu_backoff_reservation(&ww, &objs);
-		}
-		if (bo)
-			drm_gem_object_put(&bo->ttm.base);
-	} else {
-		err = __vm_bind_ioctl(vm, vma, e, NULL, bind_op->op,
-				      syncs, num_syncs, afence);
+		tv_bo.bo = &vma->bo->ttm;
+		tv_bo.num_shared = 1;
+		list_add(&tv_bo.head, &objs);
 	}
+
+	err = ttm_eu_reserve_buffers(&ww, &objs, true, &dups);
+	if (!err) {
+		err = __vm_bind_ioctl(vm, vma, e, bo,
+				      bind_op->op, syncs, num_syncs,
+				      afence);
+		ttm_eu_backoff_reservation(&ww, &objs);
+	}
+	if (vma->bo)
+		drm_gem_object_put(&vma->bo->ttm.base);
 
 	return err;
 }
