@@ -39,9 +39,9 @@ err:
 static struct xe_sched_job *
 __xe_bb_create_job(struct xe_engine *kernel_eng, struct xe_bb *bb, u64 *addr)
 {
-	u32 size = bb->bo->eoffset - bb->bo->soffset;
+	u32 size = drm_suballoc_size(bb->bo);
 
-	BUG_ON(bb->len >= size/4 - 1);
+	XE_BUG_ON((bb->len * 4 + 1) > size);
 
 	bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
 
@@ -56,8 +56,9 @@ struct xe_sched_job *xe_bb_create_migration_job(struct xe_engine *kernel_eng,
 						u32 second_idx)
 {
 	u64 addr[2] = {
-		batch_base_ofs + bb->bo->soffset,
-		batch_base_ofs + bb->bo->soffset + 4 * second_idx,
+		batch_base_ofs + drm_suballoc_soffset(bb->bo),
+		batch_base_ofs + drm_suballoc_soffset(bb->bo) +
+		4 * second_idx,
 	};
 
 	BUG_ON(second_idx > bb->len);
@@ -80,6 +81,6 @@ void xe_bb_free(struct xe_bb *bb, struct dma_fence *fence)
 	if (!bb)
 		return;
 
-	xe_sa_bo_free(bb->bo, fence, -1);
+	xe_sa_bo_free(bb->bo, fence);
 	kfree(bb);
 }
