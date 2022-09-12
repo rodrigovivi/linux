@@ -381,11 +381,15 @@ struct drm_xe_vm_bind_op {
 	/** @op: Operation to perform (lower 16 bits) and flags (upper 16 bits) */
 	__u32 op;
 
+	/** @mem_region: Memory region to prefetch VMA to, instance not a mask */
+	__u32 region;
+
 #define XE_VM_BIND_OP_MAP		0x0
 #define XE_VM_BIND_OP_UNMAP		0x1
 #define XE_VM_BIND_OP_MAP_USERPTR	0x2
 #define XE_VM_BIND_OP_RESTART		0x3
 #define XE_VM_BIND_OP_UNMAP_ALL		0x4
+#define XE_VM_BIND_OP_PREFETCH		0x5
 
 #define XE_VM_BIND_FLAG_READONLY	(0x1 << 16)
 	/*
@@ -418,7 +422,6 @@ struct drm_xe_vm_bind_op {
 	 * than differing the MAP to the page fault handler.
 	 */
 #define XE_VM_BIND_FLAG_IMMEDIATE	(0x1 << 18)
-
 
 	/** @reserved: Reserved */
 	__u64 reserved[2];

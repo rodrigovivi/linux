@@ -2755,12 +2755,53 @@ int xe_vm_destroy_ioctl(struct drm_device *dev, void *data,
 	return 0;
 }
 
+static const u32 region_to_mem_type[] = {
+	XE_PL_TT,
+	XE_PL_VRAM0,
+	XE_PL_VRAM1,
+};
+
+static int xe_vm_prefetch(struct xe_vm *vm, struct xe_vma *vma,
+			  struct xe_engine *e, u32 region,
+			  struct xe_sync_entry *syncs, u32 num_syncs,
+			  struct async_op_fence *afence)
+{
+	int err;
+
+	XE_BUG_ON(region > ARRAY_SIZE(region_to_mem_type));
+
+	if (!xe_vma_is_userptr(vma)) {
+		err = xe_bo_migrate(vma->bo, region_to_mem_type[region]);
+		if (err)
+			return err;
+	}
+
+	if (vma->gt_mask != (vma->gt_present & ~vma->usm.gt_invalidated)) {
+		if (xe_vma_is_userptr(vma))
+			return xe_vm_bind_userptr(vm, vma, e, syncs, num_syncs,
+						  afence);
+		else
+			return xe_vm_bind(vm, vma, e, vma->bo, syncs, num_syncs,
+					  afence);
+	} else {
+		int i;
+
+		/* Nothing to do, signal fences now */
+		for (i = 0; i < num_syncs; i++)
+			xe_sync_entry_signal(&syncs[i], NULL,
+					     dma_fence_get_stub());
+		if (afence)
+			dma_fence_signal(&afence->fence);
+		return 0;
+	}
+}
+
 #define VM_BIND_OP(op)	(op & 0xffff)
 
 static int __vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 			   struct xe_engine *e, struct xe_bo *bo, u32 op,
-			   struct xe_sync_entry *syncs, u32 num_syncs,
-			   struct async_op_fence *afence)
+			   u32 region, struct xe_sync_entry *syncs,
+			   u32 num_syncs, struct async_op_fence *afence)
 {
 	switch (VM_BIND_OP(op)) {
 	case XE_VM_BIND_OP_MAP:
@@ -2770,6 +2811,10 @@ static int __vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 		return xe_vm_unbind(vm, vma, e, syncs, num_syncs, afence);
 	case XE_VM_BIND_OP_MAP_USERPTR:
 		return xe_vm_bind_userptr(vm, vma, e, syncs, num_syncs, afence);
+	case XE_VM_BIND_OP_PREFETCH:
+		return xe_vm_prefetch(vm, vma, e, region, syncs, num_syncs,
+				      afence);
+		break;
 	default:
 		XE_BUG_ON("NOT POSSIBLE");
 		return -EINVAL;
@@ -2860,8 +2905,8 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 	err = ttm_eu_reserve_buffers(&ww, &objs, true, &dups);
 	if (!err) {
 		err = __vm_bind_ioctl(vm, vma, e, bo,
-				      bind_op->op, syncs, num_syncs,
-				      afence);
+				      bind_op->op, bind_op->region, syncs,
+				      num_syncs, afence);
 		ttm_eu_backoff_reservation(&ww, &objs);
 	}
 	if (vma->bo)
@@ -3117,7 +3162,8 @@ static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_vma *vma,
 	 */
 
 	XE_BUG_ON(VM_BIND_OP(bind_op->op) != XE_VM_BIND_OP_UNMAP &&
-		  VM_BIND_OP(bind_op->op) != XE_VM_BIND_OP_UNMAP_ALL);
+		  VM_BIND_OP(bind_op->op) != XE_VM_BIND_OP_UNMAP_ALL &&
+		  VM_BIND_OP(bind_op->op) != XE_VM_BIND_OP_PREFETCH);
 
 	/* Decompose syncs */
 	if (num_syncs) {
@@ -3141,7 +3187,8 @@ static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_vma *vma,
 	/* Do unbinds + move rebinds to new list */
 	INIT_LIST_HEAD(&rebind_list);
 	list_for_each_entry_safe(__vma, next, &vma->unbind_link, unbind_link) {
-		if (__vma->destroyed) {
+		if (__vma->destroyed ||
+		    VM_BIND_OP(bind_op->op) == XE_VM_BIND_OP_PREFETCH) {
 			list_del_init(&__vma->unbind_link);
 			if (bo)
 				drm_gem_object_get(&bo->ttm.base);
@@ -3303,6 +3350,7 @@ static int __vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 			return -EBUSY;
 		break;
 	case XE_VM_BIND_OP_UNMAP:
+	case XE_VM_BIND_OP_PREFETCH:
 		vma = xe_vm_find_overlapping_vma(vm, &lookup);
 		if (XE_IOCTL_ERR(xe, !vma) ||
 		    XE_IOCTL_ERR(xe, (vma->start != addr ||
@@ -3484,6 +3532,60 @@ unwind:
 	return ERR_PTR(err);
 }
 
+/*
+ * Similar to vm_unbind_lookup_vmas, find all VMAs in lookup range to prefetch
+ */
+static struct xe_vma *vm_prefetch_lookup_vmas(struct xe_vm *vm,
+					      struct xe_vma *lookup,
+					      u32 region)
+{
+	struct xe_vma *vma = xe_vm_find_overlapping_vma(vm, lookup), *__vma,
+		      *next;
+	struct rb_node *node;
+
+	if (!xe_vma_is_userptr(vma)) {
+		if (!xe_bo_can_migrate(vma->bo, region_to_mem_type[region]))
+			return ERR_PTR(-EINVAL);
+	}
+
+	node = &vma->vm_node;
+	while ((node = rb_next(node))) {
+		if (!xe_vma_cmp_vma_cb(lookup, node)) {
+			__vma = to_xe_vma(node);
+			if (!xe_vma_is_userptr(__vma)) {
+				if (!xe_bo_can_migrate(__vma->bo, region_to_mem_type[region]))
+					goto flush_list;
+			}
+			list_add_tail(&__vma->unbind_link, &vma->unbind_link);
+		} else {
+			break;
+		}
+	}
+
+	node = &vma->vm_node;
+	while ((node = rb_prev(node))) {
+		if (!xe_vma_cmp_vma_cb(lookup, node)) {
+			__vma = to_xe_vma(node);
+			if (!xe_vma_is_userptr(__vma)) {
+				if (!xe_bo_can_migrate(__vma->bo, region_to_mem_type[region]))
+					goto flush_list;
+			}
+			list_add(&__vma->unbind_link, &vma->unbind_link);
+		} else {
+			break;
+		}
+	}
+
+	return vma;
+
+flush_list:
+	list_for_each_entry_safe(__vma, next, &vma->unbind_link,
+				 unbind_link)
+		list_del_init(&__vma->unbind_link);
+
+	return ERR_PTR(-EINVAL);
+}
+
 static struct xe_vma *vm_unbind_all_lookup_vmas(struct xe_vm *vm,
 						struct xe_bo *bo)
 {
@@ -3509,7 +3611,7 @@ static struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm,
 					       struct xe_bo *bo,
 					       u64 bo_offset_or_userptr,
 					       u64 addr, u64 range, u32 op,
-					       u64 gt_mask)
+					       u64 gt_mask, u32 region)
 {
 	struct ww_acquire_ctx ww;
 	struct xe_vma *vma, lookup;
@@ -3547,6 +3649,9 @@ static struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm,
 		break;
 	case XE_VM_BIND_OP_UNMAP:
 		vma = vm_unbind_lookup_vmas(vm, &lookup);
+		break;
+	case XE_VM_BIND_OP_PREFETCH:
+		vma = vm_prefetch_lookup_vmas(vm, &lookup, region);
 		break;
 	case XE_VM_BIND_OP_UNMAP_ALL:
 		XE_BUG_ON(!bo);
@@ -3638,6 +3743,7 @@ static int vm_bind_ioctl_check_args(struct xe_device *xe,
 		u32 op = (*bind_ops)[i].op;
 		u32 obj = (*bind_ops)[i].obj;
 		u64 obj_offset = (*bind_ops)[i].obj_offset;
+		u32 region = (*bind_ops)[i].region;
 
 		if (i == 0) {
 			*async = !!(op & XE_VM_BIND_FLAG_ASYNC);
@@ -3655,8 +3761,14 @@ static int vm_bind_ioctl_check_args(struct xe_device *xe,
 			goto free_bind_ops;
 		}
 
+		if (XE_IOCTL_ERR(xe, !*async &&
+				 VM_BIND_OP(op) == XE_VM_BIND_OP_PREFETCH)) {
+			err = -EINVAL;
+			goto free_bind_ops;
+		}
+
 		if (XE_IOCTL_ERR(xe, VM_BIND_OP(op) >
-				 XE_VM_BIND_OP_UNMAP_ALL) ||
+				 XE_VM_BIND_OP_PREFETCH) ||
 		    XE_IOCTL_ERR(xe, op & ~SUPPORTED_FLAGS) ||
 		    XE_IOCTL_ERR(xe, !obj &&
 				 VM_BIND_OP(op) == XE_VM_BIND_OP_MAP) ||
@@ -3668,6 +3780,12 @@ static int vm_bind_ioctl_check_args(struct xe_device *xe,
 				 VM_BIND_OP(op) == XE_VM_BIND_OP_UNMAP_ALL) ||
 		    XE_IOCTL_ERR(xe, obj &&
 				 VM_BIND_OP(op) == XE_VM_BIND_OP_MAP_USERPTR) ||
+		    XE_IOCTL_ERR(xe, obj &&
+				 VM_BIND_OP(op) == XE_VM_BIND_OP_PREFETCH) ||
+		    XE_IOCTL_ERR(xe, region &&
+				 VM_BIND_OP(op) != XE_VM_BIND_OP_PREFETCH) ||
+		    XE_IOCTL_ERR(xe, !(BIT(region) &
+				       xe->info.mem_region_mask)) ||
 		    XE_IOCTL_ERR(xe, obj &&
 				 VM_BIND_OP(op) == XE_VM_BIND_OP_UNMAP)) {
 			err = -EINVAL;
@@ -3873,9 +3991,11 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		u32 op = bind_ops[i].op;
 		u64 obj_offset = bind_ops[i].obj_offset;
 		u64 gt_mask = bind_ops[i].gt_mask;
+		u32 region = bind_ops[i].region;
 
 		vmas[i] = vm_bind_ioctl_lookup_vma(vm, bos[i], obj_offset,
-						   addr, range, op, gt_mask);
+						   addr, range, op, gt_mask,
+						   region);
 		if (IS_ERR(vmas[i])) {
 			err = PTR_ERR(vmas[i]);
 			vmas[i] = NULL;
