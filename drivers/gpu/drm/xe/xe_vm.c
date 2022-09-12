@@ -3602,10 +3602,11 @@ static struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm,
 #ifdef TEST_VM_ASYNC_OPS_ERROR
 #define SUPPORTED_FLAGS	\
 	(FORCE_ASYNC_OP_ERROR | XE_VM_BIND_FLAG_ASYNC | \
-	 XE_VM_BIND_FLAG_READONLY | 0xffff)
+	 XE_VM_BIND_FLAG_READONLY | XE_VM_BIND_FLAG_IMMEDIATE | 0xffff)
 #else
 #define SUPPORTED_FLAGS	\
-	(XE_VM_BIND_FLAG_ASYNC | XE_VM_BIND_FLAG_READONLY | 0xffff)
+	(XE_VM_BIND_FLAG_ASYNC | XE_VM_BIND_FLAG_READONLY | \
+	 XE_VM_BIND_FLAG_IMMEDIATE | 0xffff)
 #endif
 #define XE_64K_PAGE_MASK 0xffffull
 
