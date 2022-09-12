@@ -523,6 +523,7 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 		if (IS_ERR(bb))
 			return ERR_CAST(bb);
 
+		/* Preemption is enabled again by the ring ops. */
 		emit_arb_clear(bb);
 		if (src_L1)
 			emit_pte(m, bb, src_L1_pt, SZ_2M, src, &src_it, src_L1,
@@ -650,7 +651,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 			clear_L1, clear_L0);
 
 		/* And calculate final sizes and batch size.. */
-		batch_size +=
+		batch_size += 1 +
 			pte_update_size(m, src,
 					&clear_L0, &clear_L0_ofs, &clear_L0_pt,
 					&clear_L1, &clear_L1_ofs, &clear_L1_pt,
@@ -668,6 +669,9 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		size -= clear_L0 + clear_L1;
 
 		/* TODO: Add dependencies here */
+
+		/* Preemption is enabled again by the ring ops. */
+		emit_arb_clear(bb);
 		if (clear_L1)
 			emit_pte(m, bb, clear_L1_pt, SZ_2M, src, &src_it,
 				 clear_L1, bo->ttm.ttm);
@@ -852,6 +856,8 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 				    NUM_VMUSA_UNIT_PER_PAGE) *
 				VM_SA_UPDATE_UNIT_SIZE;
 		}
+
+		/* Preemption is enabled again by the ring ops. */
 		emit_arb_clear(bb);
 
 		/* Map our PT's to gtt */
@@ -883,6 +889,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 		bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
 		update_idx = bb->len;
 
+		/* Preemption is enabled again by the ring ops. */
 		emit_arb_clear(bb);
 		for (i = 0; i < num_updates; i++)
 			write_pgtable(m->gt, bb, 0, &updates[i], populatefn,
