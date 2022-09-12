@@ -19,8 +19,7 @@ struct drm_suballoc *xe_sa_bo_new(struct xe_sa_manager *sa_manager,
 				  u32 size);
 void xe_sa_bo_flush_write(struct drm_suballoc *sa_bo);
 void xe_sa_bo_free(struct drm_suballoc *sa_bo,
-		   struct dma_fence *fence,
-		   s32 idx);
+		   struct dma_fence *fence);
 
 static inline struct xe_sa_manager *
 to_xe_sa_manager(struct drm_suballoc_manager *mng)
@@ -30,12 +29,14 @@ to_xe_sa_manager(struct drm_suballoc_manager *mng)
 
 static inline u64 xe_sa_bo_gpu_addr(struct drm_suballoc *sa)
 {
-	return to_xe_sa_manager(sa->manager)->gpu_addr + sa->soffset;
+	return to_xe_sa_manager(sa->manager)->gpu_addr +
+		drm_suballoc_soffset(sa);
 }
 
 static inline void *xe_sa_bo_cpu_addr(struct drm_suballoc *sa)
 {
-	return to_xe_sa_manager(sa->manager)->cpu_ptr + sa->soffset;
+	return to_xe_sa_manager(sa->manager)->cpu_ptr +
+		drm_suballoc_soffset(sa);
 }
 
 #endif

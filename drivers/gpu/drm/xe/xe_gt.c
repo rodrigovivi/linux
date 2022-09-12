@@ -284,9 +284,6 @@ int xe_gt_init(struct xe_gt *gt)
 		err = xe_sa_bo_manager_init(gt, &gt->kernel_bb_pool, SZ_1M, 16);
 		if (err)
 			goto err_force_wake;
-
-		/* Reserve the last page for prefetcher overflow */
-		gt->kernel_bb_pool.base.size -= SZ_4K;
 	}
 
 	err = xe_uc_init_hw(&gt->uc);
