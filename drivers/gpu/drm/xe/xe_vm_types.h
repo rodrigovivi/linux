@@ -312,6 +312,11 @@ struct xe_vm {
 	struct {
 		/** @asid: address space ID, unique to each VM */
 		u32 asid;
+		/**
+		 * @last_fault_vma: Last fault VMA, used for fast lookup when we
+		 * get a flood of faults to the same VMA
+		 */
+		struct xe_vma *last_fault_vma;
 	} usm;
 };
 
