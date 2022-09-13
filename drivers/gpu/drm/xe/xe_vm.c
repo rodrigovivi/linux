@@ -1149,7 +1149,7 @@ static bool xe_vma_less_cb(struct rb_node *a, const struct rb_node *b)
 	return xe_vma_cmp(to_xe_vma(a), to_xe_vma(b)) < 0;
 }
 
-static int xe_vma_cmp_vma_cb(const void *key, const struct rb_node *node)
+int xe_vma_cmp_vma_cb(const void *key, const struct rb_node *node)
 {
 	struct xe_vma *cmp = to_xe_vma(node);
 	const struct xe_vma *own = key;
@@ -3835,8 +3835,10 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		return err;
 
 	vm = xe_vm_lookup(xef, args->vm_id);
-	if (XE_IOCTL_ERR(xe, !vm))
+	if (XE_IOCTL_ERR(xe, !vm)) {
+		err = -EINVAL;
 		goto free_objs;
+	}
 
 	if (XE_IOCTL_ERR(xe, xe_vm_is_closed(vm))) {
 		DRM_ERROR("VM closed while we began looking up?\n");
