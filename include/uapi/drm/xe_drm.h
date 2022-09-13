@@ -117,6 +117,7 @@ struct xe_user_extension {
 #define DRM_XE_MMIO			0x09
 #define DRM_XE_ENGINE_SET_PROPERTY	0x0a
 #define DRM_XE_WAIT_USER_FENCE		0x0b
+#define DRM_XE_VM_MADVISE		0x0c
 
 /* Must be kept compact -- no holes */
 #define DRM_IOCTL_XE_DEVICE_QUERY		DRM_IOWR(DRM_COMMAND_BASE + DRM_XE_DEVICE_QUERY, struct drm_xe_device_query)
@@ -131,6 +132,7 @@ struct xe_user_extension {
 #define DRM_IOCTL_XE_MMIO			DRM_IOWR(DRM_COMMAND_BASE + DRM_XE_MMIO, struct drm_xe_mmio)
 #define DRM_IOCTL_XE_ENGINE_SET_PROPERTY	DRM_IOW( DRM_COMMAND_BASE + DRM_XE_ENGINE_SET_PROPERTY, struct drm_xe_engine_set_property)
 #define DRM_IOCTL_XE_WAIT_USER_FENCE		DRM_IOWR(DRM_COMMAND_BASE + DRM_XE_WAIT_USER_FENCE, struct drm_xe_wait_user_fence)
+#define DRM_IOCTL_XE_VM_MADVISE			DRM_IOW( DRM_COMMAND_BASE + DRM_XE_VM_MADVISE, struct drm_xe_vm_madvise)
 
 struct drm_xe_engine_class_instance {
 	__u16 engine_class;
@@ -695,6 +697,64 @@ struct drm_xe_wait_user_fence {
 	 * wait on, must be NULL when DRM_XE_UFENCE_WAIT_SOFT_OP set
 	 */
 	__u64 instances;
+
+	/** @reserved: Reserved */
+	__u64 reserved[2];
+};
+
+struct drm_xe_vm_madvise {
+	/** @extensions: Pointer to the first extension struct, if any */
+	__u64 extensions;
+
+	/** @vm_id: The ID VM in which the VMA exists */
+	__u32 vm_id;
+
+	/** @range: Number of bytes in the VMA */
+	__u64 range;
+
+	/** @addr: Address of the VMA to operation on */
+	__u64 addr;
+
+	/*
+	 * Setting the preferred location will trigger a migrate of the VMA
+	 * backing store to new location if the backing store is already
+	 * allocated.
+	 */
+#define DRM_XE_VM_MADVISE_PREFERED_MEM_CLASS	0
+#define DRM_XE_VM_MADVISE_PREFERED_GT		1
+	/*
+	 * In this case lower 32 bits are mem class, upper 32 are GT.
+	 * Combination provides a single IOCTL plus migrate VMA to preferred
+	 * location.
+	 */
+#define DRM_XE_VM_MADVISE_PREFERED_MEM_CLASS_GT	2
+	/*
+	 * The CPU will do atomic memory operations to this VMA. Must be set on
+	 * some devices for atomics to behave correctly.
+	 */
+#define DRM_XE_VM_MADVISE_CPU_ATOMIC		3
+	/*
+	 * The device will do atomic memory operations to this VMA. Must be set
+	 * on some devices for atomics to behave correctly.
+	 */
+#define DRM_XE_VM_MADVISE_DEVICE_ATOMIC		4
+	/*
+	 * Priority WRT to eviction (moving from preferred memory location due to
+	 * memory pressure). The lower the priority, the more likely to be
+	 * evicted.
+	 */
+#define DRM_XE_VM_MADVISE_PRIORITY		5
+#define		DRM_XE_VMA_PRIORITY_LOW		0
+#define		DRM_XE_VMA_PRIORITY_NORMAL	1	/* Default */
+#define		DRM_XE_VMA_PRIORITY_HIGH	2	/* Must be elevated user */
+	/* Pin the VMA in memory, must be elevated user */
+#define DRM_XE_VM_MADVISE_PIN			6
+
+	/** @property: property to set */
+	__u32 property;
+
+	/** @value: property value */
+	__u64 value;
 
 	/** @reserved: Reserved */
 	__u64 reserved[2];
