@@ -30,10 +30,12 @@ static bool rule_matches(struct xe_gt *gt,
 			match = xe->info.platform == r->platform &&
 				xe->info.subplatform == r->subplatform;
 			break;
-		case XE_RTP_MATCH_VERSION:
-			/* TODO: match media/display */
-			match = xe->info.graphics_verx100 >= r->ver_start &&
-				xe->info.graphics_verx100 < r->ver_end;
+		case XE_RTP_MATCH_GRAPHICS_VERSION:
+			/* TODO: match display */
+			match = xe->info.graphics_verx100 == r->ver_start;
+			break;
+		case XE_RTP_MATCH_MEDIA_VERSION:
+			match = xe->info.media_verx100 == r->ver_start;
 			break;
 		case XE_RTP_MATCH_STEP:
 			/* TODO: match media/display */
@@ -49,6 +51,13 @@ static bool rule_matches(struct xe_gt *gt,
 		case XE_RTP_MATCH_FUNC:
 			match = r->match_func(gt, hwe);
 			break;
+		case XE_RTP_MATCH_INTEGRATED:
+			match = !xe->info.is_dgfx;
+			break;
+		case XE_RTP_MATCH_DISCRETE:
+			match = xe->info.is_dgfx;
+			break;
+
 		default:
 			XE_WARN_ON(r->match_type);
 		}

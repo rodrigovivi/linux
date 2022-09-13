@@ -82,6 +82,20 @@ struct xe_reg_sr;
 	{ .match_type = XE_RTP_MATCH_FUNC,					\
 	  .match_func = (func__) }
 
+#define XE_RTP_RULE_GRAPHICS_VERSION(ver__)					\
+	{ .match_type = XE_RTP_MATCH_GRAPHICS_VERSION,				\
+	  .ver_start = ver__, }
+
+#define XE_RTP_RULE_MEDIA_VERSION(ver__)					\
+	{ .match_type = XE_RTP_MATCH_MEDIA_VERSION,				\
+	  .ver_start = ver__, }
+
+#define XE_RTP_RULE_IS_INTEGRATED						\
+	{ .match_type = XE_RTP_MATCH_INTEGRATED }
+
+#define XE_RTP_RULE_IS_DISCRETE							\
+	{ .match_type = XE_RTP_MATCH_DISCRETE }
+
 /**
  * @XE_RTP_WR: Helper to write @val_ to a register, overriding all the bits. The
  * correspondent notation in bspec is:
@@ -132,6 +146,10 @@ struct xe_reg_sr;
 #define XE_RTP_FIELD_SET(reg_, mask_bits_, val_, ...)				\
 	.regval = { .reg = (reg_), .clr_bits = (mask_bits_), .set_bits = (val_),\
 		    .read_mask = (mask_bits_), ##__VA_ARGS__ }
+
+#define XE_RTP_FIELD_SET_NO_READ_MASK(reg_, mask_bits_, val_, ...)		\
+	.regval = { .reg = (reg_), .clr_bits = (mask_bits_), .set_bits = (val_),\
+		    .read_mask = 0, ##__VA_ARGS__ }
 
 /**
  * @XE_RTP_NAME: Helper to set the name in xe_rtp_entry
