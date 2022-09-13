@@ -78,6 +78,8 @@
 #define XE_PL_VRAM0		TTM_PL_VRAM
 #define XE_PL_VRAM1		(XE_PL_VRAM0 + 1)
 
+#define XE_BO_PROPS_INVALID	(-1)
+
 struct xe_bo *xe_bo_alloc(void);
 void xe_bo_free(struct xe_bo *bo);
 int xe_bo_alloc_backing(struct xe_device *xe, struct xe_bo *bo);
@@ -98,6 +100,9 @@ struct xe_bo *xe_bo_create_pin_map(struct xe_device *xe, struct xe_gt *gt,
 struct xe_bo *xe_bo_create_from_data(struct xe_device *xe, struct xe_gt *gt,
 				     const void *data, size_t size,
 				     enum ttm_bo_type type, u32 flags);
+
+int xe_bo_placement_for_flags(struct xe_device *xe, struct xe_bo *bo,
+			      u32 bo_flags);
 
 void xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo);
 
@@ -221,6 +226,19 @@ bool xe_bo_is_vram(struct xe_bo *bo);
 bool xe_bo_can_migrate(struct xe_bo *bo, u32 mem_type);
 
 int xe_bo_migrate(struct xe_bo *bo, u32 mem_type);
+static inline int xe_bo_migrate_unlocked(struct xe_bo *bo, u32 mem_type)
+{
+	struct ww_acquire_ctx ww;
+	int ret;
+
+	ret = xe_bo_lock(bo, &ww, 1, true);
+	if (ret)
+		return ret;
+	ret = xe_bo_migrate(bo, mem_type);
+	xe_bo_unlock(bo, &ww);
+
+	return ret;
+}
 
 extern struct ttm_device_funcs xe_ttm_funcs;
 

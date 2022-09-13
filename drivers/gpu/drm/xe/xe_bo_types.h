@@ -45,6 +45,25 @@ struct xe_bo {
 	struct ttm_validate_buffer extobj_tv;
 	/** @pinned_link: link to present / evicted list of pinned BO */
 	struct list_head pinned_link;
+	/** @props: BO user controlled properties */
+	struct {
+		/** @preferred_mem: preferred memory class for this BO */
+		s16 preferred_mem_class;
+		/** @prefered_gt: preferred GT for this BO */
+		s16 preferred_gt;
+		/** @preferred_mem_type: preferred memory type */
+		s32 preferred_mem_type;
+		/**
+		 * @cpu_atomic: the CPU expects to do atomics operations to
+		 * this BO
+		 */
+		bool cpu_atomic;
+		/**
+		 * @device_atomic: the device expects to do atomics operations
+		 * to this BO
+		 */
+		bool device_atomic;
+	} props;
 };
 
 #endif

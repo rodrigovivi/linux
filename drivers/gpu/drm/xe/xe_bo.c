@@ -67,18 +67,30 @@ mem_type_to_gt(struct xe_device *xe, u32 mem_type)
 	return xe_device_get_gt(xe, mem_type - XE_PL_VRAM0);
 }
 
-static int xe_bo_placement_for_flags(struct xe_device *xe, struct xe_bo *bo,
-				     u32 bo_flags)
+static void try_add_system(struct xe_bo *bo, struct ttm_place *places,
+			   u32 bo_flags, u32 *c)
 {
-	struct ttm_place *places = bo->placements;
+	if (bo_flags & XE_BO_CREATE_SYSTEM_BIT) {
+		places[*c] = (struct ttm_place) {
+			.mem_type = XE_PL_TT,
+		};
+		*c += 1;
+
+		if (bo->props.preferred_mem_type == XE_BO_PROPS_INVALID)
+			bo->props.preferred_mem_type = XE_PL_TT;
+	}
+}
+
+static void try_add_vram0(struct xe_device *xe, struct xe_bo *bo,
+			  struct ttm_place *places, u32 bo_flags, u32 *c)
+{
 	struct xe_gt *gt;
-	u32 c = 0;
 
 	if (bo_flags & XE_BO_CREATE_VRAM0_BIT) {
 		gt = mem_type_to_gt(xe, XE_PL_VRAM0);
 		XE_BUG_ON(!gt->mem.vram.size);
 
-		places[c++] = (struct ttm_place) {
+		places[*c] = (struct ttm_place) {
 			.mem_type = XE_PL_VRAM0,
 			/*
 			 * For eviction / restore on suspend / resume objects
@@ -88,24 +100,66 @@ static int xe_bo_placement_for_flags(struct xe_device *xe, struct xe_bo *bo,
 					     XE_BO_CREATE_GGTT_BIT) ?
 				TTM_PL_FLAG_CONTIGUOUS : 0,
 		};
+		*c += 1;
+
+		if (bo->props.preferred_mem_type == XE_BO_PROPS_INVALID)
+			bo->props.preferred_mem_type = XE_PL_VRAM0;
 	}
+}
+
+static void try_add_vram1(struct xe_device *xe, struct xe_bo *bo,
+			  struct ttm_place *places, u32 bo_flags, u32 *c)
+{
+	struct xe_gt *gt;
 
 	if (bo_flags & XE_BO_CREATE_VRAM1_BIT) {
 		gt = mem_type_to_gt(xe, XE_PL_VRAM1);
 		XE_BUG_ON(!gt->mem.vram.size);
 
-		places[c++] = (struct ttm_place) {
+		places[*c] = (struct ttm_place) {
 			.mem_type = XE_PL_VRAM1,
+			/*
+			 * For eviction / restore on suspend / resume objects
+			 * pinned in VRAM must be contiguous
+			 */
 			.flags = bo_flags & (XE_BO_CREATE_PINNED_BIT |
 					     XE_BO_CREATE_GGTT_BIT) ?
 				TTM_PL_FLAG_CONTIGUOUS : 0,
 		};
-	}
+		*c += 1;
 
-	if (bo_flags & XE_BO_CREATE_SYSTEM_BIT) {
-		places[c++] = (struct ttm_place) {
-			.mem_type = XE_PL_TT,
-		};
+		if (bo->props.preferred_mem_type == XE_BO_PROPS_INVALID)
+			bo->props.preferred_mem_type = XE_PL_VRAM1;
+	}
+}
+
+int xe_bo_placement_for_flags(struct xe_device *xe, struct xe_bo *bo,
+			      u32 bo_flags)
+{
+	struct ttm_place *places = bo->placements;
+	u32 c = 0;
+
+	bo->props.preferred_mem_type = XE_BO_PROPS_INVALID;
+
+	/* The order of placements should indicate preferred location */
+
+	if (bo->props.preferred_mem_class == XE_MEM_REGION_CLASS_SYSMEM) {
+		try_add_system(bo, places, bo_flags, &c);
+		if (bo->props.preferred_gt == XE_GT1) {
+			try_add_vram1(xe, bo, places, bo_flags, &c);
+			try_add_vram0(xe, bo, places, bo_flags, &c);
+		} else {
+			try_add_vram0(xe, bo, places, bo_flags, &c);
+			try_add_vram1(xe, bo, places, bo_flags, &c);
+		}
+	} else if (bo->props.preferred_gt == XE_GT1) {
+		try_add_vram1(xe, bo, places, bo_flags, &c);
+		try_add_vram0(xe, bo, places, bo_flags, &c);
+		try_add_system(bo, places, bo_flags, &c);
+	} else {
+		try_add_vram0(xe, bo, places, bo_flags, &c);
+		try_add_vram1(xe, bo, places, bo_flags, &c);
+		try_add_system(bo, places, bo_flags, &c);
 	}
 
 	if (!c)
@@ -585,8 +639,7 @@ static bool should_migrate_to_system(struct xe_bo *bo)
 {
 	struct xe_device *xe = xe_bo_device(bo);
 
-	/* FIXME: Wire up madvise */
-	return xe_device_in_fault_mode(xe) && xe_bo_can_migrate(bo, XE_PL_TT);
+	return xe_device_in_fault_mode(xe) && bo->props.cpu_atomic;
 }
 
 static vm_fault_t xe_gem_fault(struct vm_fault *vmf)
@@ -709,6 +762,7 @@ static int __xe_bo_alloc_backing_locked(struct xe_device *xe, struct xe_bo *bo,
 	if (WARN_ON(err))
 		return err;
 
+	ttm_bo_move_to_lru_tail_unlocked(&bo->ttm);
 	bo->flags |= XE_BO_INTERNAL_ALLOC;
 	return 0;
 }
@@ -773,6 +827,10 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
 	bo->ttm.base.funcs = &xe_gem_object_funcs;
 	bo->extobj_tv.num_shared = 1;
 	bo->extobj_tv.bo = &bo->ttm;
+	bo->props.preferred_mem_class = XE_BO_PROPS_INVALID;
+	bo->props.preferred_gt = XE_BO_PROPS_INVALID;
+	bo->props.preferred_mem_type = XE_BO_PROPS_INVALID;
+	bo->ttm.priority = DRM_XE_VMA_PRIORITY_NORMAL;
 	INIT_LIST_HEAD(&bo->vmas);
 	INIT_LIST_HEAD(&bo->pinned_link);
 
