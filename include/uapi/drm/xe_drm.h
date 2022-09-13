@@ -720,14 +720,14 @@ struct drm_xe_vm_madvise {
 	 * backing store to new location if the backing store is already
 	 * allocated.
 	 */
-#define DRM_XE_VM_MADVISE_PREFERED_MEM_CLASS	0
-#define DRM_XE_VM_MADVISE_PREFERED_GT		1
+#define DRM_XE_VM_MADVISE_PREFERRED_MEM_CLASS	0
+#define DRM_XE_VM_MADVISE_PREFERRED_GT		1
 	/*
 	 * In this case lower 32 bits are mem class, upper 32 are GT.
 	 * Combination provides a single IOCTL plus migrate VMA to preferred
 	 * location.
 	 */
-#define DRM_XE_VM_MADVISE_PREFERED_MEM_CLASS_GT	2
+#define DRM_XE_VM_MADVISE_PREFERRED_MEM_CLASS_GT	2
 	/*
 	 * The CPU will do atomic memory operations to this VMA. Must be set on
 	 * some devices for atomics to behave correctly.
@@ -739,8 +739,8 @@ struct drm_xe_vm_madvise {
 	 */
 #define DRM_XE_VM_MADVISE_DEVICE_ATOMIC		4
 	/*
-	 * Priority WRT to eviction (moving from preferred memory location due to
-	 * memory pressure). The lower the priority, the more likely to be
+	 * Priority WRT to eviction (moving from preferred memory location due
+	 * to memory pressure). The lower the priority, the more likely to be
 	 * evicted.
 	 */
 #define DRM_XE_VM_MADVISE_PRIORITY		5

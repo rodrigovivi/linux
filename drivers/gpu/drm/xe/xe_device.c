@@ -21,6 +21,7 @@
 #include "xe_mmio.h"
 #include "xe_query.h"
 #include "xe_vm.h"
+#include "xe_vm_madvise.h"
 #include "xe_wait_user_fence.h"
 
 /* FIXME: Move to common param infrastructure */
@@ -91,6 +92,7 @@ static const struct drm_ioctl_desc xe_ioctls[] = {
 			  DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(XE_WAIT_USER_FENCE, xe_wait_user_fence_ioctl,
 			  DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(XE_VM_MADVISE, xe_vm_madvise_ioctl, DRM_RENDER_ALLOW),
 };
 
 static const struct file_operations xe_driver_fops = {
