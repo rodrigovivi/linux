@@ -51,6 +51,13 @@ static bool rule_matches(struct xe_gt *gt,
 		case XE_RTP_MATCH_FUNC:
 			match = r->match_func(gt, hwe);
 			break;
+		case XE_RTP_MATCH_INTEGRATED:
+			match = !xe->info.is_dgfx;
+			break;
+		case XE_RTP_MATCH_DISCRETE:
+			match = xe->info.is_dgfx;
+			break;
+
 		default:
 			XE_WARN_ON(r->match_type);
 		}
