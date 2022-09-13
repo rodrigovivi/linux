@@ -1193,6 +1193,8 @@ static void xe_vm_remove_vma(struct xe_vm *vm, struct xe_vma *vma)
 	lockdep_assert_held(&vm->lock);
 
 	rb_erase(&vma->vm_node, &vm->vmas);
+	if (vm->usm.last_fault_vma == vma)
+		vm->usm.last_fault_vma = NULL;
 }
 
 static int create_scratch(struct xe_device *xe, struct xe_gt *gt,

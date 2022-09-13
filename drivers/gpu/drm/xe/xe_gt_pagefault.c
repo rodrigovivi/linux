@@ -97,12 +97,26 @@ static inline bool access_is_atomic(enum page_fault_type err_code)
 	return false;
 }
 
+static bool vma_is_valid(struct xe_gt *gt, struct xe_vma *vma)
+{
+	return BIT(gt->info.id) & vma->gt_present &&
+		!(BIT(gt->info.id) & vma->usm.gt_invalidated);
+}
+
+static bool vma_matches(struct xe_vma *vma, struct xe_vma *lookup)
+{
+	if (lookup->start > vma->end || lookup->end < vma->start)
+		return false;
+
+	return true;
+}
+
 static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 {
 	enum page_fault_type err_code;
 	struct xe_device *xe = gt_to_xe(gt);
 	struct xe_vm *vm;
-	struct xe_vma *vma, lookup;
+	struct xe_vma *vma = NULL, lookup;
 	struct xe_bo *bo;
 	LIST_HEAD(objs);
 	LIST_HEAD(dups);
@@ -126,7 +140,12 @@ static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 	/* Lookup VMA */
 	lookup.start = pf->page_addr;
 	lookup.end = lookup.start + SZ_4K - 1;
-	vma = xe_vm_find_overlapping_vma(vm, &lookup);
+	if (vm->usm.last_fault_vma) {	/* Fast lookup */
+		if (vma_matches(vm->usm.last_fault_vma, &lookup))
+			vma = vm->usm.last_fault_vma;
+	}
+	if (!vma)
+		vma = xe_vm_find_overlapping_vma(vm, &lookup);
 	if (!vma) {
 		ret = -EINVAL;
 		goto unlock_vm;
@@ -137,8 +156,7 @@ static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 	atomic = access_is_atomic(err_code);
 
 	/* Check if VMA is valid */
-	if (BIT(gt->info.id) & vma->gt_present &&
-	    !(BIT(gt->info.id) & vma->usm.gt_invalidated) && !atomic)
+	if (vma_is_valid(gt, vma) && !atomic)
 		goto unlock_vm;
 
 	/* TODO: Validate fault */
@@ -217,6 +235,8 @@ unlock_dma_resv:
 unlock_vm:
 	if (ret == -EAGAIN)
 		goto retry_userptr;
+	if (!ret)
+		vm->usm.last_fault_vma = vma;
 	up_read(&vm->lock);
 	xe_vm_put(vm);
 
