@@ -90,6 +90,12 @@ struct xe_reg_sr;
 	{ .match_type = XE_RTP_MATCH_MEDIA_VERSION,				\
 	  .ver_start = ver__, }
 
+#define XE_RTP_RULE_IS_INTEGRATED						\
+	{ .match_type = XE_RTP_MATCH_INTEGRATED }
+
+#define XE_RTP_RULE_IS_DISCRETE							\
+	{ .match_type = XE_RTP_MATCH_DISCRETE }
+
 /**
  * @XE_RTP_WR: Helper to write @val_ to a register, overriding all the bits. The
  * correspondent notation in bspec is:
