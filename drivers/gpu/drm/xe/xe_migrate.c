@@ -560,19 +560,41 @@ err:
 	return fence;
 }
 
-static int emit_clear(struct xe_bb *bb, u64 src_ofs, u32 size, u32 pitch,
-		      u32 value)
+static int emit_clear(struct xe_device *xe, struct xe_bb *bb, u64 src_ofs,
+		      u32 size, u32 pitch, u32 value, bool is_vram)
 {
-	BUG_ON(size / pitch > S16_MAX);
-	BUG_ON(pitch / 4 > S16_MAX);
+	u32 *cs = bb->cs + bb->len;
+	u32 len = XY_FAST_COLOR_BLT_DW;
+	u32 mocs = 0;
 
-	bb->cs[bb->len++] = XY_COLOR_BLT_CMD | BLT_WRITE_RGBA | (7 - 2);
-	bb->cs[bb->len++] = BLT_DEPTH_32 | BLT_ROP_COLOR_COPY | pitch;
-	bb->cs[bb->len++] = 0;
-	bb->cs[bb->len++] = (size / pitch) << 16 | pitch / 4;
-	bb->cs[bb->len++] = lower_32_bits(src_ofs);
-	bb->cs[bb->len++] = upper_32_bits(src_ofs);
-	bb->cs[bb->len++] = value;
+	if (xe->info.platform == XE_TIGERLAKE ||
+	    xe->info.platform == XE_DG1)
+		len = 11;
+
+	*cs++ = XY_FAST_COLOR_BLT_CMD | XY_FAST_COLOR_BLT_DEPTH_32 |
+		(len - 2);
+	*cs++ = FIELD_PREP(XY_FAST_COLOR_BLT_MOCS_MASK, mocs) |
+		(pitch - 1);
+	*cs++ = 0;
+	*cs++ = (size / pitch) << 16 | pitch / 4;
+	*cs++ = lower_32_bits(src_ofs);
+	*cs++ = upper_32_bits(src_ofs);
+	*cs++ = (is_vram ? 0x0 : 0x1) <<  XY_FAST_COLOR_BLT_MEM_TYPE_SHIFT;
+	*cs++ = value;
+	*cs++ = 0;
+	*cs++ = 0;
+	*cs++ = 0;
+
+	if (len > 11) {
+		*cs++ = 0;
+		*cs++ = 0;
+		*cs++ = 0;
+		*cs++ = 0;
+		*cs++ = 0;
+	}
+
+	XE_BUG_ON(cs - bb->cs != len + bb->len);
+	bb->len += len;
 
 	return 0;
 }
@@ -613,7 +635,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		batch_size = 2 +
 			pte_update_size(m, src, &src_it,
 					&clear_L0, &clear_L0_ofs, &clear_L0_pt,
-					8, 0, NUM_PT_PER_BLIT);
+					XY_FAST_COLOR_BLT_DW, 0, NUM_PT_PER_BLIT);
 
 		/* Clear commands */
 		dma_fence_put(fence);
@@ -640,7 +662,8 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
 		update_idx = bb->len;
 
-		emit_clear(bb, clear_L0_ofs, clear_L0, GEN8_PAGE_SIZE, value);
+		emit_clear(xe, bb, clear_L0_ofs, clear_L0, GEN8_PAGE_SIZE,
+			   value, mem_type_is_vram(dst->mem_type));
 
 		mutex_lock(&m->job_mutex);
 		job = xe_bb_create_migration_job(m->eng, bb,
@@ -1234,8 +1257,8 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 	xe_map_wr(xe, &pt->vmap, 0, u32, 0xdeaddead);
 	expected = 0x12345678U;
 
-	emit_clear(bb, xe_migrate_vm_addr(NUM_KERNEL_PDE - 1, 0), 4, 4,
-		   expected);
+	emit_clear(xe, bb, xe_migrate_vm_addr(NUM_KERNEL_PDE - 1, 0), 4, 4,
+		   expected, IS_DGFX(xe));
 	run_sanity_job(m, xe, bb, 1, "Writing to our newly mapped pagetable");
 
 	retval = xe_map_rd(xe, &pt->vmap, 0, u32);
