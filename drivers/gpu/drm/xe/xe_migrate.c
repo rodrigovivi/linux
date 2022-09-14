@@ -36,6 +36,7 @@ struct xe_migrate {
 
 #define NUM_KERNEL_PDE 17
 #define NUM_PT_SLOTS 32
+#define MAX_PREEMPTDISABLE_TRANSFER SZ_8M /* Around 1ms. */
 
 static void xe_migrate_sanity_test(struct xe_migrate *m);
 
@@ -294,13 +295,15 @@ static void xe_migrate_res_sizes(struct ttm_resource *res,
 				 struct xe_res_cursor *cur,
 				 u64 *L0, u64 *L1)
 {
+	u64 remaining = min_t(u64, MAX_PREEMPTDISABLE_TRANSFER, cur->remaining);
+
 	if (!mem_type_is_vram(res->mem_type) ||
 	    (cur->start & (SZ_2M - 1))) {
 		*L1 = 0;
-		*L0 = cur->remaining;
+		*L0 = remaining;
 	} else {
-		*L1 = cur->remaining & ~(SZ_2M - 1);
-		*L0 = cur->remaining - *L1;
+		*L1 = remaining & ~(SZ_2M - 1);
+		*L0 = remaining - *L1;
 	}
 }
 
