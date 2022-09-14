@@ -643,7 +643,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		u64 clear_L0, clear_L1;
 		struct xe_sched_job *job;
 		struct xe_bb *bb;
-		u32 batch_size = 8, update_idx;
+		u32 batch_size, update_idx;
 
 		/* Obtain max we can clear through L0 and L1 */
 		xe_migrate_res_sizes(src, &src_it, &clear_L0, &clear_L1);
@@ -651,12 +651,14 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 			clear_L1, clear_L0);
 
 		/* And calculate final sizes and batch size.. */
-		batch_size += 1 +
+		batch_size = 1 +
 			pte_update_size(m, src,
 					&clear_L0, &clear_L0_ofs, &clear_L0_pt,
 					&clear_L1, &clear_L1_ofs, &clear_L1_pt,
 					7, 0, NUM_KERNEL_PDE - 1);
 
+		/* Clear commands */
+		batch_size += (clear_L1 / SZ_256M + clear_L0 / SZ_64M + 1) * 8;
 		dma_fence_put(fence);
 
 		if (WARN_ON_ONCE(!clear_L0 && !clear_L1))
