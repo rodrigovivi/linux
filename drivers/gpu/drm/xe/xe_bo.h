@@ -75,9 +75,14 @@
 #define XE_PL_VRAM0		TTM_PL_VRAM
 #define XE_PL_VRAM1		(XE_PL_VRAM0 + 1)
 
-struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_gt *gt,
-				    struct dma_resv *resv, size_t size,
-				    enum ttm_bo_type type, u32 flags);
+struct xe_bo *xe_bo_alloc(void);
+
+void xe_bo_free(struct xe_bo *bo);
+
+struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
+				    struct xe_gt *gt, struct dma_resv *resv,
+				    size_t size, enum ttm_bo_type type,
+				    u32 flags);
 struct xe_bo *xe_bo_create_locked(struct xe_device *xe, struct xe_gt *gt,
 				  struct xe_vm *vm, size_t size,
 				  enum ttm_bo_type type, u32 flags);
@@ -145,7 +150,8 @@ static inline void xe_bo_lock_no_vm(struct xe_bo *bo,
 				    struct ww_acquire_ctx *ctx)
 {
 	if (bo) {
-		XE_BUG_ON(bo->vm || bo->ttm.base.resv != &bo->ttm.base._resv);
+		XE_BUG_ON(bo->vm || (bo->ttm.type != ttm_bo_type_sg &&
+				     bo->ttm.base.resv != &bo->ttm.base._resv));
 		dma_resv_lock(bo->ttm.base.resv, ctx);
 	}
 }
@@ -153,7 +159,8 @@ static inline void xe_bo_lock_no_vm(struct xe_bo *bo,
 static inline void xe_bo_unlock_no_vm(struct xe_bo *bo)
 {
 	if (bo) {
-		XE_BUG_ON(bo->vm || bo->ttm.base.resv != &bo->ttm.base._resv);
+		XE_BUG_ON(bo->vm || (bo->ttm.type != ttm_bo_type_sg &&
+				     bo->ttm.base.resv != &bo->ttm.base._resv));
 		dma_resv_unlock(bo->ttm.base.resv);
 	}
 }
@@ -207,10 +214,30 @@ void xe_bo_vunmap(struct xe_bo *bo);
 bool mem_type_is_vram(u32 mem_type);
 bool xe_bo_is_vram(struct xe_bo *bo);
 
+bool xe_bo_can_migrate(struct xe_bo *bo, u32 mem_type);
+
+int xe_bo_migrate(struct xe_bo *bo, u32 mem_type);
+
 extern struct ttm_device_funcs xe_ttm_funcs;
 
 int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 			struct drm_file *file);
 int xe_gem_mmap_offset_ioctl(struct drm_device *dev, void *data,
 			     struct drm_file *file);
+
+#if IS_ENABLED(CONFIG_DRM_XE_KUNIT_TEST)
+/**
+ * xe_bo_is_mem_type - Whether the bo currently resides in the given
+ * TTM memory type
+ * @bo: The bo to check.
+ * @mem_type The TTM memory type.
+ *
+ * Return: true iff the bo resides in @mem_type, false otherwise.
+ */
+static inline bool xe_bo_is_mem_type(struct xe_bo *bo, u32 mem_type)
+{
+	xe_bo_assert_held(bo);
+	return bo->ttm.resource->mem_type == mem_type;
+}
+#endif
 #endif
