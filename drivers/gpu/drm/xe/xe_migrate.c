@@ -682,7 +682,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		update_idx = bb->len;
 
 		while (clear_L1) {
-			u64 chunk = min_t(u64, clear_L1, SZ_1G);
+			u64 chunk = min_t(u64, clear_L1, SZ_256M);
 
 			emit_clear(bb, clear_L1_ofs, chunk, SZ_16K, value);
 			clear_L1 -= chunk;
@@ -690,7 +690,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		}
 
 		while (clear_L0) {
-			u32 chunk = min_t(u32, clear_L0, SZ_256M);
+			u32 chunk = min_t(u32, clear_L0, SZ_16M);
 
 			emit_clear(bb, clear_L0_ofs, chunk, SZ_4K, value);
 			clear_L0 -= chunk;
