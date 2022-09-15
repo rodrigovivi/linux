@@ -12,6 +12,7 @@
 #include "xe_guc_ct.h"
 #include "xe_map.h"
 #include "xe_mmio.h"
+#include "xe_pcode.h"
 #include "i915_reg_defs.h"
 #include "../i915/i915_reg.h"
 
@@ -637,6 +638,14 @@ static int pc_gucrc_disable(struct xe_guc_pc *pc)
 	return 0;
 }
 
+static void pc_init_pcode_freq(struct xe_guc_pc *pc)
+{
+	u32 min = DIV_ROUND_CLOSEST(pc->rpn_freq, GT_FREQUENCY_MULTIPLIER);
+	u32 max = DIV_ROUND_CLOSEST(pc->rp0_freq, GT_FREQUENCY_MULTIPLIER);
+
+	XE_WARN_ON(xe_pcode_init_min_freq_table(pc_to_gt(pc), min, max));
+}
+
 static int pc_init_freqs(struct xe_guc_pc *pc)
 {
 	int ret;
@@ -650,6 +659,8 @@ static int pc_init_freqs(struct xe_guc_pc *pc)
 	ret = pc_adjust_requested_freq(pc);
 	if (ret)
 		goto out;
+
+	pc_init_pcode_freq(pc);
 
 	/*
 	 * The frequencies are really ready for use only after the user
