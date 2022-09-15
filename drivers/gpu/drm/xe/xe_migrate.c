@@ -664,6 +664,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		bb = xe_bb_new(gt, batch_size);
 		if (IS_ERR(bb))
 			return ERR_CAST(bb);
+
 		size -= clear_L0 + clear_L1;
 
 		/* TODO: Add dependencies here */
@@ -837,15 +838,18 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 		if (eng) {
 			XE_BUG_ON(num_updates > NUM_VMUSA_WRITES_PER_UNIT);
 
-			sa_bo = drm_suballoc_new(&m->vm_update_sa, 1);
+			sa_bo = drm_suballoc_new(&m->vm_update_sa, 1,
+						 GFP_KERNEL, true);
 			if (IS_ERR(sa_bo)) {
 				err = PTR_ERR(sa_bo);
 				goto err;
 			}
 
 			ppgtt_ofs = NUM_KERNEL_PDE +
-				(sa_bo->soffset / NUM_VMUSA_UNIT_PER_PAGE);
-			page_ofs = (sa_bo->soffset % NUM_VMUSA_UNIT_PER_PAGE) *
+				(drm_suballoc_soffset(sa_bo) /
+				 NUM_VMUSA_UNIT_PER_PAGE);
+			page_ofs = (drm_suballoc_soffset(sa_bo) %
+				    NUM_VMUSA_UNIT_PER_PAGE) *
 				VM_SA_UPDATE_UNIT_SIZE;
 		}
 		emit_arb_clear(bb);
@@ -929,7 +933,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 		mutex_unlock(&m->job_mutex);
 
 	xe_bb_free(bb, fence);
-	drm_suballoc_free(sa_bo, fence, -1);
+	drm_suballoc_free(sa_bo, fence);
 
 	return fence;
 
@@ -940,7 +944,7 @@ err_bb:
 		mutex_unlock(&m->job_mutex);
 	xe_bb_free(bb, NULL);
 err:
-	drm_suballoc_free(sa_bo, NULL, 0);
+	drm_suballoc_free(sa_bo, NULL);
 	return ERR_PTR(err);
 }
 
