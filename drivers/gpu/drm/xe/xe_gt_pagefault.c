@@ -112,6 +112,11 @@ static bool vma_matches(struct xe_vma *vma, struct xe_vma *lookup)
 	return true;
 }
 
+static bool only_needs_bo_lock(struct xe_bo *bo)
+{
+	return bo && bo->vm;
+}
+
 static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 {
 	enum page_fault_type err_code;
@@ -178,15 +183,20 @@ retry_userptr:
 	}
 
 	/* Lock VM and BOs dma-resv */
-	tv_vm.num_shared = xe->info.tile_count;
-	tv_vm.bo = xe_vm_ttm_bo(vm);
-	list_add(&tv_vm.head, &objs);
-	if (bo) {
-		tv_bo.bo = &bo->ttm;
-		tv_bo.num_shared = xe->info.tile_count;
-		list_add(&tv_bo.head, &objs);
+	if (only_needs_bo_lock(bo)) {
+		/* This path ensures the BO's LRU is updated */
+		ret = xe_bo_lock(bo, &ww, xe->info.tile_count, false);
+	} else {
+		tv_vm.num_shared = xe->info.tile_count;
+		tv_vm.bo = xe_vm_ttm_bo(vm);
+		list_add(&tv_vm.head, &objs);
+		if (bo) {
+			tv_bo.bo = &bo->ttm;
+			tv_bo.num_shared = xe->info.tile_count;
+			list_add(&tv_bo.head, &objs);
+		}
+		ret = ttm_eu_reserve_buffers(&ww, &objs, false, &dups);
 	}
-	ret = ttm_eu_reserve_buffers(&ww, &objs, false, &dups);
 	if (ret)
 		goto unlock_vm;
 
@@ -232,7 +242,10 @@ retry_userptr:
 	vma->usm.gt_invalidated &= ~BIT(gt->info.id);
 
 unlock_dma_resv:
-	ttm_eu_backoff_reservation(&ww, &objs);
+	if (only_needs_bo_lock(bo))
+		xe_bo_unlock(bo, &ww);
+	else
+		ttm_eu_backoff_reservation(&ww, &objs);
 unlock_vm:
 	if (ret == -EAGAIN)
 		goto retry_userptr;
