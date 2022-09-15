@@ -343,9 +343,8 @@ static int xe_pt_populate_for_vma(struct xe_gt *gt, struct xe_vma *vma,
 			cur = next_start;
 		}
 	} else {
-		/* newly added entries only, evict didn't decrease num_live */
-		if (!rebind)
-			pt->num_live += last_ofs + 1 - start_ofs;
+		XE_BUG_ON(!init);
+		pt->num_live += last_ofs + 1 - start_ofs;
 	}
 
 	if (init) {
