@@ -573,25 +573,12 @@ static void xe_gem_object_free(struct drm_gem_object *obj)
 	ttm_bo_put(container_of(obj, struct ttm_buffer_object, base));
 }
 
-static bool has_system_placement(struct xe_bo *bo)
-{
-	int i;
-
-	for (i = 0; i < bo->placement.num_placement; ++i)
-		if (bo->placements[i].mem_type == XE_PL_SYSTEM ||
-		    bo->placements[i].mem_type == XE_PL_TT)
-			return true;
-
-	return false;
-}
-
 static bool should_migrate_to_system(struct xe_bo *bo)
 {
 	struct xe_device *xe = xe_bo_device(bo);
 
 	/* FIXME: Wire up madvise */
-	return xe_device_in_fault_mode(xe) &&
-		has_system_placement(bo);
+	return xe_device_in_fault_mode(xe) && xe_bo_can_migrate(bo, XE_PL_TT);
 }
 
 static vm_fault_t xe_gem_fault(struct vm_fault *vmf)
