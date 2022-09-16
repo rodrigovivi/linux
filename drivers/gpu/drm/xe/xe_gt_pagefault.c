@@ -30,12 +30,17 @@ struct pagefault {
 	u8 fault_unsuccessful;
 };
 
-enum page_fault_type {
-	FAULT_READ_NOT_PRESENT = 0x0,
-	FAULT_WRITE_NOT_PRESENT = 0x1,
-	FAULT_ATOMIC_NOT_PRESENT = 0x2,
-	FAULT_WRITE_ACCESS_VIOLATION = 0x5,
-	FAULT_ATOMIC_ACCESS_VIOLATION = 0xa,
+enum access_type {
+	ACCESS_TYPE_READ = 0,
+	ACCESS_TYPE_WRITE = 1,
+	ACCESS_TYPE_ATOMIC = 2,
+	ACCESS_TYPE_RESERVED = 3,
+};
+
+enum fault_type {
+	NOT_PRESENT = 0,
+	WRITE_ACCESS_VIOLATION = 1,
+	ATOMIC_ACCESS_VIOLATION = 2,
 };
 
 struct acc {
@@ -89,13 +94,9 @@ static int send_tlb_invalidation(struct xe_guc *guc)
 	return ret;
 }
 
-static inline bool access_is_atomic(enum page_fault_type err_code)
+static bool access_is_atomic(enum access_type access_type)
 {
-	if (err_code == FAULT_ATOMIC_NOT_PRESENT ||
-	    err_code == FAULT_ATOMIC_ACCESS_VIOLATION)
-		return true;
-
-	return false;
+	return access_type == ACCESS_TYPE_ATOMIC;
 }
 
 static bool vma_is_valid(struct xe_gt *gt, struct xe_vma *vma)
@@ -119,7 +120,6 @@ static bool only_needs_bo_lock(struct xe_bo *bo)
 
 static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 {
-	enum page_fault_type err_code;
 	struct xe_device *xe = gt_to_xe(gt);
 	struct xe_vm *vm;
 	struct xe_vma *vma = NULL, lookup;
@@ -158,8 +158,7 @@ static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 	}
 	trace_xe_vma_pagefault(vma);
 
-	err_code = (pf->fault_type << 2) | pf->access_type;
-	atomic = access_is_atomic(err_code);
+	atomic = access_is_atomic(pf->access_type);
 
 	/* Check if VMA is valid */
 	if (vma_is_valid(gt, vma) && !atomic)
@@ -511,7 +510,7 @@ int xe_guc_tlb_invalidation_done_handler(struct xe_guc *guc, u32 *msg, u32 len)
 	return 0;
 }
 
-static inline int granularity_in_byte(int val)
+static int granularity_in_byte(int val)
 {
 	switch (val) {
 	case 0:
@@ -527,7 +526,7 @@ static inline int granularity_in_byte(int val)
 	}
 }
 
-static inline int sub_granularity_in_byte(int val)
+static int sub_granularity_in_byte(int val)
 {
 	return (granularity_in_byte(val) / 32);
 }
