@@ -39,6 +39,11 @@ DECLARE_EVENT_CLASS(xe_bo,
 			      __entry->size, __entry->flags, __entry->vm)
 );
 
+DEFINE_EVENT(xe_bo, xe_bo_cpu_fault,
+	     TP_PROTO(struct xe_bo *bo),
+	     TP_ARGS(bo)
+);
+
 DEFINE_EVENT(xe_bo, xe_bo_move,
 	     TP_PROTO(struct xe_bo *bo),
 	     TP_ARGS(bo)

@@ -8,6 +8,7 @@
 
 #include <linux/dma-buf.h>
 
+#include <drm/drm_drv.h>
 #include <drm/drm_gem_ttm_helper.h>
 #include <drm/ttm/ttm_device.h>
 #include <drm/ttm/ttm_placement.h>
@@ -572,10 +573,77 @@ static void xe_gem_object_free(struct drm_gem_object *obj)
 	ttm_bo_put(container_of(obj, struct ttm_buffer_object, base));
 }
 
+static bool has_system_placement(struct xe_bo *bo)
+{
+	int i;
+
+	for (i = 0; i < bo->placement.num_placement; ++i)
+		if (bo->placements[i].mem_type == XE_PL_SYSTEM ||
+		    bo->placements[i].mem_type == XE_PL_TT)
+			return true;
+
+	return false;
+}
+
+static bool should_migrate_to_system(struct xe_bo *bo)
+{
+	struct xe_device *xe = xe_bo_device(bo);
+
+	/* FIXME: Wire up madvise */
+	return xe_device_in_fault_mode(xe) &&
+		has_system_placement(bo);
+}
+
+static vm_fault_t xe_gem_fault(struct vm_fault *vmf)
+{
+	struct ttm_buffer_object *tbo = vmf->vma->vm_private_data;
+	struct drm_device *ddev = tbo->base.dev;
+	vm_fault_t ret;
+	int idx, r = 0;
+
+	ret = ttm_bo_vm_reserve(tbo, vmf);
+	if (ret)
+		return ret;
+
+	if (drm_dev_enter(ddev, &idx)) {
+		struct xe_bo *bo = ttm_to_xe_bo(tbo);
+
+		trace_xe_bo_cpu_fault(bo);
+		if (should_migrate_to_system(bo)) {
+			r = xe_bo_migrate(bo, XE_PL_TT);
+			if (r == -EBUSY || r == -ERESTARTSYS)
+				ret = VM_FAULT_NOPAGE;
+			else if (r)
+				ret = VM_FAULT_SIGBUS;
+		}
+		if (!ret)
+			ret = ttm_bo_vm_fault_reserved(vmf,
+						       vmf->vma->vm_page_prot,
+						       TTM_BO_VM_NUM_PREFAULT);
+
+		drm_dev_exit(idx);
+	} else {
+		ret = ttm_bo_vm_dummy_page(vmf, vmf->vma->vm_page_prot);
+	}
+	if (ret == VM_FAULT_RETRY && !(vmf->flags & FAULT_FLAG_RETRY_NOWAIT))
+		return ret;
+
+	dma_resv_unlock(tbo->base.resv);
+	return ret;
+}
+
+static const struct vm_operations_struct xe_gem_vm_ops = {
+	.fault = xe_gem_fault,
+	.open = ttm_bo_vm_open,
+	.close = ttm_bo_vm_close,
+	.access = ttm_bo_vm_access
+};
+
 static const struct drm_gem_object_funcs xe_gem_object_funcs = {
 	.free = xe_gem_object_free,
 	.mmap = drm_gem_ttm_mmap,
 	.export = xe_gem_prime_export,
+	.vm_ops = &xe_gem_vm_ops,
 };
 
 /**
