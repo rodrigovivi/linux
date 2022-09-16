@@ -717,6 +717,7 @@ out:
  */
 int xe_guc_pc_stop(struct xe_guc_pc *pc)
 {
+	struct xe_device *xe = gt_to_xe(pc_to_gt(pc));
 	int ret;
 
 	ret = pc_gucrc_disable(pc);
@@ -731,10 +732,13 @@ int xe_guc_pc_stop(struct xe_guc_pc *pc)
 	if (ret)
 		return ret;
 
+	xe_device_mem_access_wa_get(xe);
 	if (wait_for(pc_is_in_state(pc, SLPC_GLOBAL_STATE_NOT_RUNNING), 5)) {
+		xe_device_mem_access_wa_put(xe);
 		drm_err(&pc_to_xe(pc)->drm, "GuC PC Shutdown failed\n");
 		return -EIO;
 	}
+	xe_device_mem_access_wa_put(xe);
 
 	return 0;
 }
