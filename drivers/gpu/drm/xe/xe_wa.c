@@ -35,7 +35,7 @@ static bool match_14011060649(const struct xe_gt *gt,
 
 static const struct xe_rtp_entry gt_was[] = {
 	{ XE_RTP_NAME("14011060649"),
-	  XE_RTP_RULES(MEDIA_VERSION(1200),
+	  XE_RTP_RULES(MEDIA_VERSION_RANGE(1200, 1255),
 		       ENGINE_CLASS(VIDEO_DECODE),
 		       FUNC(match_14011060649)),
 	  XE_RTP_SET(VDBOX_CGCTL3F10(0), IECPUNIT_CLKGATE_DIS,
