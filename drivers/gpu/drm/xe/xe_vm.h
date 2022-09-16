@@ -19,8 +19,6 @@ struct xe_engine;
 struct xe_file;
 struct xe_sync_entry;
 
-void __xe_vma_unbind(struct xe_vma *vma);
-
 struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags);
 void xe_vm_free(struct kref *ref);
 
@@ -65,6 +63,17 @@ static inline bool xe_vm_in_compute_mode(struct xe_vm *vm)
 {
 	return vm->flags & XE_VM_FLAG_COMPUTE_MODE;
 }
+
+static inline bool xe_vm_in_fault_mode(struct xe_vm *vm)
+{
+	return vm->flags & XE_VM_FLAG_FAULT_MODE;
+}
+
+static inline bool xe_vm_no_dma_fences(struct xe_vm *vm)
+{
+	return xe_vm_in_compute_mode(vm) || xe_vm_in_fault_mode(vm);
+}
+
 int xe_vm_add_compute_engine(struct xe_vm *vm, struct xe_engine *e);
 
 int xe_vm_userptr_pin(struct xe_vm *vm, bool rebind_worker);
@@ -91,10 +100,5 @@ u64 gen8_pte_encode(struct xe_vma *vma, struct xe_bo *bo,
 extern struct ttm_device_funcs xe_ttm_funcs;
 
 struct ttm_buffer_object *xe_vm_ttm_bo(struct xe_vm *vm);
-
-static inline bool xe_vm_no_dma_fences(struct xe_vm *vm)
-{
-	return vm->flags & XE_VM_FLAG_COMPUTE_MODE;
-}
 
 #endif

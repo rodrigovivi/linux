@@ -674,8 +674,11 @@ guc_engine_run_job(struct drm_sched_job *drm_job)
 		submit_engine(e);
 	}
 
-	/* Immediately signal a compute mode job's fence as this is unused */
-	if (xe_vm_in_compute_mode(e->vm) && !xe_sched_job_is_error(job))
+	/*
+	 * Immediately signal a job's fence as this is unused if dma-fences are
+	 * not allowed on the VM
+	 */
+	if (xe_vm_no_dma_fences(e->vm) && !xe_sched_job_is_error(job))
 		xe_sched_job_set_error(job, -ENOTSUPP);
 
 	if (test_and_set_bit(JOB_FLAG_SUBMIT, &job->fence->flags))
@@ -754,7 +757,7 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 	int i = 0;
 
 	if (!test_bit(DMA_FENCE_FLAG_SIGNALED_BIT, &job->fence->flags)) {
-		XE_WARN_ON(xe_vm_in_compute_mode(e->vm));
+		XE_WARN_ON(xe_vm_no_dma_fences(e->vm));
 		XE_WARN_ON(e->flags & ENGINE_FLAG_KERNEL);
 		XE_WARN_ON(e->flags & ENGINE_FLAG_VM && !engine_killed(e));
 
@@ -1114,7 +1117,7 @@ static void guc_engine_kill(struct xe_engine *e)
 {
 	trace_xe_engine_kill(e);
 	set_engine_killed(e);
-	if (!xe_vm_in_compute_mode(e->vm))
+	if (!xe_vm_no_dma_fences(e->vm))
 		drm_sched_set_timeout(&e->guc->sched, MIN_SCHED_TIMEOUT);
 }
 

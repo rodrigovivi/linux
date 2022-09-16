@@ -833,8 +833,7 @@ free:
 struct async_op_fence;
 static int __xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma,
 			struct xe_engine *e, struct xe_sync_entry *syncs,
-			u32 num_syncs, struct async_op_fence *afence,
-			bool rebind);
+			u32 num_syncs, struct async_op_fence *afence);
 
 static void vma_destroy_work_func(struct work_struct *w)
 {
@@ -888,21 +887,30 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 
 	write_unlock(&vm->userptr.notifier_lock);
 
-	/* Preempt fences turn into schedule disables, pipeline these */
-	dma_resv_iter_begin(&cursor, &vm->resv, DMA_RESV_USAGE_PREEMPT_FENCE);
-	dma_resv_for_each_fence_unlocked(&cursor, fence)
-		dma_fence_enable_sw_signaling(fence);
-	dma_resv_iter_end(&cursor);
+	if (xe_vm_in_fault_mode(vm)) {
+		/*
+		 * FIXME: Modify page table memory without a lock and
+		 * invalidate TLB.
+		 */
+	} else {
+		/* Preempt fences turn into schedule disables, pipeline these */
+		dma_resv_iter_begin(&cursor, &vm->resv,
+				    DMA_RESV_USAGE_PREEMPT_FENCE);
+		dma_resv_for_each_fence_unlocked(&cursor, fence)
+			dma_fence_enable_sw_signaling(fence);
+		dma_resv_iter_end(&cursor);
 
-	err = dma_resv_wait_timeout(&vm->resv, DMA_RESV_USAGE_PREEMPT_FENCE,
-				    false, MAX_SCHEDULE_TIMEOUT);
-	XE_WARN_ON(err <= 0);
+		err = dma_resv_wait_timeout(&vm->resv,
+					    DMA_RESV_USAGE_PREEMPT_FENCE,
+					    false, MAX_SCHEDULE_TIMEOUT);
+		XE_WARN_ON(err <= 0);
 
-	trace_xe_vma_userptr_invalidate_complete(vma);
+		trace_xe_vma_userptr_invalidate_complete(vma);
 
-	/* If this VM in compute mode, rebind the VMA */
-	if (xe_vm_in_compute_mode(vm))
-		queue_work(xe->ordered_wq, &vm->preempt.rebind_work);
+		/* If this VM in compute mode, rebind the VMA */
+		if (xe_vm_in_compute_mode(vm))
+			queue_work(xe->ordered_wq, &vm->preempt.rebind_work);
+	}
 
 	return true;
 }
@@ -918,7 +926,7 @@ int xe_vm_userptr_pin(struct xe_vm *vm, bool rebind_worker)
 
 	lockdep_assert_held(&vm->lock);
 	if (!xe_vm_has_userptr(vm) ||
-	    (xe_vm_in_compute_mode(vm) && !rebind_worker))
+	    (xe_vm_no_dma_fences(vm) && !rebind_worker))
 		return 0;
 
 	list_for_each_entry(vma, &vm->userptr.list, userptr_link) {
@@ -937,7 +945,7 @@ int xe_vm_userptr_needs_repin(struct xe_vm *vm, bool rebind_worker)
 
 	lockdep_assert_held(&vm->lock);
 	if (!xe_vm_has_userptr(vm) ||
-	    (xe_vm_in_compute_mode(vm) && !rebind_worker))
+	    (xe_vm_no_dma_fences(vm) && !rebind_worker))
 		return 0;
 
 	read_lock(&vm->userptr.notifier_lock);
@@ -954,8 +962,7 @@ out_unlock:
 
 static struct dma_fence *
 xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
-	       struct xe_sync_entry *syncs, u32 num_syncs,
-	       bool rebind);
+	       struct xe_sync_entry *syncs, u32 num_syncs);
 
 struct dma_fence *xe_vm_rebind(struct xe_vm *vm, bool rebind_worker)
 {
@@ -963,7 +970,7 @@ struct dma_fence *xe_vm_rebind(struct xe_vm *vm, bool rebind_worker)
 	struct xe_vma *vma, *next;
 
 	lockdep_assert_held(&vm->lock);
-	if (xe_vm_in_compute_mode(vm) && !rebind_worker)
+	if (xe_vm_no_dma_fences(vm) && !rebind_worker)
 		return NULL;
 
 	xe_vm_assert_held(vm);
@@ -974,7 +981,7 @@ struct dma_fence *xe_vm_rebind(struct xe_vm *vm, bool rebind_worker)
 				trace_xe_vma_userptr_rebind_worker(vma);
 			else
 				trace_xe_vma_userptr_rebind_exec(vma);
-			fence = xe_vm_bind_vma(vma, NULL, NULL, 0, true);
+			fence = xe_vm_bind_vma(vma, NULL, NULL, 0);
 		}
 		if (IS_ERR(fence))
 			return fence;
@@ -988,7 +995,7 @@ struct dma_fence *xe_vm_rebind(struct xe_vm *vm, bool rebind_worker)
 				trace_xe_vma_rebind_worker(vma);
 			else
 				trace_xe_vma_rebind_exec(vma);
-			fence = xe_vm_bind_vma(vma, NULL, NULL, 0, true);
+			fence = xe_vm_bind_vma(vma, NULL, NULL, 0);
 		}
 		if (IS_ERR(fence))
 			return fence;
@@ -1303,6 +1310,13 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 	if (number_gts > 1)
 		vm->composite_fence_ctx = dma_fence_context_alloc(1);
 
+	mutex_lock(&xe->usm.lock);
+	if (flags & XE_VM_FLAG_FAULT_MODE)
+		xe->usm.num_vm_in_fault_mode++;
+	else if (!(flags & XE_VM_FLAG_MIGRATION))
+		xe->usm.num_vm_in_non_fault_mode++;
+	mutex_unlock(&xe->usm.lock);
+
 	trace_xe_vm_create(vm);
 
 	return vm;
@@ -1484,6 +1498,13 @@ static void vm_destroy_work_func(struct work_struct *w)
 		}
 	}
 	xe_vm_unlock(vm, &ww);
+
+	mutex_lock(&xe->usm.lock);
+	if (vm->flags & XE_VM_FLAG_FAULT_MODE)
+		xe->usm.num_vm_in_fault_mode--;
+	else if (!(vm->flags & XE_VM_FLAG_MIGRATION))
+		xe->usm.num_vm_in_non_fault_mode--;
+	mutex_unlock(&xe->usm.lock);
 
 	trace_xe_vm_free(vm);
 	dma_fence_put(vm->rebind_fence);
@@ -1849,7 +1870,7 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 	}
 
 	for_each_gt(gt, vm->xe, id) {
-		if (!(vma->gt_mask & BIT(id)))
+		if (!(vma->gt_mask & BIT(id)) || !(vma->gt_present & BIT(id)))
 			goto next;
 
 		fence = __xe_vm_unbind_vma(gt, vma, e, syncs, num_syncs);
@@ -1857,6 +1878,8 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 			err = PTR_ERR(fence);
 			goto err_fences;
 		}
+		vma->gt_present &= ~BIT(id);
+
 		if (fences)
 			fences[cur_fence++] = fence;
 
@@ -2237,7 +2260,7 @@ __xe_vm_bind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 		 * failure, likely related to xe_exec_threads.threads-rebind
 		 * failure. Details in issue #39
 		 */
-		if (rebind && !xe_vm_in_compute_mode(vm))
+		if (rebind && !xe_vm_no_dma_fences(vm))
 			dma_fence_wait(fence, false);
 	} else {
 		xe_pt_abort_bind(vma, entries, num_entries);
@@ -2251,8 +2274,7 @@ err:
 
 static struct dma_fence *
 xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
-	       struct xe_sync_entry *syncs, u32 num_syncs,
-	       bool rebind)
+	       struct xe_sync_entry *syncs, u32 num_syncs)
 {
 	struct xe_gt *gt;
 	struct dma_fence *fence;
@@ -2277,11 +2299,14 @@ xe_vm_bind_vma(struct xe_vma *vma, struct xe_engine *e,
 		if (!(vma->gt_mask & BIT(id)))
 			goto next;
 
-		fence = __xe_vm_bind_vma(gt, vma, e, syncs, num_syncs, rebind);
+		fence = __xe_vm_bind_vma(gt, vma, e, syncs, num_syncs,
+					 vma->gt_present & BIT(id));
 		if (IS_ERR(fence)) {
 			err = PTR_ERR(fence);
 			goto err_fences;
 		}
+		vma->gt_present |= BIT(id);
+
 		if (fences)
 			fences[cur_fence++] = fence;
 
@@ -2359,7 +2384,7 @@ static void add_async_op_fence_cb(struct xe_vm *vm,
 {
 	int ret;
 
-	if (!xe_vm_in_compute_mode(vm)) {
+	if (!xe_vm_no_dma_fences(vm)) {
 		afence->started = true;
 		smp_wmb();
 		wake_up_all(&afence->wq);
@@ -2383,7 +2408,7 @@ int xe_vm_async_fence_wait_start(struct dma_fence *fence)
 		struct async_op_fence *afence =
 			container_of(fence, struct async_op_fence, fence);
 
-		XE_BUG_ON(xe_vm_in_compute_mode(afence->vm));
+		XE_BUG_ON(xe_vm_no_dma_fences(afence->vm));
 
 		smp_rmb();
 		return wait_event_interruptible(afence->wq, afence->started);
@@ -2394,14 +2419,13 @@ int xe_vm_async_fence_wait_start(struct dma_fence *fence)
 
 static int __xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma,
 			struct xe_engine *e, struct xe_sync_entry *syncs,
-			u32 num_syncs, struct async_op_fence *afence,
-			bool rebind)
+			u32 num_syncs, struct async_op_fence *afence)
 {
 	struct dma_fence *fence;
 
 	xe_vm_assert_held(vm);
 
-	fence = xe_vm_bind_vma(vma, e, syncs, num_syncs, rebind);
+	fence = xe_vm_bind_vma(vma, e, syncs, num_syncs);
 	if (IS_ERR(fence))
 		return PTR_ERR(fence);
 	if (afence)
@@ -2430,7 +2454,7 @@ static int xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma, struct xe_engine *e,
 			return err;
 	}
 
-	return __xe_vm_bind(vm, vma, e, syncs, num_syncs, afence, false);
+	return __xe_vm_bind(vm, vma, e, syncs, num_syncs, afence);
 }
 
 static int xe_vm_bind_userptr(struct xe_vm *vm, struct xe_vma *vma,
@@ -2442,7 +2466,7 @@ static int xe_vm_bind_userptr(struct xe_vm *vm, struct xe_vma *vma,
 
 	err = xe_vm_lock(vm, &ww, 1, true);
 	if (!err) {
-		err = __xe_vm_bind(vm, vma, e, syncs, num_syncs, afence, false);
+		err = __xe_vm_bind(vm, vma, e, syncs, num_syncs, afence);
 		xe_vm_unlock(vm, &ww);
 	}
 	if (err)
@@ -2571,7 +2595,8 @@ static int vm_user_extensions(struct xe_device *xe, struct xe_vm *vm,
 
 #define ALL_DRM_XE_VM_CREATE_FLAGS (DRM_XE_VM_CREATE_SCRATCH_PAGE | \
 				    DRM_XE_VM_CREATE_COMPUTE_MODE | \
-				    DRM_XE_VM_CREATE_ASYNC_BIND_OPS)
+				    DRM_XE_VM_CREATE_ASYNC_BIND_OPS | \
+				    DRM_XE_VM_CREATE_FAULT_MODE)
 
 int xe_vm_create_ioctl(struct drm_device *dev, void *data,
 		       struct drm_file *file)
@@ -2587,12 +2612,30 @@ int xe_vm_create_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, args->flags & ~ALL_DRM_XE_VM_CREATE_FLAGS))
 		return -EINVAL;
 
+	if (XE_IOCTL_ERR(xe, args->flags & DRM_XE_VM_CREATE_SCRATCH_PAGE &&
+			 args->flags & DRM_XE_VM_CREATE_FAULT_MODE))
+		return -EINVAL;
+
+	if (XE_IOCTL_ERR(xe, args->flags & DRM_XE_VM_CREATE_COMPUTE_MODE &&
+			 args->flags & DRM_XE_VM_CREATE_FAULT_MODE))
+		return -EINVAL;
+
+	if (XE_IOCTL_ERR(xe, args->flags & DRM_XE_VM_CREATE_FAULT_MODE &&
+			 xe_device_in_non_fault_mode(xe)))
+		return -EINVAL;
+
+	if (XE_IOCTL_ERR(xe, !(args->flags & DRM_XE_VM_CREATE_FAULT_MODE) &&
+			 xe_device_in_fault_mode(xe)))
+		return -EINVAL;
+
 	if (args->flags & DRM_XE_VM_CREATE_SCRATCH_PAGE)
 		flags |= XE_VM_FLAG_SCRATCH_PAGE;
 	if (args->flags & DRM_XE_VM_CREATE_COMPUTE_MODE)
 		flags |= XE_VM_FLAG_COMPUTE_MODE;
 	if (args->flags & DRM_XE_VM_CREATE_ASYNC_BIND_OPS)
 		flags |= XE_VM_FLAG_ASYNC_BIND_OPS;
+	if (args->flags & DRM_XE_VM_CREATE_FAULT_MODE)
+		flags |= XE_VM_FLAG_FAULT_MODE;
 
 	vm = xe_vm_create(xe, flags);
 	if (IS_ERR(vm))
@@ -2704,12 +2747,25 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 			 struct xe_engine *e, struct xe_bo *bo,
 			 struct drm_xe_vm_bind_op *bind_op,
 			 struct xe_sync_entry *syncs, u32 num_syncs,
-			 struct async_op_fence *fence)
+			 struct async_op_fence *afence)
 {
-	int err;
+	int err, i;
 
 	lockdep_assert_held(&vm->lock);
 	XE_BUG_ON(!list_empty(&vma->unbind_link));
+
+	/* Binds deferred to faults, signal fences now */
+	if (xe_vm_in_fault_mode(vm) &&
+	    (VM_BIND_OP(bind_op->op) == XE_VM_BIND_OP_MAP ||
+	    VM_BIND_OP(bind_op->op) == XE_VM_BIND_OP_MAP_USERPTR) &&
+	    !(bind_op->op & XE_VM_BIND_FLAG_IMMEDIATE)) {
+		for (i = 0; i < num_syncs; i++)
+			xe_sync_entry_signal(&syncs[i], NULL,
+					     dma_fence_get_stub());
+		if (afence)
+			dma_fence_signal(&afence->fence);
+		return 0;
+	}
 
 	/*
 	 * FIXME: workaround for xe_exec_threads.threads-rebind failure, likely
@@ -2754,14 +2810,14 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 		if (!err) {
 			err = __vm_bind_ioctl(vm, vma, e, bo,
 					      bind_op->op, syncs, num_syncs,
-					      fence);
+					      afence);
 			ttm_eu_backoff_reservation(&ww, &objs);
 		}
 		if (bo)
 			drm_gem_object_put(&bo->ttm.base);
 	} else {
 		err = __vm_bind_ioctl(vm, vma, e, NULL, bind_op->op,
-				      syncs, num_syncs, fence);
+				      syncs, num_syncs, afence);
 	}
 
 	return err;
@@ -2910,7 +2966,7 @@ again:
 
 			if (op->fence && !test_bit(DMA_FENCE_FLAG_SIGNALED_BIT,
 						   &op->fence->fence.flags)) {
-				if (!xe_vm_in_compute_mode(vm)) {
+				if (!xe_vm_no_dma_fences(vm)) {
 					op->fence->started = true;
 					smp_wmb();
 					wake_up_all(&op->fence->wq);
@@ -2952,7 +3008,7 @@ static int __vm_bind_ioctl_async(struct xe_vm *vm, struct xe_vma *vma,
 			       &vm->async_ops.lock, e ? e->bind.fence_ctx :
 			       vm->async_ops.fence.context, seqno);
 
-		if (!xe_vm_in_compute_mode(vm)) {
+		if (!xe_vm_no_dma_fences(vm)) {
 			op->fence->vm = vm;
 			op->fence->started = false;
 			init_waitqueue_head(&op->fence->wq);

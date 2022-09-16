@@ -113,6 +113,10 @@ struct xe_device {
 		struct xarray asid_to_vm;
 		/** @next_asid: next ASID, used to cyclical alloc asids */
 		u32 next_asid;
+		/** @num_vm_in_fault_mode: number of VM in fault mode */
+		u32 num_vm_in_fault_mode;
+		/** @num_vm_in_non_fault_mode: number of VM in non-fault mode */
+		u32 num_vm_in_non_fault_mode;
 		/** @lock: protects UM state */
 		struct mutex lock;
 	} usm;

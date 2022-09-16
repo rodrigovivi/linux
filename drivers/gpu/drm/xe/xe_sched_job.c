@@ -79,7 +79,7 @@ struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
 	/* Migration and kernel engines have their own locking */
 	if (!(e->flags & (ENGINE_FLAG_KERNEL | ENGINE_FLAG_VM))) {
 		lockdep_assert_held(&e->vm->lock);
-		if (!xe_vm_in_compute_mode(e->vm))
+		if (!xe_vm_no_dma_fences(e->vm))
 			xe_vm_assert_held(e->vm);
 	}
 
