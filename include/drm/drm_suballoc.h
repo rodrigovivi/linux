@@ -100,11 +100,11 @@ static inline u64 drm_suballoc_size(struct drm_suballoc *sa)
 
 #ifdef CONFIG_DEBUG_FS
 void drm_suballoc_dump_debug_info(struct drm_suballoc_manager *sa_manager,
-				  struct drm_printer *p);
+				  struct drm_printer *p, u64 suballoc_base);
 #else
 static inline void
 drm_suballoc_dump_debug_info(struct drm_suballoc_manager *sa_manager,
-			     struct drm_printer *p)
+			     struct drm_printer *p, u64 suballoc_base)
 { }
 
 #endif

@@ -77,7 +77,7 @@ int radeon_ib_get(struct radeon_device *rdev, int ring,
 		/* ib pool is bound at RADEON_VA_IB_OFFSET in virtual address
 		 * space and soffset is the offset inside the pool bo
 		 */
-		ib->gpu_addr = ib->sa_bo->soffset + RADEON_VA_IB_OFFSET;
+		ib->gpu_addr = drm_suballoc_soffset(ib->sa_bo) + RADEON_VA_IB_OFFSET;
 	} else {
 		ib->gpu_addr = radeon_sa_bo_gpu_addr(ib->sa_bo);
 	}

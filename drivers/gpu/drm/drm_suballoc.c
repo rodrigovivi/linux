@@ -79,6 +79,7 @@ EXPORT_SYMBOL(drm_suballoc_manager_fini);
 static void __drm_suballoc_free(struct drm_suballoc *sa)
 {
 	struct drm_suballoc_manager *sa_manager = sa->manager;
+	struct dma_fence *fence;
 
 	/*
 	 * In order to avoid protecting the potentially lengthy drm_mm manager
@@ -103,10 +104,12 @@ static void __drm_suballoc_free(struct drm_suballoc *sa)
 locked:
 	drm_mm_remove_node(&sa->node);
 
-	/* Maybe only wake if first mm hole is sufficiently large? */
+	fence = sa->fence;
+	sa->fence = NULL;
 	spin_unlock(&sa_manager->lock);
+	/* Maybe only wake if first mm hole is sufficiently large? */
 	wake_up(&sa_manager->wq);
-	dma_fence_put(sa->fence);
+	dma_fence_put(fence);
 	kfree(sa);
 }
 
@@ -253,19 +256,41 @@ drm_suballoc_free(struct drm_suballoc *sa, struct dma_fence *fence)
 EXPORT_SYMBOL(drm_suballoc_free);
 
 #ifdef CONFIG_DEBUG_FS
+
 /**
  * drm_suballoc_dump_debug_info - Dump the suballocator state
  * @sa_manager: The suballoc manager.
  * @p: Pointer to a drm printer for output.
+ * @suballoc_base: Constant to add to the suballocated offsets on printout.
  *
  * This function dumps the suballocator state in the same format as the
- * drm_mm_manager.
+ * drm_mm_manager. Note that the caller has to explicitly order frees and
+ * calls to this function in order for the freed node to show up as
+ * protected by a fence.
  */
 void drm_suballoc_dump_debug_info(struct drm_suballoc_manager *sa_manager,
-				  struct drm_printer *p)
+				  struct drm_printer *p, u64 suballoc_base)
 {
+	const struct drm_mm_node *entry;
+
 	spin_lock(&sa_manager->lock);
-	drm_mm_print(&sa_manager->mm, p);
+	drm_mm_for_each_node(entry, &sa_manager->mm) {
+		struct drm_suballoc *sa =
+			container_of(entry, typeof(*sa), node);
+
+		drm_printf(p, " ");
+		drm_printf(p, "[0x%010llx 0x%010llx] size %8lld",
+			   (unsigned long long)suballoc_base + entry->start,
+			   (unsigned long long)suballoc_base + entry->start +
+			   entry->size, (unsigned long long)entry->size);
+
+		if (sa->fence)
+			drm_printf(p, " protected by 0x%016llx on context %llu",
+				   (unsigned long long)sa->fence->seqno,
+				   (unsigned long long)sa->fence->context);
+
+		drm_printf(p, "\n");
+	}
 	spin_unlock(&sa_manager->lock);
 }
 EXPORT_SYMBOL(drm_suballoc_dump_debug_info);
