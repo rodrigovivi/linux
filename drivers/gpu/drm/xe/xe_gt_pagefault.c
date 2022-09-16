@@ -224,17 +224,14 @@ retry_userptr:
 		ret = PTR_ERR(fence);
 		goto unlock_dma_resv;
 	}
+
 	/*
 	 * XXX: Should we drop the lock before waiting? This only helps if doing
 	 * GPU binds which is currently only down if we have to wait for more
 	 * than 1ms on a move.
 	 */
 	dma_fence_wait(fence, false);
-
-	/* FIXME: Doing a full TLB invalidation for now */
-	ret = send_tlb_invalidation(&gt->uc.guc);
-	if (ret >= 0)
-		ret = 0;
+	dma_fence_put(fence);
 
 	if (xe_vma_is_userptr(vma))
 		ret = xe_vma_userptr_needs_repin(vma);
@@ -251,6 +248,16 @@ unlock_vm:
 	if (!ret)
 		vm->usm.last_fault_vma = vma;
 	up_read(&vm->lock);
+	if (!ret) {
+		/*
+		 * FIXME: Doing a full TLB invalidation for now, likely could
+		 * defer TLB invalidate + fault response to a callback of fence
+		 * too
+		 */
+		ret = send_tlb_invalidation(&gt->uc.guc);
+		if (ret >= 0)
+			ret = 0;
+	}
 	xe_vm_put(vm);
 
 	return ret;
