@@ -13,4 +13,7 @@ void xe_wa_process_gt(struct xe_gt *gt);
 void xe_wa_process_engine(struct xe_hw_engine *hwe);
 void xe_wa_process_ctx(struct xe_hw_engine *hwe);
 
+void xe_reg_whitelist_process_engine(struct xe_hw_engine *hwe);
+void xe_reg_whitelist_apply(struct xe_hw_engine *hwe);
+
 #endif

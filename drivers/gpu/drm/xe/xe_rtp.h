@@ -160,6 +160,16 @@ struct xe_reg_sr;
 		    .read_mask = 0, ##__VA_ARGS__ }
 
 /**
+ * @XE_WHITELIST_REGISTER: Add register to user-space whitelist, allowing
+ * user-space to modify register with regular user privileges.
+ */
+#define XE_WHITELIST_REGISTER(reg_, flags_, ...)				\
+	/* TODO fail build if ((flags) & ~(RING_FORCE_TO_NONPRIV_MASK_VALID)) */\
+	.regval = { .reg = (reg_), .set_bits = (flags_),			\
+		    .clr_bits = RING_FORCE_TO_NONPRIV_MASK_VALID,		\
+		    ##__VA_ARGS__ }
+
+/**
  * @XE_RTP_NAME: Helper to set the name in xe_rtp_entry
  *
  * TODO: maybe move this behind a debug config?
@@ -206,5 +216,4 @@ struct xe_reg_sr;
  */
 void xe_rtp_process(const struct xe_rtp_entry *entries, struct xe_reg_sr *sr,
 		    struct xe_gt *gt, struct xe_hw_engine *hwe);
-
 #endif

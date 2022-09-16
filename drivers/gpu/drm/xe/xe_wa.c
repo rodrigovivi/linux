@@ -8,9 +8,10 @@
 #include <linux/compiler_types.h>
 
 #include "xe_device_types.h"
-#include "xe_hw_engine_types.h"
+#include "xe_force_wake.h"
 #include "xe_gt.h"
 #include "xe_hw_engine_types.h"
+#include "xe_mmio.h"
 #include "xe_platform_types.h"
 #include "xe_rtp.h"
 #include "xe_step.h"
@@ -20,7 +21,6 @@
 #include "../i915/i915_reg.h"
 
 /* TODO:
- * - whitelist
  * - steering:  we probably want that separate, and xe_wa.c only cares about the
  *   value to be added to the table
  * - apply workarounds with and without guc
@@ -219,6 +219,16 @@ static const struct xe_rtp_entry context_was[] = {
 	{}
 };
 
+static const struct xe_rtp_entry register_whitelist[] = {
+	{ XE_RTP_NAME("WaAllowPMDepthAndInvocationCountAccessFromUMD, 1408556865"),
+	  XE_RTP_RULES(GRAPHICS_VERSION_RANGE(1200, 1210), ENGINE_CLASS(RENDER)),
+	  XE_WHITELIST_REGISTER(PS_INVOCATION_COUNT,
+				RING_FORCE_TO_NONPRIV_ACCESS_RD |
+				RING_FORCE_TO_NONPRIV_RANGE_4)
+	},
+	{}
+};
+
 void xe_wa_process_gt(struct xe_gt *gt)
 {
 	xe_rtp_process(gt_was, &gt->reg_sr, gt, NULL);
@@ -229,7 +239,49 @@ void xe_wa_process_engine(struct xe_hw_engine *hwe)
 	xe_rtp_process(engine_was, &hwe->reg_sr, hwe->gt, hwe);
 }
 
+void xe_reg_whitelist_process_engine(struct xe_hw_engine *hwe)
+{
+	xe_rtp_process(register_whitelist, &hwe->reg_whitelist, hwe->gt, hwe);
+}
+
 void xe_wa_process_ctx(struct xe_hw_engine *hwe)
 {
 	//xe_rtp_process(context_was, &hwe->reg_sr, gt, hwe);
+}
+
+void xe_reg_whitelist_apply(struct xe_hw_engine *hwe)
+{
+	struct xe_gt *gt = hwe->gt;
+	struct xe_device *xe = gt_to_xe(gt);
+	struct xe_reg_sr *sr = &hwe->reg_whitelist;
+	struct xe_reg_sr_entry *entry;
+	const u32 base = hwe->mmio_base;
+	unsigned long reg;
+	unsigned int slot = 0;
+	int err;
+
+	drm_dbg(&xe->drm, "Whitelisting %s registers\n", sr->name);
+
+	err = xe_force_wake_get(&gt->mmio.fw, XE_FORCEWAKE_ALL);
+	if (err)
+		goto err_force_wake;
+
+	xa_for_each(&sr->xa, reg, entry) {
+		xe_mmio_write32(gt, RING_FORCE_TO_NONPRIV(base, slot).reg,
+				reg | entry->set_bits);
+		slot++;
+	}
+
+	/* And clear the rest just in case of garbage */
+	for (; slot < RING_MAX_NONPRIV_SLOTS; slot++)
+		xe_mmio_write32(gt, RING_FORCE_TO_NONPRIV(base, slot).reg,
+				RING_NOPID(base).reg);
+
+	err = xe_force_wake_put(&gt->mmio.fw, XE_FORCEWAKE_ALL);
+	XE_WARN_ON(err);
+
+	return;
+
+err_force_wake:
+	drm_err(&xe->drm, "Failed to apply, err=%d\n", err);
 }
