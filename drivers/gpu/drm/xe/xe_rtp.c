@@ -34,8 +34,16 @@ static bool rule_matches(struct xe_gt *gt,
 			/* TODO: match display */
 			match = xe->info.graphics_verx100 == r->ver_start;
 			break;
+		case XE_RTP_MATCH_GRAPHICS_VERSION_RANGE:
+			match = xe->info.graphics_verx100 >= r->ver_start &&
+				xe->info.graphics_verx100 <= r->ver_end;
+			break;
 		case XE_RTP_MATCH_MEDIA_VERSION:
 			match = xe->info.media_verx100 == r->ver_start;
+			break;
+		case XE_RTP_MATCH_MEDIA_VERSION_RANGE:
+			match = xe->info.media_verx100 >= r->ver_start &&
+				xe->info.media_verx100 <= r->ver_end;
 			break;
 		case XE_RTP_MATCH_STEP:
 			/* TODO: match media/display */
