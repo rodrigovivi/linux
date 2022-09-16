@@ -100,7 +100,7 @@ static int xe_exec_begin(struct xe_engine *e, struct ww_acquire_ctx *ww,
 
 	lockdep_assert_held(&vm->lock);
 
-	if (!xe_vm_in_compute_mode(e->vm)) {
+	if (!xe_vm_no_dma_fences(e->vm)) {
 		struct xe_vma *vma;
 		LIST_HEAD(dups);
 
@@ -149,7 +149,7 @@ static int xe_exec_begin(struct xe_engine *e, struct ww_acquire_ctx *ww,
 static void xe_exec_end(struct xe_engine *e, struct ww_acquire_ctx *ww,
 			struct list_head *objs)
 {
-	if (!xe_vm_in_compute_mode(e->vm))
+	if (!xe_vm_no_dma_fences(e->vm))
 		ttm_eu_backoff_reservation(ww, objs);
 }
 
@@ -225,7 +225,7 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	 * all dependent async VM binds to start (install correct fences into
 	 * dma-resv slots) before moving forward.
 	 */
-	if (!xe_vm_in_compute_mode(vm) &&
+	if (!xe_vm_no_dma_fences(vm) &&
 	    vm->flags & XE_VM_FLAG_ASYNC_BIND_OPS) {
 		for (i = 0; i < args->num_syncs; i++) {
 			struct dma_fence *fence = syncs[i].fence;
@@ -321,7 +321,7 @@ retry:
 
 	xe_sched_job_arm(job);
 
-	if (!xe_vm_in_compute_mode(vm)) {
+	if (!xe_vm_no_dma_fences(vm)) {
 		/* Block userptr invalidations / BO eviction */
 		dma_resv_add_fence(&vm->resv,
 				   &job->drm.s_fence->finished,

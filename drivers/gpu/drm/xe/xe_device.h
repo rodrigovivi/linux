@@ -127,4 +127,14 @@ static inline void xe_device_mem_access_wa_put(struct xe_device *xe)
 	XE_WARN_ON(ret);
 }
 
+static inline bool xe_device_in_fault_mode(struct xe_device *xe)
+{
+	return xe->usm.num_vm_in_fault_mode != 0;
+}
+
+static inline bool xe_device_in_non_fault_mode(struct xe_device *xe)
+{
+	return xe->usm.num_vm_in_non_fault_mode != 0;
+}
+
 #endif

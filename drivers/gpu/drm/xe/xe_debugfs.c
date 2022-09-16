@@ -37,6 +37,8 @@ static int info(struct seq_file *m, void *data)
 	drm_printf(&p, "tile_count %d\n", xe->info.tile_count);
 	drm_printf(&p, "vm_max_level %d\n", xe->info.vm_max_level);
 	drm_printf(&p, "enable_guc %s\n", xe->info.enable_guc ? "yes" : "no");
+	drm_printf(&p, "supports_usm %s\n",
+		   xe->info.supports_usm ? "yes" : "no");
 	for_each_gt(gt, xe, id)
 		drm_printf(&p, "gt%d force wake %d\n", id,
 			   xe_force_wake_ref(gt_to_fw(gt), XE_FW_GT));

@@ -248,20 +248,30 @@ void xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo)
 	struct dma_fence *fence;
 	struct xe_vma *vma;
 
-	dma_resv_iter_begin(&cursor, bo->ttm.base.resv,
-			    DMA_RESV_USAGE_PREEMPT_FENCE);
-	dma_resv_for_each_fence_unlocked(&cursor, fence)
-		dma_fence_enable_sw_signaling(fence);
-	dma_resv_iter_end(&cursor);
+	if (!xe_device_in_fault_mode(xe)) {
+		dma_resv_iter_begin(&cursor, bo->ttm.base.resv,
+				    DMA_RESV_USAGE_PREEMPT_FENCE);
+		dma_resv_for_each_fence_unlocked(&cursor, fence)
+			dma_fence_enable_sw_signaling(fence);
+		dma_resv_iter_end(&cursor);
+	}
 
 	list_for_each_entry(vma, &bo->vmas, bo_link) {
 		trace_xe_vma_evict(vma);
 
-		if (list_empty(&vma->evict_link))
-			list_add_tail(&vma->evict_link, &vma->vm->evict_list);
-		if (xe_vm_in_compute_mode(vma->vm))
-			queue_work(xe->ordered_wq,
-				   &vma->vm->preempt.rebind_work);
+		if (xe_device_in_fault_mode(xe)) {
+			/*
+			 * FIXME: Modify page table memory without a lock and
+			 * invalidate TLB.
+			 */
+		} else {
+			if (list_empty(&vma->evict_link))
+				list_add_tail(&vma->evict_link,
+					      &vma->vm->evict_list);
+			if (xe_vm_in_compute_mode(vma->vm))
+				queue_work(xe->ordered_wq,
+					   &vma->vm->preempt.rebind_work);
+		}
 	}
 }
 
@@ -655,6 +665,11 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
 	placement = (type == ttm_bo_type_sg) ? &sys_placement :
 		&bo->placement;
 
+	/*
+	 * FIXME: For USM, sometimes we want to create a BO without any backing
+	 * store with the backing store allocated on fault. Believe this
+	 * requires a TTM update.
+	 */
 	err = ttm_bo_init_reserved(&xe->ttm, &bo->ttm, type,
 				   DMA_RESV_USAGE_BOOKKEEP,
 				   placement, SZ_64K >> PAGE_SHIFT,

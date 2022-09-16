@@ -214,8 +214,11 @@ static int engine_set_compute_mode(struct xe_device *xe, struct xe_engine *e,
 		struct xe_vm *vm = e->vm;
 		int err;
 
-		if (XE_IOCTL_ERR(xe, !(e->vm->flags & XE_VM_FLAG_COMPUTE_MODE)))
-			return -ENOTSUPP;
+		if (XE_IOCTL_ERR(xe, xe_vm_in_fault_mode(vm)))
+			return -EOPNOTSUPP;
+
+		if (XE_IOCTL_ERR(xe, !xe_vm_in_compute_mode(vm)))
+			return -EOPNOTSUPP;
 
 		if (XE_IOCTL_ERR(xe, e->width != 1))
 			return -EINVAL;
@@ -553,8 +556,7 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 			goto put_engine;
 	}
 
-	if (XE_IOCTL_ERR(xe, e->vm &&
-			 !!(e->vm->flags & XE_VM_FLAG_COMPUTE_MODE) !=
+	if (XE_IOCTL_ERR(xe, e->vm && xe_vm_in_compute_mode(e->vm) !=
 			 !!(e->flags & ENGINE_FLAG_COMPUTE_MODE))) {
 		err = -ENOTSUPP;
 		goto put_engine;

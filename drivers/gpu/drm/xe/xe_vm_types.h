@@ -44,6 +44,9 @@ struct xe_vma {
 	/** @gt_mask: GT mask of where to create binding for this VMA */
 	u64 gt_mask;
 
+	/** @gt_present: GT mask of binding are present for this VMA */
+	u64 gt_present;
+
 	/** @destroyed: VMA is destroyed */
 	bool destroyed;
 
@@ -163,8 +166,9 @@ struct xe_vm {
 #define XE_VM_FLAG_ASYNC_BIND_OPS	BIT(2)
 #define XE_VM_FLAG_MIGRATION		BIT(3)
 #define XE_VM_FLAG_SCRATCH_PAGE		BIT(4)
-#define XE_VM_FLAG_GT_ID(flags)		((flags >> 5) & 0x3)
-#define XE_VM_FLAG_SET_GT_ID(gt)	(gt->info.id << 5)
+#define XE_VM_FLAG_FAULT_MODE		BIT(5)
+#define XE_VM_FLAG_GT_ID(flags)		(((flags) >> 6) & 0x3)
+#define XE_VM_FLAG_SET_GT_ID(gt)	((gt)->info.id << 6)
 	unsigned long flags;
 
 	/** @composite_fence_ctx: context composite fence */
