@@ -402,8 +402,10 @@ static int gt_reset(struct xe_gt *gt)
 	if (err)
 		goto err_out;
 
-	for_each_hw_engine(hwe, gt, id)
+	for_each_hw_engine(hwe, gt, id) {
 		xe_reg_sr_apply_mmio(&hwe->reg_sr, gt);
+		xe_reg_whitelist_apply(hwe);
+	}
 
 	xe_device_mem_access_wa_put(gt_to_xe(gt));
 	err = xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL);
