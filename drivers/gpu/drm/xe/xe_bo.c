@@ -557,6 +557,14 @@ static void xe_ttm_bo_destroy(struct ttm_buffer_object *ttm_bo)
 
 static void xe_gem_object_free(struct drm_gem_object *obj)
 {
+	struct xe_bo *bo = gem_to_xe_bo(obj);
+
+	/* Corner case, no alloc */
+	if (!(bo->flags & XE_BO_INTERNAL_ALLOC)) {
+		xe_ttm_bo_destroy(&bo->ttm);
+		return;
+	}
+
 	/* Our BO reference counting scheme works as follows:
 	 *
 	 * The gem object kref is typically used throughout the driver,
@@ -596,6 +604,7 @@ static vm_fault_t xe_gem_fault(struct vm_fault *vmf)
 		struct xe_bo *bo = ttm_to_xe_bo(tbo);
 
 		trace_xe_bo_cpu_fault(bo);
+
 		if (should_migrate_to_system(bo)) {
 			r = xe_bo_migrate(bo, XE_PL_TT);
 			if (r == -EBUSY || r == -ERESTARTSYS)
@@ -667,10 +676,9 @@ void xe_bo_free(struct xe_bo *bo)
 	kfree(bo);
 }
 
-struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
-				    struct xe_gt *gt, struct dma_resv *resv,
-				    size_t size, enum ttm_bo_type type,
-				    u32 flags)
+static int __xe_bo_alloc_backing_locked(struct xe_device *xe, struct xe_bo *bo,
+					enum ttm_bo_type type,
+					struct dma_resv *resv)
 {
 	struct ttm_operation_ctx ctx = {
 		.interruptible = true,
@@ -679,13 +687,72 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
 	struct ttm_placement *placement;
 	int err;
 
-	/* Only kernel objects should set GT */
-	XE_BUG_ON(gt && type != ttm_bo_type_kernel);
+	XE_BUG_ON(bo->flags & XE_BO_INTERNAL_ALLOC);
 
 	if (resv) {
 		ctx.allow_res_evict = true;
 		ctx.resv = resv;
 	}
+
+	err = xe_bo_placement_for_flags(xe, bo, bo->flags);
+	if (WARN_ON(err))
+		return err;
+
+	/* Defer populating type_sg bos */
+	placement = (bo->ttm.type == ttm_bo_type_sg) ? &sys_placement :
+		&bo->placement;
+
+	err = ttm_bo_init_reserved(&xe->ttm, &bo->ttm, type,
+				   DMA_RESV_USAGE_BOOKKEEP,
+				   placement, SZ_64K >> PAGE_SHIFT,
+				   &ctx, NULL, resv, xe_ttm_bo_destroy);
+	if (WARN_ON(err))
+		return err;
+
+	bo->flags |= XE_BO_INTERNAL_ALLOC;
+	return 0;
+}
+
+/**
+ * xe_bo_alloc_backing - Allocate backing store for BO
+ * @xe: XE device
+ * @bo: The buffer object storage.
+ *
+ * Returns 0 for success, negative error code otherwise.
+ */
+int xe_bo_alloc_backing(struct xe_device *xe, struct xe_bo *bo)
+{
+	struct ww_acquire_ctx ww;
+	int ret;
+
+	/* Ensure deferred alloc setup minimum required TTM objects */
+	XE_BUG_ON(!bo->ttm.base.resv);
+	XE_BUG_ON(!bo->ttm.bdev);
+
+	ret = xe_bo_lock(bo, &ww, 0, false);
+	if (!ret) {
+		/*
+		 * An async bind and mmap can race to do the alloc, the lock
+		 * protects and flag protects against a double alloc.
+		 */
+		if (!(bo->flags & XE_BO_INTERNAL_ALLOC))
+			ret = __xe_bo_alloc_backing_locked(xe, bo, bo->ttm.type,
+							   bo->ttm.base.resv);
+		xe_bo_unlock(bo, &ww);
+	}
+
+	return ret;
+}
+
+struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
+				    struct xe_gt *gt, struct dma_resv *resv,
+				    size_t size, enum ttm_bo_type type,
+				    u32 flags)
+{
+	int err;
+
+	/* Only kernel objects should set GT */
+	XE_BUG_ON(gt && type != ttm_bo_type_kernel);
 
 	if (!bo) {
 		bo = xe_bo_alloc();
@@ -711,25 +778,18 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
 
 	drm_gem_private_object_init(&xe->drm, &bo->ttm.base, size);
 
-	err = xe_bo_placement_for_flags(xe, bo, flags);
-	if (WARN_ON(err))
-		return ERR_PTR(err);
-
-	/* Defer populating type_sg bos */
-	placement = (type == ttm_bo_type_sg) ? &sys_placement :
-		&bo->placement;
-
-	/*
-	 * FIXME: For USM, sometimes we want to create a BO without any backing
-	 * store with the backing store allocated on fault. Believe this
-	 * requires a TTM update.
-	 */
-	err = ttm_bo_init_reserved(&xe->ttm, &bo->ttm, type,
-				   DMA_RESV_USAGE_BOOKKEEP,
-				   placement, SZ_64K >> PAGE_SHIFT,
-				   &ctx, NULL, resv, xe_ttm_bo_destroy);
-	if (WARN_ON(err))
-		return ERR_PTR(err);
+	if (!(flags & XE_BO_DEFER_BACKING)) {
+		err = __xe_bo_alloc_backing_locked(xe, bo, type, resv);
+		if (err)
+			return ERR_PTR(err);
+	} else {
+		bo->ttm.type = type;
+		bo->ttm.bdev = &xe->ttm;
+		if (resv)
+			bo->ttm.base.resv = resv;
+		else
+			bo->ttm.base.resv = &bo->ttm.base._resv;
+	}
 
 	return bo;
 }
@@ -774,7 +834,7 @@ struct xe_bo *xe_bo_create(struct xe_device *xe, struct xe_gt *gt,
 {
 	struct xe_bo *bo = xe_bo_create_locked(xe, gt, vm, size, type, flags);
 
-	if (!IS_ERR(bo))
+	if (!IS_ERR(bo) && bo->flags & XE_BO_INTERNAL_ALLOC)
 		xe_bo_unlock_vm_held(bo);
 
 	return bo;
@@ -1107,7 +1167,9 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, args->extensions))
 		return -EINVAL;
 
-	if (XE_IOCTL_ERR(xe, args->flags & ~xe->info.mem_region_mask))
+	if (XE_IOCTL_ERR(xe, args->flags &
+			 ~(XE_GEM_CREATE_FLAG_DEFER_BACKING |
+			   xe->info.mem_region_mask)))
 		return -EINVAL;
 
 	/* at least one memory type must be specified */
@@ -1133,6 +1195,9 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 			return err;
 		}
 	}
+
+	if (args->flags & XE_GEM_CREATE_FLAG_DEFER_BACKING)
+		bo_flags |= XE_BO_DEFER_BACKING;
 
 	bo_flags |= args->flags << (ffs(XE_BO_CREATE_SYSTEM_BIT) - 1);
 	bo = xe_bo_create(xe, NULL, vm, args->size, ttm_bo_type_device,
@@ -1166,6 +1231,8 @@ int xe_gem_mmap_offset_ioctl(struct drm_device *dev, void *data,
 	struct xe_device *xe = to_xe_device(dev);
 	struct drm_xe_gem_mmap_offset *args = data;
 	struct drm_gem_object *gem_obj;
+	struct xe_bo *bo;
+	int err = 0;
 
 	if (XE_IOCTL_ERR(xe, args->extensions))
 		return -EINVAL;
@@ -1177,11 +1244,19 @@ int xe_gem_mmap_offset_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, !gem_obj))
 		return -ENOENT;
 
+	bo = gem_to_xe_bo(gem_obj);
+	if (!(bo->flags & XE_BO_INTERNAL_ALLOC)) {
+		err = xe_bo_alloc_backing(xe, bo);
+		if (XE_IOCTL_ERR(xe, err))
+			goto out;
+	}
+
 	/* The mmap offset was set up at BO allocation time. */
 	args->offset = drm_vma_node_offset_addr(&gem_obj->vma_node);
 
+out:
 	drm_gem_object_put(gem_obj);
-	return 0;
+	return err;
 }
 
 int xe_bo_lock(struct xe_bo *bo, struct ww_acquire_ctx *ww,
