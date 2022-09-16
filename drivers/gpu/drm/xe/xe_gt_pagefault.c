@@ -152,7 +152,7 @@ retry_userptr:
 		goto unlock_vm;
 
 	if (atomic) {
-		if (!vma->bo) {
+		if (xe_vma_is_userptr(vma)) {
 			ret = -EACCES;
 			goto unlock_dma_resv;
 		}
