@@ -1890,7 +1890,7 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 		 struct xe_sync_entry *syncs, u32 num_syncs)
 {
 	struct xe_gt *gt;
-	struct dma_fence *fence;
+	struct dma_fence *fence = NULL;
 	struct dma_fence **fences = NULL;
 	struct dma_fence_array *cf = NULL;
 	struct xe_vm *vm = vma->vm;
@@ -1944,7 +1944,7 @@ next:
 	for (i = 0; i < num_syncs; i++)
 		xe_sync_entry_signal(&syncs[i], NULL, cf ? &cf->base : fence);
 
-	return cf ? &cf->base : fence;
+	return cf ? &cf->base : !fence ? dma_fence_get_stub() : fence;
 
 err_fences:
 	if (fences) {
