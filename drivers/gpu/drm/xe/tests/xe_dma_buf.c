@@ -7,16 +7,40 @@
 
 #include "xe_pci.h"
 
+static bool p2p_enabled(struct dma_buf_test_params *params)
+{
+	return IS_ENABLED(CONFIG_PCI_P2PDMA) && params->attach_ops &&
+		params->attach_ops->allow_peer2peer;
+}
+
+static bool is_dynamic(struct dma_buf_test_params *params)
+{
+	return IS_ENABLED(CONFIG_DMABUF_MOVE_NOTIFY) && params->attach_ops &&
+		params->attach_ops->move_notify;
+}
+
 static void check_residency(struct kunit *test, struct xe_bo *exported,
-			    struct xe_bo *imported, struct dma_buf *dmabuf,
-			    u32 mem_type)
+			    struct xe_bo *imported, struct dma_buf *dmabuf)
 {
 	static struct ttm_operation_ctx ctx = {.interruptible = true};
 	struct dma_buf_test_params *params = test->priv;
+	u32 mem_type;
 	int ret;
 
 	xe_bo_assert_held(exported);
 	xe_bo_assert_held(imported);
+
+	mem_type = XE_PL_VRAM0;
+	if (!(params->mem_mask & XE_BO_CREATE_VRAM0_BIT))
+		/* No VRAM allowed */
+		mem_type = XE_PL_TT;
+	else if (params->force_different_devices && !p2p_enabled(params))
+		/* No P2P */
+		mem_type = XE_PL_TT;
+	else if (params->force_different_devices && !is_dynamic(params) &&
+		 (params->mem_mask & XE_BO_CREATE_SYSTEM_BIT))
+		/* Pin migrated to TT */
+		mem_type = XE_PL_TT;
 
 	if (!xe_bo_is_mem_type(exported, mem_type)) {
 		KUNIT_FAIL(test, "Exported bo was not in expected memory type.\n");
@@ -105,47 +129,41 @@ static void xe_test_dmabuf_import_same_driver(struct xe_device *xe)
 		goto out;
 	}
 
-	/*
-	 * We expect an import of an VRAM-only object to fail with
-	 * -EOPNOTSUPP because it can't be migrated to SMEM.
-	 */
 	import = xe_gem_prime_import(&xe->drm, dmabuf);
 	if (!IS_ERR(import)) {
 		struct xe_bo *import_bo = gem_to_xe_bo(import);
 
-		if (params->attach_ops &&
-		    !params->attach_ops->allow_peer2peer &&
-		    params->force_different_devices &&
+		/*
+		 * Did import succeed when it shouldn't due to lack of p2p support?
+		 */
+		if (params->force_different_devices &&
+		    !p2p_enabled(params) &&
 		    !(params->mem_mask & XE_BO_CREATE_SYSTEM_BIT)) {
 			KUNIT_FAIL(test,
 				   "xe_gem_prime_import() succeeded when it shouldn't have\n");
 		} else {
 			int err;
 
+			/* Is everything where we expect it to be? */
 			xe_bo_lock_no_vm(import_bo, NULL);
 			err = xe_bo_validate(import_bo, NULL);
 			if (err && err != -EINTR && err != -ERESTARTSYS)
 				KUNIT_FAIL(test,
 					   "xe_bo_validate() failed with err=%d\n", err);
 
-			else if ((!params->force_different_devices ||
-				  (params->attach_ops &&
-				   params->attach_ops->allow_peer2peer)) &&
-				 (params->mem_mask & XE_BO_CREATE_VRAM0_BIT))
-				check_residency(test, bo, import_bo, dmabuf,
-						XE_PL_VRAM0);
-			else
-				check_residency(test, bo, import_bo, dmabuf,
-						XE_PL_TT);
-
+			check_residency(test, bo, import_bo, dmabuf);
 			xe_bo_unlock_no_vm(import_bo);
 		}
 		drm_gem_object_put(import);
 	} else if (PTR_ERR(import) != -EOPNOTSUPP) {
+		/* Unexpected error code. */
 		KUNIT_FAIL(test,
 			   "xe_gem_prime_import failed with the wrong err=%ld\n",
 			   PTR_ERR(import));
-	} else if (params->attach_ops && params->attach_ops->allow_peer2peer) {
+	} else if (!params->force_different_devices ||
+		   p2p_enabled(params) ||
+		   (params->mem_mask & XE_BO_CREATE_SYSTEM_BIT)) {
+		/* Shouldn't fail if we can reuse same bo, use p2p or use system */
 		KUNIT_FAIL(test, "dynamic p2p attachment failed with err=%ld\n",
 			   PTR_ERR(import));
 	}
