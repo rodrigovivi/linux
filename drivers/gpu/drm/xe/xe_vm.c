@@ -1072,7 +1072,8 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 	if (bo) {
 		xe_bo_assert_held(bo);
 		vma->bo_offset = bo_offset_or_userptr;
-		vma->bo = xe_bo_get(bo);
+		drm_gem_object_get(&bo->ttm.base);
+		vma->bo = bo;
 		list_add_tail(&vma->bo_link, &bo->vmas);
 	} else /* userptr */ {
 		u64 size = end - start + 1;
@@ -1120,7 +1121,8 @@ static void xe_vma_destroy(struct xe_vma *vma)
 		queue_work(system_unbound_wq, &vma->userptr.destroy_work);
 	} else {
 		list_del(&vma->bo_link);
-		xe_bo_put(vma->bo);
+		if (vma->bo)
+			drm_gem_object_put(&vma->bo->ttm.base);
 		kfree(vma);
 	}
 }
@@ -2816,6 +2818,13 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 		if (afence)
 			dma_fence_signal(&afence->fence);
 		return 0;
+	}
+
+	/* Alloc backing store */
+	if (bo && !(bo->flags & XE_BO_INTERNAL_ALLOC)) {
+		err = xe_bo_alloc_backing(vm->xe, bo);
+		if (err)
+			return err;
 	}
 
 	/*

@@ -177,9 +177,16 @@ struct dma_buf *xe_gem_prime_export(struct drm_gem_object *obj, int flags)
 {
 	struct xe_bo *bo = gem_to_xe_bo(obj);
 	struct dma_buf *buf;
+	int ret;
 
 	if (bo->vm)
 		return ERR_PTR(-EPERM);
+
+	if (!(bo->flags & XE_BO_INTERNAL_ALLOC)) {
+		ret = xe_bo_alloc_backing(xe_bo_device(bo), bo);
+		if (ret)
+			return ERR_PTR(ret);
+	}
 
 	buf = drm_gem_prime_export(obj, flags);
 	if (!IS_ERR(buf))

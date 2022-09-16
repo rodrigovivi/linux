@@ -22,7 +22,9 @@
 #define XE_BO_CREATE_GGTT_BIT		BIT(5)
 #define XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT BIT(6)
 #define XE_BO_CREATE_PINNED_BIT		BIT(7)
+#define XE_BO_DEFER_BACKING		BIT(8)
 /* this one is trigger internally only */
+#define XE_BO_INTERNAL_ALLOC		BIT(29)
 #define XE_BO_INTERNAL_TEST		BIT(30)
 #define XE_BO_INTERNAL_64K		BIT(31)
 
@@ -77,8 +79,8 @@
 #define XE_PL_VRAM1		(XE_PL_VRAM0 + 1)
 
 struct xe_bo *xe_bo_alloc(void);
-
 void xe_bo_free(struct xe_bo *bo);
+int xe_bo_alloc_backing(struct xe_device *xe, struct xe_bo *bo);
 
 struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
 				    struct xe_gt *gt, struct dma_resv *resv,
@@ -139,7 +141,8 @@ void xe_bo_unlock(struct xe_bo *bo, struct ww_acquire_ctx *ww);
 static inline void xe_bo_unlock_vm_held(struct xe_bo *bo)
 {
 	if (bo) {
-		XE_BUG_ON(bo->vm && bo->ttm.base.resv != &bo->vm->resv);
+		XE_BUG_ON(bo->flags & XE_BO_INTERNAL_ALLOC &&
+			  bo->vm && bo->ttm.base.resv != &bo->vm->resv);
 		if (bo->vm)
 			xe_vm_assert_held(bo->vm);
 		else

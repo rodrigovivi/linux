@@ -92,6 +92,7 @@ static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 	struct xe_device *xe = gt_to_xe(gt);
 	struct xe_vm *vm;
 	struct xe_vma *vma, lookup;
+	struct xe_bo *bo;
 	LIST_HEAD(objs);
 	LIST_HEAD(dups);
 	struct ttm_validate_buffer tv_bo, tv_vm;
@@ -131,6 +132,14 @@ static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 
 	/* TODO: Validate fault */
 
+	/* Allocate backing store */
+	bo = vma->bo;
+	if (bo && !(bo->flags & XE_BO_INTERNAL_ALLOC)) {
+		ret = xe_bo_alloc_backing(xe, bo);
+		if (ret)
+			goto unlock_vm;
+	}
+
 retry_userptr:
 	if (xe_vma_is_userptr(vma)) {
 		ret = xe_vma_userptr_pin_pages(vma);
@@ -142,8 +151,8 @@ retry_userptr:
 	tv_vm.num_shared = xe->info.tile_count;
 	tv_vm.bo = xe_vm_ttm_bo(vm);
 	list_add(&tv_vm.head, &objs);
-	if (vma->bo) {
-		tv_bo.bo = &vma->bo->ttm;
+	if (bo) {
+		tv_bo.bo = &bo->ttm;
 		tv_bo.num_shared = xe->info.tile_count;
 		list_add(&tv_bo.head, &objs);
 	}
@@ -158,12 +167,12 @@ retry_userptr:
 		}
 
 		/* Migrate to VRAM, move should invalidate the VMA first */
-		ret = xe_bo_migrate(vma->bo, XE_PL_VRAM0 + gt->info.vram_id);
+		ret = xe_bo_migrate(bo, XE_PL_VRAM0 + gt->info.vram_id);
 		if (ret)
 			goto unlock_dma_resv;
-	} else if (vma->bo) {
+	} else if (bo) {
 		/* Create backing store if needed */
-		ret = xe_bo_validate(vma->bo, vm);
+		ret = xe_bo_validate(bo, vm);
 		if (ret)
 			goto unlock_dma_resv;
 	}
