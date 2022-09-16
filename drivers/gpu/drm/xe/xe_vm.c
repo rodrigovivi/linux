@@ -2838,6 +2838,18 @@ static void xe_vm_tv_populate(struct xe_vm *vm, struct ttm_validate_buffer *tv)
 	tv->bo = xe_vm_ttm_bo(vm);
 }
 
+static bool is_map_op(u32 op)
+{
+	return VM_BIND_OP(op) == XE_VM_BIND_OP_MAP ||
+		VM_BIND_OP(op) == XE_VM_BIND_OP_MAP_USERPTR;
+}
+
+static bool is_unmap_op(u32 op)
+{
+	return VM_BIND_OP(op) == XE_VM_BIND_OP_UNMAP ||
+		VM_BIND_OP(op) == XE_VM_BIND_OP_UNMAP_ALL;
+}
+
 static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 			 struct xe_engine *e, struct xe_bo *bo,
 			 struct drm_xe_vm_bind_op *bind_op,
@@ -2855,9 +2867,7 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 	XE_BUG_ON(!list_empty(&vma->unbind_link));
 
 	/* Binds deferred to faults, signal fences now */
-	if (xe_vm_in_fault_mode(vm) &&
-	    (VM_BIND_OP(bind_op->op) == XE_VM_BIND_OP_MAP ||
-	    VM_BIND_OP(bind_op->op) == XE_VM_BIND_OP_MAP_USERPTR) &&
+	if (xe_vm_in_fault_mode(vm) && is_map_op(bind_op->op) &&
 	    !(bind_op->op & XE_VM_BIND_FLAG_IMMEDIATE)) {
 		for (i = 0; i < num_syncs; i++)
 			xe_sync_entry_signal(&syncs[i], NULL,
@@ -2868,7 +2878,8 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 	}
 
 	/* Alloc backing store */
-	if (bo && !(bo->flags & XE_BO_INTERNAL_ALLOC)) {
+	if (!is_unmap_op(bind_op->op) && bo &&
+	    !(bo->flags & XE_BO_INTERNAL_ALLOC)) {
 		err = xe_bo_alloc_backing(vm->xe, bo);
 		if (err)
 			return err;
@@ -2879,8 +2890,7 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 	 * related to xe_evict.evict-mixed-many-threads-small failure. Details
 	 * in issue #39
 	 */
-	if (VM_BIND_OP(bind_op->op) == XE_VM_BIND_OP_UNMAP ||
-	    VM_BIND_OP(bind_op->op) == XE_VM_BIND_OP_UNMAP_ALL) {
+	if (is_unmap_op(bind_op->op)) {
 		int i;
 
 		for (i = 0; i < num_syncs; i++) {
@@ -3053,8 +3063,7 @@ again:
 		} else {
 			trace_xe_vma_flush(op->vma);
 
-			if (VM_BIND_OP(op->bind_op.op) == XE_VM_BIND_OP_UNMAP ||
-			    VM_BIND_OP(op->bind_op.op) == XE_VM_BIND_OP_UNMAP_ALL) {
+			if (is_unmap_op(op->bind_op.op)) {
 				down_write(&vm->lock);
 				xe_vma_destroy(op->vma);
 				up_write(&vm->lock);
