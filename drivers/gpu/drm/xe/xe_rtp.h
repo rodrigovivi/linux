@@ -86,9 +86,17 @@ struct xe_reg_sr;
 	{ .match_type = XE_RTP_MATCH_GRAPHICS_VERSION,				\
 	  .ver_start = ver__, }
 
+#define XE_RTP_RULE_GRAPHICS_VERSION_RANGE(ver_start__, ver_end__)		\
+	{ .match_type = XE_RTP_MATCH_GRAPHICS_VERSION_RANGE,			\
+	  .ver_start = ver_start__, .ver_end = ver_end__, }
+
 #define XE_RTP_RULE_MEDIA_VERSION(ver__)					\
 	{ .match_type = XE_RTP_MATCH_MEDIA_VERSION,				\
 	  .ver_start = ver__, }
+
+#define XE_RTP_RULE_MEDIA_VERSION_RANGE(ver_start__, ver_end__)			\
+	{ .match_type = XE_RTP_MATCH_MEDIA_VERSION_RANGE,			\
+	  .ver_start = ver_start__, .ver_end = ver_end__, }
 
 #define XE_RTP_RULE_IS_INTEGRATED						\
 	{ .match_type = XE_RTP_MATCH_INTEGRATED }
