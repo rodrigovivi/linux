@@ -608,21 +608,29 @@ static int handle_acc(struct xe_gt *gt, struct acc *acc)
 		goto unlock_vm;
 
 	/* Lock VM and BOs dma-resv */
-	bo = vma->bo;
-	tv_vm.num_shared = xe->info.tile_count;
-	tv_vm.bo = xe_vm_ttm_bo(vm);
-	list_add(&tv_vm.head, &objs);
-	tv_bo.bo = &bo->ttm;
-	tv_bo.num_shared = xe->info.tile_count;
-	list_add(&tv_bo.head, &objs);
-	ret = ttm_eu_reserve_buffers(&ww, &objs, false, &dups);
+	if (only_needs_bo_lock(bo)) {
+		/* This path ensures the BO's LRU is updated */
+		ret = xe_bo_lock(bo, &ww, xe->info.tile_count, false);
+	} else {
+		bo = vma->bo;
+		tv_vm.num_shared = xe->info.tile_count;
+		tv_vm.bo = xe_vm_ttm_bo(vm);
+		list_add(&tv_vm.head, &objs);
+		tv_bo.bo = &bo->ttm;
+		tv_bo.num_shared = xe->info.tile_count;
+		list_add(&tv_bo.head, &objs);
+		ret = ttm_eu_reserve_buffers(&ww, &objs, false, &dups);
+	}
 	if (ret)
 		goto unlock_vm;
 
 	/* Migrate to VRAM, move should invalidate the VMA first */
 	ret = xe_bo_migrate(bo, XE_PL_VRAM0 + gt->info.vram_id);
 
-	ttm_eu_backoff_reservation(&ww, &objs);
+	if (only_needs_bo_lock(bo))
+		xe_bo_unlock(bo, &ww);
+	else
+		ttm_eu_backoff_reservation(&ww, &objs);
 unlock_vm:
 	up_read(&vm->lock);
 	xe_vm_put(vm);
