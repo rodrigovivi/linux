@@ -121,7 +121,7 @@ int radeon_sa_bo_new(struct radeon_sa_manager *sa_manager,
 		     struct drm_suballoc **sa_bo,
 		     unsigned size)
 {
-	struct drm_suballoc *sa = drm_suballoc_new(&sa_manager->base, size);
+	struct drm_suballoc *sa = drm_suballoc_new(&sa_manager->base, size, GFP_KERNEL, true);
 
 	if (IS_ERR(sa)) {
 		*sa_bo = NULL;
@@ -140,9 +140,9 @@ void radeon_sa_bo_free(struct drm_suballoc **sa_bo,
 	}
 
 	if (fence)
-		drm_suballoc_free(*sa_bo, &fence->base, fence->ring);
+		drm_suballoc_free(*sa_bo, &fence->base);
 	else
-		drm_suballoc_free(*sa_bo, NULL, 0);
+		drm_suballoc_free(*sa_bo, NULL);
 
 	*sa_bo = NULL;
 }
@@ -151,6 +151,8 @@ void radeon_sa_bo_free(struct drm_suballoc **sa_bo,
 void radeon_sa_bo_dump_debug_info(struct radeon_sa_manager *sa_manager,
 				  struct seq_file *m)
 {
-	drm_suballoc_dump_debug_info(&sa_manager->base, m, sa_manager->gpu_addr);
+	struct drm_printer p = drm_seq_file_printer(m);
+
+	drm_suballoc_dump_debug_info(&sa_manager->base, &p, sa_manager->gpu_addr);
 }
 #endif

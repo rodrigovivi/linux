@@ -50,8 +50,6 @@ int amdgpu_sa_bo_manager_init(struct amdgpu_device *adev,
 {
 	int r;
 
-	BUILD_BUG_ON(DRM_SUBALLOC_MAX_QUEUES < AMDGPU_MAX_RINGS);
-
 	r = amdgpu_bo_create_kernel(adev, size, AMDGPU_GPU_PAGE_SIZE, domain, &sa_manager->bo,
 				&sa_manager->gpu_addr, &sa_manager->cpu_ptr);
 	if (r) {
@@ -81,7 +79,7 @@ int amdgpu_sa_bo_new(struct amdgpu_sa_manager *sa_manager,
 		     struct drm_suballoc **sa_bo,
 		     unsigned size)
 {
-	struct drm_suballoc *sa = drm_suballoc_new(&sa_manager->base, size);
+	struct drm_suballoc *sa = drm_suballoc_new(&sa_manager->base, size, GFP_KERNEL, true);
 
 	if (IS_ERR(sa)) {
 		*sa_bo = NULL;
@@ -100,7 +98,7 @@ void amdgpu_sa_bo_free(struct amdgpu_device *adev, struct drm_suballoc **sa_bo,
 		return;
 	}
 
-	drm_suballoc_free(*sa_bo, fence, fence->context % DRM_SUBALLOC_MAX_QUEUES);
+	drm_suballoc_free(*sa_bo, fence);
 	*sa_bo = NULL;
 }
 
@@ -109,6 +107,8 @@ void amdgpu_sa_bo_free(struct amdgpu_device *adev, struct drm_suballoc **sa_bo,
 void amdgpu_sa_bo_dump_debug_info(struct amdgpu_sa_manager *sa_manager,
 				  struct seq_file *m)
 {
-	drm_suballoc_dump_debug_info(&sa_manager->base, m, sa_manager->gpu_addr);
+	struct drm_printer p = drm_seq_file_printer(m);
+
+	drm_suballoc_dump_debug_info(&sa_manager->base, &p, sa_manager->gpu_addr);
 }
 #endif
