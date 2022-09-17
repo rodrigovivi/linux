@@ -227,8 +227,8 @@ retry_userptr:
 
 	/*
 	 * XXX: Should we drop the lock before waiting? This only helps if doing
-	 * GPU binds which is currently only down if we have to wait for more
-	 * than 1ms on a move.
+	 * GPU binds which is currently only done if we have to wait for more
+	 * than 10ms on a move.
 	 */
 	dma_fence_wait(fence, false);
 	dma_fence_put(fence);

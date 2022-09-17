@@ -845,7 +845,7 @@ xe_migrate_update_pgtables_cpu(struct xe_migrate *m,
 {
 	u32 i;
 
-	/* Wait on BO moves for 1 ms, then fall back to GPU job */
+	/* Wait on BO moves for 10 ms, then fall back to GPU job */
 	if (bo) {
 		long wait;
 
