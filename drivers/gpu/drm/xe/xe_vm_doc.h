@@ -355,11 +355,11 @@
  *	If atomic fault, migrate to VRAM, else validate BO location            |
  *	Issue rebind                                                           |
  *	Wait on rebind to complete                                             |
- *	Issue blocking TLB invalidation                                        |
  *	Check if userptr invalidated since pin                                 |
  *		Drop VM & BO dma-resv locks                                    |
  *		Retry ----------------------------------------------------------
  *	Unlock all
+ *	Issue blocking TLB invalidation                                        |
  *	Send page fault response to GuC
  *
  * Access counters
