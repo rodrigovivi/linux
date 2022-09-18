@@ -187,6 +187,15 @@
  * to execs and compute mode rebind worker. To accomplish this, hold the
  * vm->lock in write mode from the first operation until the last.
  *
+ * Deferred binds in fault mode
+ * ----------------------------
+ *
+ * In a VM is in fault mode (TODO: link to fault mode), new bind operations that
+ * create mappings are by default are deferred to the page fault handler (first
+ * use). This behavior can be overriden by setting the flag
+ * XE_VM_BIND_FLAG_IMMEDIATE which indicates to creating the mapping
+ * immediately.
+ *
  * User pointer
  * ============
  *
