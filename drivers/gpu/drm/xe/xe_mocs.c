@@ -428,6 +428,7 @@ static unsigned int get_mocs_settings(struct xe_device *xe,
 		info->uc_index = 3;
 		break;
 	case XE_ALDERLAKE_S:
+	case XE_ALDERLAKE_P:
 		info->size  = ARRAY_SIZE(gen12_mocs_desc);
 		info->table = gen12_mocs_desc;
 		info->n_entries = GEN9_NUM_MOCS_ENTRIES;
