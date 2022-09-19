@@ -29,6 +29,7 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 
 struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 				   struct xe_bo *bo,
+				   struct ttm_resource *dst,
 				   u32 value);
 
 typedef void (*xe_migrate_populatefn_t)(struct xe_gt *gt,
