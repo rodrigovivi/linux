@@ -36,6 +36,7 @@ struct xe_migrate {
 
 #define NUM_KERNEL_PDE 17
 #define NUM_PT_SLOTS 32
+#define MAX_PREEMPTDISABLE_TRANSFER SZ_8M /* Around 1ms. */
 
 static void xe_migrate_sanity_test(struct xe_migrate *m);
 
@@ -294,13 +295,15 @@ static void xe_migrate_res_sizes(struct ttm_resource *res,
 				 struct xe_res_cursor *cur,
 				 u64 *L0, u64 *L1)
 {
+	u64 remaining = min_t(u64, MAX_PREEMPTDISABLE_TRANSFER, cur->remaining);
+
 	if (!mem_type_is_vram(res->mem_type) ||
 	    (cur->start & (SZ_2M - 1))) {
 		*L1 = 0;
-		*L0 = cur->remaining;
+		*L0 = remaining;
 	} else {
-		*L1 = cur->remaining & ~(SZ_2M - 1);
-		*L0 = cur->remaining - *L1;
+		*L1 = remaining & ~(SZ_2M - 1);
+		*L0 = remaining - *L1;
 	}
 }
 
@@ -523,6 +526,7 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 		if (IS_ERR(bb))
 			return ERR_CAST(bb);
 
+		/* Preemption is enabled again by the ring ops. */
 		emit_arb_clear(bb);
 		if (src_L1)
 			emit_pte(m, bb, src_L1_pt, SZ_2M, src, &src_it, src_L1,
@@ -642,7 +646,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		u64 clear_L0, clear_L1;
 		struct xe_sched_job *job;
 		struct xe_bb *bb;
-		u32 batch_size = 8, update_idx;
+		u32 batch_size, update_idx;
 
 		/* Obtain max we can clear through L0 and L1 */
 		xe_migrate_res_sizes(src, &src_it, &clear_L0, &clear_L1);
@@ -650,12 +654,14 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 			clear_L1, clear_L0);
 
 		/* And calculate final sizes and batch size.. */
-		batch_size +=
+		batch_size = 1 +
 			pte_update_size(m, src,
 					&clear_L0, &clear_L0_ofs, &clear_L0_pt,
 					&clear_L1, &clear_L1_ofs, &clear_L1_pt,
 					7, 0, NUM_KERNEL_PDE - 1);
 
+		/* Clear commands */
+		batch_size += (clear_L1 / SZ_256M + clear_L0 / SZ_64M + 1) * 8;
 		dma_fence_put(fence);
 
 		if (WARN_ON_ONCE(!clear_L0 && !clear_L1))
@@ -668,6 +674,9 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		size -= clear_L0 + clear_L1;
 
 		/* TODO: Add dependencies here */
+
+		/* Preemption is enabled again by the ring ops. */
+		emit_arb_clear(bb);
 		if (clear_L1)
 			emit_pte(m, bb, clear_L1_pt, SZ_2M, src, &src_it,
 				 clear_L1, bo->ttm.ttm);
@@ -678,7 +687,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		update_idx = bb->len;
 
 		while (clear_L1) {
-			u64 chunk = min_t(u64, clear_L1, SZ_1G);
+			u64 chunk = min_t(u64, clear_L1, SZ_256M);
 
 			emit_clear(bb, clear_L1_ofs, chunk, SZ_16K, value);
 			clear_L1 -= chunk;
@@ -686,7 +695,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		}
 
 		while (clear_L0) {
-			u32 chunk = min_t(u32, clear_L0, SZ_256M);
+			u32 chunk = min_t(u32, clear_L0, SZ_16M);
 
 			emit_clear(bb, clear_L0_ofs, chunk, SZ_4K, value);
 			clear_L0 -= chunk;
@@ -852,6 +861,8 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 				    NUM_VMUSA_UNIT_PER_PAGE) *
 				VM_SA_UPDATE_UNIT_SIZE;
 		}
+
+		/* Preemption is enabled again by the ring ops. */
 		emit_arb_clear(bb);
 
 		/* Map our PT's to gtt */
@@ -883,6 +894,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 		bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
 		update_idx = bb->len;
 
+		/* Preemption is enabled again by the ring ops. */
 		emit_arb_clear(bb);
 		for (i = 0; i < num_updates; i++)
 			write_pgtable(m->gt, bb, 0, &updates[i], populatefn,
