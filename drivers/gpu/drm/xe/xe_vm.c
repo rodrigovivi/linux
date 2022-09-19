@@ -285,7 +285,7 @@ static int xe_pt_populate_for_vma(struct xe_gt *gt, struct xe_vma *vma,
 	bool init = !pt->num_live;
 	u32 i;
 	int err;
-	u64 page_size = 1 << xe_pt_shift(pt->level);
+	u64 page_size = 1ull << xe_pt_shift(pt->level);
 	u32 numpdes = GEN8_PDES;
 	u32 flags = 0;
 	u64 bo_offset = vma->bo_offset + (start - vma->start);
@@ -305,8 +305,8 @@ static int xe_pt_populate_for_vma(struct xe_gt *gt, struct xe_vma *vma,
 		}
 	}
 
-	vm_dbg(&vm->xe->drm, "\t\t%u: %d..%d F:0x%x 0x%llx %d\n", pt->level,
-	       start_ofs, last_ofs, flags, page_size, idx);
+	vm_dbg(&vm->xe->drm, "\t\t%u: %d..%d F:0x%x 0x%llx %d n:%d\n", pt->level,
+	       start_ofs, last_ofs, flags, page_size, idx, pt->num_live);
 
 	if (pt->level) {
 		u64 cur = start;
@@ -1613,9 +1613,9 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 			my_removed_pte = last_ofs - start_ofs + 1;
 		}
 		vm_dbg(&vma->vm->xe->drm,
-		       "\t%u: De-Populating entry [%u..%u +%u) [%llx...%llx)\n",
+		       "\t%u: De-Populating entry [%u..%u +%u) [%llx...%llx) n:%d\n",
 			pt->level, start_ofs, last_ofs, my_removed_pte, start,
-			end);
+			end, num_live);
 		XE_BUG_ON(!my_removed_pte);
 	} else {
 		struct xe_pt_dir *pt_dir = as_xe_pt_dir(pt);
@@ -1636,9 +1636,9 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 			partial_end = xe_pt_partial_entry(end_start, end,
 							  pt->level);
 		vm_dbg(&vma->vm->xe->drm,
-		       "\t%u: [%llx...%llx) partial begin/end: %u / %u, %u entries\n",
+		       "\t%u: [%llx...%llx) partial begin/end: %u / %u, %u entries n:%d\n",
 		       pt->level, start, end, partial_begin, partial_end,
-		       my_rm_pte);
+		       my_rm_pte, num_live);
 		my_rm_pte -= partial_begin + partial_end;
 		if (partial_begin) {
 			u32 rem = 0;
@@ -1656,23 +1656,29 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 			if (rem)
 				my_removed_pte++;
 		}
-		for (i = 0; i < my_rm_pte; i++) {
-			u32 rem = 0;
-			u64 cur_end = min(xe_pt_next_start(cur, pt->level),
-					  end);
+		if (my_rm_pte < GEN8_PDES) {
+			for (i = 0; i < my_rm_pte; i++) {
+				u32 rem = 0;
+				u64 cur_end = min(xe_pt_next_start(cur, pt->level),
+						  end);
 
-			vm_dbg(&vma->vm->xe->drm, "\t%llx...%llx / %llx",
-			       xe_pt_next_start(cur, pt->level), end, cur_end);
-			__xe_pt_prepare_unbind(vma,
-					       pt_dir->entries[start_ofs++],
-					       &rem, cur, cur_end, num_entries,
-					       entries);
-			if (rem) {
-				if (!my_removed_pte)
-					first_ofs = start_ofs - 1;
-				my_removed_pte++;
+				vm_dbg(&vma->vm->xe->drm, "\t%llx...%llx / %llx\n",
+				       xe_pt_next_start(cur, pt->level), end, cur_end);
+				__xe_pt_prepare_unbind(vma,
+						       pt_dir->entries[start_ofs++],
+						       &rem, cur, cur_end, num_entries,
+						       entries);
+				if (rem) {
+					if (!my_removed_pte)
+						first_ofs = start_ofs - 1;
+					my_removed_pte++;
+				}
+				cur = cur_end;
 			}
-			cur = cur_end;
+		} else {
+			vm_dbg(&vma->vm->xe->drm, "\tremove parent\n");
+			*removed_parent_pte += 1;
+			cur = end_start;
 		}
 		if (partial_end) {
 			u32 rem = 0;
@@ -1716,10 +1722,10 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 	entry->target_offset = vma->bo_offset + (start - vma->start);
 	entry->flags = 0;
 
-	vm_dbg(&vma->vm->xe->drm, "REMOVE %d L:%d o:%d q:%d t:0x%llx (%llx,%llx,%llx) f:0x%x\n",
+	vm_dbg(&vma->vm->xe->drm, "REMOVE %d L:%d o:%d q:%d t:0x%llx (%llx,%llx,%llx) f:0x%x n:%d\n",
 	       (*num_entries)-1, pt->level, entry->ofs, entry->qwords,
 	       entry->target_offset, vma->bo_offset, start, vma->start,
-	       entry->flags);
+	       entry->flags, num_live);
 }
 
 static void
@@ -1756,7 +1762,7 @@ __xe_vm_unbind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 	vm_dbg(&vm->xe->drm, "%u entries to update\n", num_entries);
 	for (i = 0; i < num_entries; i++) {
 		struct xe_vm_pgtable_update *entry = &entries[i];
-		u64 page_size = 1 << xe_pt_shift(entry->pt->level);
+		u64 page_size = 1ull << xe_pt_shift(entry->pt->level);
 		u64 end;
 		u64 start;
 		u64 len;
@@ -1876,7 +1882,7 @@ xe_vm_populate_pgtable(struct xe_gt *gt, void *data, u32 qword_ofs,
 		       u32 num_qwords, struct xe_vm_pgtable_update *update,
 		       void *arg)
 {
-	u64 page_size = 1 << xe_pt_shift(update->pt->level);
+	u64 page_size = 1ull << xe_pt_shift(update->pt->level);
 	u64 bo_offset;
 	struct xe_pt **ptes = update->pt_entries;
 	u64 *ptr = data;
