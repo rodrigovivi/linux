@@ -169,6 +169,36 @@ static const struct drm_info_list debugfs_list[] = {
 #endif
 };
 
+static int forcewake_open(struct inode *inode, struct file *file)
+{
+	struct xe_device *xe = inode->i_private;
+	struct xe_gt *gt;
+	u8 id;
+
+	for_each_gt(gt, xe, id)
+		XE_WARN_ON(xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL));
+
+	return 0;
+}
+
+static int forcewake_release(struct inode *inode, struct file *file)
+{
+	struct xe_device *xe = inode->i_private;
+	struct xe_gt *gt;
+	u8 id;
+
+	for_each_gt(gt, xe, id)
+		XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
+
+	return 0;
+}
+
+static const struct file_operations forcewake_all_fops = {
+	.owner = THIS_MODULE,
+	.open = forcewake_open,
+	.release = forcewake_release,
+};
+
 void xe_debugfs_register(struct xe_device *xe)
 {
 	struct ttm_device *bdev = &xe->ttm;
@@ -182,6 +212,9 @@ void xe_debugfs_register(struct xe_device *xe)
 	drm_debugfs_create_files(debugfs_list,
 				 ARRAY_SIZE(debugfs_list),
 				 root, minor);
+
+	debugfs_create_file("forcewake_all", 0400, root, xe,
+			    &forcewake_all_fops);
 
 	for (mem_type = XE_PL_VRAM0; mem_type <= XE_PL_VRAM1; ++mem_type) {
 		man = ttm_manager_type(bdev, mem_type);
