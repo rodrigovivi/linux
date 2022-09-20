@@ -53,4 +53,5 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 
 void xe_migrate_wait(struct xe_migrate *m);
 
+struct xe_engine *xe_gt_migrate_engine(struct xe_gt *gt);
 #endif

@@ -13,6 +13,7 @@
 #include "xe_guc.h"
 #include "xe_guc_ct.h"
 #include "xe_gt_pagefault.h"
+#include "xe_migrate.h"
 #include "xe_trace.h"
 #include "xe_vm.h"
 
@@ -208,7 +209,7 @@ retry_userptr:
 
 	/* Bind VMA only to the GT that has faulted */
 	trace_xe_vma_pf_bind(vma);
-	fence = __xe_vm_bind_vma(gt, vma, NULL, NULL, 0,
+	fence = __xe_vm_bind_vma(gt, vma, xe_gt_migrate_engine(gt), NULL, 0,
 				 vma->gt_present & BIT(gt->info.id));
 	if (IS_ERR(fence)) {
 		ret = PTR_ERR(fence);
