@@ -190,7 +190,8 @@ static int query_config(struct xe_device *xe, struct drm_xe_device_query *query)
 			XE_QUERY_CONFIG_FLAGS_USE_GUC;
 	config->info[XE_QUERY_CONFIG_MIN_ALIGNEMENT] =
 		xe->info.vram_flags & XE_VRAM_FLAGS_NEED64K ? SZ_64K : SZ_4K;
-	config->info[XE_QUERY_CONFIG_GTT_SIZE] = to_gt(xe)->mem.ggtt->size;
+	config->info[XE_QUERY_CONFIG_VA_BITS] = 12 +
+		(9 * (xe->info.vm_max_level + 1));
 	config->info[XE_QUERY_CONFIG_GT_COUNT] = xe->info.tile_count;
 	config->info[XE_QUERY_CONFIG_MEM_REGION_COUNT] =
 		hweight_long(xe->info.mem_region_mask);
