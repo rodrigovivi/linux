@@ -284,6 +284,16 @@ int xe_gt_init(struct xe_gt *gt)
 		err = xe_sa_bo_manager_init(gt, &gt->kernel_bb_pool, SZ_1M, 16);
 		if (err)
 			goto err_force_wake;
+
+		/*
+		 * USM has its only SA pool to non-block behind user operations
+		 */
+		if (gt_to_xe(gt)->info.supports_usm) {
+			err = xe_sa_bo_manager_init(gt, &gt->usm.bb_pool,
+						    SZ_1M, 16);
+			if (err)
+				goto err_force_wake;
+		}
 	}
 
 	err = xe_uc_init_hw(&gt->uc);

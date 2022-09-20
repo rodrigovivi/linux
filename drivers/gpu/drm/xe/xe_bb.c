@@ -13,7 +13,7 @@
 
 #include "../i915/gt/intel_gpu_commands.h"
 
-struct xe_bb *xe_bb_new(struct xe_gt *gt, u32 dwords)
+struct xe_bb *xe_bb_new(struct xe_gt *gt, u32 dwords, bool usm)
 {
 	struct xe_bb *bb = kmalloc(sizeof(*bb), GFP_KERNEL);
 	int err;
@@ -21,7 +21,8 @@ struct xe_bb *xe_bb_new(struct xe_gt *gt, u32 dwords)
 	if (!bb)
 		return ERR_PTR(-ENOMEM);
 
-	bb->bo = xe_sa_bo_new(&gt->kernel_bb_pool, 4 * dwords + 4);
+	bb->bo = xe_sa_bo_new(!usm ? &gt->kernel_bb_pool :
+			      &gt->usm.bb_pool, 4 * dwords + 4);
 	if (IS_ERR(bb->bo)) {
 		err = PTR_ERR(bb->bo);
 		goto err;

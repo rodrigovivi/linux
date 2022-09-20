@@ -31,6 +31,7 @@ struct xe_migrate {
 	struct mutex job_mutex;
 	struct xe_bo *pt_bo;
 	u64 batch_base_ofs;
+	u64 usm_batch_base_ofs;
 	struct dma_fence *fence;
 	struct drm_suballoc_manager vm_update_sa;
 };
@@ -90,8 +91,8 @@ static int xe_migrate_prepare_vm(struct xe_gt *gt, struct xe_migrate *m,
 	u8 id = gt->info.id;
 	u32 num_entries = NUM_PT_SLOTS, num_level = vm->pt_root[id]->level;
 	u32 map_ofs, level, i;
-	struct xe_bo *bo, *batch = m->gt->kernel_bb_pool.bo;
 	struct xe_device *xe = gt_to_xe(m->gt);
+	struct xe_bo *bo, *batch = gt->kernel_bb_pool.bo;
 	u64 entry;
 
 	/* Can't bump NUM_PT_SLOTS too high */
@@ -140,6 +141,8 @@ static int xe_migrate_prepare_vm(struct xe_gt *gt, struct xe_migrate *m,
 	}
 
 	if (!IS_DGFX(xe)) {
+		XE_BUG_ON(xe->info.supports_usm);
+
 		/* Write out batch too */
 		m->batch_base_ofs = NUM_PT_SLOTS * GEN8_PAGE_SIZE;
 		for (i = 0; i < batch->size;
@@ -156,6 +159,13 @@ static int xe_migrate_prepare_vm(struct xe_gt *gt, struct xe_migrate *m,
 		u64 batch_addr = xe_bo_addr(batch, 0, GEN8_PAGE_SIZE, &is_lmem);
 
 		m->batch_base_ofs = xe_migrate_vram_ofs(batch_addr);
+
+		if (xe->info.supports_usm) {
+			batch = gt->usm.bb_pool.bo;
+			batch_addr = xe_bo_addr(batch, 0, GEN8_PAGE_SIZE,
+						&is_lmem);
+			m->usm_batch_base_ofs = xe_migrate_vram_ofs(batch_addr);
+		}
 	}
 
 	for (level = 1; level < num_level; level++) {
@@ -463,6 +473,11 @@ static int job_add_deps(struct xe_sched_job *job, struct dma_resv *resv,
 	return drm_sched_job_add_dependencies_resv(&job->drm, resv, usage);
 }
 
+static u64 migrate_batch_base(struct xe_migrate *m, bool usm)
+{
+	return usm ? m->usm_batch_base_ofs : m->batch_base_ofs;
+}
+
 struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 				  struct xe_bo *bo,
 				  struct ttm_resource *src,
@@ -495,6 +510,7 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 		u32 num_src_pts;
 		u32 num_dst_pts;
 		u32 update_idx;
+		bool usm = xe->info.supports_usm;
 
 		dma_fence_put(fence);
 
@@ -537,7 +553,7 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 
 		XE_BUG_ON(src_L0 + src_L1 != dst_L0 + dst_L1);
 
-		bb = xe_bb_new(gt, batch_size);
+		bb = xe_bb_new(gt, batch_size, usm);
 		if (IS_ERR(bb))
 			return ERR_CAST(bb);
 
@@ -578,7 +594,8 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 
 		mutex_lock(&m->job_mutex);
 
-		job = xe_bb_create_migration_job(m->eng, bb, m->batch_base_ofs,
+		job = xe_bb_create_migration_job(m->eng, bb,
+						 migrate_batch_base(m, usm),
 						 update_idx);
 		if (IS_ERR(job)) {
 			err = PTR_ERR(job);
@@ -663,6 +680,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		struct xe_sched_job *job;
 		struct xe_bb *bb;
 		u32 batch_size, update_idx;
+		bool usm = xe->info.supports_usm;
 
 		/* Obtain max we can clear through L0 and L1 */
 		xe_migrate_res_sizes(src, &src_it, &clear_L0, &clear_L1);
@@ -683,7 +701,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		if (WARN_ON_ONCE(!clear_L0 && !clear_L1))
 			break;
 
-		bb = xe_bb_new(gt, batch_size);
+		bb = xe_bb_new(gt, batch_size, usm);
 		if (IS_ERR(bb))
 			return ERR_CAST(bb);
 
@@ -719,7 +737,8 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		}
 
 		mutex_lock(&m->job_mutex);
-		job = xe_bb_create_migration_job(m->eng, bb, m->batch_base_ofs,
+		job = xe_bb_create_migration_job(m->eng, bb,
+						 migrate_batch_base(m, usm),
 						 update_idx);
 		if (IS_ERR(job)) {
 			err = PTR_ERR(job);
@@ -882,6 +901,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	u32 i, batch_size, ppgtt_ofs, update_idx, page_ofs = 0;
 	u64 addr;
 	int err = 0;
+	bool usm = !eng && xe->info.supports_usm;
 
 	/* Use the CPU if no in syncs and engine is idle */
 	if (no_in_syncs(syncs, num_syncs) && engine_is_idle(eng)) {
@@ -913,7 +933,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	 */
 	XE_BUG_ON(batch_size >= SZ_128K);
 
-	bb = xe_bb_new(gt, batch_size);
+	bb = xe_bb_new(gt, batch_size, !eng && xe->info.supports_usm);
 	if (IS_ERR(bb))
 		return ERR_CAST(bb);
 
@@ -980,7 +1000,8 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	if (!eng)
 		mutex_lock(&m->job_mutex);
 
-	job = xe_bb_create_migration_job(eng ?: m->eng, bb, m->batch_base_ofs,
+	job = xe_bb_create_migration_job(eng ?: m->eng, bb,
+					 migrate_batch_base(m, usm),
 					 update_idx);
 	if (IS_ERR(job)) {
 		err = PTR_ERR(job);
@@ -1182,8 +1203,8 @@ free_sysmem:
 
 static void test_addressing_2mb(struct xe_migrate *m)
 {
-	struct xe_bb *bb = xe_bb_new(m->gt, 1024);
 	struct xe_device *xe = gt_to_xe(m->gt);
+	struct xe_bb *bb = xe_bb_new(m->gt, 1024, xe->info.supports_usm);
 	u32 size = (NUM_KERNEL_PDE - 1) * SZ_2M;
 	struct xe_res_cursor src_it;
 	u64 expected, retval;
@@ -1345,7 +1366,7 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 	if (err)
 		goto free_tiny;
 
-	bb = xe_bb_new(m->gt, 32);
+	bb = xe_bb_new(m->gt, 32, xe->info.supports_usm);
 	if (IS_ERR(bb)) {
 		drm_err(&xe->drm, "Failed to create batchbuffer: %li\n",
 			PTR_ERR(bb));

@@ -14,7 +14,7 @@ struct xe_gt;
 struct xe_engine;
 struct xe_sched_job;
 
-struct xe_bb *xe_bb_new(struct xe_gt *gt, u32 size);
+struct xe_bb *xe_bb_new(struct xe_gt *gt, u32 size, bool usm);
 struct xe_sched_job *xe_bb_create_job(struct xe_engine *kernel_eng,
 				      struct xe_bb *bb);
 struct xe_sched_job *xe_bb_create_migration_job(struct xe_engine *kernel_eng,
