@@ -13,6 +13,7 @@
 #include "xe_macros.h"
 #include "xe_query.h"
 #include "xe_ggtt.h"
+#include "xe_guc_hwconfig.h"
 
 static const enum xe_engine_class xe_to_user_engine_class[] = {
 	[XE_ENGINE_CLASS_RENDER] = DRM_XE_ENGINE_CLASS_RENDER,
@@ -253,12 +254,45 @@ static int query_gts(struct xe_device *xe, struct drm_xe_device_query *query)
 	return 0;
 }
 
+static int query_hwconfig(struct xe_device *xe,
+			  struct drm_xe_device_query *query)
+{
+	struct xe_gt *gt = xe_device_get_gt(xe, 0);
+	size_t size = xe_guc_hwconfig_size(&gt->uc.guc);
+	void __user *query_ptr = u64_to_user_ptr(query->data);
+	void *hwconfig;
+
+	if (query->size == 0) {
+		query->size = size;
+		return 0;
+	} else if (XE_IOCTL_ERR(xe, query->size != size)) {
+		return -EINVAL;
+	}
+
+	hwconfig = kzalloc(size, GFP_KERNEL);
+	if (XE_IOCTL_ERR(xe, !hwconfig))
+		return -ENOMEM;
+
+	xe_device_mem_access_wa_get(xe);
+	xe_guc_hwconfig_copy(&gt->uc.guc, hwconfig);
+	xe_device_mem_access_wa_put(xe);
+
+	if (copy_to_user(query_ptr, hwconfig, size)) {
+		kfree(hwconfig);
+		return -EFAULT;
+	}
+	kfree(hwconfig);
+
+	return 0;
+}
+
 static int (* const xe_query_funcs[])(struct xe_device *xe,
 				      struct drm_xe_device_query *query) = {
 	query_engines,
 	query_memory_usage,
 	query_config,
 	query_gts,
+	query_hwconfig,
 };
 
 int xe_query_ioctl(struct drm_device *dev, void *data, struct drm_file *file)

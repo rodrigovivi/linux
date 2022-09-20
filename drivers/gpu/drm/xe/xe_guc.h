@@ -13,6 +13,7 @@
 struct drm_printer;
 
 int xe_guc_init(struct xe_guc *guc);
+int xe_guc_post_load_init(struct xe_guc *guc);
 int xe_guc_reset(struct xe_guc *guc);
 int xe_guc_upload(struct xe_guc *guc);
 int xe_guc_enable_communication(struct xe_guc *guc);

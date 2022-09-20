@@ -8,6 +8,7 @@
 #include "xe_guc.h"
 #include "xe_guc_ads.h"
 #include "xe_guc_ct.h"
+#include "xe_guc_hwconfig.h"
 #include "xe_guc_log.h"
 #include "xe_guc_reg.h"
 #include "xe_guc_pc.h"
@@ -237,6 +238,22 @@ int xe_guc_init(struct xe_guc *guc)
 
 out:
 	drm_err(&xe->drm, "GuC init failed with %d", ret);
+	return ret;
+}
+
+int xe_guc_post_load_init(struct xe_guc *guc)
+{
+	struct xe_device *xe = guc_to_xe(guc);
+	int ret;
+
+	ret = xe_guc_hwconfig_init(guc);
+	if (ret)
+		goto out;
+
+	return 0;
+
+out:
+	drm_err(&xe->drm, "GuC post load init failed with %d", ret);
 	return ret;
 }
 
