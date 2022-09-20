@@ -115,6 +115,14 @@ struct xe_gt {
 	/** @usm: unified shared memory state */
 	struct {
 		/**
+		 * @bb_pool: Pool from which batchbuffers, for USM operations
+		 * (e.g. migrations, fixing page tables), are allocated.
+		 * Dedicated pool needed so USM operations to not get blocked
+		 * behind any user operations which may have resulted in a
+		 * fault.
+		 */
+		struct xe_sa_manager bb_pool;
+		/**
 		 * @reserved_bcs_instance: reserved BCS instance used for USM
 		 * operations (e.g. mmigrations, fixing page tables)
 		 */
