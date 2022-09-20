@@ -21,7 +21,6 @@
  * and write operations to PCODE will be internal and private to this component.
  *
  * What's next:
- * - PCODE dgfx init wait and timeout
  * - PCODE hw metrics
  * - PCODE for display operations
  */
@@ -41,6 +40,8 @@ static int pcode_mailbox_status(struct xe_gt *gt)
 		[PCODE_ERROR_MASK] = {-EPROTO, "Unknown"},
 	};
 
+	lockdep_assert_held(&gt->pcode.lock);
+
 	err = xe_mmio_read32(gt, PCODE_MAILBOX.reg) & PCODE_ERROR_MASK;
 	if (err) {
 		drm_err(&gt_to_xe(gt)->drm, "PCODE Mailbox failed: %d %s", err,
@@ -53,12 +54,15 @@ static int pcode_mailbox_status(struct xe_gt *gt)
 
 static bool pcode_mailbox_done(struct xe_gt *gt)
 {
+	lockdep_assert_held(&gt->pcode.lock);
 	return (xe_mmio_read32(gt, PCODE_MAILBOX.reg) & PCODE_READY) == 0;
 }
 
 static int pcode_mailbox_rw(struct xe_gt *gt, u32 mbox, u32 *data0, u32 *data1,
 			    unsigned int timeout, bool return_data)
 {
+	lockdep_assert_held(&gt->pcode.lock);
+
 	if (!pcode_mailbox_done(gt))
 		return -EAGAIN;
 
@@ -77,9 +81,10 @@ static int pcode_mailbox_rw(struct xe_gt *gt, u32 mbox, u32 *data0, u32 *data1,
 	return pcode_mailbox_status(gt);
 }
 
-static int pcode_mailbox_write(struct xe_gt *gt, u32 mbox, u32 data)
+static int pcode_mailbox_write(struct xe_gt *gt, u32 mbox, u32 data,
+			       unsigned int timeout)
 {
-	return pcode_mailbox_rw(gt, mbox, &data, NULL, 500, false);
+	return pcode_mailbox_rw(gt, mbox, &data, NULL, timeout, false);
 }
 
 /**
@@ -119,12 +124,75 @@ int xe_pcode_init_min_freq_table(struct xe_gt *gt, u32 min_gt_freq,
 	if (max_gt_freq <= min_gt_freq)
 		return -EINVAL;
 
+	mutex_lock(&gt->pcode.lock);
 	for (freq = min_gt_freq; freq <= max_gt_freq; freq++) {
 		ret = pcode_mailbox_write(gt, PCODE_WRITE_MIN_FREQ_TABLE,
 					  freq << PCODE_FREQ_RING_RATIO_SHIFT |
-					  freq);
+					  freq, 500);
 		if (ret)
-			return ret;
+			goto unlock;
 	}
-	return 0;
+
+unlock:
+	mutex_unlock(&gt->pcode.lock);
+	return ret;
+}
+
+static bool pcode_dgfx_status_complete(struct xe_gt *gt)
+{
+	u32 data = DGFX_GET_INIT_STATUS;
+	int status = pcode_mailbox_rw(gt, DGFX_PCODE_STATUS,
+				      &data, NULL, 500, true);
+
+	return status == 0 &&
+		(data & DGFX_INIT_STATUS_COMPLETE) == DGFX_INIT_STATUS_COMPLETE;
+}
+
+/**
+ * xe_pcode_init - Ensure PCODE is initialized
+ * @gt: gt instance
+ *
+ * This function ensures that PCODE is properly initialized. To be called during
+ * probe and resume paths.
+ *
+ * It returns 0 on success, and -error number on failure.
+ */
+int xe_pcode_init(struct xe_gt *gt)
+{
+	int timeout = 180000; /* 3 min */
+	int ret;
+
+	if (!IS_DGFX(gt_to_xe(gt)))
+		return 0;
+
+	mutex_lock(&gt->pcode.lock);
+	ret = wait_for(pcode_dgfx_status_complete(gt), timeout);
+	mutex_unlock(&gt->pcode.lock);
+
+	if (ret)
+		drm_err(&gt_to_xe(gt)->drm,
+			"PCODE initialization timedout after: %d min\n",
+			timeout / 60000);
+
+	return ret;
+}
+
+/**
+ * xe_pcode_probe - Prepare xe_pcode and also ensure PCODE is initialized.
+ * @gt: gt instance
+ *
+ * This function initializes the xe_pcode component, and when needed, it ensures
+ * that PCODE has properly performed its initialization and it is really ready
+ * to go. To be called once only during probe.
+ *
+ * It returns 0 on success, and -error number on failure.
+ */
+int xe_pcode_probe(struct xe_gt *gt)
+{
+	mutex_init(&gt->pcode.lock);
+
+	if (!IS_DGFX(gt_to_xe(gt)))
+		return 0;
+
+	return xe_pcode_init(gt);
 }
