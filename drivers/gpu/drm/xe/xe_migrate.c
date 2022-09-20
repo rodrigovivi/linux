@@ -40,6 +40,11 @@ struct xe_migrate {
 #define NUM_PT_SLOTS 32
 #define MAX_PREEMPTDISABLE_TRANSFER SZ_8M /* Around 1ms. */
 
+struct xe_engine *xe_gt_migrate_engine(struct xe_gt *gt)
+{
+	return gt->migrate->eng;
+}
+
 static void xe_migrate_sanity_test(struct xe_migrate *m);
 
 static void xe_migrate_fini(struct drm_device *dev, void *arg)
