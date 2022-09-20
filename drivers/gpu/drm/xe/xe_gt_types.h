@@ -49,6 +49,8 @@ struct xe_gt {
 		u8 id;
 		/** @vram: id of the VRAM for this GT */
 		u8 vram_id;
+		/** @clock_freq: clock frequency */
+		u32 clock_freq;
 		/** @engine_mask: mask of engines present on GT */
 		u64 engine_mask;
 	} info;

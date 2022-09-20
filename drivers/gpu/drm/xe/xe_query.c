@@ -236,6 +236,7 @@ static int query_gts(struct xe_device *xe, struct drm_xe_device_query *query)
 		else
 			gts->gts[id].type = XE_QUERY_GT_TYPE_REMOTE;
 		gts->gts[id].instance = id;
+		gts->gts[id].clock_freq = gt->info.clock_freq;
 		if (!IS_DGFX(xe))
 			gts->gts[id].native_mem_regions = 0x1;
 		else

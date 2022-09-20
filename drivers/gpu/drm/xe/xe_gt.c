@@ -14,6 +14,7 @@
 #include "xe_force_wake.h"
 #include "xe_ggtt.h"
 #include "xe_gt.h"
+#include "xe_gt_clock.h"
 #include "xe_gt_pagefault.h"
 #include "xe_gt_sysfs.h"
 #include "xe_hw_fence.h"
@@ -255,6 +256,10 @@ int xe_gt_init(struct xe_gt *gt)
 	setup_private_ppat(gt);
 
 	xe_reg_sr_apply_mmio(&gt->reg_sr, gt);
+
+	err = xe_gt_clock_init(gt);
+	if (err)
+		goto err_force_wake;
 
 	if (!xe_gt_is_media_type(gt)) {
 		err = gt_ttm_mgr_init(gt);

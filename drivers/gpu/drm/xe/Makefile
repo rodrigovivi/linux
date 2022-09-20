@@ -51,6 +51,7 @@ xe-y += xe_bb.o \
 	xe_force_wake.o \
 	xe_ggtt.o \
 	xe_gt.o \
+	xe_gt_clock.o \
 	xe_gt_debugfs.o \
 	xe_gt_pagefault.o \
 	xe_gt_sysfs.o \
