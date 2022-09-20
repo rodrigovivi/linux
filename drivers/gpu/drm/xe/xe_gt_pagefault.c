@@ -294,3 +294,15 @@ void xe_gt_pagefault_reset(struct xe_gt *gt)
 		spin_unlock(&gt->usm.pf_queue[i].lock);
 	}
 }
+
+int xe_gt_tlb_invalidate(struct xe_gt *gt)
+{
+	/* TODO: Implement */
+	return 0;
+}
+
+int xe_gt_tlb_invalidate_wait(struct xe_gt *gt, int seqno)
+{
+	/* TODO: Implement */
+	return 0;
+}

@@ -247,6 +247,7 @@ void xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo)
 	struct dma_resv_iter cursor;
 	struct dma_fence *fence;
 	struct xe_vma *vma;
+	int ret;
 
 	if (!xe_device_in_fault_mode(xe)) {
 		dma_resv_iter_begin(&cursor, bo->ttm.base.resv,
@@ -260,10 +261,8 @@ void xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo)
 		trace_xe_vma_evict(vma);
 
 		if (xe_device_in_fault_mode(xe)) {
-			/*
-			 * FIXME: Modify page table memory without a lock and
-			 * invalidate TLB.
-			 */
+			ret = xe_vm_invalidate_vma(vma);
+			XE_WARN_ON(ret);
 		} else {
 			if (list_empty(&vma->evict_link))
 				list_add_tail(&vma->evict_link,
