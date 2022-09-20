@@ -15,11 +15,13 @@
 #include "xe_res_cursor.h"
 #include "xe_sched_job.h"
 #include "xe_sync.h"
+#include "xe_trace.h"
 #include "xe_vm.h"
 
 #include <linux/sizes.h>
 #include <drm/drm_managed.h>
 #include <drm/ttm/ttm_tt.h>
+#include <drm/xe_drm.h>
 
 #include "../i915/gt/intel_gpu_commands.h"
 
@@ -30,7 +32,6 @@ struct xe_migrate {
 	struct xe_bo *pt_bo;
 	u64 batch_base_ofs;
 	struct dma_fence *fence;
-
 	struct drm_suballoc_manager vm_update_sa;
 };
 
@@ -783,7 +784,7 @@ static void write_pgtable(struct xe_gt *gt, struct xe_bb *bb, u64 ppgtt_ofs,
 			(chunk * 2 + 1);
 		bb->cs[bb->len++] = lower_32_bits(addr);
 		bb->cs[bb->len++] = upper_32_bits(addr);
-		populatefn(gt, bb->cs + bb->len, ofs, chunk, update, arg);
+		populatefn(gt, NULL, bb->cs + bb->len, ofs, chunk, update, arg);
 
 		bb->len += chunk * 2;
 		ofs += chunk;
@@ -794,6 +795,57 @@ static void write_pgtable(struct xe_gt *gt, struct xe_bb *bb, u64 ppgtt_ofs,
 struct xe_vm *xe_migrate_get_vm(struct xe_migrate *m)
 {
 	return xe_vm_get(m->eng->vm);
+}
+
+static struct dma_fence *
+xe_migrate_update_pgtables_cpu(struct xe_migrate *m,
+			       struct xe_vm *vm, struct xe_bo *bo,
+			       struct xe_vm_pgtable_update *updates,
+			       u32 num_updates,
+			       xe_migrate_populatefn_t populatefn,
+			       void *arg)
+{
+	u32 i;
+
+	/* Wait on BO moves for 1 ms, then fall back to GPU job */
+	if (bo) {
+		long wait;
+
+		wait = dma_resv_wait_timeout(bo->ttm.base.resv,
+					     DMA_RESV_USAGE_KERNEL,
+					     true, HZ / 100);
+		if (wait <= 0)
+			return ERR_PTR(-ETIME);
+	}
+
+	for (i = 0; i < num_updates; i++) {
+		struct xe_vm_pgtable_update *update = &updates[i];
+
+		populatefn(m->gt, &update->pt_bo->vmap, NULL, update->ofs,
+			   update->qwords, update, arg);
+	}
+
+	trace_xe_vm_cpu_bind(vm);
+
+	return dma_fence_get_stub();
+}
+
+static bool no_in_syncs(struct xe_sync_entry *syncs, u32 num_syncs)
+{
+	int i;
+
+	/* XXX: Further optimization, check if all in fences signaled */
+	for (i = 0; i < num_syncs; i++)
+		if (!(syncs[i].flags & DRM_XE_SYNC_SIGNAL))
+			return false;
+
+	return true;
+}
+
+static bool engine_is_idle(struct xe_engine *e)
+{
+	return !e || e->lrc[0].fence_ctx.next_seqno == 1 ||
+		xe_lrc_seqno(&e->lrc[0]) == e->lrc[0].fence_ctx.next_seqno;
 }
 
 struct dma_fence *
@@ -816,6 +868,15 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	u32 i, batch_size, ppgtt_ofs, update_idx, page_ofs = 0;
 	u64 addr;
 	int err = 0;
+
+	/* Use the CPU if no in syncs and engine is idle */
+	if (no_in_syncs(syncs, num_syncs) && engine_is_idle(eng)) {
+		fence =  xe_migrate_update_pgtables_cpu(m, vm, bo, updates,
+							num_updates, populatefn,
+							arg);
+		if (!IS_ERR(fence))
+			return fence;
+	}
 
 	/* fixed + PTE entries */
 	if (IS_DGFX(xe))
@@ -1016,7 +1077,8 @@ static int run_sanity_job(struct xe_migrate *m, struct xe_device *xe,
 }
 
 static void
-sanity_populate_cb(struct xe_gt *gt, void *dst, u32 qword_ofs, u32 num_qwords,
+sanity_populate_cb(struct xe_gt *gt, struct iosys_map *map, void *dst,
+		   u32 qword_ofs, u32 num_qwords,
 		   struct xe_vm_pgtable_update *update,
 		   void *arg)
 {
