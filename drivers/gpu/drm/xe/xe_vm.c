@@ -18,6 +18,7 @@
 #include "xe_device.h"
 #include "xe_engine.h"
 #include "xe_gt.h"
+#include "xe_gt_pagefault.h"
 #include "xe_map.h"
 #include "xe_migrate.h"
 #include "xe_preempt_fence.h"
@@ -273,6 +274,27 @@ static bool vma_uses_64k_pages(struct xe_vma *vma)
 	return vma->bo && vma->bo->flags & XE_BO_INTERNAL_64K;
 }
 
+static void vma_add_leaf(struct xe_gt *gt, struct xe_vma *vma,
+			 struct xe_pt *pt, int start_ofs, int len)
+{
+	struct xe_device *xe = gt_to_xe(gt);
+	int gt_id = gt->info.id;
+	int num_leafs = vma->usm.gt[gt_id].num_leafs;
+
+	if (!xe_vm_in_fault_mode(vma->vm))
+		return;
+
+	XE_BUG_ON(num_leafs >= MAX_LEAFS);
+
+	vm_dbg(&xe->drm, "add leaf=%d, pt->level=%d, start_ofs=%d, len=%d",
+	       num_leafs, pt->level, start_ofs, len);
+
+	vma->usm.gt[gt_id].leafs[num_leafs].bo = pt->bo;
+	vma->usm.gt[gt_id].leafs[num_leafs].start_ofs = start_ofs;
+	vma->usm.gt[gt_id].leafs[num_leafs].len = len;
+	vma->usm.gt[gt_id].num_leafs++;
+}
+
 static int xe_pt_populate_for_vma(struct xe_gt *gt, struct xe_vma *vma,
 				  struct xe_pt *pt, u64 start, u64 end,
 				  bool rebind, u32 idx)
@@ -290,8 +312,13 @@ static int xe_pt_populate_for_vma(struct xe_gt *gt, struct xe_vma *vma,
 	u32 flags = 0;
 	u64 bo_offset = vma->bo_offset + (start - vma->start);
 	u8 id = gt->info.id;
+	bool add_leaf = false;
 
 	XE_BUG_ON(xe_gt_is_media_type(gt));
+
+	if ((start_ofs != 0 || last_ofs != 511) &&
+	    (end - start) >=  0x1ull << xe_pt_shift(pt->level))
+		add_leaf = true;
 
 	if (vma_uses_64k_pages(vma)) {
 		if (page_size < SZ_64K)
@@ -304,6 +331,9 @@ static int xe_pt_populate_for_vma(struct xe_gt *gt, struct xe_vma *vma,
 			last_ofs = last_ofs / 16;
 		}
 	}
+	if (add_leaf)
+		vma_add_leaf(gt, vma, pt, start_ofs * sizeof(u64),
+			     (last_ofs + 1 - start_ofs) * sizeof(u64));
 
 	vm_dbg(&vm->xe->drm, "\t\t%u: %d..%d F:0x%x 0x%llx %d n:%d\n", pt->level,
 	       start_ofs, last_ofs, flags, page_size, idx, pt->num_live);
@@ -888,10 +918,8 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 	write_unlock(&vm->userptr.notifier_lock);
 
 	if (xe_vm_in_fault_mode(vm)) {
-		/*
-		 * FIXME: Modify page table memory without a lock and
-		 * invalidate TLB.
-		 */
+		err = xe_vm_invalidate_vma(vma);
+		XE_WARN_ON(err);
 	} else {
 		/* Preempt fences turn into schedule disables, pipeline these */
 		dma_resv_iter_begin(&cursor, &vm->resv,
@@ -2027,12 +2055,19 @@ __xe_pt_prepare_bind(struct xe_gt *gt, struct xe_vma *vma, struct xe_pt *pt,
 	BUG_ON(!my_added_pte);
 
 	if (!pt->level) {
+		bool add_leaf = false;
+
+		if (start_ofs != 0 || last_ofs != 511)
+			add_leaf = true;
 		if (vma_uses_64k_pages(vma)) {
 			start_ofs = start_ofs / 16;
 			last_ofs = last_ofs / 16;
 			my_added_pte = last_ofs + 1 - start_ofs;
 			flags |= GEN12_PDE_64K;
 		}
+		if (add_leaf)
+			vma_add_leaf(gt, vma, pt, start_ofs * sizeof(u64),
+				     (last_ofs + 1 - start_ofs) * sizeof(u64));
 		vm_dbg(&xe->drm, "\t%u: Populating entry [%u..%u +%u) [%llx...%llx)\n",
 		       pt->level, start_ofs, last_ofs, my_added_pte, start,
 		       end);
@@ -2140,6 +2175,11 @@ __xe_pt_prepare_bind(struct xe_gt *gt, struct xe_vma *vma, struct xe_pt *pt,
 		/* No changes to this entry, fast return, no need to free 0 size ptr.. */
 		if (!my_added_pte)
 			return 0;
+
+		if ((end - start) >= 0x1ull << xe_pt_shift(pt->level))
+			vma_add_leaf(gt, vma, pt, start_ofs * sizeof(u64),
+				     my_added_pte * sizeof(u64));
+
 		goto done;
 
 unwind:
@@ -2179,6 +2219,7 @@ xe_pt_prepare_bind(struct xe_gt *gt, struct xe_vma *vma,
 	vm_dbg(&vma->vm->xe->drm, "Preparing bind, with range [%llx...%llx)\n",
 	       vma->start, vma->end);
 
+	vma->usm.gt[gt->info.id].num_leafs = 0;
 	*num_entries = 0;
 	err = __xe_pt_prepare_bind(gt, vma, vma->vm->pt_root[gt->info.id],
 				   vma->start, vma->end +
@@ -3990,4 +4031,56 @@ void xe_vm_unlock(struct xe_vm *vm, struct ww_acquire_ctx *ww)
 {
 	dma_resv_unlock(&vm->resv);
 	ww_acquire_fini(ww);
+}
+
+/**
+ * xm_vm_invalidate_vma - invalidate GPU mappings for VMA without a lock
+ * @vma: VMA to invalidate
+ *
+ * Walks a list of page tables leafs which it memset the entries owned by this
+ * VMA to zero, invalidates the TLBs, and block until TLBs invalidation is
+ * complete.
+ *
+ * Returns 0 for success, negative error code otherwise.
+ */
+int xe_vm_invalidate_vma(struct xe_vma *vma)
+{
+	struct xe_device *xe = vma->vm->xe;
+	struct xe_gt *gt;
+	u32 gt_needs_invalidate = 0;
+	int seqno[XE_MAX_GT];
+	u8 id;
+	int i;
+	int ret;
+
+	XE_BUG_ON(!xe_vm_in_fault_mode(vma->vm));
+	trace_xe_vma_usm_invalidate(vma);
+
+	for_each_gt(gt, xe, id) {
+		for (i = 0; i < vma->usm.gt[id].num_leafs; ++i) {
+			struct iosys_map *map =
+				&vma->usm.gt[id].leafs[i].bo->vmap;
+
+			xe_map_memset(xe, map,
+				      vma->usm.gt[id].leafs[i].start_ofs, 0,
+				      vma->usm.gt[id].leafs[i].len);
+			gt_needs_invalidate |= BIT(id);
+		}
+		if (gt_needs_invalidate & BIT(id)) {
+			seqno[id] = xe_gt_tlb_invalidate(gt);
+			if (seqno[id] < 0)
+				return seqno[id];
+		}
+		vma->usm.gt[id].num_leafs = 0;
+	}
+
+	for_each_gt(gt, xe, id) {
+		if (gt_needs_invalidate & BIT(id)) {
+			ret = xe_gt_tlb_invalidate_wait(gt, seqno[id]);
+			if (ret < 0)
+				return ret;
+		}
+	}
+
+	return 0;
 }

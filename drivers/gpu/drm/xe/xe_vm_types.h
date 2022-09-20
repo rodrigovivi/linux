@@ -103,6 +103,34 @@ struct xe_vma {
 		/** @initial_bind: user pointer has been bound at least once */
 		bool initial_bind;
 	} userptr;
+
+	/** @usm: unified shared memory state */
+	struct {
+		/** @gt: state for each GT this VMA is mapped in */
+		struct {
+			/** @num_leafs: the number of leaf pages */
+			int num_leafs;
+			/**
+			 * @leafs: leafs info, used for invalidating VMAs
+			 * without a lock in eviction / userptr invalidation
+			 * code. Needed as we can't take the required locks to
+			 * access / change the stored page table structure in
+			 * these paths.
+			 */
+			struct {
+				/**
+				 * @bo: buffer object for leaf of page table
+				 * structure
+				 */
+				struct xe_bo *bo;
+				/** @start_ofs: start offset in leaf BO */
+				u32 start_ofs;
+				/** @len: length of memory to zero in leaf BO */
+				u32 len;
+#define MAX_LEAFS	7
+			} leafs[MAX_LEAFS];
+		} gt[XE_MAX_GT];
+	} usm;
 };
 
 struct xe_device;

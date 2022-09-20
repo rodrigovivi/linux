@@ -93,6 +93,8 @@ static inline bool xe_vm_has_userptr(struct xe_vm *vm)
 	return !list_empty(&vm->userptr.list);
 }
 
+int xe_vm_invalidate_vma(struct xe_vma *vma);
+
 int xe_vm_async_fence_wait_start(struct dma_fence *fence);
 
 #define xe_pt_write(xe, map, idx, data) \
