@@ -102,6 +102,15 @@ static const struct xe_device_desc adl_s_desc = {
 		BIT(XE_HW_ENGINE_VCS2),
 };
 
+static const struct xe_device_desc adl_p_desc = {
+	GEN12_FEATURES,
+	PLATFORM(XE_ALDERLAKE_P),
+	.platform_engine_mask =
+		BIT(XE_HW_ENGINE_RCS0) | BIT(XE_HW_ENGINE_BCS0) |
+		BIT(XE_HW_ENGINE_VECS0) | BIT(XE_HW_ENGINE_VCS0) |
+		BIT(XE_HW_ENGINE_VCS2),
+};
+
 #define DGFX_FEATURES \
 	.is_dgfx = 1
 
@@ -246,6 +255,7 @@ static const struct pci_device_id pciidlist[] = {
 	XE_ATS_M_IDS(INTEL_VGA_DEVICE, &ats_m_desc),
 	XE_DG2_IDS(INTEL_VGA_DEVICE, &ats_m_desc), /* TODO: switch to proper dg2_desc */
 	XE_ADLS_IDS(INTEL_VGA_DEVICE, &adl_s_desc),
+	XE_ADLP_IDS(INTEL_VGA_DEVICE, &adl_p_desc),
 	XE_PVC_IDS(INTEL_VGA_DEVICE, &pvc_desc),
 	XE_MTL_IDS(INTEL_VGA_DEVICE, &mtl_desc),
 	{ }
