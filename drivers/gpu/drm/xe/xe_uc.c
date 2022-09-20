@@ -105,6 +105,10 @@ int xe_uc_init_hw(struct xe_uc *uc)
 	if (ret)
 		return ret;
 
+	ret = xe_guc_post_load_init(&uc->guc);
+	if (ret)
+		return ret;
+
 	ret = xe_guc_enable_communication(&uc->guc);
 	if (ret)
 		return ret;

@@ -52,6 +52,13 @@ struct xe_guc {
 			u32 seqno;
 		} suspend;
 	} submission_state;
+	/** @hwconfig_state: Hardware config state */
+	struct {
+		/** @bo: buffer object of the hardware config */
+		struct xe_bo *bo;
+		/** @size: size of the hardware config */
+		u32 size;
+	} hwconfig;
 
 	/**
 	 * @notify_reg: Register which is written to notify GuC of H2G messages

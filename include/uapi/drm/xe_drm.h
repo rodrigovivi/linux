@@ -171,6 +171,21 @@ struct drm_xe_query_mem_usage {
 	} regions[];
 };
 
+struct drm_xe_query_config {
+	__u32 num_params;
+	__u32 pad;
+#define XE_QUERY_CONFIG_REV_AND_DEVICE_ID	0
+#define XE_QUERY_CONFIG_FLAGS			1
+	#define XE_QUERY_CONFIG_FLAGS_HAS_VRAM		(0x1 << 0)
+	#define XE_QUERY_CONFIG_FLAGS_USE_GUC		(0x1 << 1)
+#define XE_QUERY_CONFIG_MIN_ALIGNEMENT		2
+#define XE_QUERY_CONFIG_VA_BITS			3
+#define XE_QUERY_CONFIG_GT_COUNT		4
+#define XE_QUERY_CONFIG_MEM_REGION_COUNT	5
+#define XE_QUERY_CONFIG_NUM_PARAM		XE_QUERY_CONFIG_MEM_REGION_COUNT + 1
+	__u64 info[];
+};
+
 struct drm_xe_query_gts {
 	__u32 num_gt;
 	__u32 pad;
@@ -195,21 +210,6 @@ struct drm_xe_query_gts {
 	} gts[];
 };
 
-struct drm_xe_query_config {
-	__u32 num_params;
-	__u32 pad;
-#define XE_QUERY_CONFIG_REV_AND_DEVICE_ID	0
-#define XE_QUERY_CONFIG_FLAGS			1
-	#define XE_QUERY_CONFIG_FLAGS_HAS_VRAM		(0x1 << 0)
-	#define XE_QUERY_CONFIG_FLAGS_USE_GUC		(0x1 << 1)
-#define XE_QUERY_CONFIG_MIN_ALIGNEMENT		2
-#define XE_QUERY_CONFIG_VA_BITS			3
-#define XE_QUERY_CONFIG_GT_COUNT		4
-#define XE_QUERY_CONFIG_MEM_REGION_COUNT	5
-#define XE_QUERY_CONFIG_NUM_PARAM		XE_QUERY_CONFIG_MEM_REGION_COUNT + 1
-	__u64 info[];
-};
-
 struct drm_xe_device_query {
 	/** @extensions: Pointer to the first extension struct, if any */
 	__u64 extensions;
@@ -221,6 +221,7 @@ struct drm_xe_device_query {
 #define DRM_XE_DEVICE_QUERY_MEM_USAGE	1
 #define DRM_XE_DEVICE_QUERY_CONFIG	2
 #define DRM_XE_DEVICE_QUERY_GTS		3
+#define DRM_XE_DEVICE_QUERY_HWCONFIG	4
 
 	/** @size: Size of the queried data */
 	__u32 size;
