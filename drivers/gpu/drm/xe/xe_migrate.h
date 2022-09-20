@@ -9,6 +9,7 @@
 #include <drm/drm_mm.h>
 
 struct dma_fence;
+struct iosys_map;
 struct ttm_resource;
 
 struct xe_bo;
@@ -33,6 +34,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 				   u32 value);
 
 typedef void (*xe_migrate_populatefn_t)(struct xe_gt *gt,
+					struct iosys_map *map,
 					void *pos, u32 ofs, u32 num_qwords,
 					struct xe_vm_pgtable_update *update,
 					void *arg);

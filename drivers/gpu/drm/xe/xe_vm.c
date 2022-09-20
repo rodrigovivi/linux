@@ -1541,17 +1541,26 @@ xe_vm_printk(const char *prefix, struct xe_vm *vm)
 }
 
 static void
-xe_migrate_clear_pgtable_callback(struct xe_gt *gt,
+xe_migrate_clear_pgtable_callback(struct xe_gt *gt, struct iosys_map *map,
 				  void *ptr, u32 qword_ofs, u32 num_qwords,
 				  struct xe_vm_pgtable_update *update,
 				  void *arg)
 {
 	struct xe_vma *vma = arg;
 	u64 empty = __xe_vm_empty_pte(gt, vma->vm, update->pt->level);
+	int i;
 
 	XE_BUG_ON(xe_gt_is_media_type(gt));
 
-	memset64(ptr, empty, num_qwords);
+	if (map && map->is_iomem)
+		for (i = 0; i < num_qwords; ++i)
+			xe_map_wr(gt_to_xe(gt), map, (qword_ofs + i) *
+				  sizeof(u64), u64, empty);
+	else if (map)
+		memset64(map->vaddr + qword_ofs * sizeof(u64), empty,
+			 num_qwords);
+	else
+		memset64(ptr, empty, num_qwords);
 }
 
 static void
@@ -1886,14 +1895,15 @@ err_fences:
 }
 
 static void
-xe_vm_populate_pgtable(struct xe_gt *gt, void *data, u32 qword_ofs,
-		       u32 num_qwords, struct xe_vm_pgtable_update *update,
-		       void *arg)
+xe_vm_populate_pgtable(struct xe_gt *gt, struct iosys_map *map, void *data,
+		       u32 qword_ofs, u32 num_qwords,
+		       struct xe_vm_pgtable_update *update, void *arg)
 {
 	u64 page_size = 1ull << xe_pt_shift(update->pt->level);
 	u64 bo_offset;
 	struct xe_pt **ptes = update->pt_entries;
 	u64 *ptr = data;
+	u64 pte;
 	u32 i;
 
 	XE_BUG_ON(xe_gt_is_media_type(gt));
@@ -1905,15 +1915,20 @@ xe_vm_populate_pgtable(struct xe_gt *gt, void *data, u32 qword_ofs,
 
 	for (i = 0; i < num_qwords; i++, bo_offset += page_size) {
 		if (ptes && ptes[i])
-			ptr[i] = gen8_pde_encode(ptes[i]->bo, 0, XE_CACHE_WB) |
+			pte = gen8_pde_encode(ptes[i]->bo, 0, XE_CACHE_WB) |
 				update->flags;
 		else
-			ptr[i] = gen8_pte_encode(update->target_vma,
-						 update->target_vma->bo,
-						 bo_offset,
-						 XE_CACHE_WB,
-						 update->target_vma->pte_flags,
-						 update->pt->level);
+			pte = gen8_pte_encode(update->target_vma,
+					      update->target_vma->bo,
+					      bo_offset,
+					      XE_CACHE_WB,
+					      update->target_vma->pte_flags,
+					      update->pt->level);
+		if (map)
+			xe_map_wr(gt_to_xe(gt), map, (qword_ofs + i) *
+				  sizeof(u64), u64, pte);
+		else
+			ptr[i] = pte;
 	}
 }
 
