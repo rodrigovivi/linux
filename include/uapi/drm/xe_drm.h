@@ -167,7 +167,7 @@ struct drm_xe_query_mem_usage {
 		__u32 max_page_size;
 		__u64 total_size;
 		__u64 used;
-		__u64 reserved[2];
+		__u64 reserved[8];
 	} regions[];
 };
 
@@ -201,12 +201,12 @@ struct drm_xe_query_gts {
 #define XE_QUERY_GT_TYPE_MEDIA		2
 		__u16 type;
 		__u16 instance;
-		__u32 pad;
+		__u32 clock_freq;
 		__u64 features;
 		__u64 native_mem_regions;	/* bit mask of instances from drm_xe_query_mem_usage */
 		__u64 slow_mem_regions;		/* bit mask of instances from drm_xe_query_mem_usage */
 		__u64 inaccessible_mem_regions;	/* bit mask of instances from drm_xe_query_mem_usage */
-		__u64 reserved[2];
+		__u64 reserved[8];
 	} gts[];
 };
 
