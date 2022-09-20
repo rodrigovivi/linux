@@ -1072,8 +1072,7 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 	if (bo) {
 		xe_bo_assert_held(bo);
 		vma->bo_offset = bo_offset_or_userptr;
-		drm_gem_object_get(&bo->ttm.base);
-		vma->bo = bo;
+		vma->bo = xe_bo_get(bo);
 		list_add_tail(&vma->bo_link, &bo->vmas);
 	} else /* userptr */ {
 		u64 size = end - start + 1;
@@ -1121,8 +1120,7 @@ static void xe_vma_destroy(struct xe_vma *vma)
 		queue_work(system_unbound_wq, &vma->userptr.destroy_work);
 	} else {
 		list_del(&vma->bo_link);
-		if (vma->bo)
-			drm_gem_object_put(&vma->bo->ttm.base);
+		xe_bo_put(vma->bo);
 		kfree(vma);
 	}
 }
@@ -2909,7 +2907,7 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 		 * the BO is needed for ttm_eu_backoff_reservation so
 		 * take a reference here.
 		 */
-		drm_gem_object_get(&vbo->ttm.base);
+		xe_bo_get(vbo);
 
 		tv_bo.bo = &vbo->ttm;
 		tv_bo.num_shared = 1;
@@ -2923,8 +2921,7 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 				      num_syncs, afence);
 		ttm_eu_backoff_reservation(&ww, &objs);
 	}
-	if (vbo)
-		drm_gem_object_put(&vbo->ttm.base);
+	xe_bo_put(vbo);
 
 	return err;
 }
@@ -2945,8 +2942,7 @@ static void async_op_cleanup(struct xe_vm *vm, struct async_op *op)
 	while (op->num_syncs--)
 		xe_sync_entry_cleanup(&op->syncs[op->num_syncs]);
 	kfree(op->syncs);
-	if (op->bo)
-		drm_gem_object_put(&op->bo->ttm.base);
+	xe_bo_put(op->bo);
 	if (op->engine)
 		xe_engine_put(op->engine);
 	xe_vm_put(vm);
@@ -3203,16 +3199,14 @@ static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_vma *vma,
 		if (__vma->destroyed ||
 		    VM_BIND_OP(bind_op->op) == XE_VM_BIND_OP_PREFETCH) {
 			list_del_init(&__vma->unbind_link);
-			if (bo)
-				drm_gem_object_get(&bo->ttm.base);
+			xe_bo_get(bo);
 			err = __vm_bind_ioctl_async(xe_vm_get(vm), __vma,
 						    e ? xe_engine_get(e) : NULL,
 						    bo, bind_op, first ?
 						    in_syncs : NULL,
 						    first ? num_in_syncs : 0);
 			if (err) {
-				if (bo)
-					drm_gem_object_put(&bo->ttm.base);
+				xe_bo_put(bo);
 				xe_vm_put(vm);
 				if (e)
 					xe_engine_put(e);
@@ -3257,7 +3251,7 @@ static int vm_bind_ioctl_async(struct xe_vm *vm, struct xe_vma *vma,
 		} else {
 			bind_op->op = XE_VM_BIND_FLAG_ASYNC |
 				XE_VM_BIND_OP_MAP;
-			drm_gem_object_get(&__vma->bo->ttm.base);
+			xe_bo_get(__vma->bo);
 		}
 
 		if (!last) {
@@ -4122,10 +4116,8 @@ free_syncs:
 
 	kfree(syncs);
 put_obj:
-	for (i = j; i < args->num_binds; ++i) {
-		if (bos[i])
-			drm_gem_object_put(&bos[i]->ttm.base);
-	}
+	for (i = j; i < args->num_binds; ++i)
+		xe_bo_put(bos[i]);
 put_engine:
 	if (e)
 		xe_engine_put(e);
