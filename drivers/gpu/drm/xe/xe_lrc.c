@@ -1036,18 +1036,6 @@ u32 xe_lrc_ring_space(struct xe_lrc *lrc)
 	return ((head - tail - 1) & (size - 1)) + 1;
 }
 
-static void xe_lrc_assert_ring_space(struct xe_lrc *lrc, size_t size)
-{
-#if XE_EXTRA_DEBUG
-	u32 space = xe_lrc_ring_space(lrc);
-
-	BUG_ON(size > lrc->ring.size);
-	WARN(size > space,
-	     "Insufficient ring space: %lu > %u, head=%d, tail=%d",
-	     size, space, xe_lrc_ring_head(lrc), lrc->ring.tail);
-#endif
-}
-
 static void __xe_lrc_write_ring(struct xe_lrc *lrc, struct iosys_map ring,
 				const void *data, size_t size)
 {
@@ -1066,8 +1054,6 @@ void xe_lrc_write_ring(struct xe_lrc *lrc, const void *data, size_t size)
 
 	XE_BUG_ON(!IS_ALIGNED(size, 4));
 	aligned_size = ALIGN(size, 8);
-
-	xe_lrc_assert_ring_space(lrc, aligned_size);
 
 	ring = __xe_lrc_ring_map(lrc);
 
