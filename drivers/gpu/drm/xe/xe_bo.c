@@ -1277,7 +1277,8 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 
 #if IS_ENABLED(CONFIG_DRM_XE_DEBUG_MEM)
 	/* Warning: Security issue - never enable by default */
-	args->reserved[0] = xe_bo_main_addr(bo, GEN8_PAGE_SIZE);
+	if (bo->flags & XE_BO_INTERNAL_ALLOC)
+		args->reserved[0] = xe_bo_main_addr(bo, GEN8_PAGE_SIZE);
 #endif
 
 	return 0;
