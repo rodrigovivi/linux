@@ -175,6 +175,7 @@ static int xe_migrate_prepare_vm(struct xe_gt *gt, struct xe_migrate *m,
 
 	for (level = 1; level < num_level; level++) {
 		u32 flags = 0;
+
 		if (vm->flags & XE_VM_FLAGS_64K && level == 1)
 			flags = GEN12_PDE_64K;
 
@@ -182,23 +183,25 @@ static int xe_migrate_prepare_vm(struct xe_gt *gt, struct xe_migrate *m,
 					GEN8_PAGE_SIZE, XE_CACHE_WB);
 		xe_map_wr(xe, &bo->vmap, map_ofs + GEN8_PAGE_SIZE * level, u64,
 			  entry | flags);
+	}
 
-		/* Write PDE's that point to our BO. */
-		for (i = 0; i < num_entries - num_level; i++) {
-			entry = gen8_pde_encode(bo, i * GEN8_PAGE_SIZE,
-						XE_CACHE_WB);
+	/* Write PDE's that point to our BO. */
+	for (i = 0; i < num_entries - num_level; i++) {
+		u32 flags = 0;
 
-			/*
-			 * HACK: Is it allowed to make level 0 pagetables
-			 * 4KiB instead of 64KiB? If not, we should map the
-			 * 64 KiB around each pagetable being updated.
-			 */
-			if (i == NUM_KERNEL_PDE - 1)
-				flags = 0;
+		entry = gen8_pde_encode(bo, i * GEN8_PAGE_SIZE,
+					XE_CACHE_WB);
 
-			xe_map_wr(xe, &bo->vmap, map_ofs + GEN8_PAGE_SIZE *
-				  level + (i + 1) * 8, u64, entry | flags);
-		}
+		/*
+		 * HACK: Is it allowed to make level 0 pagetables
+		 * 4KiB instead of 64KiB? If not, we should map the
+		 * 64 KiB around each pagetable being updated.
+		 */
+		if (vm->flags & XE_VM_FLAGS_64K && i < NUM_KERNEL_PDE - 1)
+			flags = GEN12_PDE_64K;
+
+		xe_map_wr(xe, &bo->vmap, map_ofs + GEN8_PAGE_SIZE +
+			  (i + 1) * 8, u64, entry | flags);
 	}
 
 	/* Identity map the entire vram at 256GiB offset */
@@ -321,48 +324,17 @@ static void emit_arb_clear(struct xe_bb *bb)
 	bb->cs[bb->len++] = MI_ARB_ON_OFF | MI_ARB_DISABLE;
 }
 
-static void xe_migrate_res_sizes(struct ttm_resource *res,
-				 struct xe_res_cursor *cur,
-				 u64 *L0, u64 *L1)
+static u64 xe_migrate_res_sizes(struct xe_res_cursor *cur)
 {
-	u64 remaining = min_t(u64, MAX_PREEMPTDISABLE_TRANSFER, cur->remaining);
-
-	if (!mem_type_is_vram(res->mem_type) ||
-	    (cur->start & (SZ_2M - 1))) {
-		*L1 = 0;
-		*L0 = remaining;
-	} else {
-		*L1 = remaining & ~(SZ_2M - 1);
-		*L0 = remaining - *L1;
-	}
+	return min_t(u64, MAX_PREEMPTDISABLE_TRANSFER, cur->remaining);
 }
 
 static u32 pte_update_size(struct xe_migrate *m,
 			   struct ttm_resource *res,
 			   u64 *L0, u64 *L0_ofs, u32 *L0_pt,
-			   u64 *L1, u64 *L1_ofs, u32 *L1_pt,
 			   u32 cmd_size, u32 pt_ofs, u32 avail_pts)
 {
-	u32 cmds = 0, L0_size = xe_migrate_pagesize(m), used_pts;
-
-	*L1_pt = pt_ofs;
-	if (*L1) {
-		u64 size = min(*L1, (u64)SZ_1G * avail_pts);
-
-		*L1 = size;
-		*L1_ofs = xe_migrate_vm_addr(pt_ofs, 1);
-
-		used_pts = DIV_ROUND_UP(*L1, SZ_1G);
-		avail_pts -= used_pts;
-		pt_ofs += used_pts;
-
-		/* MI_STORE_DATA_IMM */
-		cmds += 3 * DIV_ROUND_UP(*L1 / SZ_2M, 0x1ff);
-		/* Actual PDE qwords */
-		cmds += *L1 / SZ_2M * 2;
-
-		cmds += cmd_size * used_pts; /* Clears or copies 1 GiB at a time.. */
-	}
+	u32 cmds = 0, L0_size = xe_migrate_pagesize(m);
 
 	*L0_pt = pt_ofs;
 	if (*L0) {
@@ -378,8 +350,8 @@ static u32 pte_update_size(struct xe_migrate *m,
 		/* PDE qwords */
 		cmds += size / xe_migrate_pagesize(m) * 2;
 
-		/* Each command clears 256 MiB at a time */
-		cmds += cmd_size * DIV_ROUND_UP(*L0, SZ_256M);
+		/* Each command clears 64 MiB at a time */
+		cmds += cmd_size * DIV_ROUND_UP(*L0, SZ_64M);
 	}
 
 	return cmds;
@@ -430,9 +402,6 @@ static void emit_pte(struct xe_migrate *m,
 				addr = ttm->dma_address[page] + offset;
 			}
 			addr |= PPAT_CACHED | GEN8_PAGE_PRESENT | GEN8_PAGE_RW;
-			if (pagesize == SZ_2M)
-				addr |= GEN8_PDE_PS_2M;
-
 			bb->cs[bb->len++] = lower_32_bits(addr);
 			bb->cs[bb->len++] = upper_32_bits(addr);
 
@@ -461,17 +430,6 @@ static void emit_copy(struct xe_gt *gt, struct xe_bb *bb,
 	bb->cs[bb->len++] = upper_32_bits(src_ofs);
 }
 
-static void partition(u64 *lmem_L1, u64 *lmem_L0, u64 *sysmem,
-		      u32 *lmem_pts, u32 *sysmem_pts)
-{
-	XE_BUG_ON(*lmem_L0 >= SZ_2M);
-
-	*lmem_L0 = 0;
-	*lmem_pts = 1;
-	*sysmem_pts = min_t(u32, *lmem_L1 / SZ_2M, NUM_KERNEL_PDE - 2);
-	*sysmem = *lmem_L1 = *sysmem_pts * SZ_2M;
-}
-
 static int job_add_deps(struct xe_sched_job *job, struct dma_resv *resv,
 			enum dma_resv_usage usage)
 {
@@ -494,9 +452,9 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 	u64 size = bo->size;
 	struct xe_res_cursor src_it, dst_it;
 	struct ttm_tt *ttm = bo->ttm.ttm;
-	u64 src_L0_ofs, src_L1_ofs, dst_L0_ofs, dst_L1_ofs;
-	u32 src_L0_pt, src_L1_pt, dst_L0_pt, dst_L1_pt;
-	u64 src_L0, src_L1, dst_L0, dst_L1;
+	u64 src_L0_ofs, dst_L0_ofs;
+	u32 src_L0_pt, dst_L0_pt;
+	u64 src_L0, dst_L0;
 	int pass = 0;
 	int err;
 
@@ -519,44 +477,28 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 
 		dma_fence_put(fence);
 
-		xe_migrate_res_sizes(src, &src_it, &src_L0, &src_L1);
-		xe_migrate_res_sizes(dst, &dst_it, &dst_L0, &dst_L1);
+		src_L0 = xe_migrate_res_sizes(&src_it);
+		dst_L0 = xe_migrate_res_sizes(&dst_it);
 
-		drm_dbg(&xe->drm, "Pass %u, sizes: %llu / %llu & %llu %llu\n",
-			pass++, src_L1, src_L0, dst_L1, dst_L0);
+		drm_dbg(&xe->drm, "Pass %u, sizes: %llu & %llu\n",
+			pass++, src_L0, dst_L0);
 
-		/* Only copying to and from lmem, not both sides lmem */
-		XE_BUG_ON(src_L1 && dst_L1);
+		num_src_pts = DIV_ROUND_UP(src_L0, SZ_2M);
+		num_dst_pts = DIV_ROUND_UP(dst_L0, SZ_2M);
 
-		num_src_pts = DIV_ROUND_UP(src_L1, SZ_1G) +
-			DIV_ROUND_UP(src_L0, SZ_2M);
-		num_dst_pts = DIV_ROUND_UP(dst_L1, SZ_1G) +
-			DIV_ROUND_UP(dst_L0, SZ_2M);
-
-		if (num_src_pts + num_dst_pts > NUM_KERNEL_PDE - 1) {
-			/* Copy the biggest chunk we can */
-			if (src_L1)
-				partition(&src_L1, &src_L0, &dst_L0,
-					  &num_src_pts, &num_dst_pts);
-			else
-				partition(&dst_L1, &dst_L0, &src_L0,
-					  &num_dst_pts, &num_src_pts);
-		}
+		XE_BUG_ON(num_src_pts + num_dst_pts > NUM_KERNEL_PDE - 1);
 
 		batch_size += pte_update_size(m, src, &src_L0, &src_L0_ofs,
-					      &src_L0_pt, &src_L1, &src_L1_ofs,
-					      &src_L1_pt, 0, 0, num_src_pts);
+					      &src_L0_pt, 0, 0, num_src_pts);
 
 		batch_size += pte_update_size(m, dst, &dst_L0, &dst_L0_ofs,
-					      &dst_L0_pt, &dst_L1, &dst_L1_ofs,
-					      &dst_L1_pt, 0, num_src_pts,
+					      &dst_L0_pt, 0, num_src_pts,
 					      num_dst_pts);
 
 		/* Add copy commands size here */
-		batch_size += 10 *
-			(1 + (src_L1 && src_L0) + (dst_L1 && dst_L0));
+		batch_size += 10;
 
-		XE_BUG_ON(src_L0 + src_L1 != dst_L0 + dst_L1);
+		XE_BUG_ON(src_L0 != dst_L0);
 
 		bb = xe_bb_new(gt, batch_size, usm);
 		if (IS_ERR(bb))
@@ -564,14 +506,8 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 
 		/* Preemption is enabled again by the ring ops. */
 		emit_arb_clear(bb);
-		if (src_L1)
-			emit_pte(m, bb, src_L1_pt, SZ_2M, src, &src_it, src_L1,
-				 ttm);
 		if (src_L0)
 			emit_pte(m, bb, src_L0_pt, 0, src, &src_it, src_L0,
-				 ttm);
-		if (dst_L1)
-			emit_pte(m, bb, dst_L1_pt, SZ_2M, dst, &dst_it, dst_L1,
 				 ttm);
 		if (dst_L0)
 			emit_pte(m, bb, dst_L0_pt, 0, dst, &dst_it, dst_L0,
@@ -580,22 +516,7 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 		bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
 		update_idx = bb->len;
 
-		if (src_L1) {
-			emit_copy(gt, bb, src_L1_ofs, dst_L0_ofs, src_L1,
-				  SZ_32K);
-			if (src_L0)
-				emit_copy(gt, bb, src_L0_ofs,
-					  dst_L0_ofs + src_L1, src_L0, SZ_4K);
-		} else if (dst_L1) {
-			emit_copy(gt, bb, src_L0_ofs, dst_L1_ofs, dst_L1,
-				  SZ_32K);
-			if (dst_L0)
-				emit_copy(gt, bb, src_L0_ofs + dst_L1,
-					  dst_L0_ofs, dst_L0, SZ_4K);
-		} else {
-			emit_copy(gt, bb, src_L0_ofs, dst_L0_ofs, src_L0,
-				  SZ_4K);
-		}
+		emit_copy(gt, bb, src_L0_ofs, dst_L0_ofs, src_L0, SZ_4K);
 
 		mutex_lock(&m->job_mutex);
 
@@ -624,7 +545,7 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 		mutex_unlock(&m->job_mutex);
 
 		xe_bb_free(bb, fence);
-		size -= src_L1 + src_L0;
+		size -= src_L0;
 		continue;
 
 err_job:
@@ -679,67 +600,46 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 	xe_res_first(src, 0, bo->size, &src_it);
 
 	while (size) {
-		u64 clear_L0_ofs, clear_L1_ofs;
-		u32 clear_L0_pt, clear_L1_pt;
-		u64 clear_L0, clear_L1;
+		u64 clear_L0_ofs;
+		u32 clear_L0_pt;
+		u64 clear_L0;
 		struct xe_sched_job *job;
 		struct xe_bb *bb;
 		u32 batch_size, update_idx;
 		bool usm = xe->info.supports_usm;
 
-		/* Obtain max we can clear through L0 and L1 */
-		xe_migrate_res_sizes(src, &src_it, &clear_L0, &clear_L1);
-		drm_dbg(&xe->drm, "Pass %u, sizes: %llu / %llu\n", pass++,
-			clear_L1, clear_L0);
+		clear_L0 = xe_migrate_res_sizes(&src_it);
+		drm_dbg(&xe->drm, "Pass %u, size: %llu\n", pass++, clear_L0);
 
-		/* And calculate final sizes and batch size.. */
+		/* Calculate final sizes and batch size.. */
 		batch_size = 1 +
 			pte_update_size(m, src,
 					&clear_L0, &clear_L0_ofs, &clear_L0_pt,
-					&clear_L1, &clear_L1_ofs, &clear_L1_pt,
-					7, 0, NUM_KERNEL_PDE - 1);
+					8, 0, NUM_KERNEL_PDE - 1);
 
 		/* Clear commands */
-		batch_size += (clear_L1 / SZ_256M + clear_L0 / SZ_64M + 1) * 8;
 		dma_fence_put(fence);
 
-		if (WARN_ON_ONCE(!clear_L0 && !clear_L1))
+		if (WARN_ON_ONCE(!clear_L0))
 			break;
 
 		bb = xe_bb_new(gt, batch_size, usm);
 		if (IS_ERR(bb))
 			return ERR_CAST(bb);
 
-		size -= clear_L0 + clear_L1;
+		size -= clear_L0;
 
 		/* TODO: Add dependencies here */
 
 		/* Preemption is enabled again by the ring ops. */
 		emit_arb_clear(bb);
-		if (clear_L1)
-			emit_pte(m, bb, clear_L1_pt, SZ_2M, src, &src_it,
-				 clear_L1, bo->ttm.ttm);
 		if (clear_L0)
 			emit_pte(m, bb, clear_L0_pt, 0, src, &src_it, clear_L0,
 				 bo->ttm.ttm);
 		bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
 		update_idx = bb->len;
 
-		while (clear_L1) {
-			u64 chunk = min_t(u64, clear_L1, SZ_256M);
-
-			emit_clear(bb, clear_L1_ofs, chunk, SZ_16K, value);
-			clear_L1 -= chunk;
-			clear_L1_ofs += chunk;
-		}
-
-		while (clear_L0) {
-			u32 chunk = min_t(u32, clear_L0, SZ_16M);
-
-			emit_clear(bb, clear_L0_ofs, chunk, SZ_4K, value);
-			clear_L0 -= chunk;
-			clear_L0_ofs += chunk;
-		}
+		emit_clear(bb, clear_L0_ofs, clear_L0, SZ_4K, value);
 
 		mutex_lock(&m->job_mutex);
 		job = xe_bb_create_migration_job(m->eng, bb,
@@ -1207,76 +1107,6 @@ free_sysmem:
 	xe_bo_put(sysmem);
 }
 
-static void test_addressing_2mb(struct xe_migrate *m)
-{
-	struct xe_device *xe = gt_to_xe(m->gt);
-	struct xe_bb *bb = xe_bb_new(m->gt, 1024, xe->info.supports_usm);
-	u32 size = (NUM_KERNEL_PDE - 1) * SZ_2M;
-	struct xe_res_cursor src_it;
-	u64 expected, retval;
-	struct xe_bo *bo;
-	int i, err;
-	u32 update_idx;
-
-	if (IS_ERR(bb)) {
-		drm_err(&xe->drm, "Failed to create a batchbuffer for testing 2mb: %li\n", PTR_ERR(bb));
-		return;
-	}
-
-	bo = xe_bo_create_pin_map(xe, m->gt, m->eng->vm, size,
-				  ttm_bo_type_kernel,
-				  XE_BO_CREATE_VRAM_IF_DGFX(m->gt) |
-				  XE_BO_CREATE_PINNED_BIT);
-
-	if (IS_ERR(bo)) {
-		drm_err(&xe->drm, "Failed to create a fake bo for testing pagetables: %li\n", PTR_ERR(bo));
-		goto err_bb;
-	}
-
-	err = xe_bo_populate(bo);
-	if (err)
-		goto err_bo;
-
-	xe_map_memset(xe, &bo->vmap, 0, 0xcc, bo->size);
-
-	/* write our pagetables, one at a time.. */
-	xe_res_first(bo->ttm.resource, 0, bo->size, &src_it);
-	for (i = 0; i < NUM_KERNEL_PDE - 1; i++)
-		emit_pte(m, bb, i, SZ_2M, bo->ttm.resource, &src_it, SZ_2M,
-			 bo->ttm.ttm);
-
-	bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
-	update_idx = bb->len;
-
-	for (i = 0; i < NUM_KERNEL_PDE - 1; i++)
-		emit_clear(bb, xe_migrate_vm_addr(i, 1), SZ_2M, SZ_16K, 0xff124800U | i);
-
-	run_sanity_job(m, xe, bb, update_idx, "Testing that 2 MB pages job work as intended");
-
-	for (i = 0; i < NUM_KERNEL_PDE - 1; i++) {
-		u32 addrs[] = { 0, 4096, SZ_2M - 8 };
-		u32 j;
-
-		expected = 0xff124800U | i;
-		expected |= expected << 32ULL;
-
-		for (j = 0; j < ARRAY_SIZE(addrs); j += 8) {
-			retval = xe_map_rd(xe, &bo->vmap, i * SZ_2M + addrs[j], u64);
-			if (retval != expected) {
-				drm_err(&xe->drm, "Sanity check failed at 2 mb page %u offset %u expected %llx, got %llx\n",
-					i, addrs[j], expected, retval);
-				break;
-			}
-		}
-	}
-
-err_bo:
-	xe_bo_unpin(bo);
-	xe_bo_put(bo);
-err_bb:
-	xe_bb_free(bb, NULL);
-}
-
 static void test_pt_update(struct xe_migrate *m, struct xe_bo *pt)
 {
 	struct xe_device *xe = gt_to_xe(m->gt);
@@ -1408,9 +1238,6 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 
 	retval = xe_map_rd(xe, &pt->vmap, 0, u32);
 	check(retval, expected, "Write to PT after adding PTE");
-
-	if (IS_DGFX(xe))
-		test_addressing_2mb(m);
 
 	/* Sanity checks passed, try the full ones! */
 
