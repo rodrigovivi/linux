@@ -36,9 +36,10 @@ struct xe_migrate {
 	struct drm_suballoc_manager vm_update_sa;
 };
 
+#define MAX_PREEMPTDISABLE_TRANSFER SZ_8M /* Around 1ms. */
 #define NUM_KERNEL_PDE 17
 #define NUM_PT_SLOTS 32
-#define MAX_PREEMPTDISABLE_TRANSFER SZ_8M /* Around 1ms. */
+#define NUM_PT_PER_BLIT (MAX_PREEMPTDISABLE_TRANSFER / SZ_2M)
 
 struct xe_engine *xe_gt_migrate_engine(struct xe_gt *gt)
 {
@@ -331,13 +332,14 @@ static u64 xe_migrate_res_sizes(struct xe_res_cursor *cur)
 
 static u32 pte_update_size(struct xe_migrate *m,
 			   struct ttm_resource *res,
+			   struct xe_res_cursor *cur,
 			   u64 *L0, u64 *L0_ofs, u32 *L0_pt,
 			   u32 cmd_size, u32 pt_ofs, u32 avail_pts)
 {
 	u32 cmds = 0, L0_size = xe_migrate_pagesize(m);
 
 	*L0_pt = pt_ofs;
-	if (*L0) {
+	if (!mem_type_is_vram(res->mem_type)) {
 		/* Clip L0 to available size */
 		u64 size = min(*L0, (u64)avail_pts * SZ_2M);
 
@@ -352,6 +354,10 @@ static u32 pte_update_size(struct xe_migrate *m,
 
 		/* Each command clears 64 MiB at a time */
 		cmds += cmd_size * DIV_ROUND_UP(*L0, SZ_64M);
+	} else {
+		/* Offset into identity map. */
+		*L0_ofs = xe_migrate_vram_ofs(cur->start);
+		cmds += cmd_size;
 	}
 
 	return cmds;
@@ -365,7 +371,14 @@ static void emit_pte(struct xe_migrate *m,
 {
 	u32 ptes;
 	bool lmem = mem_type_is_vram(res->mem_type);
-	u32 ofs = at_pt * GEN8_PAGE_SIZE;
+	u64 ofs = at_pt * GEN8_PAGE_SIZE;
+
+	/*
+	 * FIXME: Emitting lmem PTEs to L0 PTs is forbidden. Currently
+	 * we're only emitting lmem PTEs during sanity tests, so when
+	 * that's moved to a Kunit test, we should condition lmem PTEs
+	 * on running tests.
+	 */
 
 	if (!pagesize)
 		pagesize = xe_migrate_pagesize(m);
@@ -457,6 +470,8 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 	u64 src_L0, dst_L0;
 	int pass = 0;
 	int err;
+	bool src_is_vram = mem_type_is_vram(src->mem_type);
+	bool dst_is_vram = mem_type_is_vram(dst->mem_type);
 
 	err = dma_resv_reserve_fences(bo->ttm.base.resv, 1);
 	if (err)
@@ -483,35 +498,40 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 		drm_dbg(&xe->drm, "Pass %u, sizes: %llu & %llu\n",
 			pass++, src_L0, dst_L0);
 
-		num_src_pts = DIV_ROUND_UP(src_L0, SZ_2M);
-		num_dst_pts = DIV_ROUND_UP(dst_L0, SZ_2M);
-
 		XE_BUG_ON(num_src_pts + num_dst_pts > NUM_KERNEL_PDE - 1);
 
-		batch_size += pte_update_size(m, src, &src_L0, &src_L0_ofs,
-					      &src_L0_pt, 0, 0, num_src_pts);
+		batch_size += pte_update_size(m, src, &src_it, &src_L0,
+					      &src_L0_ofs, &src_L0_pt, 0, 0,
+					      NUM_PT_PER_BLIT);
 
-		batch_size += pte_update_size(m, dst, &dst_L0, &dst_L0_ofs,
-					      &dst_L0_pt, 0, num_src_pts,
-					      num_dst_pts);
+		batch_size += pte_update_size(m, dst, &dst_it, &dst_L0,
+					      &dst_L0_ofs, &dst_L0_pt, 0,
+					      NUM_PT_PER_BLIT, NUM_PT_PER_BLIT);
 
 		/* Add copy commands size here */
 		batch_size += 10;
 
-		XE_BUG_ON(src_L0 != dst_L0);
+		src_L0 = min(src_L0, dst_L0);
 
 		bb = xe_bb_new(gt, batch_size, usm);
 		if (IS_ERR(bb))
 			return ERR_CAST(bb);
 
 		/* Preemption is enabled again by the ring ops. */
-		emit_arb_clear(bb);
-		if (src_L0)
+		if (!src_is_vram || !dst_is_vram)
+			emit_arb_clear(bb);
+
+		if (!src_is_vram)
 			emit_pte(m, bb, src_L0_pt, 0, src, &src_it, src_L0,
 				 ttm);
-		if (dst_L0)
-			emit_pte(m, bb, dst_L0_pt, 0, dst, &dst_it, dst_L0,
+		else
+			xe_res_next(&src_it, src_L0);
+
+		if (!dst_is_vram)
+			emit_pte(m, bb, dst_L0_pt, 0, dst, &dst_it, src_L0,
 				 ttm);
+		else
+			xe_res_next(&dst_it, src_L0);
 
 		bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
 		update_idx = bb->len;
@@ -613,9 +633,9 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 
 		/* Calculate final sizes and batch size.. */
 		batch_size = 1 +
-			pte_update_size(m, src,
+			pte_update_size(m, src, &src_it,
 					&clear_L0, &clear_L0_ofs, &clear_L0_pt,
-					8, 0, NUM_KERNEL_PDE - 1);
+					8, 0, NUM_PT_PER_BLIT);
 
 		/* Clear commands */
 		dma_fence_put(fence);
@@ -632,10 +652,13 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		/* TODO: Add dependencies here */
 
 		/* Preemption is enabled again by the ring ops. */
-		emit_arb_clear(bb);
-		if (clear_L0)
+		if (!mem_type_is_vram(src->mem_type)) {
+			emit_arb_clear(bb);
 			emit_pte(m, bb, clear_L0_pt, 0, src, &src_it, clear_L0,
 				 bo->ttm.ttm);
+		} else {
+			xe_res_next(&src_it, clear_L0);
+		}
 		bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
 		update_idx = bb->len;
 
