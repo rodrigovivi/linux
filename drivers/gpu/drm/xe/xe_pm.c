@@ -12,6 +12,7 @@
 #include "xe_gt.h"
 #include "xe_ggtt.h"
 #include "xe_irq.h"
+#include "xe_pcode.h"
 
 /**
  * DOC: Xe Power Management
@@ -68,6 +69,12 @@ int xe_pm_resume(struct xe_device *xe)
 	struct xe_gt *gt;
 	u8 id;
 	int err;
+
+	for_each_gt(gt, xe, id) {
+		err = xe_pcode_init(gt);
+		if (err)
+			return err;
+	}
 
 	/*
 	 * This only restores pinned memory which is the memory required for the

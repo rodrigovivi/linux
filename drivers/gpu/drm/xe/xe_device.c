@@ -19,6 +19,7 @@
 #include "xe_gt.h"
 #include "xe_irq.h"
 #include "xe_mmio.h"
+#include "xe_pcode.h"
 #include "xe_query.h"
 #include "xe_vm.h"
 #include "xe_vm_madvise.h"
@@ -210,6 +211,12 @@ int xe_device_probe(struct xe_device *xe)
 	err = xe_mmio_init(xe);
 	if (err)
 		return err;
+
+	for_each_gt(gt, xe, id) {
+		err = xe_pcode_probe(gt);
+		if (err)
+			return err;
+	}
 
 	err = xe_irq_install(xe);
 	if (err)

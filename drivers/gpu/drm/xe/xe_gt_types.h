@@ -225,6 +225,12 @@ struct xe_gt {
 	/** @migrate: Migration helper for vram blits and clearing */
 	struct xe_migrate *migrate;
 
+	/** @pcode: GT's PCODE */
+	struct {
+		/** @lock: protecting GT's PCODE mailbox data */
+		struct mutex lock;
+	} pcode;
+
 	/** @sysfs: sysfs' kobj used by xe_gt_sysfs */
 	struct kobject *sysfs;
 
