@@ -752,7 +752,7 @@ static int __xe_bo_alloc_backing_locked(struct xe_device *xe, struct xe_bo *bo,
 		return err;
 
 	/* Defer populating type_sg bos */
-	placement = (bo->ttm.type == ttm_bo_type_sg) ? &sys_placement :
+	placement = (type == ttm_bo_type_sg) ? &sys_placement :
 		&bo->placement;
 
 	err = ttm_bo_init_reserved(&xe->ttm, &bo->ttm, type,
