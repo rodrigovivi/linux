@@ -8,9 +8,10 @@
 #include <linux/compiler_types.h>
 
 #include "xe_device_types.h"
-#include "xe_hw_engine_types.h"
+#include "xe_force_wake.h"
 #include "xe_gt.h"
 #include "xe_hw_engine_types.h"
+#include "xe_mmio.h"
 #include "xe_platform_types.h"
 #include "xe_rtp.h"
 #include "xe_step.h"
@@ -20,7 +21,6 @@
 #include "../i915/i915_reg.h"
 
 /* TODO:
- * - whitelist
  * - steering:  we probably want that separate, and xe_wa.c only cares about the
  *   value to be added to the table
  * - apply workarounds with and without guc
@@ -33,9 +33,15 @@ static bool match_14011060649(const struct xe_gt *gt,
 	return hwe->instance % 2 == 0;
 }
 
+static bool match_not_render(const struct xe_gt *gt,
+			     const struct xe_hw_engine *hwe)
+{
+	return hwe->class != XE_ENGINE_CLASS_RENDER;
+}
+
 static const struct xe_rtp_entry gt_was[] = {
 	{ XE_RTP_NAME("14011060649"),
-	  XE_RTP_RULES(MEDIA_VERSION(1200),
+	  XE_RTP_RULES(MEDIA_VERSION_RANGE(1200, 1255),
 		       ENGINE_CLASS(VIDEO_DECODE),
 		       FUNC(match_14011060649)),
 	  XE_RTP_SET(VDBOX_CGCTL3F10(0), IECPUNIT_CLKGATE_DIS,
@@ -108,8 +114,16 @@ static const struct xe_rtp_entry gt_was[] = {
 	  XE_RTP_CLR(GEN7_MISCCPCTL, GEN12_DOP_CLOCK_GATE_RENDER_ENABLE)
 	},
 	{ XE_RTP_NAME("14011059788"),
-	  XE_RTP_RULES(GRAPHICS_VERSION(1200)),
+	  XE_RTP_RULES(GRAPHICS_VERSION_RANGE(1200, 1210)),
 	  XE_RTP_SET(GEN10_DFR_RATIO_EN_AND_CHICKEN, DFR_DISABLE)
+	},
+	{ XE_RTP_NAME("1409420604"),
+	  XE_RTP_RULES(PLATFORM(DG1)),
+	  XE_RTP_SET(SUBSLICE_UNIT_LEVEL_CLKGATE2, CPSSUNIT_CLKGATE_DIS)
+	},
+	{ XE_RTP_NAME("1408615072"),
+	  XE_RTP_RULES(PLATFORM(DG1)),
+	  XE_RTP_SET(UNSLICE_UNIT_LEVEL_CLKGATE2, VSUNIT_CLKGATE_DIS_TGL)
 	},
 	{}
 };
@@ -121,7 +135,7 @@ static const struct xe_rtp_entry engine_was[] = {
 		     XE_RTP_FLAG(MASKED_REG))
 	},
 	{ XE_RTP_NAME("1606931601"),
-	  XE_RTP_RULES(GRAPHICS_VERSION(1200), ENGINE_CLASS(RENDER)),
+	  XE_RTP_RULES(GRAPHICS_VERSION_RANGE(1200, 1210), ENGINE_CLASS(RENDER)),
 	  XE_RTP_SET(GEN7_ROW_CHICKEN2, GEN12_DISABLE_EARLY_READ,
 		     XE_RTP_FLAG(MASKED_REG))
 	},
@@ -130,7 +144,7 @@ static const struct xe_rtp_entry engine_was[] = {
 	  XE_RTP_SET(GEN7_FF_THREAD_MODE, GEN12_FF_TESSELATION_DOP_GATE_DISABLE)
 	},
 	{ XE_RTP_NAME("14010826681, 1606700617, 22010271021"),
-	  XE_RTP_RULES(GRAPHICS_VERSION(1200), ENGINE_CLASS(RENDER)),
+	  XE_RTP_RULES(GRAPHICS_VERSION_RANGE(1200, 1210), ENGINE_CLASS(RENDER)),
 	  XE_RTP_SET(GEN9_CS_DEBUG_MODE1, FF_DOP_CLOCK_GATE_DISABLE,
 		     XE_RTP_FLAG(MASKED_REG))
 	},
@@ -166,11 +180,11 @@ static const struct xe_rtp_entry engine_was[] = {
 		     GEN8_RC_SEMA_IDLE_MSG_DISABLE, XE_RTP_FLAG(MASKED_REG))
 	},
 	{ XE_RTP_NAME("1406941453"),
-	  XE_RTP_RULES(GRAPHICS_VERSION(1200), ENGINE_CLASS(RENDER)),
+	  XE_RTP_RULES(GRAPHICS_VERSION_RANGE(1200, 1210), ENGINE_CLASS(RENDER)),
 	  XE_RTP_SET(GEN10_SAMPLER_MODE, ENABLE_SMALLPL, XE_RTP_FLAG(MASKED_REG))
 	},
 	{ XE_RTP_NAME("FtrPerCtxtPreemptionGranularityControl"),
-	  XE_RTP_RULES(GRAPHICS_VERSION(1200), ENGINE_CLASS(RENDER)),
+	  XE_RTP_RULES(GRAPHICS_VERSION_RANGE(1200, 1250), ENGINE_CLASS(RENDER)),
 	  XE_RTP_SET(GEN7_FF_SLICE_CS_CHICKEN1, GEN9_FFSC_PERCTX_PREEMPT_CTRL,
 		     XE_RTP_FLAG(MASKED_REG))
 	},
@@ -179,22 +193,70 @@ static const struct xe_rtp_entry engine_was[] = {
 
 static const struct xe_rtp_entry context_was[] = {
 	{ XE_RTP_NAME("1409342910, 14010698770, 14010443199, 1408979724, 1409178076, 1409207793, 1409217633, 1409252684, 1409347922, 1409142259"),
-	  XE_RTP_RULES(GRAPHICS_VERSION(1200)),
+	  XE_RTP_RULES(GRAPHICS_VERSION_RANGE(1200, 1210)),
 	  XE_RTP_SET(GEN11_COMMON_SLICE_CHICKEN3,
 		     GEN12_DISABLE_CPS_AWARE_COLOR_PIPE,
 		     XE_RTP_FLAG(MASKED_REG))
 	},
 	{ XE_RTP_NAME("WaDisableGPGPUMidThreadPreemption"),
-	  XE_RTP_RULES(GRAPHICS_VERSION(1200)),
+	  XE_RTP_RULES(GRAPHICS_VERSION_RANGE(1200, 1210)),
 	  XE_RTP_FIELD_SET(GEN8_CS_CHICKEN1, GEN9_PREEMPT_GPGPU_LEVEL_MASK,
 			   GEN9_PREEMPT_GPGPU_THREAD_GROUP_LEVEL,
 			   XE_RTP_FLAG(MASKED_REG))
 	},
 	{ XE_RTP_NAME("16011163337"),
-	  XE_RTP_RULES(GRAPHICS_VERSION(1200)),
+	  XE_RTP_RULES(GRAPHICS_VERSION_RANGE(1200, 1210)),
 	  /* read verification is ignored due to 1608008084. */
 	  XE_RTP_FIELD_SET_NO_READ_MASK(FF_MODE2, FF_MODE2_GS_TIMER_MASK,
 					FF_MODE2_GS_TIMER_224)
+	},
+	{ XE_RTP_NAME("1409044764"),
+	  XE_RTP_RULES(PLATFORM(DG1)),
+	  XE_RTP_CLR(GEN11_COMMON_SLICE_CHICKEN3,
+		     DG1_FLOAT_POINT_BLEND_OPT_STRICT_MODE_EN,
+		     XE_RTP_FLAG(MASKED_REG))
+	},
+	{ XE_RTP_NAME("22010493298"),
+	  XE_RTP_RULES(PLATFORM(DG1)),
+	  XE_RTP_SET(HIZ_CHICKEN,
+		     DG1_HZ_READ_SUPPRESSION_OPTIMIZATION_DISABLE,
+		     XE_RTP_FLAG(MASKED_REG))
+	},
+	{}
+};
+
+static const struct xe_rtp_entry register_whitelist[] = {
+	{ XE_RTP_NAME("WaAllowPMDepthAndInvocationCountAccessFromUMD, 1408556865"),
+	  XE_RTP_RULES(GRAPHICS_VERSION_RANGE(1200, 1210), ENGINE_CLASS(RENDER)),
+	  XE_WHITELIST_REGISTER(PS_INVOCATION_COUNT,
+				RING_FORCE_TO_NONPRIV_ACCESS_RD |
+				RING_FORCE_TO_NONPRIV_RANGE_4)
+	},
+	{ XE_RTP_NAME("1508744258, 14012131227, 1808121037"),
+	  XE_RTP_RULES(GRAPHICS_VERSION_RANGE(1200, 1210), ENGINE_CLASS(RENDER)),
+	  XE_WHITELIST_REGISTER(GEN7_COMMON_SLICE_CHICKEN1, 0)
+	},
+	{ XE_RTP_NAME("1806527549"),
+	  XE_RTP_RULES(GRAPHICS_VERSION_RANGE(1200, 1210), ENGINE_CLASS(RENDER)),
+	  XE_WHITELIST_REGISTER(HIZ_CHICKEN, 0)
+	},
+	{ XE_RTP_NAME("allow_read_ctx_timestamp"),
+	  XE_RTP_RULES(GRAPHICS_VERSION_RANGE(1200, 1260), FUNC(match_not_render)),
+	  XE_WHITELIST_REGISTER(RING_CTX_TIMESTAMP(0),
+				RING_FORCE_TO_NONPRIV_ACCESS_RD,
+				XE_RTP_FLAG(ENGINE_BASE))
+	},
+	{ XE_RTP_NAME("16014440446_part_1"),
+	  XE_RTP_RULES(PLATFORM(PVC)),
+	  XE_WHITELIST_REGISTER(_MMIO(0x4400),
+				RING_FORCE_TO_NONPRIV_DENY |
+				RING_FORCE_TO_NONPRIV_RANGE_64)
+	},
+	{ XE_RTP_NAME("16014440446_part_2"),
+	  XE_RTP_RULES(PLATFORM(PVC)),
+	  XE_WHITELIST_REGISTER(_MMIO(0x4500),
+				RING_FORCE_TO_NONPRIV_DENY |
+				RING_FORCE_TO_NONPRIV_RANGE_64)
 	},
 	{}
 };
@@ -209,7 +271,49 @@ void xe_wa_process_engine(struct xe_hw_engine *hwe)
 	xe_rtp_process(engine_was, &hwe->reg_sr, hwe->gt, hwe);
 }
 
+void xe_reg_whitelist_process_engine(struct xe_hw_engine *hwe)
+{
+	xe_rtp_process(register_whitelist, &hwe->reg_whitelist, hwe->gt, hwe);
+}
+
 void xe_wa_process_ctx(struct xe_hw_engine *hwe)
 {
 	//xe_rtp_process(context_was, &hwe->reg_sr, gt, hwe);
+}
+
+void xe_reg_whitelist_apply(struct xe_hw_engine *hwe)
+{
+	struct xe_gt *gt = hwe->gt;
+	struct xe_device *xe = gt_to_xe(gt);
+	struct xe_reg_sr *sr = &hwe->reg_whitelist;
+	struct xe_reg_sr_entry *entry;
+	const u32 base = hwe->mmio_base;
+	unsigned long reg;
+	unsigned int slot = 0;
+	int err;
+
+	drm_dbg(&xe->drm, "Whitelisting %s registers\n", sr->name);
+
+	err = xe_force_wake_get(&gt->mmio.fw, XE_FORCEWAKE_ALL);
+	if (err)
+		goto err_force_wake;
+
+	xa_for_each(&sr->xa, reg, entry) {
+		xe_mmio_write32(gt, RING_FORCE_TO_NONPRIV(base, slot).reg,
+				reg | entry->set_bits);
+		slot++;
+	}
+
+	/* And clear the rest just in case of garbage */
+	for (; slot < RING_MAX_NONPRIV_SLOTS; slot++)
+		xe_mmio_write32(gt, RING_FORCE_TO_NONPRIV(base, slot).reg,
+				RING_NOPID(base).reg);
+
+	err = xe_force_wake_put(&gt->mmio.fw, XE_FORCEWAKE_ALL);
+	XE_WARN_ON(err);
+
+	return;
+
+err_force_wake:
+	drm_err(&xe->drm, "Failed to apply, err=%d\n", err);
 }
