@@ -116,26 +116,26 @@ void xe_force_wake_prune(struct xe_gt *gt, struct xe_force_wake *fw)
 
 static void domain_wake(struct xe_gt *gt, struct xe_force_wake_domain *domain)
 {
-	xe_mmio_write32(gt, domain->reg_ctl, domain->mask | domain->val);
+	xe_mmio_write32_nofw(gt, domain->reg_ctl, domain->mask | domain->val);
 }
 
 static int domain_wake_wait(struct xe_gt *gt,
 			    struct xe_force_wake_domain *domain)
 {
-	return xe_mmio_wait32(gt, domain->reg_ack, domain->val, domain->val,
-			      XE_FORCE_WAKE_ACK_TIMEOUT_MS);
+	return xe_mmio_wait32_nofw(gt, domain->reg_ack, domain->val, domain->val,
+				   XE_FORCE_WAKE_ACK_TIMEOUT_MS);
 }
 
 static void domain_sleep(struct xe_gt *gt, struct xe_force_wake_domain *domain)
 {
-	xe_mmio_write32(gt, domain->reg_ctl, domain->mask);
+	xe_mmio_write32_nofw(gt, domain->reg_ctl, domain->mask);
 }
 
 static int domain_sleep_wait(struct xe_gt *gt,
 			     struct xe_force_wake_domain *domain)
 {
-	return xe_mmio_wait32(gt, domain->reg_ack, 0, domain->val,
-			      XE_FORCE_WAKE_ACK_TIMEOUT_MS);
+	return xe_mmio_wait32_nofw(gt, domain->reg_ack, 0, domain->val,
+				   XE_FORCE_WAKE_ACK_TIMEOUT_MS);
 }
 
 #define for_each_fw_domain_masked(domain__, mask__, fw__, tmp__) \

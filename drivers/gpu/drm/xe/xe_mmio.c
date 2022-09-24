@@ -281,7 +281,34 @@ int xe_mmio_ioctl(struct drm_device *dev, void *data,
 	return 0;
 }
 
+static bool needs_forcewake(u32 reg)
+{
+	return reg < 0x40000 || reg > GEN11_BSD_RING_BASE;
+}
+
+static void reg_forcewake_get(struct xe_gt *gt, u32 reg)
+{
+	if (needs_forcewake(reg))
+		xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
+}
+
+static void reg_forcewake_put(struct xe_gt *gt, u32 reg)
+{
+	if (needs_forcewake(reg))
+		xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL);
+}
+
 void xe_mmio_write32(struct xe_gt *gt, u32 reg, u32 val)
+{
+	if (reg < gt->mmio.adj_limit)
+		reg += gt->mmio.adj_offset;
+
+	reg_forcewake_get(gt, reg);
+	writel(val, gt->mmio.regs + reg);
+	reg_forcewake_put(gt, reg);
+}
+
+void xe_mmio_write32_nofw(struct xe_gt *gt, u32 reg, u32 val)
 {
 	if (reg < gt->mmio.adj_limit)
 		reg += gt->mmio.adj_offset;
@@ -290,6 +317,20 @@ void xe_mmio_write32(struct xe_gt *gt, u32 reg, u32 val)
 }
 
 u32 xe_mmio_read32(struct xe_gt *gt, u32 reg)
+{
+	u32 ret;
+
+	if (reg < gt->mmio.adj_limit)
+		reg += gt->mmio.adj_offset;
+
+	reg_forcewake_get(gt, reg);
+	ret = readl(gt->mmio.regs + reg);
+	reg_forcewake_put(gt, reg);
+
+	return ret;
+}
+
+u32 xe_mmio_read32_nofw(struct xe_gt *gt, u32 reg)
 {
 	if (reg < gt->mmio.adj_limit)
 		reg += gt->mmio.adj_offset;
@@ -311,16 +352,20 @@ void xe_mmio_write64(struct xe_gt *gt, u32 reg, u64 val)
 {
 	if (reg < gt->mmio.adj_limit)
 		reg += gt->mmio.adj_offset;
-
+	reg_forcewake_get(gt, reg);
 	writeq(val, gt->mmio.regs + reg);
+	reg_forcewake_put(gt, reg);
 }
 
 u64 xe_mmio_read64(struct xe_gt *gt, u32 reg)
 {
+	u64 ret;
 	if (reg < gt->mmio.adj_limit)
 		reg += gt->mmio.adj_offset;
-
-	return readq(gt->mmio.regs + reg);
+	reg_forcewake_get(gt, reg);
+	ret = readq(gt->mmio.regs + reg);
+	reg_forcewake_put(gt, reg);
+	return ret;
 }
 
 int xe_mmio_write32_and_verify(struct xe_gt *gt,
@@ -335,15 +380,16 @@ int xe_mmio_write32_and_verify(struct xe_gt *gt,
 	return (reg_val & mask) != eval ? -EINVAL : 0;
 }
 
-int xe_mmio_wait32(struct xe_gt *gt,
-		   u32 reg, u32 val,
-		   u32 mask, u32 timeout_ms)
+int mmio_wait32(struct xe_gt *gt,
+		u32 reg, u32 val,
+		u32 mask, u32 timeout_ms,
+		u32 (*read32)(struct xe_gt *gt, u32 reg))
 {
 	ktime_t cur = ktime_get_raw();
 	const ktime_t end = ktime_add_ms(cur, timeout_ms);
         s64 wait;
 
-	if ((xe_mmio_read32(gt, reg) & mask) == val)
+	if ((read32(gt, reg) & mask) == val)
 		return 0;
 
 	for(wait = 10; ktime_before(cur, end); wait <<= 1) {
@@ -352,11 +398,25 @@ int xe_mmio_wait32(struct xe_gt *gt,
 
 		udelay(wait);
 
-		if ((xe_mmio_read32(gt, reg) & mask) == val)
+		if ((read32(gt, reg) & mask) == val)
 			return 0;
 
 		cur = ktime_get_raw();
 	}
 
 	return -ETIMEDOUT;
+}
+
+int xe_mmio_wait32(struct xe_gt *gt,
+		   u32 reg, u32 val,
+		   u32 mask, u32 timeout_ms)
+{
+	return mmio_wait32(gt, reg, val, mask, timeout_ms, xe_mmio_read32);
+}
+
+int xe_mmio_wait32_nofw(struct xe_gt *gt,
+			u32 reg, u32 val,
+			u32 mask, u32 timeout_ms)
+{
+	return mmio_wait32(gt, reg, val, mask, timeout_ms, xe_mmio_read32_nofw);
 }
