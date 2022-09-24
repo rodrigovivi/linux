@@ -56,6 +56,15 @@ static int force_reset(struct seq_file *m, void *data)
 	return 0;
 }
 
+static int forcewake_domains(struct seq_file *m, void *data)
+{
+	struct xe_gt *gt = node_to_gt(m->private);
+	struct drm_printer p = drm_seq_file_printer(m);
+
+	xe_force_wake_print(gt_to_fw(gt), &p);
+	return 0;
+}
+
 #ifdef CONFIG_DRM_XE_DEBUG
 static int invalidate_tlb(struct seq_file *m, void *data)
 {
@@ -76,6 +85,7 @@ static int invalidate_tlb(struct seq_file *m, void *data)
 static const struct drm_info_list debugfs_list[] = {
 	{"hw_engines", hw_engines, 0},
 	{"force_reset", force_reset, 0},
+	{"forcewake_domains", forcewake_domains, 0},
 #ifdef CONFIG_DRM_XE_DEBUG
 	{"invalidate_tlb", invalidate_tlb, 0},
 #endif

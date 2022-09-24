@@ -137,6 +137,41 @@ static int domain_sleep_wait(struct xe_gt *gt,
 					 __mask_next_bit(tmp__))) && \
 					 domain__->reg_ctl)
 
+#define for_each_fw_domain(domain__, fw__, tmp__) \
+	for_each_fw_domain_masked(domain__, XE_FORCEWAKE_ALL, fw__, tmp__)
+
+static const char *domain_name[] = {
+	[XE_FW_DOMAIN_ID_GT] = "GT",
+	[XE_FW_DOMAIN_ID_RENDER] = "Render",
+	[XE_FW_DOMAIN_ID_MEDIA] = "Media",
+	[XE_FW_DOMAIN_ID_MEDIA_VDBOX0] = "VDBOX0",
+	[XE_FW_DOMAIN_ID_MEDIA_VDBOX1] = "VDBOX1",
+	[XE_FW_DOMAIN_ID_MEDIA_VDBOX2] = "VDBOX2",
+	[XE_FW_DOMAIN_ID_MEDIA_VDBOX3] = "VDBOX3",
+	[XE_FW_DOMAIN_ID_MEDIA_VDBOX4] = "VDBOX4",
+	[XE_FW_DOMAIN_ID_MEDIA_VDBOX5] = "VDBOX5",
+	[XE_FW_DOMAIN_ID_MEDIA_VDBOX6] = "VDBOX6",
+	[XE_FW_DOMAIN_ID_MEDIA_VDBOX7] = "VDBOX7",
+	[XE_FW_DOMAIN_ID_MEDIA_VEBOX0] = "VEBOX0",
+	[XE_FW_DOMAIN_ID_MEDIA_VEBOX1] = "VEBOX1",
+	[XE_FW_DOMAIN_ID_MEDIA_VEBOX2] = "VEBOX2",
+	[XE_FW_DOMAIN_ID_MEDIA_VEBOX3] = "VEBOX3",
+	[XE_FW_DOMAIN_ID_GSC] = "GSC",
+};
+
+void xe_force_wake_print(struct xe_force_wake *fw, struct drm_printer *p)
+{
+	struct xe_force_wake_domain *domain;
+	enum xe_force_wake_domains tmp;
+
+	for_each_fw_domain(domain, fw, tmp) {
+		drm_printf(p, "domain:%s\n", domain_name[domain->id]);
+		drm_printf(p, "\tawake:%s\n",
+			   str_yes_no(fw->awake_domains & BIT(domain->id)));
+		drm_printf(p, "\trefs:%d\n", domain->ref);
+	}
+}
+
 int xe_force_wake_get(struct xe_force_wake *fw,
 		      enum xe_force_wake_domains domains)
 {

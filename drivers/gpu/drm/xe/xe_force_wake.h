@@ -10,6 +10,7 @@
 #include "xe_macros.h"
 
 struct xe_gt;
+struct drm_printer;
 
 void xe_force_wake_init(struct xe_gt *gt,
 			struct xe_force_wake *fw);
@@ -19,6 +20,7 @@ int xe_force_wake_get(struct xe_force_wake *fw,
 		      enum xe_force_wake_domains domains);
 int xe_force_wake_put(struct xe_force_wake *fw,
 		      enum xe_force_wake_domains domains);
+void xe_force_wake_print(struct xe_force_wake *fw, struct drm_printer *p);
 
 static inline int
 xe_force_wake_ref(struct xe_force_wake *fw,
