@@ -21,6 +21,13 @@
 #include "i915_reg_defs.h"
 #include "../i915/gt/intel_gt_regs.h"
 
+#include <linux/delay.h>
+/*
+ * FIXME: This header has been deemed evil and we need to kill it. Temporarily
+ * including so we can use 'wait_for' and range_overflow_t.
+ */
+#include "i915_utils.h"
+
 /* TODO: move to common file */
 #define GUC_WA_GAM_CREDITS		(1 << 10)
 #define GUC_WA_RENDER_RST_RC6_EXIT	(1 << 19)

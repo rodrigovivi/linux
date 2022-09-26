@@ -6,16 +6,7 @@
 #ifndef _XE_MMIO_H_
 #define _XE_MMIO_H_
 
-#include <linux/delay.h>
-
 #include "xe_gt_types.h"
-
-/*
- * FIXME: This header has been deemed evil and we need to kill it. Temporarily
- * including so we can use 'wait_for' and unblock initial development. A follow
- * should replace 'wait_for' with a sane version and drop including this header.
- */
-#include "i915_utils.h"
 
 struct drm_device;
 struct drm_file;

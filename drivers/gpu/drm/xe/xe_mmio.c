@@ -14,6 +14,15 @@
 
 #include "../i915/i915_reg.h"
 
+#include <linux/delay.h>
+/*
+ * FIXME: This header has been deemed evil and we need to kill it. Temporarily
+ * including so we can use 'wait_for' and unblock initial development. A follow
+ * should replace 'wait_for' with a sane version and drop including this header.
+ */
+#include "i915_utils.h"
+
+
 #define XEHP_MTCFG_ADDR		_MMIO(0x101800)
 #define TILE_COUNT		REG_GENMASK(15, 8)
 

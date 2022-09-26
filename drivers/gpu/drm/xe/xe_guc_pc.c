@@ -15,6 +15,13 @@
 #include "i915_reg_defs.h"
 #include "../i915/i915_reg.h"
 
+#include <linux/delay.h>
+/*
+ * FIXME: This header has been deemed evil and we need to kill it. Temporarily
+ * including so we can use 'wait_for'.
+ */
+#include "i915_utils.h"
+
 #include "../i915/intel_mchbar_regs.h"
 /* For GEN6_RP_STATE_CAP.reg to be merged when the definition moves to Xe */
 #define   RP0_MASK	REG_GENMASK(7, 0)
