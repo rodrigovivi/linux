@@ -67,10 +67,7 @@ static void xe_migrate_fini(struct drm_device *dev, void *arg)
 
 static u32 xe_migrate_pagesize(struct xe_migrate *m)
 {
-	if (m->eng->vm->flags & XE_VM_FLAGS_64K)
-		return SZ_64K;
-	else
-		return GEN8_PAGE_SIZE;
+	return GEN8_PAGE_SIZE;
 }
 
 static u64 xe_pt_shift(unsigned int level)
@@ -188,21 +185,11 @@ static int xe_migrate_prepare_vm(struct xe_gt *gt, struct xe_migrate *m,
 
 	/* Write PDE's that point to our BO. */
 	for (i = 0; i < num_entries - num_level; i++) {
-		u32 flags = 0;
-
 		entry = gen8_pde_encode(bo, i * GEN8_PAGE_SIZE,
 					XE_CACHE_WB);
 
-		/*
-		 * HACK: Is it allowed to make level 0 pagetables
-		 * 4KiB instead of 64KiB? If not, we should map the
-		 * 64 KiB around each pagetable being updated.
-		 */
-		if (vm->flags & XE_VM_FLAGS_64K && i < NUM_KERNEL_PDE - 1)
-			flags = GEN12_PDE_64K;
-
 		xe_map_wr(xe, &bo->vmap, map_ofs + GEN8_PAGE_SIZE +
-			  (i + 1) * 8, u64, entry | flags);
+			  (i + 1) * 8, u64, entry);
 	}
 
 	/* Identity map the entire vram at 256GiB offset */
