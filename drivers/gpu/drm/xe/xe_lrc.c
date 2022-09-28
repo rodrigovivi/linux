@@ -421,20 +421,11 @@ static const u8 *reg_offsets(struct xe_device *xe, enum xe_engine_class class)
 	}
 }
 
-static void set_context_control(u32 * regs, struct xe_hw_engine *hwe,
-				bool inhibit)
+static void set_context_control(u32 * regs, struct xe_hw_engine *hwe)
 {
-	struct xe_device *xe = gt_to_xe(hwe->gt);
-	u32 ctl = 0;
-
-	ctl |= _MASKED_BIT_ENABLE(CTX_CTRL_INHIBIT_SYN_CTX_SWITCH);
-	ctl |= _MASKED_BIT_DISABLE(CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT);
-	if (inhibit)
-		ctl |= CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT;
-	if (GRAPHICS_VER(xe) < 11)
-		ctl |= _MASKED_BIT_DISABLE(CTX_CTRL_ENGINE_CTX_SAVE_INHIBIT |
-					   CTX_CTRL_RS_CTX_ENABLE);
-	regs[CTX_CONTEXT_CONTROL] = ctl;
+	regs[CTX_CONTEXT_CONTROL] = _MASKED_BIT_ENABLE(CTX_CTRL_INHIBIT_SYN_CTX_SWITCH) |
+				    _MASKED_BIT_DISABLE(CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT) |
+				    CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT;
 
 	/* TODO: Timestamp */
 }
@@ -565,7 +556,7 @@ static void *empty_lrc_data(struct xe_hw_engine *hwe)
 	/* 1st page: Per-Process of HW status Page */
 	regs = data + LRC_PPHWSP_SIZE;
 	set_offsets(regs, reg_offsets(xe, hwe->class), hwe);
-	set_context_control(regs, hwe, true);
+	set_context_control(regs, hwe);
 	reset_stop_ring(regs, hwe);
 
 	return data;
