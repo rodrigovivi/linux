@@ -65,7 +65,6 @@ static void set_offsets(u32 *regs,
 	(((x) >> 2) & 0x7f)
 #define END 0
 {
-	struct xe_device *xe = gt_to_xe(hwe->gt);
 	const u32 base = hwe->mmio_base;
 
 	while (*data) {
@@ -84,8 +83,7 @@ static void set_offsets(u32 *regs,
 		*regs = MI_LOAD_REGISTER_IMM(count);
 		if (flags & POSTED)
 			*regs |= MI_LRI_FORCE_POSTED;
-		if (GRAPHICS_VER(xe) >= 11)
-			*regs |= MI_LRI_LRM_CS_MMIO;
+		*regs |= MI_LRI_LRM_CS_MMIO;
 		regs++;
 
 		XE_BUG_ON(!count);
