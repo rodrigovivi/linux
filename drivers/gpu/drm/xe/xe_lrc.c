@@ -670,10 +670,8 @@ int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 	 */
 	if (vm)
 		lrc->desc |= GEN8_CTX_PRIVILEGE;
-	if (GRAPHICS_VER(xe) == 8)
-		lrc->desc |= GEN8_CTX_L3LLC_COHERENT;
 
-	if (GRAPHICS_VER(xe) >= 11 && GRAPHICS_VERx100(xe) < 1250) {
+	if (GRAPHICS_VERx100(xe) < 1250) {
 		lrc->desc |= (u64)hwe->instance << GEN11_ENGINE_INSTANCE_SHIFT;
 		lrc->desc |= (u64)hwe->class << GEN11_ENGINE_CLASS_SHIFT;
 	}
