@@ -568,11 +568,8 @@ static void *empty_lrc_data(struct xe_hw_engine *hwe)
 	if (!data)
 		return NULL;
 
-	/* Per-Process of HW status Page */
-	memset(data, 0, LRC_PPHWSP_SIZE);
-
+	/* 1st page: Per-Process of HW status Page */
 	regs = data + LRC_PPHWSP_SIZE;
-	memset(regs, 0, SZ_4K);
 	set_offsets(regs, reg_offsets(xe, hwe->class), hwe, true);
 	set_context_control(regs, hwe, true);
 	reset_stop_ring(regs, hwe);
