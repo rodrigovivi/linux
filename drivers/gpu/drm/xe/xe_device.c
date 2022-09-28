@@ -211,15 +211,15 @@ int xe_device_probe(struct xe_device *xe)
 	if (err)
 		return err;
 
-	err = xe_irq_install(xe);
-	if (err)
-		return err;
-
 	for_each_gt(gt, xe, id) {
 		err = xe_gt_init_early(gt);
 		if (err)
 			goto err_irq_shutdown;
 	}
+
+	err = xe_irq_install(xe);
+	if (err)
+		return err;
 
 	for_each_gt(gt, xe, id) {
 		err = xe_gt_init(gt);
