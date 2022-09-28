@@ -310,24 +310,25 @@ static u32 pte_update_size(struct xe_migrate *m,
 			   u64 *L0, u64 *L0_ofs, u32 *L0_pt,
 			   u32 cmd_size, u32 pt_ofs, u32 avail_pts)
 {
-	u32 cmds = 0, L0_size = GEN8_PAGE_SIZE;
+	u32 cmds = 0;
 
 	*L0_pt = pt_ofs;
 	if (!mem_type_is_vram(res->mem_type)) {
 		/* Clip L0 to available size */
 		u64 size = min(*L0, (u64)avail_pts * SZ_2M);
+		u64 num_4k_pages = DIV_ROUND_UP(size, GEN8_PAGE_SIZE);
 
 		*L0 = size;
 		*L0_ofs = xe_migrate_vm_addr(pt_ofs, 0);
 
 		/* MI_STORE_DATA_IMM */
-		cmds += 3 * DIV_ROUND_UP(size / L0_size, 0x1ff);
+		cmds += 3 * DIV_ROUND_UP(num_4k_pages, 0x1ff);
 
 		/* PDE qwords */
-		cmds += size / L0_size * 2;
+		cmds += num_4k_pages * 2;
 
-		/* Each command clears 64 MiB at a time */
-		cmds += cmd_size * DIV_ROUND_UP(*L0, SZ_64M);
+		/* Each chunk has a single blit command */
+		cmds += cmd_size;
 	} else {
 		/* Offset into identity map. */
 		*L0_ofs = xe_migrate_vram_ofs(cur->start);
@@ -609,7 +610,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		drm_dbg(&xe->drm, "Pass %u, size: %llu\n", pass++, clear_L0);
 
 		/* Calculate final sizes and batch size.. */
-		batch_size = 1 +
+		batch_size = 2 +
 			pte_update_size(m, src, &src_it,
 					&clear_L0, &clear_L0_ofs, &clear_L0_pt,
 					8, 0, NUM_PT_PER_BLIT);
