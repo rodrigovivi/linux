@@ -65,11 +65,6 @@ static void xe_migrate_fini(struct drm_device *dev, void *arg)
 	xe_engine_put(m->eng);
 }
 
-static u32 xe_migrate_pagesize(struct xe_migrate *m)
-{
-	return GEN8_PAGE_SIZE;
-}
-
 static u64 xe_pt_shift(unsigned int level)
 {
 	return GEN8_PTE_SHIFT + GEN8_PDE_SHIFT * level;
@@ -119,15 +114,6 @@ static int xe_migrate_prepare_vm(struct xe_gt *gt, struct xe_migrate *m,
 	entry = gen8_pde_encode(bo, bo->size - GEN8_PAGE_SIZE, XE_CACHE_WB);
 	xe_pt_write(xe, &vm->pt_root[id]->bo->vmap, 0, entry);
 
-#if 0
-	/* XXX: allow for 1 GiB pages? */
-	for (i = 0; i < num_entries - num_level; i++) {
-		entry = gen8_pde_encode(bo, i * GEN8_PAGE_SIZE, XE_CACHE_WB);
-
-		__xe_pt_write(&map, i + 1, entry);
-	}
-#endif
-
 	map_ofs = (num_entries - num_level) * GEN8_PAGE_SIZE;
 
 	/* Map the entire BO in our level 0 pt */
@@ -149,7 +135,8 @@ static int xe_migrate_prepare_vm(struct xe_gt *gt, struct xe_migrate *m,
 		/* Write out batch too */
 		m->batch_base_ofs = NUM_PT_SLOTS * GEN8_PAGE_SIZE;
 		for (i = 0; i < batch->size;
-		     i += vm->flags & XE_VM_FLAGS_64K ? SZ_64K : SZ_4K) {
+		     i += vm->flags & XE_VM_FLAGS_64K ? GEN8_64K_PAGE_SIZE :
+			     GEN8_PAGE_SIZE) {
 			entry = gen8_pte_encode(NULL, batch, i,
 						XE_CACHE_WB, 0, 0);
 
@@ -323,7 +310,7 @@ static u32 pte_update_size(struct xe_migrate *m,
 			   u64 *L0, u64 *L0_ofs, u32 *L0_pt,
 			   u32 cmd_size, u32 pt_ofs, u32 avail_pts)
 {
-	u32 cmds = 0, L0_size = xe_migrate_pagesize(m);
+	u32 cmds = 0, L0_size = GEN8_PAGE_SIZE;
 
 	*L0_pt = pt_ofs;
 	if (!mem_type_is_vram(res->mem_type)) {
@@ -337,7 +324,7 @@ static u32 pte_update_size(struct xe_migrate *m,
 		cmds += 3 * DIV_ROUND_UP(size / L0_size, 0x1ff);
 
 		/* PDE qwords */
-		cmds += size / xe_migrate_pagesize(m) * 2;
+		cmds += size / L0_size * 2;
 
 		/* Each command clears 64 MiB at a time */
 		cmds += cmd_size * DIV_ROUND_UP(*L0, SZ_64M);
@@ -351,7 +338,7 @@ static u32 pte_update_size(struct xe_migrate *m,
 }
 
 static void emit_pte(struct xe_migrate *m,
-		     struct xe_bb *bb, u32 at_pt, u32 pagesize,
+		     struct xe_bb *bb, u32 at_pt,
 		     struct ttm_resource *res,
 		     struct xe_res_cursor *cur,
 		     u32 size, struct ttm_tt *ttm)
@@ -359,6 +346,7 @@ static void emit_pte(struct xe_migrate *m,
 	u32 ptes;
 	bool lmem = mem_type_is_vram(res->mem_type);
 	u64 ofs = at_pt * GEN8_PAGE_SIZE;
+	u64 cur_ofs;
 
 	/*
 	 * FIXME: Emitting lmem PTEs to L0 PTs is forbidden. Currently
@@ -367,33 +355,34 @@ static void emit_pte(struct xe_migrate *m,
 	 * on running tests.
 	 */
 
-	if (!pagesize)
-		pagesize = xe_migrate_pagesize(m);
-
-	ptes = size / pagesize;
+	ptes = size / GEN8_PAGE_SIZE;
 
 	while (ptes) {
 		u32 chunk = min(0x1ffU, ptes);
-
-		if (pagesize == SZ_64K)
-			chunk = min(32U, ptes);
 
 		bb->cs[bb->len++] = MI_STORE_DATA_IMM | BIT(21) |
 			(chunk * 2 + 1);
 		bb->cs[bb->len++] = ofs;
 		bb->cs[bb->len++] = 0;
 
-		if (pagesize == SZ_64K)
-			ofs += SZ_4K;
-		else
-			ofs += chunk * 8;
+		cur_ofs = ofs;
+		ofs += chunk * 8;
 		ptes -= chunk;
 
 		while (chunk--) {
 			u64 addr;
 
 			if (lmem) {
-				addr = cur->start | GEN12_PPGTT_PTE_LM;
+				addr = cur->start;
+
+				/* Is this a 64K PTE entry? */
+				if ((m->eng->vm->flags & XE_VM_FLAGS_64K) &&
+				    !(cur_ofs & (16 * 8 - 1))) {
+					XE_WARN_ON(!IS_ALIGNED(addr, SZ_64K));
+					addr |= GEN12_PTE_PS64;
+				}
+
+				addr |= GEN12_PPGTT_PTE_LM;
 			} else {
 				unsigned long page = cur->start >> PAGE_SHIFT;
 				unsigned long offset = cur->start &
@@ -405,7 +394,8 @@ static void emit_pte(struct xe_migrate *m,
 			bb->cs[bb->len++] = lower_32_bits(addr);
 			bb->cs[bb->len++] = upper_32_bits(addr);
 
-			xe_res_next(cur, pagesize);
+			xe_res_next(cur, PAGE_SIZE);
+			cur_ofs += 8;
 		}
 	}
 }
@@ -509,13 +499,13 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 			emit_arb_clear(bb);
 
 		if (!src_is_vram)
-			emit_pte(m, bb, src_L0_pt, 0, src, &src_it, src_L0,
+			emit_pte(m, bb, src_L0_pt, src, &src_it, src_L0,
 				 ttm);
 		else
 			xe_res_next(&src_it, src_L0);
 
 		if (!dst_is_vram)
-			emit_pte(m, bb, dst_L0_pt, 0, dst, &dst_it, src_L0,
+			emit_pte(m, bb, dst_L0_pt, dst, &dst_it, src_L0,
 				 ttm);
 		else
 			xe_res_next(&dst_it, src_L0);
@@ -523,7 +513,7 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 		bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
 		update_idx = bb->len;
 
-		emit_copy(gt, bb, src_L0_ofs, dst_L0_ofs, src_L0, SZ_4K);
+		emit_copy(gt, bb, src_L0_ofs, dst_L0_ofs, src_L0, GEN8_PAGE_SIZE);
 
 		mutex_lock(&m->job_mutex);
 
@@ -641,7 +631,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		/* Preemption is enabled again by the ring ops. */
 		if (!mem_type_is_vram(src->mem_type)) {
 			emit_arb_clear(bb);
-			emit_pte(m, bb, clear_L0_pt, 0, src, &src_it, clear_L0,
+			emit_pte(m, bb, clear_L0_pt, src, &src_it, clear_L0,
 				 bo->ttm.ttm);
 		} else {
 			xe_res_next(&src_it, clear_L0);
@@ -649,7 +639,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
 		update_idx = bb->len;
 
-		emit_clear(bb, clear_L0_ofs, clear_L0, SZ_4K, value);
+		emit_clear(bb, clear_L0_ofs, clear_L0, GEN8_PAGE_SIZE, value);
 
 		mutex_lock(&m->job_mutex);
 		job = xe_bb_create_migration_job(m->eng, bb,
@@ -1199,7 +1189,7 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 		goto free_pt;
 
 	tiny = xe_bo_create_pin_map(xe, m->gt, m->eng->vm,
-				    2 * xe_migrate_pagesize(m),
+				    2 * SZ_4K,
 				    ttm_bo_type_kernel,
 				    XE_BO_CREATE_VRAM_IF_DGFX(m->gt) |
 				    XE_BO_CREATE_PINNED_BIT);
@@ -1226,9 +1216,10 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 	/* First part of the test, are we updating our pagetable bo with a new entry? */
 	xe_map_wr(xe, &bo->vmap, GEN8_PAGE_SIZE * (NUM_KERNEL_PDE - 1), u64, 0xdeaddeadbeefbeef);
 	expected = gen8_pte_encode(NULL, pt, 0, XE_CACHE_WB, 0, 0);
-
+	if (m->eng->vm->flags & XE_VM_FLAGS_64K)
+		expected |= GEN12_PTE_PS64;
 	xe_res_first(pt->ttm.resource, 0, pt->size, &src_it);
-	emit_pte(m, bb, NUM_KERNEL_PDE - 1, GEN8_PAGE_SIZE, pt->ttm.resource,
+	emit_pte(m, bb, NUM_KERNEL_PDE - 1, pt->ttm.resource,
 		 &src_it, GEN8_PAGE_SIZE, pt->ttm.ttm);
 	run_sanity_job(m, xe, bb, bb->len, "Writing PTE for our fake PT");
 
