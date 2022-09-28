@@ -54,8 +54,7 @@ static u32 lrc_size(struct xe_device *xe, enum xe_engine_class class)
 /* TODO: Shameless copy+paste from i915 */
 static void set_offsets(u32 *regs,
 			const u8 *data,
-			const struct xe_hw_engine *hwe,
-			bool close)
+			const struct xe_hw_engine *hwe)
 #define NOP(x) (BIT(7) | (x))
 #define LRI(count, flags) ((flags) << 6 | (count) | \
 			   BUILD_BUG_ON_ZERO(count >= BIT(6)))
@@ -105,12 +104,7 @@ static void set_offsets(u32 *regs,
 		} while (--count);
 	}
 
-	if (close) {
-		/* Close the batch; used mainly by live_lrc_layout() */
-		*regs = MI_BATCH_BUFFER_END;
-		if (GRAPHICS_VER(xe) >= 11)
-			*regs |= BIT(0);
-	}
+	*regs = MI_BATCH_BUFFER_END | BIT(0);
 }
 
 static const u8 gen12_xcs_offsets[] = {
@@ -570,7 +564,7 @@ static void *empty_lrc_data(struct xe_hw_engine *hwe)
 
 	/* 1st page: Per-Process of HW status Page */
 	regs = data + LRC_PPHWSP_SIZE;
-	set_offsets(regs, reg_offsets(xe, hwe->class), hwe, true);
+	set_offsets(regs, reg_offsets(xe, hwe->class), hwe);
 	set_context_control(regs, hwe, true);
 	reset_stop_ring(regs, hwe);
 
