@@ -15,13 +15,6 @@
 #include "../i915/i915_reg.h"
 
 #include <linux/delay.h>
-/*
- * FIXME: This header has been deemed evil and we need to kill it. Temporarily
- * including so we can use 'wait_for' and unblock initial development. A follow
- * should replace 'wait_for' with a sane version and drop including this header.
- */
-#include "i915_utils.h"
-
 
 #define XEHP_MTCFG_ADDR		_MMIO(0x101800)
 #define TILE_COUNT		REG_GENMASK(15, 8)
@@ -346,6 +339,24 @@ int xe_mmio_wait32(struct xe_gt *gt,
 		   u32 reg, u32 val,
 		   u32 mask, u32 timeout_ms)
 {
-	return wait_for((xe_mmio_read32(gt, reg) & mask) == val,
-			timeout_ms);
+	ktime_t cur = ktime_get_raw();
+	const ktime_t end = ktime_add_ms(cur, timeout_ms);
+        s64 wait;
+
+	if ((xe_mmio_read32(gt, reg) & mask) == val)
+		return 0;
+
+	for(wait = 10; ktime_before(cur, end); wait <<= 1) {
+		if (ktime_after(ktime_add_us(cur, wait), end))
+			wait = ktime_us_delta(end, cur);
+
+		udelay(wait);
+
+		if ((xe_mmio_read32(gt, reg) & mask) == val)
+			return 0;
+
+		cur = ktime_get_raw();
+	}
+
+	return -ETIMEDOUT;
 }
