@@ -457,14 +457,8 @@ static int lrc_ring_mi_mode(struct xe_hw_engine *hwe)
 
 	if (GRAPHICS_VERx100(xe) >= 1250)
 		return 0x70;
-	else if (GRAPHICS_VER(xe) >= 12)
-		return 0x60;
-	else if (GRAPHICS_VER(xe) >= 9)
-		return 0x54;
-	else if (hwe->class == XE_ENGINE_CLASS_RENDER)
-		return 0x58;
 	else
-		return -1;
+		return 0x60;
 }
 
 static void reset_stop_ring(u32 *regs, struct xe_hw_engine *hwe)
@@ -472,10 +466,8 @@ static void reset_stop_ring(u32 *regs, struct xe_hw_engine *hwe)
 	int x;
 
 	x = lrc_ring_mi_mode(hwe);
-	if (x != -1) {
-		regs[x + 1] &= ~STOP_RING;
-		regs[x + 1] |= STOP_RING << 16;
-	}
+	regs[x + 1] &= ~STOP_RING;
+	regs[x + 1] |= STOP_RING << 16;
 }
 
 static inline u32 __xe_lrc_ring_offset(struct xe_lrc *lrc)
