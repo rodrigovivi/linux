@@ -39,18 +39,8 @@ static u32 lrc_size(struct xe_device *xe, enum xe_engine_class class)
 	switch (class) {
 	case XE_ENGINE_CLASS_RENDER:
 	case XE_ENGINE_CLASS_COMPUTE:
-		switch (GRAPHICS_VER(xe)) {
-		case 12:
-		case 11:
-			return 14 * SZ_4K;
-		case 9:
-			return 22 * SZ_4K;
-		case 8:
-			return 20 * SZ_4K;
-		default:
-			WARN(1, "Unknown GFX version: %d", GRAPHICS_VER(xe));
-			return 22 * SZ_4K;
-		}
+		/* 14 pages since graphics_ver == 11 */
+		return 14 * SZ_4K;
 	default:
 		WARN(1, "Unknown engine class: %d", class);
 		fallthrough;
