@@ -235,7 +235,10 @@ static struct ttm_tt *xe_ttm_tt_create(struct ttm_buffer_object *ttm_bo,
 	page_flags |= TTM_TT_FLAG_ZERO_ALLOC;
 
 	/* TODO: Select caching mode */
-	err = ttm_sg_tt_init(&tt->ttm, &bo->ttm, page_flags, ttm_cached, 0);
+	err = ttm_sg_tt_init(&tt->ttm, &bo->ttm, page_flags, ttm_cached,
+			     DIV_ROUND_UP(xe_device_ccs_bytes(xe_bo_device(bo),
+							      bo->ttm.base.size),
+					  PAGE_SIZE));
 	if (err) {
 		kfree(tt);
 		return NULL;
@@ -1330,4 +1333,24 @@ int xe_bo_migrate(struct xe_bo *bo, u32 mem_type)
 	placement.busy_placement = &requested;
 
 	return ttm_bo_validate(&bo->ttm, &placement, &ctx);
+}
+
+/**
+ * xe_bo_needs_ccs_pages - Whether a bo needs to back up CCS pages when
+ * placed in system memory.
+ * @bo: The xe_bo
+ *
+ * If a bo has an allowable placement in XE_PL_TT memory, it can't use
+ * flat CCS compression, because the GPU then has no way to access the
+ * CCS metadata using relevant commands. For the opposite case, we need to
+ * allocate storage for the CCS metadata when the BO is not resident in
+ * VRAM memory.
+ *
+ * Return: true if extra pages need to be allocated, false otherwise.
+ */
+bool xe_bo_needs_ccs_pages(struct xe_bo *bo)
+{
+	return bo->ttm.type == ttm_bo_type_device &&
+		!(bo->flags & XE_BO_CREATE_SYSTEM_BIT) &&
+		(bo->flags & (XE_BO_CREATE_VRAM0_BIT | XE_BO_CREATE_VRAM1_BIT));
 }

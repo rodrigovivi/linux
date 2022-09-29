@@ -160,7 +160,7 @@ static void emit_migration_job_gen12(struct xe_sched_job *job,
 	dw[i++] = lower_32_bits(batch_addr);
 	dw[i++] = upper_32_bits(batch_addr);
 
-	dw[i++] = (MI_FLUSH_DW | MI_INVALIDATE_TLB |
+	dw[i++] = (MI_FLUSH_DW | MI_INVALIDATE_TLB | job->migrate_flush_flags |
 		   MI_FLUSH_DW_OP_STOREDW) + 1;
 	dw[i++] = xe_lrc_seqno_ggtt_addr(lrc) | MI_FLUSH_DW_USE_GTT;
 	dw[i++] = 0;

@@ -68,6 +68,7 @@ struct xe_device_desc {
 	u8 vm_max_level;
 
 	bool supports_usm;
+	bool has_flat_ccs;
 };
 
 #define PLATFORM(x)		\
@@ -131,6 +132,7 @@ static const struct xe_device_desc dg1_desc = {
 #define XE_HP_FEATURES \
 	.graphics_ver = 12, \
 	.graphics_rel = 50, \
+	.has_flat_ccs = true, \
 	.dma_mask_size = 46, \
 	.max_tiles = 1, \
 	.vm_max_level = 3
@@ -194,6 +196,7 @@ static const struct xe_device_desc pvc_desc = {
 	PLATFORM(XE_PVC),
 	.extra_gts = pvc_gts,
 	.graphics_rel = 60,
+	.has_flat_ccs = 0,
 	.media_rel = 60,
 	.platform_engine_mask = PVC_ENGINES,
 	.require_force_probe = true,
@@ -333,6 +336,7 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	xe->info.vm_max_level = desc->vm_max_level;
 	xe->info.media_ver = desc->media_ver;
 	xe->info.supports_usm = desc->supports_usm;
+	xe->info.has_flat_ccs = desc->has_flat_ccs;
 
 	spd = subplatform_get(xe, desc);
 	xe->info.subplatform = spd ? spd->subplatform : XE_SUBPLATFORM_NONE;

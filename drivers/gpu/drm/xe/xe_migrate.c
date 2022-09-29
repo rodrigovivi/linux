@@ -31,8 +31,10 @@ struct xe_migrate {
 	struct xe_gt *gt;
 	struct mutex job_mutex;
 	struct xe_bo *pt_bo;
+	struct xe_bo *cleared_bo;
 	u64 batch_base_ofs;
 	u64 usm_batch_base_ofs;
+	u64 cleared_vram_ofs;
 	struct dma_fence *fence;
 	struct drm_suballoc_manager vm_update_sa;
 };
@@ -56,9 +58,13 @@ static void xe_migrate_fini(struct drm_device *dev, void *arg)
 
 	xe_vm_lock(m->eng->vm, &ww, 0, false);
 	xe_bo_unpin(m->pt_bo);
+	if (m->cleared_bo)
+		xe_bo_unpin(m->cleared_bo);
 	xe_vm_unlock(m->eng->vm, &ww);
 
 	dma_fence_put(m->fence);
+	if (m->cleared_bo)
+		xe_bo_put(m->cleared_bo);
 	xe_bo_put(m->pt_bo);
 	drm_suballoc_manager_fini(&m->vm_update_sa);
 	mutex_destroy(&m->job_mutex);
@@ -84,6 +90,43 @@ static u64 xe_migrate_vram_ofs(u64 addr)
 	return addr + (256ULL << xe_pt_shift(2));
 }
 
+/*
+ * For flat CCS clearing we need a cleared chunk of memory to copy from,
+ * since the CCS clearing mode of XY_FAST_COLOR_BLT appears to be buggy
+ * (it clears on only 14 bytes in each chunk of 16).
+ * If clearing the main surface one can use the part of the main surface
+ * already cleared, but for clearing as part of copying non-compressed
+ * data out of system memory, we don't readily have a cleared part of
+ * VRAM to copy from, so create one to use for that case.
+ */
+static int xe_migrate_create_cleared_bo(struct xe_migrate *m, struct xe_vm *vm)
+{
+	struct xe_gt *gt = m->gt;
+	struct xe_device *xe = vm->xe;
+	size_t cleared_size;
+	u64 vram_addr;
+	bool is_vram;
+
+	if (!xe_device_has_flat_ccs(xe))
+		return 0;
+
+	cleared_size = xe_device_ccs_bytes(xe, MAX_PREEMPTDISABLE_TRANSFER);
+	cleared_size = PAGE_ALIGN(cleared_size);
+	m->cleared_bo = xe_bo_create_pin_map(xe, gt, vm, cleared_size,
+					     ttm_bo_type_kernel,
+					     XE_BO_CREATE_VRAM_IF_DGFX(gt) |
+					     XE_BO_CREATE_PINNED_BIT);
+	if (IS_ERR(m->cleared_bo))
+		return PTR_ERR(m->cleared_bo);
+
+	xe_map_memset(xe, &m->cleared_bo->vmap, 0, 0x00, cleared_size);
+	vram_addr = xe_bo_addr(m->cleared_bo, 0, GEN8_PAGE_SIZE, &is_vram);
+	XE_BUG_ON(!is_vram);
+	m->cleared_vram_ofs = xe_migrate_vram_ofs(vram_addr);
+
+	return 0;
+}
+
 static int xe_migrate_prepare_vm(struct xe_gt *gt, struct xe_migrate *m,
 				 struct xe_vm *vm)
 {
@@ -93,6 +136,7 @@ static int xe_migrate_prepare_vm(struct xe_gt *gt, struct xe_migrate *m,
 	struct xe_device *xe = gt_to_xe(m->gt);
 	struct xe_bo *bo, *batch = gt->kernel_bb_pool.bo;
 	u64 entry;
+	int ret;
 
 	/* Can't bump NUM_PT_SLOTS too high */
 	BUILD_BUG_ON(NUM_PT_SLOTS > SZ_2M/GEN8_PAGE_SIZE);
@@ -111,6 +155,12 @@ static int xe_migrate_prepare_vm(struct xe_gt *gt, struct xe_migrate *m,
 				  XE_BO_CREATE_PINNED_BIT);
 	if (IS_ERR(bo))
 		return PTR_ERR(bo);
+
+	ret = xe_migrate_create_cleared_bo(m, vm);
+	if (ret) {
+		xe_bo_put(bo);
+		return ret;
+	}
 
 	entry = gen8_pde_encode(bo, bo->size - GEN8_PAGE_SIZE, XE_CACHE_WB);
 	xe_pt_write(xe, &vm->pt_root[id]->bo->vmap, 0, entry);
@@ -306,7 +356,7 @@ static u64 xe_migrate_res_sizes(struct xe_res_cursor *cur)
 }
 
 static u32 pte_update_size(struct xe_migrate *m,
-			   struct ttm_resource *res,
+			   bool is_vram,
 			   struct xe_res_cursor *cur,
 			   u64 *L0, u64 *L0_ofs, u32 *L0_pt,
 			   u32 cmd_size, u32 pt_ofs, u32 avail_pts)
@@ -314,7 +364,7 @@ static u32 pte_update_size(struct xe_migrate *m,
 	u32 cmds = 0;
 
 	*L0_pt = pt_ofs;
-	if (!mem_type_is_vram(res->mem_type)) {
+	if (!is_vram) {
 		/* Clip L0 to available size */
 		u64 size = min(*L0, (u64)avail_pts * SZ_2M);
 		u64 num_4k_pages = DIV_ROUND_UP(size, GEN8_PAGE_SIZE);
@@ -341,23 +391,22 @@ static u32 pte_update_size(struct xe_migrate *m,
 
 static void emit_pte(struct xe_migrate *m,
 		     struct xe_bb *bb, u32 at_pt,
-		     struct ttm_resource *res,
+		     bool is_vram,
 		     struct xe_res_cursor *cur,
 		     u32 size, struct ttm_tt *ttm)
 {
 	u32 ptes;
-	bool lmem = mem_type_is_vram(res->mem_type);
 	u64 ofs = at_pt * GEN8_PAGE_SIZE;
 	u64 cur_ofs;
 
 	/*
-	 * FIXME: Emitting lmem PTEs to L0 PTs is forbidden. Currently
-	 * we're only emitting lmem PTEs during sanity tests, so when
-	 * that's moved to a Kunit test, we should condition lmem PTEs
+	 * FIXME: Emitting VRAM PTEs to L0 PTs is forbidden. Currently
+	 * we're only emitting VRAM PTEs during sanity tests, so when
+	 * that's moved to a Kunit test, we should condition VRAM PTEs
 	 * on running tests.
 	 */
 
-	ptes = size / GEN8_PAGE_SIZE;
+	ptes = DIV_ROUND_UP(size, GEN8_PAGE_SIZE);
 
 	while (ptes) {
 		u32 chunk = min(0x1ffU, ptes);
@@ -374,7 +423,7 @@ static void emit_pte(struct xe_migrate *m,
 		while (chunk--) {
 			u64 addr;
 
-			if (lmem) {
+			if (is_vram) {
 				addr = cur->start;
 
 				/* Is this a 64K PTE entry? */
@@ -390,6 +439,7 @@ static void emit_pte(struct xe_migrate *m,
 				unsigned long offset = cur->start &
 					(PAGE_SIZE - 1);
 
+				XE_BUG_ON(page >= ttm->num_pages);
 				addr = ttm->dma_address[page] + offset;
 			}
 			addr |= PPAT_CACHED | GEN8_PAGE_PRESENT | GEN8_PAGE_RW;
@@ -400,6 +450,33 @@ static void emit_pte(struct xe_migrate *m,
 			cur_ofs += 8;
 		}
 	}
+}
+
+#define EMIT_COPY_CCS_DW 5
+static void emit_copy_ccs(struct xe_gt *gt, struct xe_bb *bb,
+			  u64 dst_ofs, bool dst_is_indirect,
+			  u64 src_ofs, bool src_is_indirect,
+			  u32 size)
+{
+	u32 *cs = bb->cs + bb->len;
+	u32 num_ccs_blks;
+	u32 mocs = xe_mocs_index_to_value(gt->mocs.uc_index);
+
+	num_ccs_blks = DIV_ROUND_UP(xe_device_ccs_bytes(gt_to_xe(gt), size),
+				    NUM_CCS_BYTES_PER_BLOCK);
+	XE_BUG_ON(num_ccs_blks > NUM_CCS_BLKS_PER_XFER);
+	*cs++ = XY_CTRL_SURF_COPY_BLT |
+		(src_is_indirect ? 0x0 : 0x1) << SRC_ACCESS_TYPE_SHIFT |
+		(dst_is_indirect ? 0x0 : 0x1) << DST_ACCESS_TYPE_SHIFT |
+		((num_ccs_blks - 1) & CCS_SIZE_MASK) << CCS_SIZE_SHIFT;
+	*cs++ = lower_32_bits(src_ofs);
+	*cs++ = upper_32_bits(src_ofs) |
+		FIELD_PREP(XY_CTRL_SURF_MOCS_MASK, mocs);
+	*cs++ = lower_32_bits(dst_ofs);
+	*cs++ = upper_32_bits(dst_ofs) |
+		FIELD_PREP(XY_CTRL_SURF_MOCS_MASK, mocs);
+
+	bb->len = cs - bb->cs;
 }
 
 static void emit_copy(struct xe_gt *gt, struct xe_bb *bb,
@@ -433,6 +510,44 @@ static u64 migrate_batch_base(struct xe_migrate *m, bool usm)
 	return usm ? m->usm_batch_base_ofs : m->batch_base_ofs;
 }
 
+static u32 xe_migrate_ccs_copy(struct xe_migrate *m,
+			       struct xe_bb *bb,
+			       u64 src_ofs, bool src_is_vram,
+			       u64 dst_ofs, bool dst_is_vram, u32 dst_size,
+			       u64 ccs_ofs, bool copy_ccs)
+{
+	struct xe_gt *gt = m->gt;
+	u32 flush_flags = 0;
+
+	if (xe_device_has_flat_ccs(gt_to_xe(gt)) && !copy_ccs && dst_is_vram) {
+		/*
+		 * If the bo doesn't have any CCS metadata attached, we still
+		 * need to clear it for security reasons.
+		 */
+		emit_copy_ccs(gt, bb, dst_ofs, true, m->cleared_vram_ofs, false,
+			      dst_size);
+		flush_flags = MI_FLUSH_DW_CCS;
+	} else if (copy_ccs) {
+		if (!src_is_vram)
+			src_ofs = ccs_ofs;
+		else if (!dst_is_vram)
+			dst_ofs = ccs_ofs;
+
+		/*
+		 * At the moment, we don't support copying CCS metadata from
+		 * system to system.
+		 */
+		XE_BUG_ON(!src_is_vram && !dst_is_vram);
+
+		emit_copy_ccs(gt, bb, dst_ofs, dst_is_vram, src_ofs,
+			      src_is_vram, dst_size);
+		if (dst_is_vram)
+			flush_flags = MI_FLUSH_DW_CCS;
+	}
+
+	return flush_flags;
+}
+
 struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 				  struct xe_bo *bo,
 				  struct ttm_resource *src,
@@ -442,7 +557,7 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 	struct xe_device *xe = gt_to_xe(gt);
 	struct dma_fence *fence = NULL;
 	u64 size = bo->size;
-	struct xe_res_cursor src_it, dst_it;
+	struct xe_res_cursor src_it, dst_it, ccs_it;
 	struct ttm_tt *ttm = bo->ttm.ttm;
 	u64 src_L0_ofs, dst_L0_ofs;
 	u32 src_L0_pt, dst_L0_pt;
@@ -451,6 +566,8 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 	int err;
 	bool src_is_vram = mem_type_is_vram(src->mem_type);
 	bool dst_is_vram = mem_type_is_vram(dst->mem_type);
+	bool copy_ccs = xe_device_has_flat_ccs(xe) && xe_bo_needs_ccs_pages(bo);
+	bool copy_system_ccs = copy_ccs && (!src_is_vram || !dst_is_vram);
 
 	err = dma_resv_reserve_fences(bo->ttm.base.resv, 1);
 	if (err)
@@ -459,6 +576,11 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 	xe_res_first(src, 0, bo->size, &src_it);
 	xe_res_first(dst, 0, bo->size, &dst_it);
 
+	if (copy_system_ccs)
+		xe_res_first(NULL, xe_bo_ccs_pages_start(bo),
+			     PAGE_ALIGN(xe_device_ccs_bytes(xe, size)),
+			     &ccs_it);
+
 	while (size) {
 		u32 batch_size = 8 + 512;	/* FIXME: 512 is hack to fix
 						   eviction bug, issue #52 */
@@ -466,7 +588,10 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 		struct xe_bb *bb;
 		u32 num_src_pts;
 		u32 num_dst_pts;
+		u32 flush_flags;
 		u32 update_idx;
+		u64 ccs_ofs, ccs_size;
+		u32 ccs_pt;
 		bool usm = xe->info.supports_usm;
 
 		dma_fence_put(fence);
@@ -479,18 +604,27 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 
 		XE_BUG_ON(num_src_pts + num_dst_pts > NUM_KERNEL_PDE - 1);
 
-		batch_size += pte_update_size(m, src, &src_it, &src_L0,
+		batch_size += pte_update_size(m, src_is_vram, &src_it, &src_L0,
 					      &src_L0_ofs, &src_L0_pt, 0, 0,
 					      NUM_PT_PER_BLIT);
 
-		batch_size += pte_update_size(m, dst, &dst_it, &dst_L0,
+		batch_size += pte_update_size(m, dst_is_vram, &dst_it, &dst_L0,
 					      &dst_L0_ofs, &dst_L0_pt, 0,
 					      NUM_PT_PER_BLIT, NUM_PT_PER_BLIT);
 
-		/* Add copy commands size here */
-		batch_size += 10;
-
 		src_L0 = min(src_L0, dst_L0);
+
+		if (copy_system_ccs) {
+			ccs_size = xe_device_ccs_bytes(xe, src_L0);
+			batch_size += pte_update_size(m, false, &ccs_it, &ccs_size,
+						      &ccs_ofs, &ccs_pt, 0,
+						      2 * NUM_PT_PER_BLIT,
+						      NUM_PT_PER_BLIT);
+		}
+
+		/* Add copy commands size here */
+		batch_size += 10 +
+			(xe_device_has_flat_ccs(xe) ? EMIT_COPY_CCS_DW : 0);
 
 		bb = xe_bb_new(gt, batch_size, usm);
 		if (IS_ERR(bb))
@@ -501,24 +635,29 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 			emit_arb_clear(bb);
 
 		if (!src_is_vram)
-			emit_pte(m, bb, src_L0_pt, src, &src_it, src_L0,
+			emit_pte(m, bb, src_L0_pt, src_is_vram, &src_it, src_L0,
 				 ttm);
 		else
 			xe_res_next(&src_it, src_L0);
 
 		if (!dst_is_vram)
-			emit_pte(m, bb, dst_L0_pt, dst, &dst_it, src_L0,
+			emit_pte(m, bb, dst_L0_pt, dst_is_vram, &dst_it, src_L0,
 				 ttm);
 		else
 			xe_res_next(&dst_it, src_L0);
+
+		if (copy_system_ccs)
+			emit_pte(m, bb, ccs_pt, false, &ccs_it, ccs_size, ttm);
 
 		bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
 		update_idx = bb->len;
 
 		emit_copy(gt, bb, src_L0_ofs, dst_L0_ofs, src_L0, GEN8_PAGE_SIZE);
+		flush_flags = xe_migrate_ccs_copy(m, bb, src_L0_ofs, src_is_vram,
+						  dst_L0_ofs, dst_is_vram,
+						  src_L0, ccs_ofs, copy_ccs);
 
 		mutex_lock(&m->job_mutex);
-
 		job = xe_bb_create_migration_job(m->eng, bb,
 						 migrate_batch_base(m, usm),
 						 update_idx);
@@ -527,6 +666,7 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 			goto err;
 		}
 
+		xe_sched_job_add_migrate_flush(job, flush_flags);
 		if (!fence) {
 			err = job_add_deps(job, bo->ttm.base.resv,
 					   DMA_RESV_USAGE_PREEMPT_FENCE);
@@ -604,6 +744,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 				   struct ttm_resource *dst,
 				   u32 value)
 {
+	bool clear_vram = mem_type_is_vram(dst->mem_type);
 	struct xe_gt *gt = m->gt;
 	struct xe_device *xe = gt_to_xe(gt);
 	struct dma_fence *fence = NULL;
@@ -622,6 +763,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 	while (size) {
 		u64 clear_L0_ofs;
 		u32 clear_L0_pt;
+		u32 flush_flags = 0;
 		u64 clear_L0;
 		struct xe_sched_job *job;
 		struct xe_bb *bb;
@@ -633,9 +775,11 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 
 		/* Calculate final sizes and batch size.. */
 		batch_size = 2 +
-			pte_update_size(m, src, &src_it,
+			pte_update_size(m, clear_vram, &src_it,
 					&clear_L0, &clear_L0_ofs, &clear_L0_pt,
 					XY_FAST_COLOR_BLT_DW, 0, NUM_PT_PER_BLIT);
+		if (xe_device_has_flat_ccs(xe) && clear_vram)
+			batch_size += EMIT_COPY_CCS_DW;
 
 		/* Clear commands */
 		dma_fence_put(fence);
@@ -652,9 +796,9 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		/* TODO: Add dependencies here */
 
 		/* Preemption is enabled again by the ring ops. */
-		if (!mem_type_is_vram(src->mem_type)) {
+		if (!clear_vram) {
 			emit_arb_clear(bb);
-			emit_pte(m, bb, clear_L0_pt, src, &src_it, clear_L0,
+			emit_pte(m, bb, clear_L0_pt, clear_vram, &src_it, clear_L0,
 				 bo->ttm.ttm);
 		} else {
 			xe_res_next(&src_it, clear_L0);
@@ -663,7 +807,12 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		update_idx = bb->len;
 
 		emit_clear(gt, bb, clear_L0_ofs, clear_L0, GEN8_PAGE_SIZE,
-			   value, mem_type_is_vram(dst->mem_type));
+			   value, clear_vram);
+		if (xe_device_has_flat_ccs(xe) && clear_vram) {
+			emit_copy_ccs(gt, bb, clear_L0_ofs, true,
+				      m->cleared_vram_ofs, false, clear_L0);
+			flush_flags = MI_FLUSH_DW_CCS;
+		}
 
 		mutex_lock(&m->job_mutex);
 		job = xe_bb_create_migration_job(m->eng, bb,
@@ -674,6 +823,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 			goto err;
 		}
 
+		xe_sched_job_add_migrate_flush(job, flush_flags);
 		if (!fence) {
 			err = drm_sched_job_add_implicit_dependencies(&job->drm,
 								      &bo->ttm.base,
