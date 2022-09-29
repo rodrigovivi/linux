@@ -15,6 +15,8 @@ struct xe_file;
 #include "xe_macros.h"
 #include "xe_force_wake.h"
 
+#include "../i915/gt/intel_gpu_commands.h"
+
 static inline struct xe_device *to_xe_device(const struct drm_device *dev)
 {
 	return container_of(dev, struct xe_device, drm);
@@ -154,4 +156,10 @@ static inline bool xe_device_in_non_fault_mode(struct xe_device *xe)
 	return xe->usm.num_vm_in_non_fault_mode != 0;
 }
 
+static inline bool xe_device_has_flat_ccs(struct xe_device *xe)
+{
+	return xe->info.has_flat_ccs;
+}
+
+u32 xe_device_ccs_bytes(struct xe_device *xe, u64 size);
 #endif

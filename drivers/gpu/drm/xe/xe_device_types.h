@@ -73,6 +73,8 @@ struct xe_device {
 		bool supports_usm;
 		/** @enable_guc: GuC submission enabled */
 		bool enable_guc;
+		/** @has_flat_ccs: Whether flat CCS metadata is used */
+		bool has_flat_ccs;
 	} info;
 
 	/** @irq: device interrupt state */
