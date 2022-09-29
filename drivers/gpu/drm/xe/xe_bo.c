@@ -555,8 +555,8 @@ static void xe_ttm_bo_release_notify(struct ttm_buffer_object *ttm_bo)
 	if (!xe_bo_is_xe_bo(ttm_bo))
 		return;
 
-	XE_WARN_ON(kref_read(&ttm_bo->base.refcount));
 	bo = ttm_to_xe_bo(ttm_bo);
+	XE_WARN_ON(bo->created && kref_read(&ttm_bo->base.refcount));
 	__xe_bo_vunmap(bo);
 }
 
@@ -759,9 +759,10 @@ static int __xe_bo_alloc_backing_locked(struct xe_device *xe, struct xe_bo *bo,
 				   DMA_RESV_USAGE_BOOKKEEP,
 				   placement, SZ_64K >> PAGE_SHIFT,
 				   &ctx, NULL, resv, xe_ttm_bo_destroy);
-	if (WARN_ON(err))
+	if (err)
 		return err;
 
+	bo->created = true;
 	ttm_bo_move_to_lru_tail_unlocked(&bo->ttm);
 	bo->flags |= XE_BO_INTERNAL_ALLOC;
 	return 0;
