@@ -151,7 +151,8 @@ int ttm_tt_init(struct ttm_tt *ttm, struct ttm_buffer_object *bo,
 		uint32_t page_flags, enum ttm_caching caching,
 		unsigned long extra_pages);
 int ttm_sg_tt_init(struct ttm_tt *ttm_dma, struct ttm_buffer_object *bo,
-		   uint32_t page_flags, enum ttm_caching caching);
+		   uint32_t page_flags, enum ttm_caching caching,
+		   unsigned long extra_pages);
 
 /**
  * ttm_tt_fini

@@ -176,11 +176,12 @@ void ttm_tt_fini(struct ttm_tt *ttm)
 EXPORT_SYMBOL(ttm_tt_fini);
 
 int ttm_sg_tt_init(struct ttm_tt *ttm, struct ttm_buffer_object *bo,
-		   uint32_t page_flags, enum ttm_caching caching)
+		   uint32_t page_flags, enum ttm_caching caching,
+		   unsigned long extra_pages)
 {
 	int ret;
 
-	ttm_tt_init_fields(ttm, bo, page_flags, caching, 0);
+	ttm_tt_init_fields(ttm, bo, page_flags, caching, extra_pages);
 
 	if (page_flags & TTM_TT_FLAG_EXTERNAL)
 		ret = ttm_sg_tt_alloc_page_directory(ttm);
