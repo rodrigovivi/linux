@@ -516,7 +516,7 @@ static struct ttm_tt *radeon_ttm_tt_create(struct ttm_buffer_object *bo,
 	else
 		caching = ttm_cached;
 
-	if (ttm_sg_tt_init(&gtt->ttm, bo, page_flags, caching)) {
+	if (ttm_sg_tt_init(&gtt->ttm, bo, page_flags, caching, 0)) {
 		kfree(gtt);
 		return NULL;
 	}

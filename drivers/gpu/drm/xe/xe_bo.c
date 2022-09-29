@@ -235,7 +235,7 @@ static struct ttm_tt *xe_ttm_tt_create(struct ttm_buffer_object *ttm_bo,
 	page_flags |= TTM_TT_FLAG_ZERO_ALLOC;
 
 	/* TODO: Select caching mode */
-	err = ttm_sg_tt_init(&tt->ttm, &bo->ttm, page_flags, ttm_cached);
+	err = ttm_sg_tt_init(&tt->ttm, &bo->ttm, page_flags, ttm_cached, 0);
 	if (err) {
 		kfree(tt);
 		return NULL;
