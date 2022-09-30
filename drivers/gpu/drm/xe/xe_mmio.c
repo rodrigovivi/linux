@@ -13,6 +13,7 @@
 #include "xe_macros.h"
 
 #include "../i915/i915_reg.h"
+#include "../i915/gt/intel_engine_regs.h"
 
 #define XEHP_MTCFG_ADDR		_MMIO(0x101800)
 #define TILE_COUNT		REG_GENMASK(15, 8)
@@ -221,15 +222,17 @@ int xe_mmio_init(struct xe_device *xe)
 	DRM_XE_MMIO_READ |\
 	DRM_XE_MMIO_WRITE)
 
+static const i915_reg_t mmio_read_whitelist[] = {
+	RING_TIMESTAMP(RENDER_RING_BASE),
+};
+
 int xe_mmio_ioctl(struct drm_device *dev, void *data,
 		  struct drm_file *file)
 {
 	struct xe_device *xe = to_xe_device(dev);
 	struct drm_xe_mmio *args = data;
 	unsigned int bits_flag, bytes;
-
-	if (XE_IOCTL_ERR(xe, !capable(CAP_SYS_ADMIN)))
-		return -EPERM;
+	bool allowed;
 
 	if (XE_IOCTL_ERR(xe, args->extensions))
 		return -EINVAL;
@@ -239,6 +242,21 @@ int xe_mmio_ioctl(struct drm_device *dev, void *data,
 
 	if (XE_IOCTL_ERR(xe, !(args->flags & DRM_XE_MMIO_WRITE) && args->value))
 		return -EINVAL;
+
+	allowed = capable(CAP_SYS_ADMIN);
+	if (!allowed && ((args->flags & ~DRM_XE_MMIO_BITS_MASK) == DRM_XE_MMIO_READ)) {
+		unsigned int i;
+
+		for (i = 0; i < ARRAY_SIZE(mmio_read_whitelist); i++) {
+			if (mmio_read_whitelist[i].reg == args->addr) {
+				allowed = true;
+				break;
+			}
+		}
+	}
+
+	if (XE_IOCTL_ERR(xe, !allowed))
+		return -EPERM;
 
 	bits_flag = args->flags & DRM_XE_MMIO_BITS_MASK;
 	bytes = 1 << bits_flag;
