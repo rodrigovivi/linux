@@ -39,18 +39,8 @@ static u32 lrc_size(struct xe_device *xe, enum xe_engine_class class)
 	switch (class) {
 	case XE_ENGINE_CLASS_RENDER:
 	case XE_ENGINE_CLASS_COMPUTE:
-		switch (GRAPHICS_VER(xe)) {
-		case 12:
-		case 11:
-			return 14 * SZ_4K;
-		case 9:
-			return 22 * SZ_4K;
-		case 8:
-			return 20 * SZ_4K;
-		default:
-			WARN(1, "Unknown GFX version: %d", GRAPHICS_VER(xe));
-			return 22 * SZ_4K;
-		}
+		/* 14 pages since graphics_ver == 11 */
+		return 14 * SZ_4K;
 	default:
 		WARN(1, "Unknown engine class: %d", class);
 		fallthrough;
@@ -61,11 +51,33 @@ static u32 lrc_size(struct xe_device *xe, enum xe_engine_class class)
 	}
 }
 
-/* TODO: Shameless copy+paste from i915 */
+/*
+ * The per-platform tables are u8-encoded in @data. Decode @data and set the
+ * addresses' offset and commands in @regs. The following encoding is used
+ * for each byte. There are 2 steps: decoding commands and decoding addresses.
+ *
+ * Commands:
+ * [7]: create NOPs - number of NOPs are set in lower bits
+ * [6]: When creating MI_LOAD_REGISTER_IMM command, allow to set
+ *      MI_LRI_FORCE_POSTED
+ * [5:0]: Number of NOPs or registers to set values to in case of
+ *        MI_LOAD_REGISTER_IMM
+ *
+ * Addresses: these are decoded after a MI_LOAD_REGISTER_IMM command by "count"
+ * number of registers. They are set by using the REG/REG16 macros: the former
+ * is used for offsets smaller than 0x200 while the latter is for values bigger
+ * than that. Those macros already set all the bits documented below correctly:
+ *
+ * [7]: When a register offset needs more than 6 bits, use additional bytes, to
+ *      follow, for the lower bits
+ * [6:0]: Register offset, without considering the engine base.
+ *
+ * This function only tweaks the commands and register offsets. Values are not
+ * filled out.
+ */
 static void set_offsets(u32 *regs,
 			const u8 *data,
-			const struct xe_hw_engine *hwe,
-			bool close)
+			const struct xe_hw_engine *hwe)
 #define NOP(x) (BIT(7) | (x))
 #define LRI(count, flags) ((flags) << 6 | (count) | \
 			   BUILD_BUG_ON_ZERO(count >= BIT(6)))
@@ -76,7 +88,6 @@ static void set_offsets(u32 *regs,
 	(((x) >> 2) & 0x7f)
 #define END 0
 {
-	struct xe_device *xe = gt_to_xe(hwe->gt);
 	const u32 base = hwe->mmio_base;
 
 	while (*data) {
@@ -95,8 +106,7 @@ static void set_offsets(u32 *regs,
 		*regs = MI_LOAD_REGISTER_IMM(count);
 		if (flags & POSTED)
 			*regs |= MI_LRI_FORCE_POSTED;
-		if (GRAPHICS_VER(xe) >= 11)
-			*regs |= MI_LRI_LRM_CS_MMIO;
+		*regs |= MI_LRI_LRM_CS_MMIO;
 		regs++;
 
 		XE_BUG_ON(!count);
@@ -115,132 +125,8 @@ static void set_offsets(u32 *regs,
 		} while (--count);
 	}
 
-	if (close) {
-		/* Close the batch; used mainly by live_lrc_layout() */
-		*regs = MI_BATCH_BUFFER_END;
-		if (GRAPHICS_VER(xe) >= 11)
-			*regs |= BIT(0);
-	}
+	*regs = MI_BATCH_BUFFER_END | BIT(0);
 }
-
-static const u8 gen8_xcs_offsets[] = {
-	NOP(1),
-	LRI(11, 0),
-	REG16(0x244),
-	REG(0x034),
-	REG(0x030),
-	REG(0x038),
-	REG(0x03c),
-	REG(0x168),
-	REG(0x140),
-	REG(0x110),
-	REG(0x11c),
-	REG(0x114),
-	REG(0x118),
-
-	NOP(9),
-	LRI(9, 0),
-	REG16(0x3a8),
-	REG16(0x28c),
-	REG16(0x288),
-	REG16(0x284),
-	REG16(0x280),
-	REG16(0x27c),
-	REG16(0x278),
-	REG16(0x274),
-	REG16(0x270),
-
-	NOP(13),
-	LRI(2, 0),
-	REG16(0x200),
-	REG(0x028),
-
-	END
-};
-
-static const u8 gen9_xcs_offsets[] = {
-	NOP(1),
-	LRI(14, POSTED),
-	REG16(0x244),
-	REG(0x034),
-	REG(0x030),
-	REG(0x038),
-	REG(0x03c),
-	REG(0x168),
-	REG(0x140),
-	REG(0x110),
-	REG(0x11c),
-	REG(0x114),
-	REG(0x118),
-	REG(0x1c0),
-	REG(0x1c4),
-	REG(0x1c8),
-
-	NOP(3),
-	LRI(9, POSTED),
-	REG16(0x3a8),
-	REG16(0x28c),
-	REG16(0x288),
-	REG16(0x284),
-	REG16(0x280),
-	REG16(0x27c),
-	REG16(0x278),
-	REG16(0x274),
-	REG16(0x270),
-
-	NOP(13),
-	LRI(1, POSTED),
-	REG16(0x200),
-
-	NOP(13),
-	LRI(44, POSTED),
-	REG(0x028),
-	REG(0x09c),
-	REG(0x0c0),
-	REG(0x178),
-	REG(0x17c),
-	REG16(0x358),
-	REG(0x170),
-	REG(0x150),
-	REG(0x154),
-	REG(0x158),
-	REG16(0x41c),
-	REG16(0x600),
-	REG16(0x604),
-	REG16(0x608),
-	REG16(0x60c),
-	REG16(0x610),
-	REG16(0x614),
-	REG16(0x618),
-	REG16(0x61c),
-	REG16(0x620),
-	REG16(0x624),
-	REG16(0x628),
-	REG16(0x62c),
-	REG16(0x630),
-	REG16(0x634),
-	REG16(0x638),
-	REG16(0x63c),
-	REG16(0x640),
-	REG16(0x644),
-	REG16(0x648),
-	REG16(0x64c),
-	REG16(0x650),
-	REG16(0x654),
-	REG16(0x658),
-	REG16(0x65c),
-	REG16(0x660),
-	REG16(0x664),
-	REG16(0x668),
-	REG16(0x66c),
-	REG16(0x670),
-	REG16(0x674),
-	REG16(0x678),
-	REG16(0x67c),
-	REG(0x068),
-
-	END
-};
 
 static const u8 gen12_xcs_offsets[] = {
 	NOP(1),
@@ -304,168 +190,6 @@ static const u8 dg2_xcs_offsets[] = {
 	REG16(0x278),
 	REG16(0x274),
 	REG16(0x270),
-
-	END
-};
-
-static const u8 gen8_rcs_offsets[] = {
-	NOP(1),
-	LRI(14, POSTED),
-	REG16(0x244),
-	REG(0x034),
-	REG(0x030),
-	REG(0x038),
-	REG(0x03c),
-	REG(0x168),
-	REG(0x140),
-	REG(0x110),
-	REG(0x11c),
-	REG(0x114),
-	REG(0x118),
-	REG(0x1c0),
-	REG(0x1c4),
-	REG(0x1c8),
-
-	NOP(3),
-	LRI(9, POSTED),
-	REG16(0x3a8),
-	REG16(0x28c),
-	REG16(0x288),
-	REG16(0x284),
-	REG16(0x280),
-	REG16(0x27c),
-	REG16(0x278),
-	REG16(0x274),
-	REG16(0x270),
-
-	NOP(13),
-	LRI(1, 0),
-	REG(0x0c8),
-
-	END
-};
-
-static const u8 gen9_rcs_offsets[] = {
-	NOP(1),
-	LRI(14, POSTED),
-	REG16(0x244),
-	REG(0x34),
-	REG(0x30),
-	REG(0x38),
-	REG(0x3c),
-	REG(0x168),
-	REG(0x140),
-	REG(0x110),
-	REG(0x11c),
-	REG(0x114),
-	REG(0x118),
-	REG(0x1c0),
-	REG(0x1c4),
-	REG(0x1c8),
-
-	NOP(3),
-	LRI(9, POSTED),
-	REG16(0x3a8),
-	REG16(0x28c),
-	REG16(0x288),
-	REG16(0x284),
-	REG16(0x280),
-	REG16(0x27c),
-	REG16(0x278),
-	REG16(0x274),
-	REG16(0x270),
-
-	NOP(13),
-	LRI(1, 0),
-	REG(0xc8),
-
-	NOP(13),
-	LRI(44, POSTED),
-	REG(0x28),
-	REG(0x9c),
-	REG(0xc0),
-	REG(0x178),
-	REG(0x17c),
-	REG16(0x358),
-	REG(0x170),
-	REG(0x150),
-	REG(0x154),
-	REG(0x158),
-	REG16(0x41c),
-	REG16(0x600),
-	REG16(0x604),
-	REG16(0x608),
-	REG16(0x60c),
-	REG16(0x610),
-	REG16(0x614),
-	REG16(0x618),
-	REG16(0x61c),
-	REG16(0x620),
-	REG16(0x624),
-	REG16(0x628),
-	REG16(0x62c),
-	REG16(0x630),
-	REG16(0x634),
-	REG16(0x638),
-	REG16(0x63c),
-	REG16(0x640),
-	REG16(0x644),
-	REG16(0x648),
-	REG16(0x64c),
-	REG16(0x650),
-	REG16(0x654),
-	REG16(0x658),
-	REG16(0x65c),
-	REG16(0x660),
-	REG16(0x664),
-	REG16(0x668),
-	REG16(0x66c),
-	REG16(0x670),
-	REG16(0x674),
-	REG16(0x678),
-	REG16(0x67c),
-	REG(0x68),
-
-	END
-};
-
-static const u8 gen11_rcs_offsets[] = {
-	NOP(1),
-	LRI(15, POSTED),
-	REG16(0x244),
-	REG(0x034),
-	REG(0x030),
-	REG(0x038),
-	REG(0x03c),
-	REG(0x168),
-	REG(0x140),
-	REG(0x110),
-	REG(0x11c),
-	REG(0x114),
-	REG(0x118),
-	REG(0x1c0),
-	REG(0x1c4),
-	REG(0x1c8),
-	REG(0x180),
-
-	NOP(1),
-	LRI(9, POSTED),
-	REG16(0x3a8),
-	REG16(0x28c),
-	REG16(0x288),
-	REG16(0x284),
-	REG16(0x280),
-	REG16(0x27c),
-	REG16(0x278),
-	REG16(0x274),
-	REG16(0x270),
-
-	LRI(1, POSTED),
-	REG(0x1b0),
-
-	NOP(10),
-	LRI(1, 0),
-	REG(0x0c8),
 
 	END
 };
@@ -708,40 +432,21 @@ static const u8 *reg_offsets(struct xe_device *xe, enum xe_engine_class class)
 			return dg2_rcs_offsets;
 		else if (GRAPHICS_VERx100(xe) >= 1250)
 			return xehp_rcs_offsets;
-		else if (GRAPHICS_VER(xe) >= 12)
-			return gen12_rcs_offsets;
-		else if (GRAPHICS_VER(xe) >= 11)
-			return gen11_rcs_offsets;
-		else if (GRAPHICS_VER(xe) >= 9)
-			return gen9_rcs_offsets;
 		else
-			return gen8_rcs_offsets;
+			return gen12_rcs_offsets;
 	} else {
 		if (GRAPHICS_VERx100(xe) >= 1255)
 			return dg2_xcs_offsets;
-		else if (GRAPHICS_VER(xe) >= 12)
-			return gen12_xcs_offsets;
-		else if (GRAPHICS_VER(xe) >= 9)
-			return gen9_xcs_offsets;
 		else
-			return gen8_xcs_offsets;
+			return gen12_xcs_offsets;
 	}
 }
 
-static void set_context_control(u32 * regs, struct xe_hw_engine *hwe,
-				bool inhibit)
+static void set_context_control(u32 * regs, struct xe_hw_engine *hwe)
 {
-	struct xe_device *xe = gt_to_xe(hwe->gt);
-	u32 ctl = 0;
-
-	ctl |= _MASKED_BIT_ENABLE(CTX_CTRL_INHIBIT_SYN_CTX_SWITCH);
-	ctl |= _MASKED_BIT_DISABLE(CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT);
-	if (inhibit)
-		ctl |= CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT;
-	if (GRAPHICS_VER(xe) < 11)
-		ctl |= _MASKED_BIT_DISABLE(CTX_CTRL_ENGINE_CTX_SAVE_INHIBIT |
-					   CTX_CTRL_RS_CTX_ENABLE);
-	regs[CTX_CONTEXT_CONTROL] = ctl;
+	regs[CTX_CONTEXT_CONTROL] = _MASKED_BIT_ENABLE(CTX_CTRL_INHIBIT_SYN_CTX_SWITCH) |
+				    _MASKED_BIT_DISABLE(CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT) |
+				    CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT;
 
 	/* TODO: Timestamp */
 }
@@ -752,14 +457,8 @@ static int lrc_ring_mi_mode(struct xe_hw_engine *hwe)
 
 	if (GRAPHICS_VERx100(xe) >= 1250)
 		return 0x70;
-	else if (GRAPHICS_VER(xe) >= 12)
-		return 0x60;
-	else if (GRAPHICS_VER(xe) >= 9)
-		return 0x54;
-	else if (hwe->class == XE_ENGINE_CLASS_RENDER)
-		return 0x58;
 	else
-		return -1;
+		return 0x60;
 }
 
 static void reset_stop_ring(u32 *regs, struct xe_hw_engine *hwe)
@@ -767,10 +466,8 @@ static void reset_stop_ring(u32 *regs, struct xe_hw_engine *hwe)
 	int x;
 
 	x = lrc_ring_mi_mode(hwe);
-	if (x != -1) {
-		regs[x + 1] &= ~STOP_RING;
-		regs[x + 1] |= STOP_RING << 16;
-	}
+	regs[x + 1] &= ~STOP_RING;
+	regs[x + 1] |= STOP_RING << 16;
 }
 
 static inline u32 __xe_lrc_ring_offset(struct xe_lrc *lrc)
@@ -869,13 +566,10 @@ static void *empty_lrc_data(struct xe_hw_engine *hwe)
 	if (!data)
 		return NULL;
 
-	/* Per-Process of HW status Page */
-	memset(data, 0, LRC_PPHWSP_SIZE);
-
+	/* 1st page: Per-Process of HW status Page */
 	regs = data + LRC_PPHWSP_SIZE;
-	memset(regs, 0, SZ_4K);
-	set_offsets(regs, reg_offsets(xe, hwe->class), hwe, true);
-	set_context_control(regs, hwe, true);
+	set_offsets(regs, reg_offsets(xe, hwe->class), hwe);
+	set_context_control(regs, hwe);
 	reset_stop_ring(regs, hwe);
 
 	return data;
@@ -976,10 +670,8 @@ int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 	 */
 	if (vm)
 		lrc->desc |= GEN8_CTX_PRIVILEGE;
-	if (GRAPHICS_VER(xe) == 8)
-		lrc->desc |= GEN8_CTX_L3LLC_COHERENT;
 
-	if (GRAPHICS_VER(xe) >= 11 && GRAPHICS_VERx100(xe) < 1250) {
+	if (GRAPHICS_VERx100(xe) < 1250) {
 		lrc->desc |= (u64)hwe->instance << GEN11_ENGINE_INSTANCE_SHIFT;
 		lrc->desc |= (u64)hwe->class << GEN11_ENGINE_CLASS_SHIFT;
 	}
