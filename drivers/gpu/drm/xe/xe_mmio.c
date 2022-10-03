@@ -45,6 +45,7 @@ mask_err:
 
 static void xe_mmio_probe_vram(struct xe_device *xe)
 {
+	struct pci_dev *pdev = to_pci_dev(xe->drm.dev);
 	struct xe_gt *gt;
 	u8 id;
 
@@ -63,7 +64,13 @@ static void xe_mmio_probe_vram(struct xe_device *xe)
 
 	gt = xe_device_get_gt(xe, 0);
 	xe->mem.vram.size = xe_mmio_read64(gt, GEN12_GSMBASE.reg);
-	xe->mem.vram.io_start = pci_resource_start(to_pci_dev(xe->drm.dev), 2);
+	xe->mem.vram.io_start = pci_resource_start(pdev, 2);
+
+	if (xe->mem.vram.size > pci_resource_len(pdev, 2)) {
+		xe->mem.vram.size = pci_resource_len(pdev, 2);
+		drm_warn(&xe->drm, "Restricting VRAM size to PCI resource size.\n");
+	}
+
 #ifdef CONFIG_64BIT
 	xe->mem.vram.mapping = ioremap_wc(xe->mem.vram.io_start,
 					  xe->mem.vram.size);
