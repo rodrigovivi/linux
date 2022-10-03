@@ -67,6 +67,7 @@
 #define GEN12_USM_PPGTT_PTE_AE		BIT_ULL(10)
 #define GEN12_PPGTT_PTE_LM		BIT_ULL(11)
 #define GEN12_PDE_64K			BIT_ULL(6)
+#define GEN12_PTE_PS64                  BIT_ULL(8)
 
 #define GEN8_PAGE_PRESENT		BIT_ULL(0)
 #define GEN8_PAGE_RW			BIT_ULL(1)
