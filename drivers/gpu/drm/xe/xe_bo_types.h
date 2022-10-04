@@ -64,8 +64,6 @@ struct xe_bo {
 		 */
 		bool device_atomic;
 	} props;
-	/** @created: Whether the bo has passed initial creation */
-	bool created;
 };
 
 #endif

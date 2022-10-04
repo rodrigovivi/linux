@@ -166,14 +166,6 @@ static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 
 	/* TODO: Validate fault */
 
-	/* Allocate backing store */
-	bo = vma->bo;
-	if (bo && !(bo->flags & XE_BO_INTERNAL_ALLOC)) {
-		ret = xe_bo_alloc_backing(xe, bo);
-		if (ret)
-			goto unlock_vm;
-	}
-
 retry_userptr:
 	if (xe_vma_is_userptr(vma)) {
 		ret = xe_vma_userptr_pin_pages(vma);

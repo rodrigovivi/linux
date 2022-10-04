@@ -133,8 +133,8 @@ static void try_add_vram1(struct xe_device *xe, struct xe_bo *bo,
 	}
 }
 
-int xe_bo_placement_for_flags(struct xe_device *xe, struct xe_bo *bo,
-			      u32 bo_flags)
+static int __xe_bo_placement_for_flags(struct xe_device *xe, struct xe_bo *bo,
+				       u32 bo_flags)
 {
 	struct ttm_place *places = bo->placements;
 	u32 c = 0;
@@ -173,6 +173,13 @@ int xe_bo_placement_for_flags(struct xe_device *xe, struct xe_bo *bo,
 	};
 
 	return 0;
+}
+
+int xe_bo_placement_for_flags(struct xe_device *xe, struct xe_bo *bo,
+			      u32 bo_flags)
+{
+	xe_bo_assert_held(bo);
+	return __xe_bo_placement_for_flags(xe, bo, bo_flags);
 }
 
 static void xe_evict_flags(struct ttm_buffer_object *tbo,
@@ -556,7 +563,7 @@ static void xe_ttm_bo_release_notify(struct ttm_buffer_object *ttm_bo)
 		return;
 
 	bo = ttm_to_xe_bo(ttm_bo);
-	XE_WARN_ON(bo->created && kref_read(&ttm_bo->base.refcount));
+	XE_WARN_ON(kref_read(&ttm_bo->base.refcount));
 	__xe_bo_vunmap(bo);
 }
 
@@ -611,14 +618,6 @@ static void xe_ttm_bo_destroy(struct ttm_buffer_object *ttm_bo)
 
 static void xe_gem_object_free(struct drm_gem_object *obj)
 {
-	struct xe_bo *bo = gem_to_xe_bo(obj);
-
-	/* Corner case, no alloc */
-	if (!(bo->flags & XE_BO_INTERNAL_ALLOC)) {
-		xe_ttm_bo_destroy(&bo->ttm);
-		return;
-	}
-
 	/* Our BO reference counting scheme works as follows:
 	 *
 	 * The gem object kref is typically used throughout the driver,
@@ -729,81 +728,16 @@ void xe_bo_free(struct xe_bo *bo)
 	kfree(bo);
 }
 
-static int __xe_bo_alloc_backing_locked(struct xe_device *xe, struct xe_bo *bo,
-					enum ttm_bo_type type,
-					struct dma_resv *resv)
+struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
+				    struct xe_gt *gt, struct dma_resv *resv,
+				    size_t size, enum ttm_bo_type type,
+				    u32 flags)
 {
 	struct ttm_operation_ctx ctx = {
 		.interruptible = true,
 		.no_wait_gpu = false,
 	};
 	struct ttm_placement *placement;
-	int err;
-
-	XE_BUG_ON(bo->flags & XE_BO_INTERNAL_ALLOC);
-
-	if (resv) {
-		ctx.allow_res_evict = true;
-		ctx.resv = resv;
-	}
-
-	err = xe_bo_placement_for_flags(xe, bo, bo->flags);
-	if (WARN_ON(err))
-		return err;
-
-	/* Defer populating type_sg bos */
-	placement = (type == ttm_bo_type_sg) ? &sys_placement :
-		&bo->placement;
-
-	err = ttm_bo_init_reserved(&xe->ttm, &bo->ttm, type,
-				   DMA_RESV_USAGE_BOOKKEEP,
-				   placement, SZ_64K >> PAGE_SHIFT,
-				   &ctx, NULL, resv, xe_ttm_bo_destroy);
-	if (err)
-		return err;
-
-	bo->created = true;
-	ttm_bo_move_to_lru_tail_unlocked(&bo->ttm);
-	bo->flags |= XE_BO_INTERNAL_ALLOC;
-	return 0;
-}
-
-/**
- * xe_bo_alloc_backing - Allocate backing store for BO
- * @xe: XE device
- * @bo: The buffer object storage.
- *
- * Returns 0 for success, negative error code otherwise.
- */
-int xe_bo_alloc_backing(struct xe_device *xe, struct xe_bo *bo)
-{
-	struct ww_acquire_ctx ww;
-	int ret;
-
-	/* Ensure deferred alloc setup minimum required TTM objects */
-	XE_BUG_ON(!bo->ttm.base.resv);
-	XE_BUG_ON(!bo->ttm.bdev);
-
-	ret = xe_bo_lock(bo, &ww, 0, false);
-	if (!ret) {
-		/*
-		 * An async bind and mmap can race to do the alloc, the lock
-		 * protects and flag protects against a double alloc.
-		 */
-		if (!(bo->flags & XE_BO_INTERNAL_ALLOC))
-			ret = __xe_bo_alloc_backing_locked(xe, bo, bo->ttm.type,
-							   bo->ttm.base.resv);
-		xe_bo_unlock(bo, &ww);
-	}
-
-	return ret;
-}
-
-struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
-				    struct xe_gt *gt, struct dma_resv *resv,
-				    size_t size, enum ttm_bo_type type,
-				    u32 flags)
-{
 	int err;
 
 	/* Only kernel objects should set GT */
@@ -837,18 +771,27 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
 
 	drm_gem_private_object_init(&xe->drm, &bo->ttm.base, size);
 
-	if (!(flags & XE_BO_DEFER_BACKING)) {
-		err = __xe_bo_alloc_backing_locked(xe, bo, type, resv);
-		if (err)
-			return ERR_PTR(err);
-	} else {
-		bo->ttm.type = type;
-		bo->ttm.bdev = &xe->ttm;
-		if (resv)
-			bo->ttm.base.resv = resv;
-		else
-			bo->ttm.base.resv = &bo->ttm.base._resv;
+	if (resv) {
+		ctx.allow_res_evict = true;
+		ctx.resv = resv;
 	}
+
+	err = __xe_bo_placement_for_flags(xe, bo, bo->flags);
+	if (WARN_ON(err))
+		return ERR_PTR(err);
+
+	/* Defer populating type_sg bos */
+	placement = (type == ttm_bo_type_sg ||
+		     bo->flags & XE_BO_DEFER_BACKING) ? &sys_placement :
+		&bo->placement;
+	err = ttm_bo_init_reserved(&xe->ttm, &bo->ttm, type,
+				   DMA_RESV_USAGE_BOOKKEEP,
+				   placement, SZ_64K >> PAGE_SHIFT,
+				   &ctx, NULL, resv, xe_ttm_bo_destroy);
+	if (WARN_ON(err))
+		return ERR_PTR(err);
+
+	ttm_bo_move_to_lru_tail_unlocked(&bo->ttm);
 
 	return bo;
 }
@@ -893,7 +836,7 @@ struct xe_bo *xe_bo_create(struct xe_device *xe, struct xe_gt *gt,
 {
 	struct xe_bo *bo = xe_bo_create_locked(xe, gt, vm, size, type, flags);
 
-	if (!IS_ERR(bo) && bo->flags & XE_BO_INTERNAL_ALLOC)
+	if (!IS_ERR(bo))
 		xe_bo_unlock_vm_held(bo);
 
 	return bo;
@@ -1270,7 +1213,7 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 		return PTR_ERR(bo);
 
 	err = drm_gem_handle_create(file, &bo->ttm.base, &handle);
-	drm_gem_object_put(&bo->ttm.base);
+	xe_bo_put(bo);
 	if (err)
 		return err;
 
@@ -1291,8 +1234,6 @@ int xe_gem_mmap_offset_ioctl(struct drm_device *dev, void *data,
 	struct xe_device *xe = to_xe_device(dev);
 	struct drm_xe_gem_mmap_offset *args = data;
 	struct drm_gem_object *gem_obj;
-	struct xe_bo *bo;
-	int err = 0;
 
 	if (XE_IOCTL_ERR(xe, args->extensions))
 		return -EINVAL;
@@ -1304,19 +1245,11 @@ int xe_gem_mmap_offset_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, !gem_obj))
 		return -ENOENT;
 
-	bo = gem_to_xe_bo(gem_obj);
-	if (!(bo->flags & XE_BO_INTERNAL_ALLOC)) {
-		err = xe_bo_alloc_backing(xe, bo);
-		if (XE_IOCTL_ERR(xe, err))
-			goto out;
-	}
-
 	/* The mmap offset was set up at BO allocation time. */
 	args->offset = drm_vma_node_offset_addr(&gem_obj->vma_node);
 
-out:
-	drm_gem_object_put(gem_obj);
-	return err;
+	xe_bo_put(gem_to_xe_bo(gem_obj));
+	return 0;
 }
 
 int xe_bo_lock(struct xe_bo *bo, struct ww_acquire_ctx *ww,

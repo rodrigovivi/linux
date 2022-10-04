@@ -24,7 +24,6 @@
 #define XE_BO_CREATE_PINNED_BIT		BIT(7)
 #define XE_BO_DEFER_BACKING		BIT(8)
 /* this one is trigger internally only */
-#define XE_BO_INTERNAL_ALLOC		BIT(29)
 #define XE_BO_INTERNAL_TEST		BIT(30)
 #define XE_BO_INTERNAL_64K		BIT(31)
 
@@ -83,7 +82,6 @@
 
 struct xe_bo *xe_bo_alloc(void);
 void xe_bo_free(struct xe_bo *bo);
-int xe_bo_alloc_backing(struct xe_device *xe, struct xe_bo *bo);
 
 struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
 				    struct xe_gt *gt, struct dma_resv *resv,
@@ -147,8 +145,7 @@ void xe_bo_unlock(struct xe_bo *bo, struct ww_acquire_ctx *ww);
 static inline void xe_bo_unlock_vm_held(struct xe_bo *bo)
 {
 	if (bo) {
-		XE_BUG_ON(bo->flags & XE_BO_INTERNAL_ALLOC &&
-			  bo->vm && bo->ttm.base.resv != &bo->vm->resv);
+		XE_BUG_ON(bo->vm && bo->ttm.base.resv != &bo->vm->resv);
 		if (bo->vm)
 			xe_vm_assert_held(bo->vm);
 		else
@@ -227,19 +224,6 @@ bool xe_bo_is_vram(struct xe_bo *bo);
 bool xe_bo_can_migrate(struct xe_bo *bo, u32 mem_type);
 
 int xe_bo_migrate(struct xe_bo *bo, u32 mem_type);
-static inline int xe_bo_migrate_unlocked(struct xe_bo *bo, u32 mem_type)
-{
-	struct ww_acquire_ctx ww;
-	int ret;
-
-	ret = xe_bo_lock(bo, &ww, 1, true);
-	if (ret)
-		return ret;
-	ret = xe_bo_migrate(bo, mem_type);
-	xe_bo_unlock(bo, &ww);
-
-	return ret;
-}
 
 extern struct ttm_device_funcs xe_ttm_funcs;
 

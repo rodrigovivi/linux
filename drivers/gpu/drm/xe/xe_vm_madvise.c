@@ -26,17 +26,16 @@ static int madvise_preferred_mem_class(struct xe_device *xe, struct xe_vm *vm,
 
 	for (i = 0; i < num_vmas; ++i) {
 		struct xe_bo *bo;
+		struct ww_acquire_ctx ww;
 
 		bo = vmas[i]->bo;
-		bo->props.preferred_mem_class = value;
-		xe_bo_placement_for_flags(xe, bo, bo->flags);
 
-		if (!(bo->flags & XE_BO_INTERNAL_ALLOC))
-			continue;
-
-		err = xe_bo_migrate_unlocked(bo, bo->props.preferred_mem_type);
+		err = xe_bo_lock(bo, &ww, 0, true);
 		if (err)
 			return err;
+		bo->props.preferred_mem_class = value;
+		xe_bo_placement_for_flags(xe, bo, bo->flags);
+		xe_bo_unlock(bo, &ww);
 	}
 
 	return 0;
@@ -52,17 +51,16 @@ static int madvise_preferred_gt(struct xe_device *xe, struct xe_vm *vm,
 
 	for (i = 0; i < num_vmas; ++i) {
 		struct xe_bo *bo;
+		struct ww_acquire_ctx ww;
 
 		bo = vmas[i]->bo;
-		bo->props.preferred_gt = value;
-		xe_bo_placement_for_flags(xe, bo, bo->flags);
 
-		if (!(bo->flags & XE_BO_INTERNAL_ALLOC))
-			continue;
-
-		err = xe_bo_migrate_unlocked(bo, bo->props.preferred_mem_type);
+		err = xe_bo_lock(bo, &ww, 0, true);
 		if (err)
 			return err;
+		bo->props.preferred_gt = value;
+		xe_bo_placement_for_flags(xe, bo, bo->flags);
+		xe_bo_unlock(bo, &ww);
 	}
 
 	return 0;
@@ -89,18 +87,17 @@ static int madvise_preferred_mem_class_gt(struct xe_device *xe,
 
 	for (i = 0; i < num_vmas; ++i) {
 		struct xe_bo *bo;
+		struct ww_acquire_ctx ww;
 
 		bo = vmas[i]->bo;
+
+		err = xe_bo_lock(bo, &ww, 0, true);
+		if (err)
+			return err;
 		bo->props.preferred_mem_class = mem_class;
 		bo->props.preferred_gt = gt_id;
 		xe_bo_placement_for_flags(xe, bo, bo->flags);
-
-		if (!(bo->flags & XE_BO_INTERNAL_ALLOC))
-			continue;
-
-		err = xe_bo_migrate_unlocked(bo, bo->props.preferred_mem_type);
-		if (err)
-			return err;
+		xe_bo_unlock(bo, &ww);
 	}
 
 	return 0;
@@ -113,23 +110,25 @@ static int madvise_cpu_atomic(struct xe_device *xe, struct xe_vm *vm,
 
 	for (i = 0; i < num_vmas; ++i) {
 		struct xe_bo *bo;
+		struct ww_acquire_ctx ww;
 
 		bo = vmas[i]->bo;
 		if (XE_IOCTL_ERR(xe, !(bo->flags & XE_BO_CREATE_SYSTEM_BIT)))
 			return -EINVAL;
 
+		err = xe_bo_lock(bo, &ww, 0, true);
+		if (err)
+			return err;
 		bo->props.cpu_atomic = !!value;
 
 		/*
 		 * All future CPU accesses must be from system memory only, we
-		 * could just invalidate the CPU page tables but for now just
-		 * trigger a migrate.
+		 * just invalidate the CPU page tables which will trigger a
+		 * migration on next access.
 		 */
-		if (bo->props.cpu_atomic && bo->flags & XE_BO_INTERNAL_ALLOC) {
-			err = xe_bo_migrate_unlocked(bo, XE_PL_TT);
-			if (err)
-				return err;
-		}
+		if (bo->props.cpu_atomic)
+			ttm_bo_unmap_virtual(&bo->ttm);
+		xe_bo_unlock(bo, &ww);
 	}
 
 	return 0;
@@ -138,17 +137,22 @@ static int madvise_cpu_atomic(struct xe_device *xe, struct xe_vm *vm,
 static int madvise_device_atomic(struct xe_device *xe, struct xe_vm *vm,
 				 struct xe_vma **vmas, int num_vmas, u64 value)
 {
-	int i;
+	int i, err;
 
 	for (i = 0; i < num_vmas; ++i) {
 		struct xe_bo *bo;
+		struct ww_acquire_ctx ww;
 
 		bo = vmas[i]->bo;
 		if (XE_IOCTL_ERR(xe, !(bo->flags & XE_BO_CREATE_VRAM0_BIT) &&
 				 !(bo->flags & XE_BO_CREATE_VRAM1_BIT)))
 			return -EINVAL;
 
+		err = xe_bo_lock(bo, &ww, 0, true);
+		if (err)
+			return err;
 		bo->props.device_atomic = !!value;
+		xe_bo_unlock(bo, &ww);
 	}
 
 	return 0;
@@ -157,7 +161,7 @@ static int madvise_device_atomic(struct xe_device *xe, struct xe_vm *vm,
 static int madvise_priority(struct xe_device *xe, struct xe_vm *vm,
 			    struct xe_vma **vmas, int num_vmas, u64 value)
 {
-	int i;
+	int i, err;
 
 	if (XE_IOCTL_ERR(xe, value > DRM_XE_VMA_PRIORITY_HIGH))
 		return -EINVAL;
@@ -168,10 +172,16 @@ static int madvise_priority(struct xe_device *xe, struct xe_vm *vm,
 
 	for (i = 0; i < num_vmas; ++i) {
 		struct xe_bo *bo;
+		struct ww_acquire_ctx ww;
 
 		bo = vmas[i]->bo;
+
+		err = xe_bo_lock(bo, &ww, 0, true);
+		if (err)
+			return err;
 		bo->ttm.priority = value;
-		ttm_bo_move_to_lru_tail_unlocked(&bo->ttm);
+		ttm_bo_move_to_lru_tail(&bo->ttm);
+		xe_bo_unlock(bo, &ww);
 	}
 
 	return 0;
