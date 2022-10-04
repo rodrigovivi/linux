@@ -31,17 +31,17 @@ static int hw_engines(struct seq_file *m, void *data)
 	enum xe_hw_engine_id id;
 	int err;
 
-	xe_device_mem_access_wa_get(xe);
+	xe_device_mem_access_get(xe);
 	err = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 	if (err) {
-		xe_device_mem_access_wa_put(xe);
+		xe_device_mem_access_put(xe);
 		return err;
 	}
 
 	for_each_hw_engine(hwe, gt, id)
 		xe_hw_engine_print_state(hwe, &p);
 
-	xe_device_mem_access_wa_put(xe);
+	xe_device_mem_access_put(xe);
 	err = xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 	if (err)
 		return err;

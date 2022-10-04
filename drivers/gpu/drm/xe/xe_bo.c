@@ -612,7 +612,7 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 	XE_BUG_ON(!gt->migrate);
 
 	trace_xe_bo_move(bo);
-	xe_device_mem_access_wa_get(xe);
+	xe_device_mem_access_get(xe);
 
 	if (xe_bo_is_pinned(bo) && !xe_bo_is_user(bo)) {
 		/*
@@ -646,7 +646,7 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 			fence = xe_migrate_copy(gt->migrate, bo, old_mem, new_mem);
 		if (IS_ERR(fence)) {
 			ret = PTR_ERR(fence);
-			xe_device_mem_access_wa_put(xe);
+			xe_device_mem_access_put(xe);
 			goto out;
 		}
 		ret = ttm_bo_move_accel_cleanup(ttm_bo, fence, evict, true,
@@ -654,7 +654,7 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 		dma_fence_put(fence);
 	}
 
-	xe_device_mem_access_wa_put(xe);
+	xe_device_mem_access_put(xe);
 	trace_printk("new_mem->mem_type=%d\n", new_mem->mem_type);
 
 out:

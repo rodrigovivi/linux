@@ -103,7 +103,7 @@ static inline void xe_device_assert_mem_access(struct xe_device *xe, bool vram)
 		xe_force_wake_assert_held(gt_to_fw(gt), XE_FW_GT);
 }
 
-static inline void xe_device_mem_access_wa_get(struct xe_device *xe)
+static inline void xe_device_mem_access_get(struct xe_device *xe)
 {
 	struct xe_gt *gt;
 	int ret;
@@ -117,7 +117,7 @@ static inline void xe_device_mem_access_wa_get(struct xe_device *xe)
 	XE_WARN_ON(ret);
 }
 
-static inline void xe_device_mem_access_wa_put(struct xe_device *xe)
+static inline void xe_device_mem_access_put(struct xe_device *xe)
 {
 	struct xe_gt *gt;
 	int ret;
@@ -131,7 +131,7 @@ static inline void xe_device_mem_access_wa_put(struct xe_device *xe)
 	XE_WARN_ON(ret);
 }
 
-static inline bool xe_device_mem_access_wa_check(struct xe_device *xe)
+static inline bool xe_device_mem_access_check(struct xe_device *xe)
 {
 	struct xe_gt *gt;
 	u8 id;
