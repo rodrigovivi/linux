@@ -2875,14 +2875,6 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 		return 0;
 	}
 
-	/* Alloc backing store */
-	if (!is_unmap_op(bind_op->op) && bo &&
-	    !(bo->flags & XE_BO_INTERNAL_ALLOC)) {
-		err = xe_bo_alloc_backing(vm->xe, bo);
-		if (err)
-			return err;
-	}
-
 	/*
 	 * FIXME: workaround for xe_exec_threads.threads-rebind failure, likely
 	 * related to xe_evict.evict-mixed-many-threads-small failure. Details
