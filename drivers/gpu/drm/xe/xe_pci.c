@@ -533,7 +533,14 @@ static int xe_pci_resume(struct device *dev)
 }
 #endif
 
-static SIMPLE_DEV_PM_OPS(xe_pm_ops, xe_pci_suspend, xe_pci_resume);
+static const struct dev_pm_ops xe_pm_ops = {
+	.suspend = xe_pci_suspend,
+	.resume = xe_pci_resume,
+	.freeze = xe_pci_suspend,
+	.thaw = xe_pci_resume,
+	.poweroff = xe_pci_suspend,
+	.restore = xe_pci_resume,
+};
 
 static struct pci_driver xe_pci_driver = {
 	.name = DRIVER_NAME,
