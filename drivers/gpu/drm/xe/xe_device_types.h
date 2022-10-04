@@ -279,6 +279,14 @@ struct xe_device {
 
 	/** @gt: graphics tile */
 	struct xe_gt gt[XE_MAX_GT];
+
+	/** @mem_access */
+	struct {
+		/** @lock: protect the ref count */
+		struct mutex lock;
+		/** @ref: ref count of memory accesses */
+		u32 ref;
+	} mem_access;
 };
 
 /**

@@ -88,62 +88,38 @@ static inline struct xe_force_wake * gt_to_fw(struct xe_gt *gt)
 	return &gt->mmio.fw;
 }
 
-/*
- * TODO: Ensure this function compiles out if kernel built without debug options
- */
-static inline void xe_device_assert_mem_access(struct xe_device *xe, bool vram)
+static inline void xe_device_assert_mem_access(struct xe_device *xe)
 {
-	struct xe_gt *gt;
-	u8 id;
-
-	if (!vram || xe->info.platform != XE_PVC || xe->info.tile_count == 1)
-		return;
-
-	for_each_gt(gt, xe, id)
-		xe_force_wake_assert_held(gt_to_fw(gt), XE_FW_GT);
+	XE_BUG_ON(!xe->mem_access.ref);
 }
 
 static inline void xe_device_mem_access_get(struct xe_device *xe)
 {
-	struct xe_gt *gt;
-	int ret;
-	u8 id;
+	mutex_lock(&xe->mem_access.lock);
+	xe->mem_access.ref++;
+	mutex_unlock(&xe->mem_access.lock);
 
-	if (xe->info.platform != XE_PVC || xe->info.tile_count == 1)
-		return;
-
-	for_each_gt(gt, xe, id)
-		ret = xe_force_wake_get(gt_to_fw(gt), XE_FW_GT);
-	XE_WARN_ON(ret);
+	XE_WARN_ON(xe->mem_access.ref == U32_MAX);
 }
 
 static inline void xe_device_mem_access_put(struct xe_device *xe)
 {
-	struct xe_gt *gt;
-	int ret;
-	u8 id;
+	mutex_lock(&xe->mem_access.lock);
+	xe->mem_access.ref--;
+	mutex_unlock(&xe->mem_access.lock);
 
-	if (xe->info.platform != XE_PVC || xe->info.tile_count == 1)
-		return;
-
-	for_each_gt(gt, xe, id)
-		ret = xe_force_wake_put(gt_to_fw(gt), XE_FW_GT);
-	XE_WARN_ON(ret);
+	XE_WARN_ON(xe->mem_access.ref < 0);
 }
 
-static inline bool xe_device_mem_access_check(struct xe_device *xe)
+static inline bool xe_device_mem_access_ongoing(struct xe_device *xe)
 {
-	struct xe_gt *gt;
-	u8 id;
+	bool ret;
 
-	if (xe->info.platform != XE_PVC || xe->info.tile_count == 1)
-		return true;
+	mutex_lock(&xe->mem_access.lock);
+	ret = xe->mem_access.ref;
+	mutex_unlock(&xe->mem_access.lock);
 
-	for_each_gt(gt, xe, id)
-		if (!(gt_to_fw(gt)->awake_domains & XE_FW_GT))
-			return false;
-
-	return true;
+	return ret;
 }
 
 static inline bool xe_device_in_fault_mode(struct xe_device *xe)

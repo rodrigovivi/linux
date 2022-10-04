@@ -1021,7 +1021,7 @@ void xe_guc_ct_fast_path(struct xe_guc_ct *ct)
 	struct xe_device *xe = ct_to_xe(ct);
 	int len;
 
-	if (!xe_device_in_fault_mode(xe) || !xe_device_mem_access_check(xe))
+	if (!xe_device_in_fault_mode(xe) || !xe_device_mem_access_ongoing(xe))
 		return;
 
 	spin_lock(&ct->fast_lock);
