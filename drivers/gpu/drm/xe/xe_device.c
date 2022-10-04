@@ -249,6 +249,7 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 	if (err)
 		goto err;
 
+	mutex_init(&xe->mem_access.lock);
 	return xe;
 
 err_put:
