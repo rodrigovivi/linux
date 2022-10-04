@@ -493,7 +493,7 @@ static int __guc_ct_send_locked(struct xe_guc_ct *ct, const u32 *action,
 		}
 	}
 
-	xe_device_mem_access_wa_get(ct_to_xe(ct));
+	xe_device_mem_access_get(ct_to_xe(ct));
 retry:
 	ret = has_room(ct, len + GUC_CTB_HDR_LEN, g2h_len);
 	if (unlikely(ret))
@@ -510,7 +510,7 @@ retry:
 	g2h_reserve_space(ct, g2h_len, num_g2h);
 	xe_guc_notify(ct_to_guc(ct));
 put_wa:
-	xe_device_mem_access_wa_put(ct_to_xe(ct));
+	xe_device_mem_access_put(ct_to_xe(ct));
 out:
 
 	return ret;
@@ -1021,7 +1021,7 @@ void xe_guc_ct_fast_path(struct xe_guc_ct *ct)
 	struct xe_device *xe = ct_to_xe(ct);
 	int len;
 
-	if (!xe_device_in_fault_mode(xe) || !xe_device_mem_access_wa_check(xe))
+	if (!xe_device_in_fault_mode(xe) || !xe_device_mem_access_check(xe))
 		return;
 
 	spin_lock(&ct->fast_lock);
@@ -1063,7 +1063,7 @@ static void g2h_worker_func(struct work_struct *w)
 	struct xe_guc_ct *ct = container_of(w, struct xe_guc_ct, g2h_worker);
 	int ret;
 
-	xe_device_mem_access_wa_get(ct_to_xe(ct));
+	xe_device_mem_access_get(ct_to_xe(ct));
 	do {
 		mutex_lock(&ct->lock);
 		ret = dequeue_one_g2h(ct);
@@ -1077,7 +1077,7 @@ static void g2h_worker_func(struct work_struct *w)
 			kick_reset(ct);
 		}
 	} while (ret == 1);
-	xe_device_mem_access_wa_put(ct_to_xe(ct));
+	xe_device_mem_access_put(ct_to_xe(ct));
 }
 
 static void guc_ct_ctb_print(struct xe_device *xe, struct guc_ctb *ctb,

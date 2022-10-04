@@ -1105,7 +1105,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 	INIT_LIST_HEAD(&vm->extobj.list);
 
 	if (!(flags & XE_VM_FLAG_MIGRATION))
-		xe_device_mem_access_wa_get(xe);
+		xe_device_mem_access_get(xe);
 
 	err = dma_resv_lock_interruptible(&vm->resv, NULL);
 	if (err)
@@ -1220,7 +1220,7 @@ err_put:
 	dma_resv_fini(&vm->resv);
 	kfree(vm);
 	if (!(flags & XE_VM_FLAG_MIGRATION))
-		xe_device_mem_access_wa_put(xe);
+		xe_device_mem_access_put(xe);
 	return ERR_PTR(err);
 }
 
@@ -1365,7 +1365,7 @@ static void vm_destroy_work_func(struct work_struct *w)
 	XE_WARN_ON(vm->size);
 
 	if (!(vm->flags & XE_VM_FLAG_MIGRATION)) {
-		xe_device_mem_access_wa_put(xe);
+		xe_device_mem_access_put(xe);
 
 		mutex_lock(&xe->usm.lock);
 		lookup = xa_erase(&xe->usm.asid_to_vm, vm->usm.asid);

@@ -274,9 +274,9 @@ static int query_hwconfig(struct xe_device *xe,
 	if (XE_IOCTL_ERR(xe, !hwconfig))
 		return -ENOMEM;
 
-	xe_device_mem_access_wa_get(xe);
+	xe_device_mem_access_get(xe);
 	xe_guc_hwconfig_copy(&gt->uc.guc, hwconfig);
-	xe_device_mem_access_wa_put(xe);
+	xe_device_mem_access_put(xe);
 
 	if (copy_to_user(query_ptr, hwconfig, size)) {
 		kfree(hwconfig);
