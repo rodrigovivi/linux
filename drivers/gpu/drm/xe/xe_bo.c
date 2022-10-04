@@ -1354,3 +1354,7 @@ bool xe_bo_needs_ccs_pages(struct xe_bo *bo)
 		!(bo->flags & XE_BO_CREATE_SYSTEM_BIT) &&
 		(bo->flags & (XE_BO_CREATE_VRAM0_BIT | XE_BO_CREATE_VRAM1_BIT));
 }
+
+#if IS_ENABLED(CONFIG_DRM_XE_KUNIT_TEST)
+#include "tests/xe_bo.c"
+#endif
