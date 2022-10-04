@@ -567,8 +567,7 @@ static int emit_clear(struct xe_device *xe, struct xe_bb *bb, u64 src_ofs,
 	u32 len = XY_FAST_COLOR_BLT_DW;
 	u32 mocs = 0;
 
-	if (xe->info.platform == XE_TIGERLAKE ||
-	    xe->info.platform == XE_DG1)
+	if (GRAPHICS_VERx100(xe) < 1250)
 		len = 11;
 
 	*cs++ = XY_FAST_COLOR_BLT_CMD | XY_FAST_COLOR_BLT_DEPTH_32 |
