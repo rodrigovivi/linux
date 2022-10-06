@@ -15,6 +15,7 @@
 #include "xe_lrc.h"
 #include "xe_macros.h"
 #include "xe_migrate.h"
+#include "xe_pm.h"
 #include "xe_trace.h"
 #include "xe_vm.h"
 
@@ -530,6 +531,8 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_ERR(xe, eci[0].gt_id >= xe->info.tile_count))
 	       return -EINVAL;
 
+	xe_pm_runtime_get(xe);
+
 	if (eci[0].engine_class == DRM_XE_ENGINE_CLASS_VM_BIND) {
 		for_each_gt(gt, xe, id) {
 			struct xe_engine *new;
@@ -541,12 +544,16 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 			logical_mask = bind_engine_logical_mask(xe, gt, eci,
 								args->width,
 								args->num_placements);
-			if (XE_IOCTL_ERR(xe, !logical_mask))
-				return -EINVAL;
+			if (XE_IOCTL_ERR(xe, !logical_mask)) {
+				err = -EINVAL;
+				goto put_rpm;
+			}
 
 			hwe = find_hw_engine(xe, eci[0]);
-			if (XE_IOCTL_ERR(xe, !hwe))
-				return -EINVAL;
+			if (XE_IOCTL_ERR(xe, !hwe)) {
+				err = -EINVAL;
+				goto put_rpm;
+			}
 
 			migrate_vm = xe_migrate_get_vm(gt->migrate);
 			new = xe_engine_create(xe, migrate_vm, logical_mask,
@@ -561,7 +568,7 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 				err = PTR_ERR(new);
 				if (e)
 					goto put_engine;
-				return err;
+				goto put_rpm;
 			}
 			if (id == 0)
 				e = new;
@@ -574,22 +581,30 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 		logical_mask = calc_validate_logical_mask(xe, gt, eci,
 							  args->width,
 							  args->num_placements);
-		if (XE_IOCTL_ERR(xe, !logical_mask))
-			return -EINVAL;
+		if (XE_IOCTL_ERR(xe, !logical_mask)) {
+			err = -EINVAL;
+			goto put_rpm;
+		}
 
 		hwe = find_hw_engine(xe, eci[0]);
-		if (XE_IOCTL_ERR(xe, !hwe))
-			return -EINVAL;
+		if (XE_IOCTL_ERR(xe, !hwe)) {
+			err = -EINVAL;
+			goto put_rpm;
+		}
 
 		vm = xe_vm_lookup(xef, args->vm_id);
-		if (XE_IOCTL_ERR(xe, !vm))
-			return -ENOENT;
+		if (XE_IOCTL_ERR(xe, !vm)) {
+			err = -ENOENT;
+			goto put_rpm;
+		}
 
 		e = xe_engine_create(xe, vm, logical_mask,
 				     args->width, hwe, ENGINE_FLAG_PERSISTENT);
 		xe_vm_put(vm);
-		if (IS_ERR(e))
-			return PTR_ERR(e);
+		if (IS_ERR(e)) {
+			err = PTR_ERR(e);
+			goto put_rpm;
+		}
 	}
 
 	if (args->extensions) {
@@ -619,6 +634,8 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 put_engine:
 	xe_engine_kill(e);
 	xe_engine_put(e);
+put_rpm:
+	xe_pm_runtime_put(xe);
 	return err;
 }
 
@@ -676,6 +693,7 @@ int xe_engine_destroy_ioctl(struct drm_device *dev, void *data,
 
 	trace_xe_engine_close(e);
 	xe_engine_put(e);
+	xe_pm_runtime_put(xe);
 
 	return 0;
 }

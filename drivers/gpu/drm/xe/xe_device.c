@@ -22,6 +22,7 @@
 #include "xe_irq.h"
 #include "xe_mmio.h"
 #include "xe_pcode.h"
+#include "xe_pm.h"
 #include "xe_query.h"
 #include "xe_vm.h"
 #include "xe_vm_madvise.h"
@@ -533,4 +534,30 @@ u32 xe_device_ccs_bytes(struct xe_device *xe, u64 size)
 {
 	return xe_device_has_flat_ccs(xe) ?
 		DIV_ROUND_UP(size, NUM_BYTES_PER_CCS_BYTE) : 0;
+}
+
+void xe_device_mem_access_get(struct xe_device *xe)
+{
+	bool resumed = xe_pm_runtime_resume_if_suspended(xe);
+
+	mutex_lock(&xe->mem_access.lock);
+	if (xe->mem_access.ref++ == 0)
+		xe->mem_access.hold_rpm = xe_pm_runtime_get_if_active(xe);
+	mutex_unlock(&xe->mem_access.lock);
+
+	/* The usage counter increased if device was immediately resumed */
+	if (resumed)
+		xe_pm_runtime_put(xe);
+
+	XE_WARN_ON(xe->mem_access.ref == U32_MAX);
+}
+
+void xe_device_mem_access_put(struct xe_device *xe)
+{
+	mutex_lock(&xe->mem_access.lock);
+	if (--xe->mem_access.ref == 0 && xe->mem_access.hold_rpm)
+		xe_pm_runtime_put(xe);
+	mutex_unlock(&xe->mem_access.lock);
+
+	XE_WARN_ON(xe->mem_access.ref < 0);
 }

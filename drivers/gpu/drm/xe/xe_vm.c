@@ -20,6 +20,7 @@
 #include "xe_gt.h"
 #include "xe_gt_pagefault.h"
 #include "xe_migrate.h"
+#include "xe_pm.h"
 #include "xe_preempt_fence.h"
 #include "xe_pt.h"
 #include "xe_res_cursor.h"
@@ -1104,8 +1105,11 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 
 	INIT_LIST_HEAD(&vm->extobj.list);
 
-	if (!(flags & XE_VM_FLAG_MIGRATION))
+	if (!(flags & XE_VM_FLAG_MIGRATION)) {
+		/* We need to immeditatelly exit from any D3 state */
+		xe_pm_runtime_get(xe);
 		xe_device_mem_access_get(xe);
+	}
 
 	err = dma_resv_lock_interruptible(&vm->resv, NULL);
 	if (err)
@@ -1219,8 +1223,10 @@ err_destroy_root:
 err_put:
 	dma_resv_fini(&vm->resv);
 	kfree(vm);
-	if (!(flags & XE_VM_FLAG_MIGRATION))
+	if (!(flags & XE_VM_FLAG_MIGRATION)) {
 		xe_device_mem_access_put(xe);
+		xe_pm_runtime_put(xe);
+	}
 	return ERR_PTR(err);
 }
 
@@ -1366,6 +1372,7 @@ static void vm_destroy_work_func(struct work_struct *w)
 
 	if (!(vm->flags & XE_VM_FLAG_MIGRATION)) {
 		xe_device_mem_access_put(xe);
+		xe_pm_runtime_put(xe);
 
 		mutex_lock(&xe->usm.lock);
 		lookup = xa_erase(&xe->usm.asid_to_vm, vm->usm.asid);

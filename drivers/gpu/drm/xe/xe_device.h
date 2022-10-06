@@ -88,27 +88,12 @@ static inline struct xe_force_wake * gt_to_fw(struct xe_gt *gt)
 	return &gt->mmio.fw;
 }
 
+void xe_device_mem_access_get(struct xe_device *xe);
+void xe_device_mem_access_put(struct xe_device *xe);
+
 static inline void xe_device_assert_mem_access(struct xe_device *xe)
 {
 	XE_WARN_ON(!xe->mem_access.ref);
-}
-
-static inline void xe_device_mem_access_get(struct xe_device *xe)
-{
-	mutex_lock(&xe->mem_access.lock);
-	xe->mem_access.ref++;
-	mutex_unlock(&xe->mem_access.lock);
-
-	XE_WARN_ON(xe->mem_access.ref == U32_MAX);
-}
-
-static inline void xe_device_mem_access_put(struct xe_device *xe)
-{
-	mutex_lock(&xe->mem_access.lock);
-	xe->mem_access.ref--;
-	mutex_unlock(&xe->mem_access.lock);
-
-	XE_WARN_ON(xe->mem_access.ref < 0);
 }
 
 static inline bool xe_device_mem_access_ongoing(struct xe_device *xe)
