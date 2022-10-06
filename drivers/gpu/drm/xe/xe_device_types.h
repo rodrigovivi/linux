@@ -286,7 +286,12 @@ struct xe_device {
 		struct mutex lock;
 		/** @ref: ref count of memory accesses */
 		u32 ref;
+		/** @hold_rpm: need to put rpm ref back at the end */
+	        bool hold_rpm;
 	} mem_access;
+
+	/** @d3cold_allowed: Indicates if d3cold is a valid device state */
+	bool d3cold_allowed;
 };
 
 /**

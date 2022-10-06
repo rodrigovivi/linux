@@ -8,6 +8,7 @@
 #include <linux/device/driver.h>
 #include <linux/module.h>
 #include <linux/pci.h>
+#include <linux/pm_runtime.h>
 
 #include <drm/drm_drv.h>
 #include <drm/drm_color_mgmt.h>
@@ -480,6 +481,8 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		return err;
 	}
 
+	xe_pm_runtime_init(xe);
+
 	return 0;
 }
 
@@ -533,6 +536,63 @@ static int xe_pci_resume(struct device *dev)
 }
 #endif
 
+static int xe_pci_runtime_suspend(struct device *dev)
+{
+	struct pci_dev *pdev = to_pci_dev(dev);
+	struct xe_device *xe = pdev_to_xe_device(pdev);
+	int err;
+
+	err = xe_pm_runtime_suspend(xe);
+	if (err)
+		return err;
+
+	pci_save_state(pdev);
+
+	if (xe->d3cold_allowed) {
+		pci_disable_device(pdev);
+		pci_ignore_hotplug(pdev);
+		pci_set_power_state(pdev, PCI_D3cold);
+	} else {
+		pci_set_power_state(pdev, PCI_D3hot);
+	}
+
+	return 0;
+}
+
+static int xe_pci_runtime_resume(struct device *dev)
+{
+	struct pci_dev *pdev = to_pci_dev(dev);
+	struct xe_device *xe = pdev_to_xe_device(pdev);
+	int err;
+
+	err = pci_set_power_state(pdev, PCI_D0);
+	if (err)
+		return err;
+
+	pci_restore_state(pdev);
+
+	if (xe->d3cold_allowed) {
+		err = pci_enable_device(pdev);
+		if (err)
+			return err;
+
+		pci_set_master(pdev);
+	}
+
+	return xe_pm_runtime_resume(xe);
+}
+
+static int xe_pci_runtime_idle(struct device *dev)
+{
+	struct pci_dev *pdev = to_pci_dev(dev);
+	struct xe_device *xe = pdev_to_xe_device(pdev);
+
+	if (IS_DGFX(xe) && !xe_device_mem_access_ongoing(xe))
+		xe->d3cold_allowed = true;
+
+	return 0;
+}
+
 static const struct dev_pm_ops xe_pm_ops = {
 	.suspend = xe_pci_suspend,
 	.resume = xe_pci_resume,
@@ -540,6 +600,9 @@ static const struct dev_pm_ops xe_pm_ops = {
 	.thaw = xe_pci_resume,
 	.poweroff = xe_pci_suspend,
 	.restore = xe_pci_resume,
+	.runtime_suspend = xe_pci_runtime_suspend,
+	.runtime_resume = xe_pci_runtime_resume,
+	.runtime_idle = xe_pci_runtime_idle,
 };
 
 static struct pci_driver xe_pci_driver = {
