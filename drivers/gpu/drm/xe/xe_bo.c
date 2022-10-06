@@ -385,6 +385,7 @@ out:
 /**
  * xe_bo_move_notify - Notify subsystems of a pending move
  * @bo: The buffer object
+ * @skip_rebind: skip triggering a rebind
  *
  * This function notifies subsystems of an upcoming buffer move.
  * Upon receiving such a notification, subsystems should schedule
@@ -396,7 +397,7 @@ out:
  * A subsystem may commence access to the object after obtaining
  * bindings to the new backing memory under the object lock.
  */
-static void xe_bo_move_notify(struct xe_bo *bo)
+static void xe_bo_move_notify(struct xe_bo *bo, bool skip_rebind)
 {
 	struct ttm_buffer_object *ttm_bo = &bo->ttm;
 	struct xe_device *xe = ttm_to_xe_device(ttm_bo->bdev);
@@ -409,7 +410,8 @@ static void xe_bo_move_notify(struct xe_bo *bo)
 	if (xe_bo_is_pinned(bo))
 		return;
 
-	xe_bo_trigger_rebind(xe, bo);
+	if (!skip_rebind)
+		xe_bo_trigger_rebind(xe, bo);
 
 	/* Don't call move_notify() for imported dma-bufs. */
 	if (ttm_bo->base.dma_buf && !ttm_bo->base.import_attach)
@@ -433,7 +435,7 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 	int ret = 0;
 
 	if (ttm_bo->type == ttm_bo_type_sg) {
-		xe_bo_move_notify(bo);
+		xe_bo_move_notify(bo, false);
 		ret = xe_bo_move_dmabuf(ttm_bo, old_mem, new_mem);
 		goto out;
 	}
@@ -451,7 +453,7 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 		goto out;
 	}
 
-	xe_bo_move_notify(bo);
+	xe_bo_move_notify(bo, move_lacks_source);
 	if (old_mem->mem_type == XE_PL_TT &&
 	    new_mem->mem_type == XE_PL_SYSTEM) {
 		long timeout = dma_resv_wait_timeout(ttm_bo->base.resv,
