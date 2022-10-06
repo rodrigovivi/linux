@@ -559,7 +559,7 @@ try_again:
 		sleep_period_ms <<= 1;
 
 		goto try_again;
-	} else if (unlikely(ret == -EBUSY && !g2h_has_room(ct, g2h_len))) {
+	} else if (unlikely(ret == -EBUSY)) {
 #ifdef XE_GUC_CT_SELFTEST
 		drm_info(drm, "G2H flow control kicking in\n");
 #endif
@@ -573,8 +573,6 @@ try_again:
 		if (dequeue_one_g2h(ct) < 0)
 			goto broken;
 
-		goto try_again;
-	} else if (unlikely(ret == -EBUSY)) {
 		goto try_again;
 	}
 
