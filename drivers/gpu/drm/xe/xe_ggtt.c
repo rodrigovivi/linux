@@ -239,7 +239,7 @@ int xe_ggtt_insert_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 		return 0;
 	}
 
-	err = xe_bo_populate(bo);
+	err = xe_bo_validate(bo, NULL);
 	if (err)
 		return err;
 

@@ -1066,7 +1066,6 @@ static void test_copy(struct xe_migrate *m, struct xe_bo *bo)
 	bool big = bo->size >= SZ_2M;
 	struct dma_fence *fence;
 	const char *str = big ? "Copying big bo" : "Copying small bo";
-	int err;
 
 	struct xe_bo *sysmem = xe_bo_create_pin_map(xe, m->gt, m->eng->vm,
 						    bo->size,
@@ -1079,10 +1078,6 @@ static void test_copy(struct xe_migrate *m, struct xe_bo *bo)
 			str, PTR_ERR(sysmem));
 		return;
 	}
-
-	err = xe_bo_populate(sysmem);
-	if (err)
-		goto free_sysmem;
 
 	xe_map_memset(xe, &sysmem->vmap, 0, 0xd0, sysmem->size);
 	fence = xe_migrate_clear(m, sysmem, sysmem->ttm.resource, 0xc0c0c0c0);
@@ -1124,8 +1119,6 @@ static void test_copy(struct xe_migrate *m, struct xe_bo *bo)
 		check(retval, expected, "vram -> sysmem bo last offset should be copied");
 	}
 	dma_fence_put(fence);
-
-free_sysmem:
 	xe_bo_unpin(sysmem);
 	xe_bo_put(sysmem);
 }
@@ -1193,9 +1186,6 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 		drm_err(&xe->drm, "Failed to allocate bo: %li\n", PTR_ERR(big));
 		goto vunmap;
 	}
-	err = xe_bo_populate(big);
-	if (err)
-		goto free_big;
 
 	pt = xe_bo_create_pin_map(xe, m->gt, m->eng->vm, GEN8_PAGE_SIZE,
 				  ttm_bo_type_kernel,
@@ -1207,9 +1197,6 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 			PTR_ERR(pt));
 		goto free_big;
 	}
-	err = xe_bo_populate(pt);
-	if (err)
-		goto free_pt;
 
 	tiny = xe_bo_create_pin_map(xe, m->gt, m->eng->vm,
 				    2 * SZ_4K,
@@ -1221,9 +1208,6 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 			PTR_ERR(pt));
 		goto free_pt;
 	}
-	err = xe_bo_populate(tiny);
-	if (err)
-		goto free_tiny;
 
 	bb = xe_bb_new(m->gt, 32, xe->info.supports_usm);
 	if (IS_ERR(bb)) {

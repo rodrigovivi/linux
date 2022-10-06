@@ -888,27 +888,6 @@ struct xe_bo *xe_bo_create_from_data(struct xe_device *xe, struct xe_gt *gt,
 	return bo;
 }
 
-int xe_bo_populate(struct xe_bo *bo)
-{
-	struct ttm_operation_ctx ctx = {
-		.interruptible = false,
-		.no_wait_gpu = false
-	};
-
-	xe_bo_assert_held(bo);
-
-	if (bo->vm) {
-		ctx.allow_res_evict = true;
-		ctx.resv = &bo->vm->resv;
-	}
-
-	/* only populate non-VRAM */
-	if (xe_bo_is_vram(bo))
-		return 0;
-
-	return ttm_tt_populate(bo->ttm.bdev, bo->ttm.ttm, &ctx);
-}
-
 /*
  * XXX: This is in the VM bind data path, likely should calculate this once and
  * store, with a recalculation if the BO is moved.
@@ -984,7 +963,7 @@ int xe_bo_pin(struct xe_bo *bo)
 	/* We only expect at most 1 pin */
 	XE_BUG_ON(xe_bo_is_pinned(bo));
 
-	err = xe_bo_populate(bo);
+	err = xe_bo_validate(bo, NULL);
 	if (err)
 		return err;
 
