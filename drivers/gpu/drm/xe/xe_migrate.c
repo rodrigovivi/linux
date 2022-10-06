@@ -12,6 +12,7 @@
 #include "xe_hw_engine.h"
 #include "xe_lrc.h"
 #include "xe_map.h"
+#include "xe_mocs.h"
 #include "xe_res_cursor.h"
 #include "xe_sched_job.h"
 #include "xe_sync.h"
@@ -560,14 +561,14 @@ err:
 	return fence;
 }
 
-static int emit_clear(struct xe_device *xe, struct xe_bb *bb, u64 src_ofs,
+static int emit_clear(struct xe_gt *gt, struct xe_bb *bb, u64 src_ofs,
 		      u32 size, u32 pitch, u32 value, bool is_vram)
 {
 	u32 *cs = bb->cs + bb->len;
 	u32 len = XY_FAST_COLOR_BLT_DW;
-	u32 mocs = 0;
+	u32 mocs = xe_mocs_index_to_value(gt->mocs.uc_index);
 
-	if (GRAPHICS_VERx100(xe) < 1250)
+	if (GRAPHICS_VERx100(gt->xe) < 1250)
 		len = 11;
 
 	*cs++ = XY_FAST_COLOR_BLT_CMD | XY_FAST_COLOR_BLT_DEPTH_32 |
@@ -661,7 +662,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
 		update_idx = bb->len;
 
-		emit_clear(xe, bb, clear_L0_ofs, clear_L0, GEN8_PAGE_SIZE,
+		emit_clear(gt, bb, clear_L0_ofs, clear_L0, GEN8_PAGE_SIZE,
 			   value, mem_type_is_vram(dst->mem_type));
 
 		mutex_lock(&m->job_mutex);
@@ -1240,7 +1241,7 @@ static void xe_migrate_sanity_test(struct xe_migrate *m)
 	xe_map_wr(xe, &pt->vmap, 0, u32, 0xdeaddead);
 	expected = 0x12345678U;
 
-	emit_clear(xe, bb, xe_migrate_vm_addr(NUM_KERNEL_PDE - 1, 0), 4, 4,
+	emit_clear(m->gt, bb, xe_migrate_vm_addr(NUM_KERNEL_PDE - 1, 0), 4, 4,
 		   expected, IS_DGFX(xe));
 	run_sanity_job(m, xe, bb, 1, "Writing to our newly mapped pagetable");
 
