@@ -2526,6 +2526,7 @@ static int xe_vm_bind_userptr(struct xe_vm *vm, struct xe_vma *vma,
 	 */
 	if (xe_vm_in_compute_mode(vm) &&
 	    xe_vma_userptr_needs_repin(vma) == -EAGAIN) {
+		struct xe_device *xe = vm->xe;
 		struct dma_resv_iter cursor;
 		struct dma_fence *fence;
 
@@ -2534,6 +2535,8 @@ static int xe_vm_bind_userptr(struct xe_vm *vm, struct xe_vma *vma,
 		dma_resv_for_each_fence_unlocked(&cursor, fence)
 			dma_fence_enable_sw_signaling(fence);
 		dma_resv_iter_end(&cursor);
+
+		queue_work(xe->ordered_wq, &vm->preempt.rebind_work);
 	}
 
 	return 0;
