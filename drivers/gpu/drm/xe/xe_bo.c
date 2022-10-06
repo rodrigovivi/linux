@@ -311,7 +311,7 @@ void xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo)
 	struct xe_vma *vma;
 	int ret;
 
-	if (!xe_device_in_fault_mode(xe)) {
+	if (!xe_device_in_fault_mode(xe) && !list_empty(&bo->vmas)) {
 		dma_resv_iter_begin(&cursor, bo->ttm.base.resv,
 				    DMA_RESV_USAGE_PREEMPT_FENCE);
 		dma_resv_for_each_fence_unlocked(&cursor, fence)
