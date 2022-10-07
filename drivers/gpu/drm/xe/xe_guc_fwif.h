@@ -123,7 +123,15 @@ struct guc_update_engine_policy {
 #define   GUC_LOG_BUF_ADDR_SHIFT	12
 
 #define GUC_CTL_WA			1
-#define   GUC_WA_POLLCS                 BIT(18)
+#define   GUC_WA_GAM_CREDITS		BIT(10)
+#define   GUC_WA_DUAL_QUEUE		BIT(11)
+#define   GUC_WA_RCS_RESET_BEFORE_RC6	BIT(13)
+#define   GUC_WA_CONTEXT_ISOLATION	BIT(15)
+#define   GUC_WA_PRE_PARSER		BIT(14)
+#define   GUC_WA_HOLD_CCS_SWITCHOUT	BIT(17)
+#define   GUC_WA_POLLCS			BIT(18)
+#define   GUC_WA_RENDER_RST_RC6_EXIT	BIT(19)
+#define   GUC_WA_RCS_REGS_IN_CCS_REGS_LIST	BIT(21)
 
 #define GUC_CTL_FEATURE			2
 #define   GUC_CTL_ENABLE_SLPC		BIT(2)
