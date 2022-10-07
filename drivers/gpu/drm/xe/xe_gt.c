@@ -418,6 +418,7 @@ static int gt_reset(struct xe_gt *gt)
 err_out:
 	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
 err_msg:
+	XE_WARN_ON(xe_uc_start(&gt->uc));
 	xe_device_mem_access_wa_put(gt_to_xe(gt));
 	drm_err(&xe->drm, "GT reset failed, err=%d\n", err);
 
