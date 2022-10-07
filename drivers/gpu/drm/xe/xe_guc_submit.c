@@ -674,13 +674,6 @@ guc_engine_run_job(struct drm_sched_job *drm_job)
 		submit_engine(e);
 	}
 
-	/*
-	 * Immediately signal a job's fence as this is unused if dma-fences are
-	 * not allowed on the VM
-	 */
-	if (xe_vm_no_dma_fences(e->vm) && !xe_sched_job_is_error(job))
-		xe_sched_job_set_error(job, -ENOTSUPP);
-
 	if (test_and_set_bit(JOB_FLAG_SUBMIT, &job->fence->flags))
 		return job->fence;
 	else
@@ -757,7 +750,6 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 	int i = 0;
 
 	if (!test_bit(DMA_FENCE_FLAG_SIGNALED_BIT, &job->fence->flags)) {
-		XE_WARN_ON(xe_vm_no_dma_fences(e->vm));
 		XE_WARN_ON(e->flags & ENGINE_FLAG_KERNEL);
 		XE_WARN_ON(e->flags & ENGINE_FLAG_VM && !engine_killed(e));
 
@@ -1042,6 +1034,7 @@ static int guc_engine_init(struct xe_engine *e)
 	struct drm_gpu_scheduler *sched;
 	struct xe_guc *guc = engine_to_guc(e);
 	struct xe_guc_engine *ge;
+	long timeout;
 	int err;
 
 	XE_BUG_ON(!xe_device_guc_submission_enabled(guc_to_xe(guc)));
@@ -1053,9 +1046,10 @@ static int guc_engine_init(struct xe_engine *e)
 	e->guc = ge;
 	ge->engine = e;
 
+	timeout = xe_vm_no_dma_fences(e->vm) ? MAX_SCHEDULE_TIMEOUT : HZ * 5;
 	err = drm_sched_init(&ge->sched, &drm_sched_ops,
 			     e->lrc[0].ring.size / MAX_JOB_SIZE_BYTES,
-			     64, HZ * 5, guc_to_gt(guc)->ordered_wq, NULL,
+			     64, timeout, guc_to_gt(guc)->ordered_wq, NULL,
 			     e->name, gt_to_xe(e->gt)->drm.dev);
 	if (err)
 		goto err_free;
