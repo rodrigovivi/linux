@@ -23,8 +23,6 @@
 #include "../i915/gt/intel_gt_regs.h"
 
 /* TODO: move to common file */
-#define GUC_WA_GAM_CREDITS		(1 << 10)
-#define GUC_WA_RENDER_RST_RC6_EXIT	(1 << 19)
 #define GUC_PVC_MOCS_INDEX_MASK		REG_GENMASK(25, 24)
 #define PVC_MOCS_UC_INDEX		1
 #define PVC_GUC_MOCS_INDEX(index)	REG_FIELD_PREP(GUC_PVC_MOCS_INDEX_MASK,\
@@ -138,6 +136,7 @@ static u32 guc_ctl_ads_flags(struct xe_guc *guc)
 static u32 guc_ctl_wa_flags(struct xe_guc *guc)
 {
 	struct xe_device *xe = guc_to_xe(guc);
+	struct xe_gt *gt = guc_to_gt(guc);
 	u32 flags = 0;
 
 	/* Wa_22012773006:gen11,gen12 < XeHP */
@@ -145,8 +144,62 @@ static u32 guc_ctl_wa_flags(struct xe_guc *guc)
 	    GRAPHICS_VERx100(xe) < 1250)
 		flags |= GUC_WA_POLLCS;
 
-	if (xe->info.platform == XE_PVC)
+	/* Wa_16011759253 */
+	/* Wa_22011383443 */
+	if (IS_SUBPLATFORM_STEP(xe, XE_DG2, XE_SUBPLATFORM_DG2_G10, STEP_A0, STEP_B0) ||
+	    IS_PLATFORM_STEP(xe, XE_PVC, STEP_A0, STEP_B0))
 		flags |= GUC_WA_GAM_CREDITS;
+
+	/* Wa_14014475959 */
+	if (IS_PLATFORM_STEP(xe, XE_METEORLAKE, STEP_A0, STEP_B0) ||
+	    xe->info.platform == XE_DG2)
+		flags |= GUC_WA_HOLD_CCS_SWITCHOUT;
+
+	/*
+	 * Wa_14012197797
+	 * Wa_22011391025
+	 *
+	 * The same WA bit is used for both and 22011391025 is applicable to
+	 * all DG2.
+	 */
+	if (xe->info.platform == XE_DG2)
+		flags |= GUC_WA_DUAL_QUEUE;
+
+	/*
+	 * Wa_2201180203
+	 * GUC_WA_PRE_PARSER causes media workload hang for PVC A0 and PCIe
+	 * errors. Disable this for PVC A0 steppings.
+	 */
+	if (GRAPHICS_VER(xe) <= 12 &&
+	    !IS_PLATFORM_STEP(xe, XE_PVC, STEP_A0, STEP_B0))
+		flags |= GUC_WA_PRE_PARSER;
+
+	/* Wa_16011777198 */
+	if (IS_SUBPLATFORM_STEP(xe, XE_DG2, XE_SUBPLATFORM_DG2_G10, STEP_A0, STEP_C0) ||
+	    IS_SUBPLATFORM_STEP(xe, XE_DG2, XE_SUBPLATFORM_DG2_G11, STEP_A0,
+				STEP_B0))
+		flags |= GUC_WA_RCS_RESET_BEFORE_RC6;
+
+	/*
+	 * Wa_22012727170
+	 * Wa_22012727685
+	 *
+	 * This WA is applicable to PVC CT A0, but causes media regressions. 
+	 * Drop the WA for PVC.
+	 */
+	if (IS_SUBPLATFORM_STEP(xe, XE_DG2, XE_SUBPLATFORM_DG2_G10, STEP_A0, STEP_C0) ||
+	    IS_SUBPLATFORM_STEP(xe, XE_DG2, XE_SUBPLATFORM_DG2_G11, STEP_A0,
+				STEP_FOREVER))
+		flags |= GUC_WA_CONTEXT_ISOLATION;
+
+	/* Wa_16015675438, Wa_18020744125 */
+	if (!xe_hw_engine_mask_per_class(gt, XE_ENGINE_CLASS_RENDER))
+		flags |= GUC_WA_RCS_REGS_IN_CCS_REGS_LIST;
+
+	/* Wa_1509372804 */
+	if (IS_PLATFORM_STEP(xe, XE_PVC, STEP_A0, STEP_C0))
+		flags |= GUC_WA_RENDER_RST_RC6_EXIT;
+
 
 	return flags;
 }
