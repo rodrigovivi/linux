@@ -2307,14 +2307,6 @@ __xe_vm_bind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 		vma->userptr.dirty = false;
 		vma->userptr.initial_bind = true;
 		vma->gt_present |= BIT(gt->info.id);
-
-		/*
-		 * FIXME: workaround for xe_evict.evict-mixed-many-threads-small
-		 * failure, likely related to xe_exec_threads.threads-rebind
-		 * failure. Details in issue #39
-		 */
-		if (rebind && !xe_vm_no_dma_fences(vm))
-			dma_fence_wait(fence, false);
 	} else {
 		xe_pt_abort_bind(vma, entries, num_entries);
 	}
@@ -2872,21 +2864,6 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 		if (afence)
 			dma_fence_signal(&afence->fence);
 		return 0;
-	}
-
-	/*
-	 * FIXME: workaround for xe_exec_threads.threads-rebind failure, likely
-	 * related to xe_evict.evict-mixed-many-threads-small failure. Details
-	 * in issue #39
-	 */
-	if (is_unmap_op(bind_op->op)) {
-		int i;
-
-		for (i = 0; i < num_syncs; i++) {
-			err = xe_sync_entry_wait(&syncs[i]);
-			if (err)
-				return err;
-		}
 	}
 
 	xe_vm_tv_populate(vm, &tv_vm);
