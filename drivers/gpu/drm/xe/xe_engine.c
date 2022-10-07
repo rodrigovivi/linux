@@ -223,9 +223,6 @@ static int engine_set_compute_mode(struct xe_device *xe, struct xe_engine *e,
 		if (XE_IOCTL_ERR(xe, e->width != 1))
 			return -EINVAL;
 
-		if (XE_IOCTL_ERR(xe, !is_power_of_2(e->logical_mask)))
-			return -EINVAL;
-
 		e->compute.context = dma_fence_context_alloc(1);
 		spin_lock_init(&e->compute.lock);
 
