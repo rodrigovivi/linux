@@ -970,8 +970,6 @@ static void __guc_engine_process_msg_resume(struct drm_sched_msg *msg)
 	struct xe_guc *guc = engine_to_guc(e);
 	struct xe_vm *vm = e->vm;
 
-	XE_BUG_ON(!engine_suspended(e));
-
 	wait_event(vm->preempt.resume_wq, vm->preempt.resume_go ||
 		   guc_read_stopped(guc));
 
@@ -1248,7 +1246,7 @@ static void guc_engine_resume(struct xe_engine *e)
 {
 	struct drm_sched_msg *msg = e->guc->static_msgs + STATIC_MSG_RESUME;
 
-	XE_BUG_ON(!engine_suspended(e) || e->guc->suspend_fence);
+	XE_BUG_ON(e->guc->suspend_fence);
 
 	xe_mocs_init_engine(e);
 	guc_engine_add_msg(e, msg, RESUME);
