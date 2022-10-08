@@ -17,6 +17,7 @@
 #include "xe_gt_pagefault.h"
 #include "xe_guc_submit.h"
 #include "xe_map.h"
+#include "xe_trace.h"
 
 /* Used when a CT send wants to block and / or receive data */
 struct g2h_fence {
@@ -548,25 +549,33 @@ try_again:
 	 */
 	if (unlikely(ret == -EBUSY &&
 		     !h2g_has_room(ct, len + GUC_CTB_HDR_LEN))) {
+		struct guc_ctb *h2g = &ct->ctbs.h2g;
+
 		if (sleep_period_ms == 1024)
 			goto broken;
 
-#ifdef XE_GUC_CT_SELFTEST
-		drm_info(drm, "H2G flow control kicking in\n");
-#endif
-
+		trace_xe_guc_ct_h2g_flow_control(h2g->head, h2g->tail,
+						 h2g->size, h2g->space,
+						 len + GUC_CTB_HDR_LEN);
 		msleep(sleep_period_ms);
 		sleep_period_ms <<= 1;
 
 		goto try_again;
 	} else if (unlikely(ret == -EBUSY)) {
-#ifdef XE_GUC_CT_SELFTEST
-		drm_info(drm, "G2H flow control kicking in\n");
-#endif
+		struct xe_device *xe = ct_to_xe(ct);
+		struct guc_ctb *g2h = &ct->ctbs.g2h;
+
+		trace_xe_guc_ct_g2h_flow_control(g2h->head,
+						 desc_read(xe, g2h, tail),
+						 g2h->size, g2h->space,
+						 g2h_fence ?
+						 GUC_CTB_HXG_MSG_MAX_LEN :
+						 g2h_len);
 
 #define g2h_avail(ct)	\
 	(desc_read(ct_to_xe(ct), (&ct->ctbs.g2h), tail) != ct->ctbs.g2h.head)
-		if (!wait_event_timeout(ct->wq, g2h_avail(ct), HZ))
+		if (!wait_event_timeout(ct->wq, !ct->g2h_outstanding ||
+					g2h_avail(ct), HZ))
 			goto broken;
 #undef g2h_avail
 
