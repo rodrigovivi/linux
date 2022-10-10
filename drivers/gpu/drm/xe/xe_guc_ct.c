@@ -598,6 +598,7 @@ broken:
 static int guc_ct_send(struct xe_guc_ct *ct, const u32 *action, u32 len,
 		       u32 g2h_len, u32 num_g2h, struct g2h_fence *g2h_fence)
 {
+	bool cookie = dma_fence_begin_signalling();
 	int ret;
 
 	XE_BUG_ON(g2h_len && g2h_fence);
@@ -605,6 +606,8 @@ static int guc_ct_send(struct xe_guc_ct *ct, const u32 *action, u32 len,
 	mutex_lock(&ct->lock);
 	ret = guc_ct_send_locked(ct, action, len, g2h_len, num_g2h, g2h_fence);
 	mutex_unlock(&ct->lock);
+
+	dma_fence_end_signalling(cookie);
 
 	return ret;
 }
