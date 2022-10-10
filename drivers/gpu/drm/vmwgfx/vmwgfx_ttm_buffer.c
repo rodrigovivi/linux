@@ -514,7 +514,7 @@ static struct ttm_tt *vmw_ttm_tt_create(struct ttm_buffer_object *bo,
 
 	if (vmw_be->dev_priv->map_mode == vmw_dma_alloc_coherent)
 		ret = ttm_sg_tt_init(&vmw_be->dma_ttm, bo, page_flags,
-				     ttm_cached);
+				     ttm_cached, 0);
 	else
 		ret = ttm_tt_init(&vmw_be->dma_ttm, bo, page_flags,
 				  ttm_cached, 0);

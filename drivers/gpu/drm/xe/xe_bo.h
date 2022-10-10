@@ -231,6 +231,13 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 int xe_gem_mmap_offset_ioctl(struct drm_device *dev, void *data,
 			     struct drm_file *file);
 
+bool xe_bo_needs_ccs_pages(struct xe_bo *bo);
+
+static inline size_t xe_bo_ccs_pages_start(struct xe_bo *bo)
+{
+	return PAGE_ALIGN(bo->ttm.base.size);
+}
+
 #if IS_ENABLED(CONFIG_DRM_XE_KUNIT_TEST)
 /**
  * xe_bo_is_mem_type - Whether the bo currently resides in the given
