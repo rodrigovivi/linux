@@ -73,6 +73,10 @@ int xe_guc_hwconfig_init(struct xe_guc *guc)
 	u32 size;
 	int err;
 
+	/* Initialization already done */
+	if (guc->hwconfig.bo)
+		return 0;
+
 	/*
 	 * All hwconfig the same across GTs so only GT0 needs to be configured
 	 */
