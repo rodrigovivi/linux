@@ -742,6 +742,7 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
 		.no_wait_gpu = false,
 	};
 	struct ttm_placement *placement;
+	uint32_t alignment;
 	int err;
 
 	/* Only kernel objects should set GT */
@@ -758,6 +759,9 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
 	    xe->info.vram_flags & XE_VRAM_FLAGS_NEED64K) {
 		size = ALIGN(size, SZ_64K);
 		flags |= XE_BO_INTERNAL_64K;
+		alignment = SZ_64K >> PAGE_SHIFT;
+	} else {
+		alignment = SZ_4K >> PAGE_SHIFT;
 	}
 
 	bo->gt = gt;
@@ -790,7 +794,7 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
 		&bo->placement;
 	err = ttm_bo_init_reserved(&xe->ttm, &bo->ttm, type,
 				   DMA_RESV_USAGE_BOOKKEEP,
-				   placement, SZ_64K >> PAGE_SHIFT,
+				   placement, alignment,
 				   &ctx, NULL, resv, xe_ttm_bo_destroy);
 	if (WARN_ON(err))
 		return ERR_PTR(err);
