@@ -44,6 +44,9 @@ int xe_pm_suspend(struct xe_device *xe)
 	u8 id;
 	int err;
 
+	for_each_gt(gt, xe, id)
+		xe_gt_suspend_prepare(gt);
+
 	/* FIXME: Super racey... */
 	err = xe_bo_evict_all(xe);
 	if (err)

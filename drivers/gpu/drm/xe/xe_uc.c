@@ -133,6 +133,11 @@ int xe_uc_reset_prepare(struct xe_uc *uc)
 	return xe_guc_reset_prepare(&uc->guc);
 }
 
+void xe_uc_stop_prepare(struct xe_uc *uc)
+{
+	xe_guc_stop_prepare(&uc->guc);
+}
+
 int xe_uc_stop(struct xe_uc *uc)
 {
 	/* GuC submission not enabled, nothing to do */

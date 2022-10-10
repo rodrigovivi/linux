@@ -374,6 +374,8 @@ static int gt_reset(struct xe_gt *gt)
 	if (err)
 		goto err_msg;
 
+	xe_uc_stop_prepare(&gt->uc);
+
 	err = xe_uc_stop(&gt->uc);
 	if (err)
 		goto err_out;
@@ -444,6 +446,17 @@ void xe_gt_reset_async(struct xe_gt *gt)
 
 	drm_info(&xe->drm, "Doing GT reset\n");
 	queue_work(gt->ordered_wq, &gt->reset.worker);
+}
+
+void xe_gt_suspend_prepare(struct xe_gt *gt)
+{
+	xe_device_mem_access_wa_get(gt_to_xe(gt));
+	XE_WARN_ON(xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL));
+
+	xe_uc_stop_prepare(&gt->uc);
+
+	xe_device_mem_access_wa_put(gt_to_xe(gt));
+	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
 }
 
 int xe_gt_suspend(struct xe_gt *gt)
