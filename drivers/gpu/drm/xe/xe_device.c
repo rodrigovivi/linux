@@ -61,15 +61,19 @@ static void xe_file_close(struct drm_device *dev, struct drm_file *file)
 	struct xe_engine *e;
 	unsigned long idx;
 
+	mutex_lock(&xef->engine.lock);
 	xa_for_each(&xef->engine.xa, idx, e) {
 		xe_engine_kill(e);
 		xe_engine_put(e);
 	}
+	mutex_unlock(&xef->engine.lock);
 	mutex_destroy(&xef->engine.lock);
 	device_kill_persitent_engines(xe, xef);
 
+	mutex_lock(&xef->vm.lock);
 	xa_for_each(&xef->vm.xa, idx, vm)
 		xe_vm_close_and_put(vm);
+	mutex_unlock(&xef->vm.lock);
 	mutex_destroy(&xef->vm.lock);
 
 	kfree(xef);
