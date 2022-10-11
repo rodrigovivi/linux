@@ -768,12 +768,14 @@ void xe_guc_reset_wait(struct xe_guc *guc)
 	xe_guc_submit_reset_wait(guc);
 }
 
+void xe_guc_stop_prepare(struct xe_guc *guc)
+{
+	XE_WARN_ON(xe_guc_pc_stop(&guc->pc));
+}
+
 int xe_guc_stop(struct xe_guc *guc)
 {
 	int ret;
-
-	ret = xe_guc_pc_stop(&guc->pc);
-	XE_WARN_ON(ret);
 
 	xe_guc_ct_disable(&guc->ct);
 
