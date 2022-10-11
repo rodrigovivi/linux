@@ -30,6 +30,7 @@
 #include <drm/ttm/ttm_placement.h>
 #include <drm/ttm/ttm_range_manager.h>
 #include <drm/ttm/ttm_resource.h>
+#include <drm/ttm/ttm_tt.h>
 
 #include "xe_macros.h"
 
@@ -39,6 +40,7 @@ struct xe_res_cursor {
 	u64		size;
 	u64		remaining;
 	struct drm_mm_node	*node;
+	const struct ttm_tt *ttm;
 };
 
 /**
@@ -57,6 +59,7 @@ static inline void xe_res_first(struct ttm_resource *res,
 {
 	struct drm_mm_node *node;
 
+	cur->ttm = NULL;
 	if (!res || res->mem_type == TTM_PL_SYSTEM) {
 		cur->start = start;
 		cur->size = size;
@@ -76,6 +79,32 @@ static inline void xe_res_first(struct ttm_resource *res,
 	cur->size = min((node->size << PAGE_SHIFT) - start, size);
 	cur->remaining = size;
 	cur->node = node;
+}
+
+static inline void __xe_res_tt_next(struct xe_res_cursor *cur)
+{
+	const u64 *dma = cur->ttm->dma_address + (cur->start >> PAGE_SHIFT);
+	pgoff_t last_idx = cur->remaining >> PAGE_SHIFT;
+	pgoff_t idx = 0;
+
+	while (idx < last_idx && dma[idx] == dma[0] + (idx << PAGE_SHIFT))
+		idx++;
+
+	cur->size = idx << PAGE_SHIFT;
+}
+
+static inline void xe_res_first_tt(const struct ttm_tt *ttm,
+				   u64 start, u64 size,
+				   struct xe_res_cursor *cur)
+{
+	XE_BUG_ON(!IS_ALIGNED(start, PAGE_SIZE) ||
+		  !IS_ALIGNED(size, PAGE_SIZE));
+	cur->node = NULL;
+	cur->start = start;
+	cur->remaining = size;
+	cur->size = 0;
+	cur->ttm = ttm;
+	__xe_res_tt_next(cur);
 }
 
 /**
@@ -100,6 +129,10 @@ static inline void xe_res_next(struct xe_res_cursor *cur, u64 size)
 	if (cur->size) {
 		cur->start += size;
 		return;
+	} else if (cur->ttm) {
+		cur->start += size;
+		__xe_res_tt_next(cur);
+		return;
 	}
 
 	cur->node = ++node;
@@ -107,4 +140,9 @@ static inline void xe_res_next(struct xe_res_cursor *cur, u64 size)
 	cur->size = min(node->size << PAGE_SHIFT, cur->remaining);
 }
 
+static inline u64 xe_res_dma(const struct xe_res_cursor *cur)
+{
+	return cur->ttm ? cur->ttm->dma_address[cur->start >> PAGE_SHIFT] :
+		cur->start;
+}
 #endif
