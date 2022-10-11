@@ -343,7 +343,7 @@ static void emit_arb_clear(struct xe_bb *bb)
 
 static u64 xe_migrate_res_sizes(struct xe_res_cursor *cur)
 {
-	return min_t(u64, MAX_PREEMPTDISABLE_TRANSFER, cur->remaining);
+	return min_t(u64, MAX_PREEMPTDISABLE_TRANSFER, cur->size);
 }
 
 static u32 pte_update_size(struct xe_migrate *m,
@@ -470,6 +470,7 @@ static void emit_copy_ccs(struct xe_gt *gt, struct xe_bb *bb,
 	bb->len = cs - bb->cs;
 }
 
+#define EMIT_COPY_DW 10
 static void emit_copy(struct xe_gt *gt, struct xe_bb *bb,
 		      u64 src_ofs, u64 dst_ofs, unsigned int size,
 		      unsigned pitch)
@@ -573,12 +574,9 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 			     &ccs_it);
 
 	while (size) {
-		u32 batch_size = 8 + 512;	/* FIXME: 512 is hack to fix
-						   eviction bug, issue #52 */
+		u32 batch_size = 2; /* arb_clear() + MI_BATCH_BUFFER_END */
 		struct xe_sched_job *job;
 		struct xe_bb *bb;
-		u32 num_src_pts;
-		u32 num_dst_pts;
 		u32 flush_flags;
 		u32 update_idx;
 		u64 ccs_ofs, ccs_size;
@@ -593,17 +591,15 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 		drm_dbg(&xe->drm, "Pass %u, sizes: %llu & %llu\n",
 			pass++, src_L0, dst_L0);
 
-		XE_BUG_ON(num_src_pts + num_dst_pts > NUM_KERNEL_PDE - 1);
+		src_L0 = min(src_L0, dst_L0);
 
 		batch_size += pte_update_size(m, src_is_vram, &src_it, &src_L0,
 					      &src_L0_ofs, &src_L0_pt, 0, 0,
 					      NUM_PT_PER_BLIT);
 
-		batch_size += pte_update_size(m, dst_is_vram, &dst_it, &dst_L0,
+		batch_size += pte_update_size(m, dst_is_vram, &dst_it, &src_L0,
 					      &dst_L0_ofs, &dst_L0_pt, 0,
 					      NUM_PT_PER_BLIT, NUM_PT_PER_BLIT);
-
-		src_L0 = min(src_L0, dst_L0);
 
 		if (copy_system_ccs) {
 			ccs_size = xe_device_ccs_bytes(xe, src_L0);
@@ -614,7 +610,7 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 		}
 
 		/* Add copy commands size here */
-		batch_size += 10 +
+		batch_size += EMIT_COPY_DW +
 			(xe_device_has_flat_ccs(xe) ? EMIT_COPY_CCS_DW : 0);
 
 		bb = xe_bb_new(gt, batch_size, usm);
