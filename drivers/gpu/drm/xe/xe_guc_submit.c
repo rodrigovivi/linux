@@ -1387,6 +1387,7 @@ int xe_guc_submit_start(struct xe_guc *guc)
 {
 	struct xe_engine *e;
 	unsigned long index;
+	bool cookie = dma_fence_begin_signalling();
 
 	XE_BUG_ON(guc_read_stopped(guc) != 1);
 
@@ -1395,6 +1396,8 @@ int xe_guc_submit_start(struct xe_guc *guc)
 	xa_for_each(&guc->submission_state.engine_lookup, index, e)
 		guc_engine_start(e);
 	mutex_unlock(&guc->submission_state.lock);
+
+	dma_fence_end_signalling(cookie);
 
 	wake_up_all(&guc->ct.wq);
 
