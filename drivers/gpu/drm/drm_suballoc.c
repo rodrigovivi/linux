@@ -80,7 +80,6 @@ static void __drm_suballoc_free(struct drm_suballoc *sa)
 {
 	struct drm_suballoc_manager *sa_manager = sa->manager;
 	struct dma_fence *fence;
-	unsigned long sa_flags;
 
 	/*
 	 * In order to avoid protecting the potentially lengthy drm_mm manager
@@ -91,7 +90,7 @@ static void __drm_suballoc_free(struct drm_suballoc *sa)
 	if (!in_task()) {
 		unsigned long irqflags;
 
-		if (spin_trylock_irqsave(&sa_manager->lock, sa_flags))
+		if (spin_trylock(&sa_manager->lock))
 			goto locked;
 
 		spin_lock_irqsave(&sa_manager->idle_list_lock, irqflags);
@@ -101,13 +100,13 @@ static void __drm_suballoc_free(struct drm_suballoc *sa)
 		return;
 	}
 
-	spin_lock_irqsave(&sa_manager->lock, sa_flags);
+	spin_lock(&sa_manager->lock);
 locked:
 	drm_mm_remove_node(&sa->node);
 
 	fence = sa->fence;
 	sa->fence = NULL;
-	spin_unlock_irqrestore(&sa_manager->lock, sa_flags);
+	spin_unlock(&sa_manager->lock);
 	/* Maybe only wake if first mm hole is sufficiently large? */
 	wake_up(&sa_manager->wq);
 	dma_fence_put(fence);
@@ -150,11 +149,11 @@ static int drm_suballoc_tryalloc(struct drm_suballoc *sa, u64 size)
 	int err;
 
 	drm_suballoc_process_idle(sa_manager);
-	spin_lock_irq(&sa_manager->lock);
+	spin_lock(&sa_manager->lock);
 	err = drm_mm_insert_node_generic(&sa_manager->mm, &sa->node, size,
 					 sa_manager->alignment, 0,
 					 DRM_MM_INSERT_EVICT);
-	spin_unlock_irq(&sa_manager->lock);
+	spin_unlock(&sa_manager->lock);
 	return err;
 }
 
@@ -274,7 +273,7 @@ void drm_suballoc_dump_debug_info(struct drm_suballoc_manager *sa_manager,
 {
 	const struct drm_mm_node *entry;
 
-	spin_lock_irq(&sa_manager->lock);
+	spin_lock(&sa_manager->lock);
 	drm_mm_for_each_node(entry, &sa_manager->mm) {
 		struct drm_suballoc *sa =
 			container_of(entry, typeof(*sa), node);
@@ -292,7 +291,7 @@ void drm_suballoc_dump_debug_info(struct drm_suballoc_manager *sa_manager,
 
 		drm_printf(p, "\n");
 	}
-	spin_unlock_irq(&sa_manager->lock);
+	spin_unlock(&sa_manager->lock);
 }
 EXPORT_SYMBOL(drm_suballoc_dump_debug_info);
 #endif
