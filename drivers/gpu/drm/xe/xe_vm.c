@@ -297,8 +297,7 @@ static void vma_add_leaf(struct xe_gt *gt, struct xe_vma *vma,
 }
 
 static int xe_pt_populate_for_vma(struct xe_gt *gt, struct xe_vma *vma,
-				  struct xe_pt *pt, u64 start, u64 end,
-				  bool rebind, u32 idx)
+				  struct xe_pt *pt, u64 start, u64 end, u32 idx)
 {
 	u32 start_ofs = xe_pt_idx(start, pt->level);
 	u32 last_ofs = xe_pt_idx(end - 1, pt->level);
@@ -361,15 +360,13 @@ static int xe_pt_populate_for_vma(struct xe_gt *gt, struct xe_vma *vma,
 
 			if (pte) {
 				err = xe_pt_populate_for_vma(gt, vma, pte,
-							     cur, cur_end,
-							     rebind, i);
+							     cur, cur_end, i);
 				if (err)
 					return err;
 			}
 
 			pt_dir->entries[i] = pte;
-			if (!rebind)
-				pt_dir->pt.num_live++;
+			pt_dir->pt.num_live++;
 
 			cur = next_start;
 		}
@@ -2151,7 +2148,6 @@ __xe_pt_prepare_bind(struct xe_gt *gt, struct xe_vma *vma, struct xe_pt *pt,
 			if (entry) {
 				err = xe_pt_populate_for_vma(gt, vma, entry,
 							     cur, cur_end,
-							     rebind,
 							     start_ofs + i);
 				if (err) {
 					xe_pt_destroy(entry, vma->vm->flags);
