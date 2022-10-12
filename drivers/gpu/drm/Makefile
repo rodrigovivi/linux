@@ -39,6 +39,7 @@ drm-y := \
 	drm_prime.o \
 	drm_print.o \
 	drm_property.o \
+	drm_pt_walk.o \
 	drm_syncobj.o \
 	drm_sysfs.o \
 	drm_trace_points.o \
