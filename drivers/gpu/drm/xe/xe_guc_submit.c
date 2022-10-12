@@ -19,6 +19,7 @@
 #include "xe_guc_submit.h"
 #include "xe_gt.h"
 #include "xe_force_wake.h"
+#include "xe_hw_engine.h"
 #include "xe_hw_fence.h"
 #include "xe_lrc.h"
 #include "xe_macros.h"
@@ -738,6 +739,45 @@ static void disable_scheduling_deregister(struct xe_guc *guc,
 		       G2H_LEN_DW_DEREGISTER_CONTEXT, 2);
 }
 
+static void guc_engine_print(struct xe_engine *e, struct drm_printer *p);
+
+#if IS_ENABLED(CONFIG_DRM_XE_SIMPLE_ERROR_CAPTURE)
+static void simple_error_capture(struct xe_engine *e)
+{
+	struct xe_guc *guc = engine_to_guc(e);
+	struct drm_printer p = drm_err_printer("");
+	struct xe_hw_engine *hwe;
+	enum xe_hw_engine_id id;
+	u32 adj_logical_mask = e->logical_mask;
+	u32 width_mask = (0x1 << e->width) - 1;
+	int i;
+
+	for (i = 0; e->width > 1 && i < XE_HW_ENGINE_MAX_INSTANCE;) {
+		if (adj_logical_mask & BIT(i)) {
+			adj_logical_mask |= width_mask << i;
+			i += e->width;
+		} else {
+			++i;
+		}
+	}
+
+	xe_force_wake_get(gt_to_fw(guc_to_gt(guc)), XE_FORCEWAKE_ALL);
+	xe_guc_ct_print(&guc->ct, &p);
+	guc_engine_print(e, &p);
+	for_each_hw_engine(hwe, guc_to_gt(guc), id) {
+		if (hwe->class != e->hwe->class ||
+		    !(BIT(hwe->logical_instance) & adj_logical_mask))
+			continue;
+		xe_hw_engine_print_state(hwe, &p);
+	}
+	xe_force_wake_put(gt_to_fw(guc_to_gt(guc)), XE_FORCEWAKE_ALL);
+}
+#else
+static void simple_error_capture(struct xe_engine *e)
+{
+}
+#endif
+
 static enum drm_gpu_sched_stat
 guc_engine_timedout_job(struct drm_sched_job *drm_job)
 {
@@ -755,6 +795,7 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 
 		drm_warn(&xe->drm, "Timedout job: seqno=%u, guc_id=%d, flags=0x%lx",
 			 xe_sched_job_seqno(job), e->guc->id, e->flags);
+		simple_error_capture(e);
 	} else {
 		drm_dbg(&xe->drm, "Timedout signaled job: seqno=%u, guc_id=%d, flags=0x%lx",
 			 xe_sched_job_seqno(job), e->guc->id, e->flags);
