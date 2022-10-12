@@ -10,6 +10,8 @@
 #include <linux/kref.h>
 #include <linux/mmu_notifier.h>
 
+#include <drm/drm_pt_walk.h>
+
 #include "xe_device_types.h"
 
 struct xe_bo;
@@ -141,6 +143,7 @@ struct xe_vma {
 struct xe_device;
 
 struct xe_pt {
+	struct drm_pt drm;
 	struct xe_bo *bo;
 	unsigned int level;
 	unsigned int num_live;

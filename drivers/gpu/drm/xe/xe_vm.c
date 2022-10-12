@@ -40,12 +40,18 @@ static inline void vm_dbg(const struct drm_device *dev,
 
 struct xe_pt_dir {
 	struct xe_pt pt;
-	struct xe_pt *entries[GEN8_PDES];
+	/** @dir: Directory structure for the drm_pt_walk functionality */
+	struct drm_pt_dir dir;
 };
 
 static struct xe_pt_dir *as_xe_pt_dir(struct xe_pt *pt)
 {
 	return container_of(pt, struct xe_pt_dir, pt);
+}
+
+static struct xe_pt *xe_pt_entry(struct xe_pt_dir *pt_dir, unsigned int index)
+{
+	return container_of(pt_dir->dir.entries[index], struct xe_pt, drm);
 }
 
 u64 gen8_pde_encode(struct xe_bo *bo, u64 bo_offset,
@@ -157,7 +163,8 @@ static struct xe_pt *xe_pt_create(struct xe_vm *vm, struct xe_gt *gt,
 	size_t size;
 	int err;
 
-	size = level ? sizeof(struct xe_pt_dir) : sizeof(struct xe_pt);
+	size = !level ?  sizeof(struct xe_pt) : sizeof(struct xe_pt_dir) +
+		GEN8_PDES * sizeof(struct drm_pt *);
 	pt = kzalloc(size, GFP_KERNEL);
 	if (!pt)
 		return ERR_PTR(-ENOMEM);
@@ -173,6 +180,7 @@ static struct xe_pt *xe_pt_create(struct xe_vm *vm, struct xe_gt *gt,
 	}
 	pt->bo = bo;
 	pt->level = level;
+	pt->drm.dir = level ? &as_xe_pt_dir(pt)->dir : NULL;
 
 	XE_BUG_ON(level > XE_VM_MAX_LEVEL);
 
@@ -358,7 +366,7 @@ static int xe_pt_populate_for_vma(struct xe_gt *gt, struct xe_vma *vma,
 			struct xe_pt *pte = NULL;
 			u64 cur_end = min(next_start, end);
 
-			XE_WARN_ON(pt_dir->entries[i]);
+			XE_WARN_ON(xe_pt_entry(pt_dir, i));
 
 			if (!xe_pte_hugepage_possible(vma, pt->level, cur,
 						      cur_end))
@@ -375,7 +383,7 @@ static int xe_pt_populate_for_vma(struct xe_gt *gt, struct xe_vma *vma,
 					return err;
 			}
 
-			pt_dir->entries[i] = pte;
+			pt_dir->dir.entries[i] = &pte->drm;
 			pt_dir->pt.num_live++;
 
 			cur = next_start;
@@ -410,8 +418,8 @@ static int xe_pt_populate_for_vma(struct xe_gt *gt, struct xe_vma *vma,
 	for (i = start_ofs; i <= last_ofs; i++, bo_offset += page_size) {
 		u64 entry;
 
-		if (pt_dir && pt_dir->entries[i])
-			entry = gen8_pde_encode(pt_dir->entries[i]->bo,
+		if (pt_dir && xe_pt_entry(pt_dir, i))
+			entry = gen8_pde_encode(xe_pt_entry(pt_dir, i)->bo,
 						0, XE_CACHE_WB) | flags;
 		else
 			entry = gen8_pte_encode(vma, vma->bo, bo_offset,
@@ -440,8 +448,8 @@ static void xe_pt_destroy(struct xe_pt *pt, u32 flags)
 		struct xe_pt_dir *pt_dir = as_xe_pt_dir(pt);
 
 		for (i = 0; i < numpdes; i++) {
-			if (pt_dir->entries[i])
-				xe_pt_destroy(pt_dir->entries[i], flags);
+			if (xe_pt_entry(pt_dir, i))
+				xe_pt_destroy(xe_pt_entry(pt_dir, i), flags);
 		}
 	}
 	kfree(pt);
@@ -1645,11 +1653,11 @@ xe_pt_commit_unbind(struct xe_vma *vma,
 
 			for (i = entry->ofs; i < entry->ofs + entry->qwords;
 			     i++) {
-				if (pt_dir->entries[i])
-					xe_pt_destroy(pt_dir->entries[i],
+				if (xe_pt_entry(pt_dir, i))
+					xe_pt_destroy(xe_pt_entry(pt_dir, i),
 						      vma->vm->flags);
 
-				pt_dir->entries[i] = NULL;
+				pt_dir->dir.entries[i] = NULL;
 			}
 		}
 	}
@@ -1710,11 +1718,11 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 		u32 i;
 		u32 first_ofs = start_ofs;
 
-		if (pt_dir->entries[start_ofs])
+		if (xe_pt_entry(pt_dir, start_ofs))
 			partial_begin = xe_pt_partial_entry(start, start_end,
 							    pt->level);
 
-		if (pt_dir->entries[last_ofs] && last_ofs > start_ofs)
+		if (xe_pt_entry(pt_dir, last_ofs) && last_ofs > start_ofs)
 			partial_end = xe_pt_partial_entry(end_start, end,
 							  pt->level);
 		vm_dbg(&vma->vm->xe->drm,
@@ -1730,7 +1738,7 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 			       pt->level, start_ofs,
 			       pt->level - 1, start, start_end);
 			__xe_pt_prepare_unbind(vma,
-					       pt_dir->entries[start_ofs++],
+					       xe_pt_entry(pt_dir, start_ofs++),
 					       &rem,
 					       start, start_end,
 					       num_entries, entries);
@@ -1747,7 +1755,7 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 				vm_dbg(&vma->vm->xe->drm, "\t%llx...%llx / %llx\n",
 				       xe_pt_next_start(cur, pt->level), end, cur_end);
 				__xe_pt_prepare_unbind(vma,
-						       pt_dir->entries[start_ofs++],
+						       xe_pt_entry(pt_dir, start_ofs++),
 						       &rem, cur, cur_end, num_entries,
 						       entries);
 				if (rem) {
@@ -1772,7 +1780,7 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 			       "\t%u: Descending to last subentry %u level %u [%llx...%llx)\n",
 			       pt->level, last_ofs, pt->level - 1, cur, end);
 
-			__xe_pt_prepare_unbind(vma, pt_dir->entries[last_ofs],
+			__xe_pt_prepare_unbind(vma, xe_pt_entry(pt_dir, last_ofs),
 					       &rem, cur, end, num_entries,
 					       entries);
 			if (rem) {
@@ -2038,11 +2046,11 @@ static void xe_pt_commit_bind(struct xe_vma *vma,
 			u32 j_ = j + entries[i].ofs;
 			struct xe_pt *newpte = entries[i].pt_entries[j];
 
-			if (pt_dir->entries[j_])
-				xe_pt_destroy(pt_dir->entries[j_],
+			if (xe_pt_entry(pt_dir, j_))
+				xe_pt_destroy(xe_pt_entry(pt_dir, j_),
 					      vma->vm->flags);
 
-			pt_dir->entries[j_] = newpte;
+			pt_dir->dir.entries[j_] = &newpte->drm;
 		}
 		kfree(entries[i].pt_entries);
 	}
@@ -2093,11 +2101,11 @@ __xe_pt_prepare_bind(struct xe_gt *gt, struct xe_vma *vma, struct xe_pt *pt,
 		int err;
 		bool partial_begin = false, partial_end = false;
 
-		if (pt_dir->entries[start_ofs])
+		if (xe_pt_entry(pt_dir, start_ofs))
 			partial_begin = xe_pt_partial_entry(start, start_end,
 							    pt->level);
 
-		if (pt_dir->entries[last_ofs] && last_ofs > start_ofs)
+		if (xe_pt_entry(pt_dir, last_ofs) && last_ofs > start_ofs)
 			partial_end = xe_pt_partial_entry(end_start, end,
 							  pt->level);
 
@@ -2113,7 +2121,7 @@ __xe_pt_prepare_bind(struct xe_gt *gt, struct xe_vma *vma, struct xe_pt *pt,
 			       pt->level, start_ofs,
 			       pt->level - 1, start, start_end);
 			err = __xe_pt_prepare_bind(gt, vma,
-						   pt_dir->entries[start_ofs++],
+						   xe_pt_entry(pt_dir, start_ofs++),
 						   start, start_end,
 						   num_entries, entries,
 						   rebind);
@@ -2177,7 +2185,7 @@ __xe_pt_prepare_bind(struct xe_gt *gt, struct xe_vma *vma, struct xe_pt *pt,
 			       pt->level, last_ofs, pt->level - 1, cur, end);
 
 			err = __xe_pt_prepare_bind(gt, vma,
-						   pt_dir->entries[last_ofs],
+						   xe_pt_entry(pt_dir, last_ofs),
 						   cur, end, num_entries,
 						   entries, rebind);
 			if (err)
