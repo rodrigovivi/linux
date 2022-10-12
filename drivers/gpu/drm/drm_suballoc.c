@@ -85,9 +85,10 @@ static void __drm_suballoc_free(struct drm_suballoc *sa)
 	 * In order to avoid protecting the potentially lengthy drm_mm manager
 	 * *allocation* processing with an irq-disabling lock,
 	 * defer touching the drm_mm for freeing until we're in task context,
-	 * or happen to succeed in taking the manager lock.
+	 * with no irqs disabled, or happen to succeed in taking the manager
+	 * lock.
 	 */
-	if (!in_task()) {
+	if (!in_task() || irqs_disabled()) {
 		unsigned long irqflags;
 
 		if (spin_trylock(&sa_manager->lock))
