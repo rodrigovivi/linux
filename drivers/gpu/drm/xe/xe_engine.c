@@ -465,7 +465,7 @@ static u32 calc_validate_logical_mask(struct xe_device *xe, struct xe_gt *gt,
 		for (j = 0; j < num_placements; ++j) {
 			struct xe_hw_engine *hwe;
 
-			n = i * num_placements + j;
+			n = j * width + i;
 
 			hwe = find_hw_engine(xe, eci[n]);
 			if (XE_IOCTL_ERR(xe, !hwe))
@@ -481,7 +481,7 @@ static u32 calc_validate_logical_mask(struct xe_device *xe, struct xe_gt *gt,
 			class = eci[n].engine_class;
 			gt_id = eci[n].gt_id;
 
-			if (width == 1 || !j)
+			if (width == 1 || !i)
 				return_mask |= BIT(eci[n].engine_instance);
 			current_mask |= BIT(eci[n].engine_instance);
 		}
