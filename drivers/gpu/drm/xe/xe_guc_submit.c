@@ -1150,8 +1150,7 @@ static void guc_engine_kill(struct xe_engine *e)
 {
 	trace_xe_engine_kill(e);
 	set_engine_killed(e);
-	if (!xe_vm_no_dma_fences(e->vm))
-		drm_sched_set_timeout(&e->guc->sched, MIN_SCHED_TIMEOUT);
+	drm_sched_set_timeout(&e->guc->sched, MIN_SCHED_TIMEOUT);
 }
 
 static void guc_engine_add_msg(struct xe_engine *e, struct drm_sched_msg *msg,
