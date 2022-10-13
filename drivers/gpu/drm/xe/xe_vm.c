@@ -2663,6 +2663,10 @@ int xe_vm_create_ioctl(struct drm_device *dev, void *data,
 			 xe_device_in_fault_mode(xe)))
 		return -EINVAL;
 
+	if (XE_IOCTL_ERR(xe, args->flags & DRM_XE_VM_CREATE_FAULT_MODE &&
+			 !xe->info.supports_usm))
+		return -EINVAL;
+
 	if (args->flags & DRM_XE_VM_CREATE_SCRATCH_PAGE)
 		flags |= XE_VM_FLAG_SCRATCH_PAGE;
 	if (args->flags & DRM_XE_VM_CREATE_COMPUTE_MODE)
