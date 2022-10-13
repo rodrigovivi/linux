@@ -93,6 +93,16 @@ static inline void __xe_res_dma_next(struct xe_res_cursor *cur)
 	cur->size = idx << PAGE_SHIFT;
 }
 
+/**
+ * xe_res_first_dma - initialize a xe_res_cursor with array of dma addresses
+ *
+ * @dma_address: array of dma addresses to walk
+ * @start: Start of the range
+ * @size: Size of the range
+ * @cur: cursor object to initialize
+ *
+ * Start walking over the range of allocations between @start and @size.
+ */
 static inline void xe_res_first_dma(const dma_addr_t *dma_address,
 				    u64 start, u64 size,
 				    struct xe_res_cursor *cur)
@@ -140,6 +150,11 @@ static inline void xe_res_next(struct xe_res_cursor *cur, u64 size)
 	cur->size = min(node->size << PAGE_SHIFT, cur->remaining);
 }
 
+/**
+ * xe_res_dma - return dma address of cursor at current position
+ *
+ * @cur: the cursor to return the dma address from
+ */
 static inline u64 xe_res_dma(const struct xe_res_cursor *cur)
 {
 	return cur->dma_address ? cur->dma_address[cur->start >> PAGE_SHIFT] :
