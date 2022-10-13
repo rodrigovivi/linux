@@ -565,7 +565,8 @@ void xe_hw_engine_print_state(struct xe_hw_engine *hwe, struct drm_printer *p)
 	if (!xe_hw_engine_is_valid(hwe))
 		return;
 
-	drm_printf(p, "%s\n", hwe->name);
+	drm_printf(p, "%s (physical), logical instance=%d\n", hwe->name,
+		   hwe->logical_instance);
 	drm_printf(p, "\tForcewake: domain 0x%x, ref %d\n",
 		   hwe->domain,
 		   xe_force_wake_ref(gt_to_fw(hwe->gt), hwe->domain));
