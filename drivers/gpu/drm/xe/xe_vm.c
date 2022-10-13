@@ -242,7 +242,6 @@ static bool xe_pte_hugepage_possible(struct xe_vma *vma, u32 level, u64 start,
 				     u64 end)
 {
 	u64 pagesize = 1ull << xe_pt_shift(level);
-	u64 bo_ofs = vma->bo_offset + (start - vma->start);
 	struct xe_res_cursor cur;
 
 	XE_BUG_ON(!level);
@@ -254,13 +253,22 @@ static bool xe_pte_hugepage_possible(struct xe_vma *vma, u32 level, u64 start,
 	if (start + pagesize != end)
 		return false;
 
-	if (xe_vma_is_userptr(vma))
-		return false;
+	if (xe_vma_is_userptr(vma)) {
+		u64 bo_ofs = (start - vma->start);
 
-	if (!mem_type_is_vram(vma->bo->ttm.resource->mem_type))
-		return false;
+		xe_res_first_dma(vma->userptr.dma_address, bo_ofs, pagesize,
+				 &cur);
+	} else if (!mem_type_is_vram(vma->bo->ttm.resource->mem_type)) {
+		u64 bo_ofs = vma->bo_offset + (start - vma->start);
 
-	xe_res_first(vma->bo->ttm.resource, bo_ofs, pagesize, &cur);
+		xe_res_first_dma(vma->bo->ttm.ttm->dma_address, bo_ofs,
+				 pagesize, &cur);
+	} else {
+		u64 bo_ofs = vma->bo_offset + (start - vma->start);
+
+		xe_res_first(vma->bo->ttm.resource, bo_ofs, pagesize, &cur);
+	}
+
 	if (cur.size < pagesize)
 		return false;
 
