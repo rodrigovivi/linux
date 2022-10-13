@@ -1672,6 +1672,7 @@ static void guc_engine_print(struct xe_engine *e, struct drm_printer *p)
 	drm_printf(p, "\tName: %s\n", e->name);
 	drm_printf(p, "\tClass: %d\n", e->class);
 	drm_printf(p, "\tLogical mask: 0x%x\n", e->logical_mask);
+	drm_printf(p, "\tWidth: %d\n", e->width);
 	drm_printf(p, "\tRef: %d\n", kref_read(&e->refcount));
 	drm_printf(p, "\tTimeout: %ld (ms)\n", sched->timeout);
 	drm_printf(p, "\tTimeslice: %u (us)\n", e->sched_props.timeslice_us);
