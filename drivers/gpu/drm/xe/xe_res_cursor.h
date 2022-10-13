@@ -40,7 +40,7 @@ struct xe_res_cursor {
 	u64		size;
 	u64		remaining;
 	struct drm_mm_node	*node;
-	const struct ttm_tt *ttm;
+	const dma_addr_t *dma_address;
 };
 
 /**
@@ -59,7 +59,7 @@ static inline void xe_res_first(struct ttm_resource *res,
 {
 	struct drm_mm_node *node;
 
-	cur->ttm = NULL;
+	cur->dma_address = NULL;
 	if (!res || res->mem_type == TTM_PL_SYSTEM) {
 		cur->start = start;
 		cur->size = size;
@@ -81,9 +81,9 @@ static inline void xe_res_first(struct ttm_resource *res,
 	cur->node = node;
 }
 
-static inline void __xe_res_tt_next(struct xe_res_cursor *cur)
+static inline void __xe_res_dma_next(struct xe_res_cursor *cur)
 {
-	const u64 *dma = cur->ttm->dma_address + (cur->start >> PAGE_SHIFT);
+	const u64 *dma = cur->dma_address + (cur->start >> PAGE_SHIFT);
 	pgoff_t last_idx = cur->remaining >> PAGE_SHIFT;
 	pgoff_t idx = 0;
 
@@ -93,9 +93,9 @@ static inline void __xe_res_tt_next(struct xe_res_cursor *cur)
 	cur->size = idx << PAGE_SHIFT;
 }
 
-static inline void xe_res_first_tt(const struct ttm_tt *ttm,
-				   u64 start, u64 size,
-				   struct xe_res_cursor *cur)
+static inline void xe_res_first_dma(const dma_addr_t *dma_address,
+				    u64 start, u64 size,
+				    struct xe_res_cursor *cur)
 {
 	XE_BUG_ON(!IS_ALIGNED(start, PAGE_SIZE) ||
 		  !IS_ALIGNED(size, PAGE_SIZE));
@@ -103,8 +103,8 @@ static inline void xe_res_first_tt(const struct ttm_tt *ttm,
 	cur->start = start;
 	cur->remaining = size;
 	cur->size = 0;
-	cur->ttm = ttm;
-	__xe_res_tt_next(cur);
+	cur->dma_address = dma_address;
+	__xe_res_dma_next(cur);
 }
 
 /**
@@ -129,9 +129,9 @@ static inline void xe_res_next(struct xe_res_cursor *cur, u64 size)
 	if (cur->size) {
 		cur->start += size;
 		return;
-	} else if (cur->ttm) {
+	} else if (cur->dma_address) {
 		cur->start += size;
-		__xe_res_tt_next(cur);
+		__xe_res_dma_next(cur);
 		return;
 	}
 
@@ -142,7 +142,7 @@ static inline void xe_res_next(struct xe_res_cursor *cur, u64 size)
 
 static inline u64 xe_res_dma(const struct xe_res_cursor *cur)
 {
-	return cur->ttm ? cur->ttm->dma_address[cur->start >> PAGE_SHIFT] :
+	return cur->dma_address ? cur->dma_address[cur->start >> PAGE_SHIFT] :
 		cur->start;
 }
 #endif
