@@ -28,6 +28,48 @@ static int info(struct seq_file *m, void *data)
 	struct xe_gt *gt;
 	u8 id;
 
+/	unsigned long *geometry_map;
+	unsigned long *compute_map;
+	unsigned long size = 64;
+	u64 buf1[1];
+	u64 buf2[1];
+	u64 buf3[1];
+
+	sseu_map = bitmap_alloc(size, GFP_KERNEL);
+	geometry_map = bitmap_alloc(size, GFP_KERNEL);
+	compute_map = bitmap_alloc(size, GFP_KERNEL);
+
+	bitmap_zero(sseu_map, size);
+	bitmap_zero(geometry_map, size);
+	bitmap_zero(compute_map, size);
+
+	for_each_gt(gt, xe, id) {
+		load_bitmap_from_regs(gt, geometry_map,
+				      1,
+				      GEN12_GT_GEOMETRY_DSS_ENABLE.reg);
+
+		if (GRAPHICS_VERx100(xe) >= 1250) {
+			load_bitmap_from_regs(gt, compute_map,
+					      1,
+					      GEN12_GT_COMPUTE_DSS_ENABLE.reg,
+					      XEHPC_GT_COMPUTE_DSS_ENABLE_EXT.reg);
+		}
+
+		bitmap_or(sseu_map, geometry_map, compute_map, size);
+
+		bitmap_to_arr64(buf1, sseu_map, size);
+		bitmap_to_arr64(buf2, geometry_map, size);
+		bitmap_to_arr64(buf3, compute_map, size);
+
+		drm_printf(&p, "gt%d: %lu, %llx %llx %llx\n", id, find_first_bit(sseu_map, size), buf1[0], buf2[0], buf3[0]);
+	}
+
+	bitmap_free(sseu_map);
+	bitmap_free(geometry_map);
+	bitmap_free(compute_map);
+
+	return 0;
+
 	drm_printf(&p, "graphics_verx100 %d\n", xe->info.graphics_verx100);
 	drm_printf(&p, "media_verx100 %d\n", xe->info.media_verx100);
 	drm_printf(&p, "is_dgfx %s\n", xe->info.is_dgfx ? "yes" : "no");
