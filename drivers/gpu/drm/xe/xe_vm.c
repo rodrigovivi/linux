@@ -44,6 +44,12 @@ struct xe_pt_dir {
 	struct drm_pt_dir dir;
 };
 
+static int
+xe_pt_stage_bind(struct xe_gt *gt, struct xe_vma *vma,
+		 struct xe_vm_pgtable_update *entries, u32 *num_entries);
+
+static void xe_pt_build_leaves(struct xe_gt *gt, struct xe_vma *vma);
+
 static struct xe_pt_dir *as_xe_pt_dir(struct xe_pt *pt)
 {
 	return container_of(pt, struct xe_pt_dir, pt);
@@ -90,27 +96,13 @@ static dma_addr_t vma_addr(struct xe_vma *vma, u64 offset,
 	}
 }
 
-u64 gen8_pte_encode(struct xe_vma *vma, struct xe_bo *bo,
-		    u64 offset, enum xe_cache_level cache,
-		    u32 flags, u32 pt_level)
+u64 __gen8_pte_encode(u64 pte, enum xe_cache_level cache, u32 flags,
+		      u32 pt_level)
 {
-	u64 pte;
-	bool is_lmem;
-
-	if (vma)
-		pte = vma_addr(vma, offset, GEN8_PAGE_SIZE, &is_lmem);
-	else
-		pte = xe_bo_addr(bo, offset, GEN8_PAGE_SIZE, &is_lmem);
 	pte |= GEN8_PAGE_PRESENT | GEN8_PAGE_RW;
 
 	if (unlikely(flags & PTE_READ_ONLY))
 		pte &= ~GEN8_PAGE_RW;
-
-	if (is_lmem) {
-		pte |= GEN12_PPGTT_PTE_LM;
-		if (vma && vma->use_atomic_access_pte_bit)
-			pte |= GEN12_USM_PPGTT_PTE_AE;
-	}
 
 	/* FIXME: I don't think the PPAT handling is correct for MTL */
 
@@ -135,6 +127,27 @@ u64 gen8_pte_encode(struct xe_vma *vma, struct xe_bo *bo,
 	XE_BUG_ON(pt_level > 2);
 
 	return pte;
+}
+
+u64 gen8_pte_encode(struct xe_vma *vma, struct xe_bo *bo,
+		    u64 offset, enum xe_cache_level cache,
+		    u32 flags, u32 pt_level)
+{
+	u64 pte;
+	bool is_vram;
+
+	if (vma)
+		pte = vma_addr(vma, offset, GEN8_PAGE_SIZE, &is_vram);
+	else
+		pte = xe_bo_addr(bo, offset, GEN8_PAGE_SIZE, &is_vram);
+
+	if (is_vram) {
+		pte |= GEN12_PPGTT_PTE_LM;
+		if (vma && vma->use_atomic_access_pte_bit)
+			pte |= GEN12_USM_PPGTT_PTE_AE;
+	}
+
+	return __gen8_pte_encode(pte, cache, flags, pt_level);
 }
 
 static u64 __xe_vm_empty_pte(struct xe_gt *gt, struct xe_vm *vm,
@@ -246,196 +259,36 @@ static u64 xe_pt_prev_end(u64 end, unsigned int level)
 	return ALIGN_DOWN(end - 1, pt_range);
 }
 
-static bool xe_pte_hugepage_possible(struct xe_vma *vma, u32 level, u64 start,
-				     u64 end)
-{
-	u64 pagesize = 1ull << xe_pt_shift(level);
-	struct xe_res_cursor cur;
-	u64 bo_ofs;
-
-	XE_BUG_ON(!level);
-	XE_BUG_ON(end - start > pagesize);
-
-	if (level > 2)
-		return false;
-
-	if (start + pagesize != end)
-		return false;
-
-	if (xe_vma_is_userptr(vma))
-		bo_ofs = (start - vma->start);
-	else
-		bo_ofs = vma->bo_offset + (start - vma->start);
-
-	if (bo_ofs & (pagesize - 1))
-		return false;
-
-	if (xe_vma_is_userptr(vma))
-		xe_res_first_dma(vma->userptr.dma_address, bo_ofs, pagesize,
-				 &cur);
-	else if (!mem_type_is_vram(vma->bo->ttm.resource->mem_type))
-		xe_res_first_dma(vma->bo->ttm.ttm->dma_address, bo_ofs,
-				 pagesize, &cur);
-	else
-		xe_res_first(vma->bo->ttm.resource, bo_ofs, pagesize, &cur);
-
-	if (cur.size < pagesize)
-		return false;
-
-	if (!IS_ALIGNED(cur.start, pagesize))
-		return false;
-
-	return true;
-}
-
 static bool vma_uses_64k_pages(struct xe_vma *vma)
 {
 	return vma->bo && vma->bo->flags & XE_BO_INTERNAL_64K;
 }
 
-static void vma_add_leaf(struct xe_gt *gt, struct xe_vma *vma,
-			 struct xe_pt *pt, int start_ofs, int len)
+static void vma_usm_add_leaf(struct xe_gt *gt, struct xe_vma_usm *usm,
+			     struct xe_pt *pt, int start_ofs, int len)
 {
 	struct xe_device *xe = gt_to_xe(gt);
 	int gt_id = gt->info.id;
-	int num_leafs = vma->usm.gt[gt_id].num_leafs;
+	int num_leaves = usm->gt[gt_id].num_leaves;
 
-	if (!xe_vm_in_fault_mode(vma->vm))
-		return;
-
-	XE_BUG_ON(num_leafs >= MAX_LEAFS);
+	XE_BUG_ON(num_leaves >= MAX_LEAVES);
 
 	vm_dbg(&xe->drm, "add leaf=%d, pt->level=%d, start_ofs=%d, len=%d",
-	       num_leafs, pt->level, start_ofs, len);
+	       num_leaves, pt->level, start_ofs, len);
 
-	vma->usm.gt[gt_id].leafs[num_leafs].bo = pt->bo;
-	vma->usm.gt[gt_id].leafs[num_leafs].start_ofs = start_ofs;
-	vma->usm.gt[gt_id].leafs[num_leafs].len = len;
-	vma->usm.gt[gt_id].num_leafs++;
-}
-
-static int xe_pt_populate_for_vma(struct xe_gt *gt, struct xe_vma *vma,
-				  struct xe_pt *pt, u64 start, u64 end, u32 idx)
-{
-	u32 start_ofs = xe_pt_idx(start, pt->level);
-	u32 last_ofs = xe_pt_idx(end - 1, pt->level);
-	struct iosys_map *map = &pt->bo->vmap;
-	struct xe_vm *vm = vma->vm;
-	struct xe_pt_dir *pt_dir = NULL;
-	bool init = !pt->num_live;
-	u32 i;
-	int err;
-	u64 page_size = 1ull << xe_pt_shift(pt->level);
-	u32 numpdes = GEN8_PDES;
-	u32 flags = 0;
-	u64 bo_offset = vma->bo_offset + (start - vma->start);
-	u8 id = gt->info.id;
-	bool add_leaf = false;
-
-	XE_BUG_ON(xe_gt_is_media_type(gt));
-
-	if ((start_ofs != 0 || last_ofs != 511) &&
-	    (end - start) >=  0x1ull << xe_pt_shift(pt->level))
-		add_leaf = true;
-
-	if (vma_uses_64k_pages(vma)) {
-		if (page_size < SZ_64K)
-			page_size = SZ_64K;
-		if (pt->level == 1)
-			flags = GEN12_PDE_64K;
-		else if (pt->level == 0) {
-			numpdes = 32;
-			start_ofs = start_ofs / 16;
-			last_ofs = last_ofs / 16;
-		}
-	}
-	if (add_leaf)
-		vma_add_leaf(gt, vma, pt, start_ofs * sizeof(u64),
-			     (last_ofs + 1 - start_ofs) * sizeof(u64));
-
-	vm_dbg(&vm->xe->drm, "\t\t%u: %d..%d F:0x%x 0x%llx %d n:%d\n", pt->level,
-	       start_ofs, last_ofs, flags, page_size, idx, pt->num_live);
-
-	if (pt->level) {
-		u64 cur = start;
-
-		pt_dir = as_xe_pt_dir(pt);
-
-		for (i = start_ofs; i <= last_ofs; i++) {
-			u64 next_start = xe_pt_next_start(cur, pt->level);
-			struct xe_pt *pte = NULL;
-			u64 cur_end = min(next_start, end);
-
-			XE_WARN_ON(xe_pt_entry(pt_dir, i));
-
-			if (!xe_pte_hugepage_possible(vma, pt->level, cur,
-						      cur_end))
-				pte = xe_pt_create(vm, gt,
-						   pt->level - 1);
-
-			if (IS_ERR(pte))
-				return PTR_ERR(pte);
-
-			if (pte) {
-				err = xe_pt_populate_for_vma(gt, vma, pte,
-							     cur, cur_end, i);
-				if (err)
-					return err;
-			}
-
-			pt_dir->dir.entries[i] = &pte->drm;
-			pt_dir->pt.num_live++;
-
-			cur = next_start;
-		}
-	} else {
-		XE_BUG_ON(!init);
-		pt->num_live += last_ofs + 1 - start_ofs;
-	}
-
-	if (init) {
-		if (!vma->vm->scratch_bo[id]) {
-			/*
-			 * FIXME: Some memory is allocated already allocated to
-			 * zero? Find out which memory that is and avoid this
-			 * memset...
-			 */
-			xe_map_memset(vma->vm->xe, map, 0, 0, SZ_4K);
-		} else {
-			u32 init_flags = (vma->vm->scratch_bo[id]) ? flags : 0;
-			u64 empty = __xe_vm_empty_pte(gt, vma->vm, pt->level) |
-				init_flags;
-
-			empty = __xe_vm_empty_pte(gt, vma->vm, pt->level) |
-				init_flags;
-			for (i = 0; i < start_ofs; i++)
-				xe_pt_write(vm->xe, map, i, empty);
-			for (i = last_ofs + 1; i < numpdes; i++)
-				xe_pt_write(vm->xe, map, i, empty);
-		}
-	}
-
-	for (i = start_ofs; i <= last_ofs; i++, bo_offset += page_size) {
-		u64 entry;
-
-		if (pt_dir && xe_pt_entry(pt_dir, i))
-			entry = gen8_pde_encode(xe_pt_entry(pt_dir, i)->bo,
-						0, XE_CACHE_WB) | flags;
-		else
-			entry = gen8_pte_encode(vma, vma->bo, bo_offset,
-						XE_CACHE_WB, vma->pte_flags,
-						pt->level);
-
-		xe_pt_write(vm->xe, map, i, entry);
-	}
-
-	return 0;
+	usm->gt[gt_id].leaves[num_leaves].bo = pt->bo;
+	usm->gt[gt_id].leaves[num_leaves].start_ofs = start_ofs;
+	usm->gt[gt_id].leaves[num_leaves].len = len;
+	usm->gt[gt_id].num_leaves++;
 }
 
 static void xe_pt_destroy(struct xe_pt *pt, u32 flags)
 {
 	int i;
 	int numpdes = GEN8_PDES;
+
+	if (!pt)
+		return;
 
 	XE_BUG_ON(!list_empty(&pt->bo->vmas));
 	xe_bo_unpin(pt->bo);
@@ -1697,7 +1550,7 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 
 	if (!pt->level) {
 		my_removed_pte = last_ofs - start_ofs + 1;
-		if (vma_uses_64k_pages(vma)) {
+		if (pt->is_compact) {
 			start_ofs = start_ofs / 16;
 			last_ofs = last_ofs / 16;
 			my_removed_pte = last_ofs - start_ofs + 1;
@@ -1808,14 +1661,11 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 	entry->ofs = start_ofs;
 	entry->qwords = my_removed_pte;
 	entry->pt = pt;
-	entry->target_vma = vma;
-	entry->target_offset = vma->bo_offset + (start - vma->start);
-	entry->flags = 0;
 
 	vm_dbg(&vma->vm->xe->drm, "REMOVE %d L:%d o:%d q:%d t:0x%llx (%llx,%llx,%llx) f:0x%x n:%d\n",
 	       (*num_entries)-1, pt->level, entry->ofs, entry->qwords,
-	       entry->target_offset, vma->bo_offset, start, vma->start,
-	       entry->flags, num_live);
+	       vma->bo_offset + (start - vma->start), vma->bo_offset, start,
+	       vma->start, 0, num_live);
 }
 
 static void
@@ -1860,15 +1710,15 @@ __xe_vm_unbind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 		if (entry->pt->level == 0 && vma_uses_64k_pages(vma)) {
 			page_size = SZ_64K;
 		}
-		start = vma->start + entry->target_offset - vma->bo_offset;
-		len = (u64)entry->qwords << page_size;
+		start = vma->start + entry->ofs * page_size;
+		len = (u64)entry->qwords * page_size;
 
 		start = xe_pt_prev_end(start + 1, entry->pt->level);
 		end = start + len;
 
 		vm_dbg(&vm->xe->drm, "\t%u: Update level %u at (%u + %u) [%llx...%llx) f:%x\n",
 		       i, entry->pt->level, entry->ofs, entry->qwords,
-		       start, end, entry->flags);
+		       start, end, 0);
 	}
 
 	/*
@@ -1976,36 +1826,18 @@ xe_vm_populate_pgtable(struct xe_gt *gt, struct iosys_map *map, void *data,
 		       u32 qword_ofs, u32 num_qwords,
 		       struct xe_vm_pgtable_update *update, void *arg)
 {
-	u64 page_size = 1ull << xe_pt_shift(update->pt->level);
-	u64 bo_offset;
-	struct xe_pt **ptes = update->pt_entries;
+	struct xe_pt_entry *ptes = update->pt_entries;
 	u64 *ptr = data;
-	u64 pte;
 	u32 i;
 
 	XE_BUG_ON(xe_gt_is_media_type(gt));
 
-	if (update->pt->level == 0 && update->flags & GEN12_PDE_64K)
-		page_size = SZ_64K;
-	bo_offset = update->target_offset +
-		page_size * (qword_ofs - update->ofs);
-
-	for (i = 0; i < num_qwords; i++, bo_offset += page_size) {
-		if (ptes && ptes[i])
-			pte = gen8_pde_encode(ptes[i]->bo, 0, XE_CACHE_WB) |
-				update->flags;
-		else
-			pte = gen8_pte_encode(update->target_vma,
-					      update->target_vma->bo,
-					      bo_offset,
-					      XE_CACHE_WB,
-					      update->target_vma->pte_flags,
-					      update->pt->level);
+	for (i = 0; i < num_qwords; i++) {
 		if (map)
 			xe_map_wr(gt_to_xe(gt), map, (qword_ofs + i) *
-				  sizeof(u64), u64, pte);
+				  sizeof(u64), u64, ptes[i].pte);
 		else
-			ptr[i] = pte;
+			ptr[i] = ptes[i].pte;
 	}
 }
 
@@ -2020,7 +1852,7 @@ static void xe_pt_abort_bind(struct xe_vma *vma,
 			continue;
 
 		for (j = 0; j < entries[i].qwords; j++)
-			xe_pt_destroy(entries[i].pt_entries[j], vma->vm->flags);
+			xe_pt_destroy(entries[i].pt_entries[j].pt, vma->vm->flags);
 		kfree(entries[i].pt_entries);
 	}
 }
@@ -2044,7 +1876,7 @@ static void xe_pt_commit_bind(struct xe_vma *vma,
 		pt_dir = as_xe_pt_dir(pt);
 		for (j = 0; j < entries[i].qwords; j++) {
 			u32 j_ = j + entries[i].ofs;
-			struct xe_pt *newpte = entries[i].pt_entries[j];
+			struct xe_pt *newpte = entries[i].pt_entries[j].pt;
 
 			if (xe_pt_entry(pt_dir, j_))
 				xe_pt_destroy(xe_pt_entry(pt_dir, j_),
@@ -2057,179 +1889,6 @@ static void xe_pt_commit_bind(struct xe_vma *vma,
 }
 
 static int
-__xe_pt_prepare_bind(struct xe_gt *gt, struct xe_vma *vma, struct xe_pt *pt,
-		     u64 start, u64 end, u32 *num_entries,
-		     struct xe_vm_pgtable_update *entries, bool rebind)
-{
-	struct xe_device *xe = vma->vm->xe;
-	u32 my_added_pte = 0;
-	struct xe_vm_pgtable_update *entry;
-	u32 start_ofs = xe_pt_idx(start, pt->level);
-	u32 last_ofs = xe_pt_idx(end - 1, pt->level);
-	struct xe_pt **pte = NULL;
-	u32 flags = 0;
-
-	XE_BUG_ON(start < vma->start);
-	XE_BUG_ON(end > vma->end + 1);
-
-	my_added_pte = last_ofs + 1 - start_ofs;
-	BUG_ON(!my_added_pte);
-
-	if (!pt->level) {
-		bool add_leaf = false;
-
-		if (start_ofs != 0 || last_ofs != 511)
-			add_leaf = true;
-		if (vma_uses_64k_pages(vma)) {
-			start_ofs = start_ofs / 16;
-			last_ofs = last_ofs / 16;
-			my_added_pte = last_ofs + 1 - start_ofs;
-			flags |= GEN12_PDE_64K;
-		}
-		if (add_leaf)
-			vma_add_leaf(gt, vma, pt, start_ofs * sizeof(u64),
-				     (last_ofs + 1 - start_ofs) * sizeof(u64));
-		vm_dbg(&xe->drm, "\t%u: Populating entry [%u..%u +%u) [%llx...%llx)\n",
-		       pt->level, start_ofs, last_ofs, my_added_pte, start,
-		       end);
-	} else {
-		struct xe_pt_dir *pt_dir = as_xe_pt_dir(pt);
-		u32 i;
-		u64 start_end = min(xe_pt_next_start(start, pt->level), end);
-		u64 end_start = max(start, xe_pt_prev_end(end, pt->level));
-		u64 cur = start;
-		int err;
-		bool partial_begin = false, partial_end = false;
-
-		if (xe_pt_entry(pt_dir, start_ofs))
-			partial_begin = xe_pt_partial_entry(start, start_end,
-							    pt->level);
-
-		if (xe_pt_entry(pt_dir, last_ofs) && last_ofs > start_ofs)
-			partial_end = xe_pt_partial_entry(end_start, end,
-							  pt->level);
-
-		my_added_pte -= partial_begin + partial_end;
-
-		vm_dbg(&xe->drm, "\t%u: [%llx...%llx) partial begin/end: %u / %u, %u entries\n",
-		       pt->level, start, end, partial_begin, partial_end,
-		       my_added_pte);
-
-		/* Prepare partially filled first part.. */
-		if (partial_begin) {
-			vm_dbg(&xe->drm, "\t%u: Descending to first subentry %u level %u [%llx...%llx)\n",
-			       pt->level, start_ofs,
-			       pt->level - 1, start, start_end);
-			err = __xe_pt_prepare_bind(gt, vma,
-						   xe_pt_entry(pt_dir, start_ofs++),
-						   start, start_end,
-						   num_entries, entries,
-						   rebind);
-			if (err)
-				return err;
-
-			start = cur = start_end;
-		}
-
-		/* optional middle part, includes begin/end if not partial */
-		pte = kmalloc_array(my_added_pte, sizeof(*pte), GFP_KERNEL);
-		if (!pte)
-			return -ENOMEM;
-
-		for (i = 0; i < my_added_pte; i++) {
-			struct xe_pt *entry;
-			u64 cur_end =
-				min(xe_pt_next_start(cur, pt->level), end);
-
-			if (vma_uses_64k_pages(vma) && pt->level == 1)
-				flags = GEN12_PDE_64K;
-
-			vm_dbg(&xe->drm, "\t%u: Populating %u/%u subentry %u level %u [%llx...%llx) f:%x\n",
-			       pt->level, i + 1, my_added_pte,
-			       start_ofs + i, pt->level - 1, cur, cur_end,
-			       flags);
-
-			if (xe_pte_hugepage_possible(vma, pt->level, cur,
-						     cur_end)) {
-				/* We will directly a PTE to object */
-				entry = NULL;
-			} else {
-				entry = xe_pt_create(vma->vm, gt,
-						     pt->level - 1);
-				if (IS_ERR(entry)) {
-					err = PTR_ERR(entry);
-					goto unwind;
-				}
-			}
-			pte[i] = entry;
-
-			if (entry) {
-				err = xe_pt_populate_for_vma(gt, vma, entry,
-							     cur, cur_end,
-							     start_ofs + i);
-				if (err) {
-					xe_pt_destroy(entry, vma->vm->flags);
-					goto unwind;
-				}
-			}
-
-			cur = cur_end;
-		}
-
-		/* last? */
-		if (partial_end) {
-			XE_WARN_ON(cur >= end);
-			XE_WARN_ON(cur != end_start);
-
-			vm_dbg(&xe->drm, "\t%u: Descending to last subentry %u level %u [%llx...%llx)\n",
-			       pt->level, last_ofs, pt->level - 1, cur, end);
-
-			err = __xe_pt_prepare_bind(gt, vma,
-						   xe_pt_entry(pt_dir, last_ofs),
-						   cur, end, num_entries,
-						   entries, rebind);
-			if (err)
-				goto unwind;
-		}
-
-		/* No changes to this entry, fast return, no need to free 0 size ptr.. */
-		if (!my_added_pte)
-			return 0;
-
-		if ((end - start) >= 0x1ull << xe_pt_shift(pt->level))
-			vma_add_leaf(gt, vma, pt, start_ofs * sizeof(u64),
-				     my_added_pte * sizeof(u64));
-
-		goto done;
-
-unwind:
-		while (i--)
-			xe_pt_destroy(pte[i], vma->vm->flags);
-
-		kfree(pte);
-		return err;
-	}
-
-done:
-	entry = &entries[(*num_entries)++];
-	entry->pt_bo = pt->bo;
-	entry->ofs = start_ofs;
-	entry->qwords = my_added_pte;
-	entry->pt = pt;
-	entry->target_vma = vma;
-	entry->target_offset = vma->bo_offset + (start - vma->start);
-	entry->pt_entries = pte;
-	entry->flags = flags;
-
-	vm_dbg(&xe->drm, "ADD %d L:%d o:%d q:%d t:0x%llx (%llx,%llx,%llx) f:0x%x\n",
-	       *num_entries-1, pt->level, entry->ofs, entry->qwords,
-	       entry->target_offset, vma->bo_offset, start, vma->start,
-	       entry->flags);
-
-	return 0;
-}
-
-static int
 xe_pt_prepare_bind(struct xe_gt *gt, struct xe_vma *vma,
 		   struct xe_vm_pgtable_update *entries, u32 *num_entries,
 		   bool rebind)
@@ -2239,11 +1898,8 @@ xe_pt_prepare_bind(struct xe_gt *gt, struct xe_vma *vma,
 	vm_dbg(&vma->vm->xe->drm, "Preparing bind, with range [%llx...%llx)\n",
 	       vma->start, vma->end);
 
-	vma->usm.gt[gt->info.id].num_leafs = 0;
 	*num_entries = 0;
-	err = __xe_pt_prepare_bind(gt, vma, vma->vm->pt_root[gt->info.id],
-				   vma->start, vma->end +
-				   1, num_entries, entries, rebind);
+	err = xe_pt_stage_bind(gt, vma, entries, num_entries);
 	if (!err)
 		BUG_ON(!*num_entries);
 	else /* abort! */
@@ -2283,15 +1939,15 @@ __xe_vm_bind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 		if (entry->pt->level == 0 && vma_uses_64k_pages(vma)) {
 			page_size = SZ_64K;
 		}
-		start = vma->start + entry->target_offset - vma->bo_offset;
-		len = (u64)entry->qwords << page_size;
+		start = vma->start + entry->ofs * page_size;
+		len = (u64)entry->qwords * page_size;
 
 		start = xe_pt_prev_end(start + 1, entry->pt->level);
 		end = start + len;
 
-		vm_dbg(&vm->xe->drm, "\t%u: Update level %u at (%u + %u) [%llx...%llx) f:%x\n",
+		vm_dbg(&vm->xe->drm, "\t%u: Update level %u at (%u + %u) [%llx...%llx)",
 		       i, entry->pt->level, entry->ofs, entry->qwords,
-		       start, end, entry->flags);
+		       start, end);
 	}
 
 	fence = xe_migrate_update_pgtables(gt->migrate,
@@ -2311,6 +1967,8 @@ __xe_vm_bind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 			dma_resv_add_fence(vma->bo->ttm.base.resv, fence,
 					   DMA_RESV_USAGE_BOOKKEEP);
 		xe_pt_commit_bind(vma, entries, num_entries, rebind);
+		if (xe_vm_in_fault_mode(vma->vm))
+			xe_pt_build_leaves(gt, vma);
 
 		if (!rebind && vma->last_munmap_rebind &&
 		    xe_vm_in_compute_mode(vm))
@@ -4147,7 +3805,7 @@ void xe_vm_unlock(struct xe_vm *vm, struct ww_acquire_ctx *ww)
  * xm_vm_invalidate_vma - invalidate GPU mappings for VMA without a lock
  * @vma: VMA to invalidate
  *
- * Walks a list of page tables leafs which it memset the entries owned by this
+ * Walks a list of page tables leaves which it memset the entries owned by this
  * VMA to zero, invalidates the TLBs, and block until TLBs invalidation is
  * complete.
  *
@@ -4167,13 +3825,13 @@ int xe_vm_invalidate_vma(struct xe_vma *vma)
 	trace_xe_vma_usm_invalidate(vma);
 
 	for_each_gt(gt, xe, id) {
-		for (i = 0; i < vma->usm.gt[id].num_leafs; ++i) {
+		for (i = 0; i < vma->usm.gt[id].num_leaves; ++i) {
 			struct iosys_map *map =
-				&vma->usm.gt[id].leafs[i].bo->vmap;
+				&vma->usm.gt[id].leaves[i].bo->vmap;
 
 			xe_map_memset(xe, map,
-				      vma->usm.gt[id].leafs[i].start_ofs, 0,
-				      vma->usm.gt[id].leafs[i].len);
+				      vma->usm.gt[id].leaves[i].start_ofs, 0,
+				      vma->usm.gt[id].leaves[i].len);
 			gt_needs_invalidate |= BIT(id);
 		}
 		if (gt_needs_invalidate & BIT(id)) {
@@ -4182,7 +3840,7 @@ int xe_vm_invalidate_vma(struct xe_vma *vma)
 			if (seqno[id] < 0)
 				return seqno[id];
 		}
-		vma->usm.gt[id].num_leafs = 0;
+		vma->usm.gt[id].num_leaves = 0;
 	}
 
 	for_each_gt(gt, xe, id) {
@@ -4197,3 +3855,5 @@ int xe_vm_invalidate_vma(struct xe_vma *vma)
 
 	return 0;
 }
+
+#include "xe_pt.c"
