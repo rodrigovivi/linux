@@ -274,6 +274,9 @@ static bool xe_pte_hugepage_possible(struct xe_vma *vma, u32 level, u64 start,
 	if (cur.size < pagesize)
 		return false;
 
+	if (!IS_ALIGNED(cur.start, pagesize))
+		return false;
+
 	return true;
 }
 
