@@ -1150,8 +1150,7 @@ static void guc_engine_kill(struct xe_engine *e)
 {
 	trace_xe_engine_kill(e);
 	set_engine_killed(e);
-	if (!xe_vm_no_dma_fences(e->vm))
-		drm_sched_set_timeout(&e->guc->sched, MIN_SCHED_TIMEOUT);
+	drm_sched_set_timeout(&e->guc->sched, MIN_SCHED_TIMEOUT);
 }
 
 static void guc_engine_add_msg(struct xe_engine *e, struct drm_sched_msg *msg,
@@ -1610,7 +1609,10 @@ int xe_guc_engine_memory_cat_error_handler(struct xe_guc *guc, u32 *msg,
 	drm_warn(&xe->drm, "Engine memory cat error: guc_id=%d", guc_id);
 	trace_xe_engine_memory_cat_error(e);
 
-	/* TODO: Trigger ban of engine? */
+	/* Treat the same as engine reset */
+	set_engine_reset(e);
+	if (!engine_banned(e))
+		drm_sched_set_timeout(&e->guc->sched, MIN_SCHED_TIMEOUT);
 
 	return 0;
 }
