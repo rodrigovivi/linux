@@ -4,6 +4,7 @@
  */
 
 #include <linux/minmax.h>
+#include <linux/bitmap.h>
 
 #include <drm/drm_managed.h>
 
@@ -15,6 +16,8 @@
 #include "xe_ggtt.h"
 #include "xe_gt.h"
 #include "xe_gt_clock.h"
+#include "xe_gt_fuse.h"
+#include "xe_gt_mcr.h"
 #include "xe_gt_pagefault.h"
 #include "xe_gt_sysfs.h"
 #include "xe_hw_fence.h"
@@ -192,6 +195,7 @@ static void gt_fini(struct drm_device *drm, void *arg)
 	struct xe_gt *gt = arg;
 	int i;
 
+	xe_gt_fuse_fini(gt);
 	destroy_workqueue(gt->ordered_wq);
 
 	for (i = 0; i < XE_ENGINE_CLASS_MAX; ++i)
@@ -219,6 +223,8 @@ int xe_gt_init_early(struct xe_gt *gt)
 		return err;
 
 	xe_reg_sr_init(&gt->reg_sr, "GT", gt_to_xe(gt));
+	xe_gt_fuse_init(gt);
+	xe_gt_mcr_init(gt);
 	xe_wa_process_gt(gt);
 	xe_tuning_process_gt(gt);
 

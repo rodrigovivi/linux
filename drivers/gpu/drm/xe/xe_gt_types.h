@@ -244,6 +244,25 @@ struct xe_gt {
 		u8 wb_index;
 	} mocs;
 
+	/** @fuse: contains the fused map information of the GT */
+	struct {
+		/** @dss_map: bitmap of the fused dss info */
+		unsigned long *dss_map;
+		/** @mslice_map: bitmap of the mslice info */
+		unsigned long *mslice_map;
+		/** @size: max size of the fusing bit maps */
+		/** @gslice_map: bitmap of the gslice info */
+		unsigned long *gslice_map;
+		unsigned long size;
+	} fuse;
+
+	/** @mcr: multicast register information */
+	struct {
+		/** @group_id: default group ID */
+		u8 group_id;
+		/** @insntance_id: default instance ID */
+		u8 instance_id;
+	} mcr;
 };
 
 #endif
