@@ -84,17 +84,30 @@ static void test_copy(struct xe_migrate *m, struct xe_bo *bo,
 	bool big = bo->size >= SZ_2M;
 	struct dma_fence *fence;
 	const char *str = big ? "Copying big bo" : "Copying small bo";
+	int err;
 
-	struct xe_bo *sysmem = xe_bo_create_pin_map(xe, m->gt, m->eng->vm,
-						    bo->size,
-						    ttm_bo_type_kernel,
-						    XE_BO_CREATE_SYSTEM_BIT |
-						    XE_BO_CREATE_PINNED_BIT |
-						    XE_BO_INTERNAL_TEST);
+	struct xe_bo *sysmem = xe_bo_create_locked(xe, m->gt, NULL,
+						   bo->size,
+						   ttm_bo_type_kernel,
+						   XE_BO_CREATE_SYSTEM_BIT);
 	if (IS_ERR(sysmem)) {
 		KUNIT_FAIL(test, "Failed to allocate sysmem bo for %s: %li\n",
 			   str, PTR_ERR(sysmem));
 		return;
+	}
+
+	err = xe_bo_validate(sysmem, NULL);
+	if (err) {
+		KUNIT_FAIL(test, "Failed to validate system bo for %s: %li\n",
+			   str, err);
+		goto out_unlock;
+	}
+
+	err = xe_bo_vmap(sysmem);
+	if (err) {
+		KUNIT_FAIL(test, "Failed to vmap system bo for %s: %li\n",
+			   str, err);
+		goto out_unlock;
 	}
 
 	xe_map_memset(xe, &sysmem->vmap, 0, 0xd0, sysmem->size);
@@ -144,7 +157,9 @@ static void test_copy(struct xe_migrate *m, struct xe_bo *bo,
 	}
 	dma_fence_put(fence);
 
-	xe_bo_unpin(sysmem);
+	xe_bo_vunmap(sysmem);
+out_unlock:
+	xe_bo_unlock_no_vm(sysmem);
 	xe_bo_put(sysmem);
 }
 
