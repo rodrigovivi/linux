@@ -1087,8 +1087,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	 * Munmap style VM unbind, need to wait for all jobs to be complete /
 	 * trigger preempts before moving forward
 	 */
-	if ((!IS_ENABLED(CONFIG_DRM_XE_DEBUG) || vma) &&
-	    vma->first_munmap_rebind) {
+	if (vma && vma->first_munmap_rebind) {
 		err = job_add_deps(job, &vm->resv,
 				   DMA_RESV_USAGE_PREEMPT_FENCE);
 		if (err)
