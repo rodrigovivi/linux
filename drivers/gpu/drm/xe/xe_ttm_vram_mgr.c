@@ -27,17 +27,32 @@ mgr_to_gt(struct xe_ttm_vram_mgr *mgr)
 	return mgr->gt;
 }
 
-static void xe_ttm_vram_mgr_virt_start(struct ttm_resource *mem,
-				       struct drm_mm_node *node)
+static inline struct drm_buddy_block *
+xe_ttm_vram_mgr_first_block(struct list_head *list)
 {
-	unsigned long start;
+	return list_first_entry_or_null(list, struct drm_buddy_block, link);
+}
 
-	start = node->start + node->size;
-	if (start > mem->num_pages)
-		start -= mem->num_pages;
-	else
-		start = 0;
-	mem->start = max(mem->start, start);
+static inline bool xe_is_vram_mgr_blocks_contiguous(struct list_head *head)
+{
+	struct drm_buddy_block *block;
+	u64 start, size;
+
+	block = xe_ttm_vram_mgr_first_block(head);
+	if (!block)
+		return false;
+
+	while (head != block->link.next) {
+		start = xe_ttm_vram_mgr_block_start(block);
+		size = xe_ttm_vram_mgr_block_size(block);
+
+		block = list_entry(block->link.next, struct drm_buddy_block,
+				   link);
+		if (start + size != xe_ttm_vram_mgr_block_start(block))
+			return false;
+	}
+
+	return true;
 }
 
 static int xe_ttm_vram_mgr_new(struct ttm_resource_manager *man,
@@ -45,133 +60,199 @@ static int xe_ttm_vram_mgr_new(struct ttm_resource_manager *man,
 			       const struct ttm_place *place,
 			       struct ttm_resource **res)
 {
-	unsigned long lpfn, num_nodes, pages_per_node, pages_left, pages;
+	u64 max_bytes, cur_size, min_block_size;
 	struct xe_ttm_vram_mgr *mgr = to_vram_mgr(man);
-	u64 mem_bytes;
-	struct ttm_range_mgr_node *node;
-	struct drm_mm *mm = &mgr->mm;
-	enum drm_mm_insert_mode mode;
-	unsigned i;
+	struct xe_ttm_vram_mgr_resource *vres;
+	u64 size, remaining_size, lpfn, fpfn;
+	struct drm_buddy *mm = &mgr->mm;
+	struct drm_buddy_block *block;
+	unsigned long pages_per_block;
 	int r;
 
-	lpfn = place->lpfn;
+	lpfn = (u64)place->lpfn << PAGE_SHIFT;
 	if (!lpfn)
 		lpfn = man->size;
 
-	mem_bytes = tbo->base.size;
+	fpfn = (u64)place->fpfn << PAGE_SHIFT;
 
+	max_bytes = mgr->gt->mem.vram.size;
 	if (place->flags & TTM_PL_FLAG_CONTIGUOUS) {
-		pages_per_node = ~0ul;
-		num_nodes = 1;
+		pages_per_block = ~0ul;
 	} else {
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+		pages_per_block = HPAGE_PMD_NR;
+#else
 		/* default to 2MB */
-		pages_per_node = 2UL << (20UL - PAGE_SHIFT);
-		pages_per_node = max_t(u32, pages_per_node,
-				       tbo->page_alignment);
-		num_nodes = DIV_ROUND_UP_ULL(PFN_UP(mem_bytes), pages_per_node);
+		pages_per_block = 2UL << (20UL - PAGE_SHIFT);
+#endif
+
+		pages_per_block = max_t(uint32_t, pages_per_block,
+					tbo->page_alignment);
 	}
 
-	/* bail out quickly if there's likely not enough VRAM for this BO */
-	if (man->size << PAGE_SHIFT <
-	    ttm_resource_manager_usage(man) + mem_bytes)
-		return -ENOSPC;
-
-	node = kvmalloc(struct_size(node, mm_nodes, num_nodes),
-			GFP_KERNEL | __GFP_ZERO);
-	if (!node)
+	vres = kzalloc(sizeof(*vres), GFP_KERNEL);
+	if (!vres)
 		return -ENOMEM;
 
-	ttm_resource_init(tbo, place, &node->base);
+	ttm_resource_init(tbo, place, &vres->base);
+	remaining_size = vres->base.num_pages << PAGE_SHIFT;
 
-	mode = DRM_MM_INSERT_BEST;
+	/* bail out quickly if there's likely not enough VRAM for this BO */
+	if (ttm_resource_manager_usage(man) > max_bytes) {
+		r = -ENOSPC;
+		goto error_fini;
+	}
+
+	INIT_LIST_HEAD(&vres->blocks);
+
 	if (place->flags & TTM_PL_FLAG_TOPDOWN)
-		mode = DRM_MM_INSERT_HIGH;
+		vres->flags |= DRM_BUDDY_TOPDOWN_ALLOCATION;
 
-	pages_left = node->base.num_pages;
+	if (fpfn || lpfn != man->size)
+		/* Allocate blocks in desired range */
+		vres->flags |= DRM_BUDDY_RANGE_ALLOCATION;
 
-	/* Limit maximum size to 2GB due to SG table limitations */
-	pages = min(pages_left, 2UL << (30 - PAGE_SHIFT));
+	mutex_lock(&mgr->lock);
+	while (remaining_size) {
+		if (tbo->page_alignment)
+			min_block_size = tbo->page_alignment << PAGE_SHIFT;
+		else
+			min_block_size = mgr->default_page_size;
 
-	i = 0;
-	spin_lock(&mgr->lock);
-	while (pages_left) {
-		u32 alignment = tbo->page_alignment;
+		XE_BUG_ON(min_block_size < mm->chunk_size);
 
-		if (pages >= pages_per_node)
-			alignment = pages_per_node;
+		/* Limit maximum size to 2GiB due to SG table limitations */
+		size = min(remaining_size, 2ULL << 30);
 
-		r = drm_mm_insert_node_in_range(mm, &node->mm_nodes[i], pages,
-						alignment, 0, place->fpfn,
-						lpfn, mode);
-		if (unlikely(r)) {
-			if (pages > pages_per_node) {
-				if (is_power_of_2(pages))
-					pages = pages / 2;
-				else
-					pages = rounddown_pow_of_two(pages);
-				continue;
+		if (size >= pages_per_block << PAGE_SHIFT)
+			min_block_size = pages_per_block << PAGE_SHIFT;
+
+		cur_size = size;
+
+		if (fpfn + size != place->lpfn << PAGE_SHIFT) {
+			/*
+			 * Except for actual range allocation, modify the size and
+			 * min_block_size conforming to continuous flag enablement
+			 */
+			if (place->flags & TTM_PL_FLAG_CONTIGUOUS) {
+				size = roundup_pow_of_two(size);
+				min_block_size = size;
+			/*
+			 * Modify the size value if size is not
+			 * aligned with min_block_size
+			 */
+			} else if (!IS_ALIGNED(size, min_block_size)) {
+				size = round_up(size, min_block_size);
 			}
-			goto error_free;
 		}
 
-		xe_ttm_vram_mgr_virt_start(&node->base, &node->mm_nodes[i]);
-		pages_left -= pages;
-		++i;
+		r = drm_buddy_alloc_blocks(mm, fpfn,
+					   lpfn,
+					   size,
+					   min_block_size,
+					   &vres->blocks,
+					   vres->flags);
+		if (unlikely(r))
+			goto error_free_blocks;
 
-		if (pages > pages_left)
-			pages = pages_left;
+		if (size > remaining_size)
+			remaining_size = 0;
+		else
+			remaining_size -= size;
 	}
-	spin_unlock(&mgr->lock);
+	mutex_unlock(&mgr->lock);
 
-	if (i == 1)
-		node->base.placement |= TTM_PL_FLAG_CONTIGUOUS;
+	if (cur_size != size) {
+		struct drm_buddy_block *block;
+		struct list_head *trim_list;
+		u64 original_size;
+		LIST_HEAD(temp);
 
-	*res = &node->base;
+		trim_list = &vres->blocks;
+		original_size = vres->base.num_pages << PAGE_SHIFT;
+
+		/*
+		 * If size value is rounded up to min_block_size, trim the last
+		 * block to the required size
+		 */
+		if (!list_is_singular(&vres->blocks)) {
+			block = list_last_entry(&vres->blocks, typeof(*block), link);
+			list_move_tail(&block->link, &temp);
+			trim_list = &temp;
+			/*
+			 * Compute the original_size value by subtracting the
+			 * last block size with (aligned size - original size)
+			 */
+			original_size = xe_ttm_vram_mgr_block_size(block) -
+				(size - cur_size);
+		}
+
+		mutex_lock(&mgr->lock);
+		drm_buddy_block_trim(mm,
+				     original_size,
+				     trim_list);
+		mutex_unlock(&mgr->lock);
+
+		if (!list_empty(&temp))
+			list_splice_tail(trim_list, &vres->blocks);
+	}
+
+	vres->base.start = 0;
+	list_for_each_entry(block, &vres->blocks, link) {
+		unsigned long start;
+
+		start = xe_ttm_vram_mgr_block_start(block) +
+			xe_ttm_vram_mgr_block_size(block);
+		start >>= PAGE_SHIFT;
+
+		if (start > vres->base.num_pages)
+			start -= vres->base.num_pages;
+		else
+			start = 0;
+		vres->base.start = max(vres->base.start, start);
+	}
+
+	if (xe_is_vram_mgr_blocks_contiguous(&vres->blocks))
+		vres->base.placement |= TTM_PL_FLAG_CONTIGUOUS;
+
+	*res = &vres->base;
 	return 0;
 
-error_free:
-	while (i--)
-		drm_mm_remove_node(&node->mm_nodes[i]);
-	spin_unlock(&mgr->lock);
-	ttm_resource_fini(man, &node->base);
-	kvfree(node);
+error_free_blocks:
+	drm_buddy_free_list(mm, &vres->blocks);
+	mutex_unlock(&mgr->lock);
+error_fini:
+	ttm_resource_fini(man, &vres->base);
+	kfree(vres);
+
 	return r;
 }
 
 static void xe_ttm_vram_mgr_del(struct ttm_resource_manager *man,
 				struct ttm_resource *res)
 {
-	struct ttm_range_mgr_node *node = to_ttm_range_mgr_node(res);
+	struct xe_ttm_vram_mgr_resource *vres =
+		to_xe_ttm_vram_mgr_resource(res);
 	struct xe_ttm_vram_mgr *mgr = to_vram_mgr(man);
-	u64 usage = 0;
-	int i, pages;
+	struct drm_buddy *mm = &mgr->mm;
 
-	spin_lock(&mgr->lock);
-	for (i = 0, pages = res->num_pages; pages;
-	     pages -= node->mm_nodes[i].size, ++i) {
-		struct drm_mm_node *mm = &node->mm_nodes[i];
-
-		drm_mm_remove_node(mm);
-		usage += mm->size << PAGE_SHIFT;
-	}
-
-	spin_unlock(&mgr->lock);
+	mutex_lock(&mgr->lock);
+	drm_buddy_free_list(mm, &vres->blocks);
+	mutex_unlock(&mgr->lock);
 
 	ttm_resource_fini(man, res);
 
-	kvfree(node);
+	kfree(vres);
 }
 
 static void xe_ttm_vram_mgr_debug(struct ttm_resource_manager *man,
 				  struct drm_printer *printer)
 {
 	struct xe_ttm_vram_mgr *mgr = to_vram_mgr(man);
-	spin_lock(&mgr->lock);
-	drm_mm_print(&mgr->mm, printer);
-	spin_unlock(&mgr->lock);
+	struct drm_buddy *mm = &mgr->mm;
 
-	drm_printf(printer, "man size:%llu pages\n",
-		   man->size);
+	drm_buddy_print(mm, printer);
+	drm_printf(printer, "man size:%llu\n", man->size);
 }
 
 static const struct ttm_resource_manager_func xe_ttm_vram_mgr_func = {
@@ -193,9 +274,7 @@ static void ttm_vram_mgr_fini(struct drm_device *drm, void *arg)
 	if (err)
 		return;
 
-	spin_lock(&mgr->lock);
-	drm_mm_takedown(&mgr->mm);
-	spin_unlock(&mgr->lock);
+	drm_buddy_fini(&mgr->mm);
 
 	ttm_resource_manager_cleanup(man);
 	ttm_set_driver_manager(&xe->ttm, XE_PL_VRAM0 + mgr->gt->info.vram_id,
@@ -213,11 +292,14 @@ int xe_ttm_vram_mgr_init(struct xe_gt *gt, struct xe_ttm_vram_mgr *mgr)
 	mgr->gt = gt;
 	man->func = &xe_ttm_vram_mgr_func;
 
-	ttm_resource_manager_init(man, &xe->ttm,
-				  gt->mem.vram.size >> PAGE_SHIFT);
+	ttm_resource_manager_init(man, &xe->ttm, gt->mem.vram.size);
+	err = drm_buddy_init(&mgr->mm, man->size, PAGE_SIZE);
+	if (err)
+		return err;
 
-	drm_mm_init(&mgr->mm, 0, man->size);
-	spin_lock_init(&mgr->lock);
+	mutex_init(&mgr->lock);
+	mgr->default_page_size = PAGE_SIZE;
+
 	ttm_set_driver_manager(&xe->ttm, XE_PL_VRAM0 + gt->info.vram_id,
 			       &mgr->manager);
 	ttm_resource_manager_set_used(man, true);

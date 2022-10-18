@@ -22,4 +22,20 @@ int xe_ttm_vram_mgr_alloc_sgt(struct xe_device *xe,
 void xe_ttm_vram_mgr_free_sgt(struct device *dev, enum dma_data_direction dir,
 			      struct sg_table *sgt);
 
+static inline u64 xe_ttm_vram_mgr_block_start(struct drm_buddy_block *block)
+{
+	return drm_buddy_block_offset(block);
+}
+
+static inline u64 xe_ttm_vram_mgr_block_size(struct drm_buddy_block *block)
+{
+	return PAGE_SIZE << drm_buddy_block_order(block);
+}
+
+static inline struct xe_ttm_vram_mgr_resource *
+to_xe_ttm_vram_mgr_resource(struct ttm_resource *res)
+{
+	return container_of(res, struct xe_ttm_vram_mgr_resource, base);
+}
+
 #endif
