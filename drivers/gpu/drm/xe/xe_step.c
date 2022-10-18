@@ -76,16 +76,40 @@ static const struct xe_step_info dg2_g12_revid_step_tbl[] = {
 	[0x1] = { COMMON_GT_MEDIA_STEP(A1), .display = STEP_C0 },
 };
 
+static const struct xe_step_info pvc_revid_step_tbl[] = {
+	[0x3] = { .graphics = STEP_A0 },
+	[0x5] = { .graphics = STEP_B0 },
+	[0x6] = { .graphics = STEP_B1 },
+	[0x7] = { .graphics = STEP_C0 },
+};
+
+static const int pvc_basedie_subids[] = {
+	[0x0] = STEP_A0,
+	[0x3] = STEP_B0,
+	[0x4] = STEP_B1,
+	[0x5] = STEP_B3,
+};
+
 __diag_pop();
 
 struct xe_step_info xe_step_get(struct xe_device *xe)
 {
 	const struct xe_step_info *revids = NULL;
 	struct xe_step_info step = {};
-	u16 revid;
+	u16 revid = xe->info.revid;
 	int size = 0;
+	const int *basedie_info = NULL;
+	int basedie_size = 0;
+	int baseid = 0;
 
-	if (xe->info.subplatform == XE_SUBPLATFORM_DG2_G10) {
+	if (xe->info.platform == XE_PVC) {
+		baseid = FIELD_GET(GENMASK(5, 3), xe->info.revid);
+		revid = FIELD_GET(GENMASK(2, 0), xe->info.revid);
+		revids = pvc_revid_step_tbl;
+		size = ARRAY_SIZE(pvc_revid_step_tbl);
+		basedie_info = pvc_basedie_subids;
+		basedie_size = ARRAY_SIZE(pvc_basedie_subids);
+	} else if (xe->info.subplatform == XE_SUBPLATFORM_DG2_G10) {
 		revids = dg2_g10_revid_step_tbl;
 		size = ARRAY_SIZE(dg2_g10_revid_step_tbl);
 	} else if (xe->info.subplatform == XE_SUBPLATFORM_DG2_G11) {
@@ -108,8 +132,6 @@ struct xe_step_info xe_step_get(struct xe_device *xe)
 	/* Not using the stepping scheme for the platform yet. */
 	if (!revids)
 		return step;
-
-	revid = xe->info.revid;
 
 	if (revid < size && revids[revid].graphics != STEP_NONE) {
 		step = revids[revid];
@@ -139,6 +161,15 @@ struct xe_step_info xe_step_get(struct xe_device *xe)
 	}
 
 	drm_WARN_ON(&xe->drm, step.graphics == STEP_NONE);
+
+	if (basedie_info && basedie_size) {
+		if (baseid < basedie_size && basedie_info[baseid] != STEP_NONE) {
+			step.basedie = basedie_info[baseid];
+		} else {
+			drm_warn(&xe->drm, "Unknown baseid 0x%02x\n", baseid);
+			step.basedie = STEP_FUTURE;
+		}
+	}
 
 	return step;
 }
