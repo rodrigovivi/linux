@@ -118,11 +118,27 @@ static bool only_needs_bo_lock(struct xe_bo *bo)
 	return bo && bo->vm;
 }
 
+static struct xe_vma *lookup_vma(struct xe_vm *vm, u64 page_addr)
+{
+	struct xe_vma *vma = NULL, lookup;
+
+	lookup.start = page_addr;
+	lookup.end = lookup.start + SZ_4K - 1;
+	if (vm->usm.last_fault_vma) {   /* Fast lookup */
+		if (vma_matches(vm->usm.last_fault_vma, &lookup))
+			vma = vm->usm.last_fault_vma;
+	}
+	if (!vma)
+		vma = xe_vm_find_overlapping_vma(vm, &lookup);
+
+	return vma;
+}
+
 static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 {
 	struct xe_device *xe = gt_to_xe(gt);
 	struct xe_vm *vm;
-	struct xe_vma *vma = NULL, lookup;
+	struct xe_vma *vma = NULL;
 	struct xe_bo *bo;
 	LIST_HEAD(objs);
 	LIST_HEAD(dups);
@@ -143,15 +159,7 @@ static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 
 	down_read(&vm->lock);
 
-	/* Lookup VMA */
-	lookup.start = pf->page_addr;
-	lookup.end = lookup.start + SZ_4K - 1;
-	if (vm->usm.last_fault_vma) {	/* Fast lookup */
-		if (vma_matches(vm->usm.last_fault_vma, &lookup))
-			vma = vm->usm.last_fault_vma;
-	}
-	if (!vma)
-		vma = xe_vm_find_overlapping_vma(vm, &lookup);
+	vma = lookup_vma(vm, pf->page_addr);
 	if (!vma) {
 		ret = -EINVAL;
 		goto unlock_vm;
