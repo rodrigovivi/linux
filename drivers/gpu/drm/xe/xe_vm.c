@@ -160,12 +160,17 @@ static u64 __xe_vm_empty_pte(struct xe_gt *gt, struct xe_vm *vm,
 	if (!vm->scratch_bo[id])
 		return 0;
 
-	if (level == 0)
-		return gen8_pte_encode(NULL, vm->scratch_bo[id], 0, XE_CACHE_WB,
-				       0, level);
-	else
+	if (level == 0) {
+		u64 empty = gen8_pte_encode(NULL, vm->scratch_bo[id], 0,
+					    XE_CACHE_WB, 0, 0);
+		if (vm->flags & XE_VM_FLAGS_64K)
+			empty |= GEN12_PTE_PS64;
+
+		return empty;
+	} else {
 		return gen8_pde_encode(vm->scratch_pt[id][level - 1]->bo, 0,
 				       XE_CACHE_WB);
+	}
 }
 
 static struct xe_pt *xe_pt_create(struct xe_vm *vm, struct xe_gt *gt,
@@ -210,8 +215,6 @@ static int xe_pt_populate_empty(struct xe_gt *gt, struct xe_vm *vm,
 	struct iosys_map *map = &pt->bo->vmap;
 	u64 empty;
 	int i;
-	int numpte = GEN8_PDES;
-	int flags = 0;
 
 	XE_BUG_ON(xe_gt_is_media_type(gt));
 
@@ -222,13 +225,8 @@ static int xe_pt_populate_empty(struct xe_gt *gt, struct xe_vm *vm,
 		 */
 		xe_map_memset(vm->xe, map, 0, 0, SZ_4K);
 	} else {
-		if (vm->flags & XE_VM_FLAGS_64K && pt->level == 1) {
-			numpte = 32;
-			flags = GEN12_PDE_64K;
-		}
-
-		empty = __xe_vm_empty_pte(gt, vm, pt->level) | flags;
-		for (i = 0; i < numpte; i++)
+		empty = __xe_vm_empty_pte(gt, vm, pt->level);
+		for (i = 0; i < GEN8_PDES; i++)
 			xe_pt_write(vm->xe, map, i, empty);
 	}
 
@@ -257,11 +255,6 @@ static u64 xe_pt_prev_end(u64 end, unsigned int level)
 	u64 pt_range = 1ull << xe_pt_shift(level);
 
 	return ALIGN_DOWN(end - 1, pt_range);
-}
-
-static bool vma_uses_64k_pages(struct xe_vma *vma)
-{
-	return vma->bo && vma->bo->flags & XE_BO_INTERNAL_64K;
 }
 
 static void vma_usm_add_leaf(struct xe_gt *gt, struct xe_vma_usm *usm,
@@ -293,9 +286,6 @@ static void xe_pt_destroy(struct xe_pt *pt, u32 flags)
 	XE_BUG_ON(!list_empty(&pt->bo->vmas));
 	xe_bo_unpin(pt->bo);
 	xe_bo_put(pt->bo);
-
-	if (pt->level == 0 && flags & XE_VM_FLAGS_64K)
-		numpdes = 32;
 
 	if (pt->level > 0 && pt->num_live) {
 		struct xe_pt_dir *pt_dir = as_xe_pt_dir(pt);
@@ -1550,7 +1540,7 @@ __xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
 
 	if (!pt->level) {
 		my_removed_pte = last_ofs - start_ofs + 1;
-		if (pt->is_compact) {
+		if (XE_WARN_ON(pt->is_compact)) {
 			start_ofs = start_ofs / 16;
 			last_ofs = last_ofs / 16;
 			my_removed_pte = last_ofs - start_ofs + 1;
@@ -1707,9 +1697,7 @@ __xe_vm_unbind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 		u64 start;
 		u64 len;
 
-		if (entry->pt->level == 0 && vma_uses_64k_pages(vma)) {
-			page_size = SZ_64K;
-		}
+		XE_BUG_ON(entry->pt->is_compact);
 		start = vma->start + entry->ofs * page_size;
 		len = (u64)entry->qwords * page_size;
 
@@ -1936,9 +1924,7 @@ __xe_vm_bind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 		u64 len;
 		u64 end;
 
-		if (entry->pt->level == 0 && vma_uses_64k_pages(vma)) {
-			page_size = SZ_64K;
-		}
+		XE_BUG_ON(entry->pt->is_compact);
 		start = vma->start + entry->ofs * page_size;
 		len = (u64)entry->qwords * page_size;
 
