@@ -50,6 +50,9 @@ xe_pt_stage_bind(struct xe_gt *gt, struct xe_vma *vma,
 
 static void xe_pt_build_leaves(struct xe_gt *gt, struct xe_vma *vma);
 
+static unsigned int xe_pt_stage_unbind(struct xe_gt *gt, struct xe_vma *vma,
+				       struct xe_vm_pgtable_update *entries);
+
 static struct xe_pt_dir *as_xe_pt_dir(struct xe_pt *pt)
 {
 	return container_of(pt, struct xe_pt_dir, pt);
@@ -236,18 +239,6 @@ static int xe_pt_populate_empty(struct xe_gt *gt, struct xe_vm *vm,
 static u64 xe_pt_shift(unsigned int level)
 {
 	return GEN8_PTE_SHIFT + GEN8_PDE_SHIFT * level;
-}
-
-static unsigned int xe_pt_idx(u64 addr, unsigned int level)
-{
-	return (addr >> xe_pt_shift(level)) & GEN8_PDE_MASK;
-}
-
-static u64 xe_pt_next_start(u64 start, unsigned int level)
-{
-	u64 pt_range = 1ull << xe_pt_shift(level);
-
-	return ALIGN_DOWN(start + pt_range, pt_range);
 }
 
 static u64 xe_pt_prev_end(u64 end, unsigned int level)
@@ -1438,24 +1429,6 @@ u64 xe_vm_pdp4_descriptor(struct xe_vm *vm, struct xe_gt *full_gt)
 			       XE_CACHE_WB);
 }
 
-static inline void
-xe_vm_printk(const char *prefix, struct xe_vm *vm)
-{
-	struct rb_node *node;
-
-	for (node = rb_first(&vm->vmas); node; node = rb_next(node)) {
-		struct xe_vma *vma = to_xe_vma(node);
-
-		printk("%s [0x%08x %08x, 0x%08x %08x]: BO(%p) + 0x%llx\n",
-		       prefix,
-		       upper_32_bits(vma->start),
-		       lower_32_bits(vma->start),
-		       upper_32_bits(vma->end),
-		       lower_32_bits(vma->end),
-		       vma->bo, vma->bo_offset);
-	}
-}
-
 static void
 xe_migrate_clear_pgtable_callback(struct xe_gt *gt, struct iosys_map *map,
 				  void *ptr, u32 qword_ofs, u32 num_qwords,
@@ -1506,158 +1479,6 @@ xe_pt_commit_unbind(struct xe_vma *vma,
 	}
 }
 
-static inline bool xe_pt_partial_entry(u64 start, u64 end, u32 level)
-{
-	u64 pte_size = 1ULL << xe_pt_shift(level);
-
-	XE_BUG_ON(end < start);
-	XE_BUG_ON(end - start > pte_size);
-
-	return start + pte_size != end;
-}
-
-static void
-__xe_pt_prepare_unbind(struct xe_vma *vma, struct xe_pt *pt,
-		       u32 *removed_parent_pte,
-		       u64 start, u64 end,
-		       u32 *num_entries, struct xe_vm_pgtable_update *entries)
-{
-	u32 my_removed_pte = 0;
-	struct xe_vm_pgtable_update *entry;
-	u32 start_ofs, last_ofs;
-	u32 num_live;
-
-	if (!pt) {
-		/* hugepage entry, skipped */
-		(*removed_parent_pte)++;
-		return;
-	}
-
-	start_ofs = xe_pt_idx(start, pt->level);
-	last_ofs = xe_pt_idx(end - 1, pt->level);
-
-	num_live = pt->num_live;
-
-	if (!pt->level) {
-		my_removed_pte = last_ofs - start_ofs + 1;
-		if (XE_WARN_ON(pt->is_compact)) {
-			start_ofs = start_ofs / 16;
-			last_ofs = last_ofs / 16;
-			my_removed_pte = last_ofs - start_ofs + 1;
-		}
-		vm_dbg(&vma->vm->xe->drm,
-		       "\t%u: De-Populating entry [%u..%u +%u) [%llx...%llx) n:%d\n",
-			pt->level, start_ofs, last_ofs, my_removed_pte, start,
-			end, num_live);
-		XE_BUG_ON(!my_removed_pte);
-	} else {
-		struct xe_pt_dir *pt_dir = as_xe_pt_dir(pt);
-
-		u64 start_end = min(xe_pt_next_start(start, pt->level), end);
-		u64 end_start = max(start, xe_pt_prev_end(end, pt->level));
-		u64 cur = start;
-		bool partial_begin = false, partial_end = false;
-		u32 my_rm_pte = last_ofs + 1 - start_ofs;
-		u32 i;
-		u32 first_ofs = start_ofs;
-
-		if (xe_pt_entry(pt_dir, start_ofs))
-			partial_begin = xe_pt_partial_entry(start, start_end,
-							    pt->level);
-
-		if (xe_pt_entry(pt_dir, last_ofs) && last_ofs > start_ofs)
-			partial_end = xe_pt_partial_entry(end_start, end,
-							  pt->level);
-		vm_dbg(&vma->vm->xe->drm,
-		       "\t%u: [%llx...%llx) partial begin/end: %u / %u, %u entries n:%d\n",
-		       pt->level, start, end, partial_begin, partial_end,
-		       my_rm_pte, num_live);
-		my_rm_pte -= partial_begin + partial_end;
-		if (partial_begin) {
-			u32 rem = 0;
-
-			vm_dbg(&vma->vm->xe->drm,
-			       "\t%u: Descending to first subentry %u level %u [%llx...%llx)\n",
-			       pt->level, start_ofs,
-			       pt->level - 1, start, start_end);
-			__xe_pt_prepare_unbind(vma,
-					       xe_pt_entry(pt_dir, start_ofs++),
-					       &rem,
-					       start, start_end,
-					       num_entries, entries);
-			start = cur = start_end;
-			if (rem)
-				my_removed_pte++;
-		}
-		if (my_rm_pte < GEN8_PDES) {
-			for (i = 0; i < my_rm_pte; i++) {
-				u32 rem = 0;
-				u64 cur_end = min(xe_pt_next_start(cur, pt->level),
-						  end);
-
-				vm_dbg(&vma->vm->xe->drm, "\t%llx...%llx / %llx\n",
-				       xe_pt_next_start(cur, pt->level), end, cur_end);
-				__xe_pt_prepare_unbind(vma,
-						       xe_pt_entry(pt_dir, start_ofs++),
-						       &rem, cur, cur_end, num_entries,
-						       entries);
-				if (rem) {
-					if (!my_removed_pte)
-						first_ofs = start_ofs - 1;
-					my_removed_pte++;
-				}
-				cur = cur_end;
-			}
-		} else {
-			vm_dbg(&vma->vm->xe->drm, "\tremove parent\n");
-			*removed_parent_pte += 1;
-			cur = end_start;
-		}
-		if (partial_end) {
-			u32 rem = 0;
-
-			XE_WARN_ON(cur >= end);
-			XE_WARN_ON(cur != end_start);
-
-			vm_dbg(&vma->vm->xe->drm,
-			       "\t%u: Descending to last subentry %u level %u [%llx...%llx)\n",
-			       pt->level, last_ofs, pt->level - 1, cur, end);
-
-			__xe_pt_prepare_unbind(vma, xe_pt_entry(pt_dir, last_ofs),
-					       &rem, cur, end, num_entries,
-					       entries);
-			if (rem) {
-				if (!my_removed_pte)
-					first_ofs = last_ofs;
-				my_removed_pte++;
-			}
-		}
-
-		/* No changes to this entry, fast return.. */
-		if (!my_removed_pte)
-			return;
-
-		start_ofs = first_ofs;
-	}
-
-	/* Don't try to delete the root.. */
-	if (removed_parent_pte && num_live == my_removed_pte) {
-		*removed_parent_pte += 1;
-		return;
-	}
-
-	entry = &entries[(*num_entries)++];
-	entry->pt_bo = pt->bo;
-	entry->ofs = start_ofs;
-	entry->qwords = my_removed_pte;
-	entry->pt = pt;
-
-	vm_dbg(&vma->vm->xe->drm, "REMOVE %d L:%d o:%d q:%d t:0x%llx (%llx,%llx,%llx) f:0x%x n:%d\n",
-	       (*num_entries)-1, pt->level, entry->ofs, entry->qwords,
-	       vma->bo_offset + (start - vma->start), vma->bo_offset, start,
-	       vma->start, 0, num_live);
-}
-
 static void
 xe_pt_prepare_unbind(struct xe_gt *gt, struct xe_vma *vma,
 		     struct xe_vm_pgtable_update *entries,
@@ -1666,9 +1487,7 @@ xe_pt_prepare_unbind(struct xe_gt *gt, struct xe_vma *vma,
 	XE_BUG_ON(xe_gt_is_media_type(gt));
 
 	*num_entries = 0;
-	__xe_pt_prepare_unbind(vma, vma->vm->pt_root[gt->info.id], NULL,
-			       vma->start, vma->end + 1,
-			       num_entries, entries);
+	*num_entries = xe_pt_stage_unbind(gt, vma, entries);
 	XE_BUG_ON(!*num_entries);
 }
 

@@ -572,3 +572,147 @@ static void xe_pt_build_leaves(struct xe_gt *gt, struct xe_vma *vma)
 	(void)drm_pt_walk_shared(&pt->drm, pt->level, vma->start, vma->end + 1,
 				 &xe_walk.drm);
 }
+
+struct xe_pt_stage_unbind_walk {
+	/** @drm: The pagewalk base-class. */
+	struct drm_pt_walk drm;
+
+	/* Input parameters for the walk */
+	/** @gt: The gt we're unbinding from. */
+	struct xe_gt *gt;
+
+	/**
+	 * @modified_start: Walk range start, modified to include any
+	 * shared pagetables that we're the only user of and can thus
+	 * treat as private.
+	 */
+	u64 modified_start;
+	/** @modified_end: Walk range start, modified like @modified_start. */
+	u64 modified_end;
+
+	/* Output */
+	/* @wupd: Structure to track the page-table updates we're building */
+	struct xe_walk_update wupd;
+};
+
+/*
+ * Check whether this range is the only one populating this pagetable,
+ * and in that case, update the walk range checks so that higher levels don't
+ * view us as a shared pagetable.
+ */
+static bool xe_pt_check_kill(u64 addr, u64 next, unsigned int level,
+			     const struct xe_pt *child,
+			     enum page_walk_action *action,
+			     struct drm_pt_walk *walk)
+{
+	struct xe_pt_stage_unbind_walk *xe_walk =
+		container_of(walk, typeof(*xe_walk), drm);
+	unsigned int shift = walk->shifts[level];
+	u64 size = 1ull << shift;
+
+	if (IS_ALIGNED(addr, size) && IS_ALIGNED(next, size) &&
+	    ((next - addr) >> shift) == child->num_live) {
+		u64 size = 1ull << walk->shifts[level + 1];
+
+		*action = ACTION_CONTINUE;
+
+		if (xe_walk->modified_start >= addr)
+			xe_walk->modified_start = round_down(addr, size);
+		if (xe_walk->modified_end <= next)
+			xe_walk->modified_end = round_up(next, size);
+
+		return true;
+	}
+
+	return false;
+}
+
+static int xe_pt_stage_unbind_entry(struct drm_pt *parent, pgoff_t offset,
+				    unsigned int level, u64 addr, u64 next,
+				    struct drm_pt **child,
+				    enum page_walk_action *action,
+				    struct drm_pt_walk *walk)
+{
+	struct xe_pt *xe_child = container_of(*child, typeof(*xe_child), drm);
+
+	XE_BUG_ON(!*child);
+	XE_BUG_ON(!level && xe_child->is_compact);
+
+	xe_pt_check_kill(addr, next, level - 1, xe_child, action, walk);
+
+	return 0;
+}
+
+static int
+xe_pt_stage_unbind_post_descend(struct drm_pt *parent, pgoff_t offset,
+				unsigned int level, u64 addr, u64 next,
+				struct drm_pt **child,
+				enum page_walk_action *action,
+				struct drm_pt_walk *walk)
+{
+	struct xe_pt_stage_unbind_walk *xe_walk =
+		container_of(walk, typeof(*xe_walk), drm);
+	struct xe_pt *xe_child = container_of(*child, typeof(*xe_child), drm);
+	pgoff_t end_offset;
+	u64 size = 1ull << walk->shifts[--level];
+
+	if (!IS_ALIGNED(addr, size))
+		addr = xe_walk->modified_start;
+	if (!IS_ALIGNED(next, size))
+		next = xe_walk->modified_end;
+
+	/* Parent == *child is the root pt. Don't kill it. */
+	if (parent != *child &&
+	    xe_pt_check_kill(addr, next, level, xe_child, action, walk))
+		return 0;
+
+	if (!xe_pt_nonshared_offsets(addr, next, level, walk, action, &offset,
+				     &end_offset))
+		return 0;
+
+	(void)xe_pt_new_shared(&xe_walk->wupd, xe_child, offset, false);
+	xe_walk->wupd.updates[level].update->qwords = end_offset - offset;
+
+	return 0;
+}
+
+static const struct drm_pt_walk_ops xe_pt_stage_unbind_ops = {
+	.pt_entry = xe_pt_stage_unbind_entry,
+	.pt_post_descend = xe_pt_stage_unbind_post_descend,
+};
+
+/**
+ * xe_pt_stage_unbind - Build page-table update structures for an unbind
+ * operation
+ * @gt: The gt we're unbinding for.
+ * @vma: The vma we're unbinding.
+ * @entries: Caller-provided storage for the update structures.
+ *
+ * Builds page-table update structures for an unbind operation. The function
+ * will attempt to remove all page-tables that we're the only user
+ * of, and for that to work, the unbind operation must be committed in the
+ * same critical section that blocks racing binds to the same page-table tree.
+ *
+ * Return: The number of entries used.
+ */
+static unsigned int xe_pt_stage_unbind(struct xe_gt *gt, struct xe_vma *vma,
+				       struct xe_vm_pgtable_update *entries)
+{
+	struct xe_pt_stage_unbind_walk xe_walk = {
+		.drm = {
+			.ops = &xe_pt_stage_unbind_ops,
+			.shifts = xe_normal_pt_shifts,
+			.max_level = XE_PT_HIGHEST_LEVEL,
+		},
+		.gt = gt,
+		.modified_start = vma->start,
+		.modified_end = vma->end + 1,
+		.wupd.entries = entries,
+	};
+	struct xe_pt *pt = vma->vm->pt_root[gt->info.id];
+
+	(void)drm_pt_walk_shared(&pt->drm, pt->level, vma->start, vma->end + 1,
+				 &xe_walk.drm);
+
+	return xe_walk.wupd.num_used_entries;
+}
