@@ -568,7 +568,6 @@ static void xe_ttm_bo_release_notify(struct ttm_buffer_object *ttm_bo)
 
 	bo = ttm_to_xe_bo(ttm_bo);
 	XE_WARN_ON(bo->created && kref_read(&ttm_bo->base.refcount));
-	__xe_bo_vunmap(bo);
 }
 
 static void xe_ttm_bo_delete_mem_notify(struct ttm_buffer_object *ttm_bo)
@@ -585,6 +584,8 @@ static void xe_ttm_bo_delete_mem_notify(struct ttm_buffer_object *ttm_bo)
 					 DMA_BIDIRECTIONAL);
 		ttm_bo->sg = NULL;
 	}
+
+	__xe_bo_vunmap(ttm_to_xe_bo(ttm_bo));
 }
 
 struct ttm_device_funcs xe_ttm_funcs = {
@@ -1126,7 +1127,6 @@ int xe_bo_vmap(struct xe_bo *bo)
 
 static void __xe_bo_vunmap(struct xe_bo *bo)
 {
-	/* FIXME: W/A for blow up in ttm_bo_vunmap */
 	if (xe_bo_is_pinned(bo) && IS_DGFX(xe_bo_device(bo))) {
 		iosys_map_clear(&bo->vmap);
 		return;
