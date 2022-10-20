@@ -1,0 +1,28 @@
+drm drm-fixes 9abf2313adc1ca1b6180c508c25f22f9395cc780
+	Linux 6.1-rc1
+drm-misc drm-misc-fixes 72655fb942c1e3d9e71e48e87ee439abe52f3a90
+	drm/panfrost: replace endian-specific types with native ones
+drm-intel drm-intel-fixes 9abf2313adc1ca1b6180c508c25f22f9395cc780
+	Linux 6.1-rc1
+drm drm-next 9abf2313adc1ca1b6180c508c25f22f9395cc780
+	Linux 6.1-rc1
+drm-misc drm-misc-next-fixes 39dd0cc2e5bd0d5188dd69f27e18783cea7ff06a
+	drm/amdgpu: Fix VRAM eviction issue
+drm-intel drm-intel-next-fixes ea19684afb545605bbcb690c49a91ce2c8e596dd
+	drm/i915/display: consider DG2_RC_CCS_CC when migrating buffers
+drm-misc drm-misc-next e9f696f88b8de4cfea8e284be91fa3ea2a631731
+	drm/plane_helper: Split into parameterized test cases
+drm-intel drm-intel-next 20c68127e8e9d7899001c47465d0b79581f5fdc1
+	drm/i915: Print return value on error
+drm-intel drm-intel-gt-next 6667d78a1123d237d66e34923754ebca97d06d39
+	drm/i915: Refactor ttm ghost obj detection
+sound-upstream for-linus 7cf3dead1ad70c72edb03e2d98e1f3dcd332cdb2
+	Linux 5.13
+sound-upstream for-next 7cf3dead1ad70c72edb03e2d98e1f3dcd332cdb2
+	Linux 5.13
+drm-intel topic/core-for-CI 20d1543a043159e7c30eeeb5e59d1d1e9a6f71dd
+	ACPI: PCI: Fix device reference counting in acpi_get_pci_dev()
+drm-misc topic/i915-ttm 1e3944578b749449bd7fa6bf0bae4c3d3f5f1733
+	Merge tag 'amd-drm-next-5.16-2021-09-27' of https://gitlab.freedesktop.org/agd5f/linux into drm-next
+drm topic/nouveau-misc dfc4005f8c172eea359f9db08c3b2b0ff0153699
+	drm/nouveau/disp: move DAC load detection method
