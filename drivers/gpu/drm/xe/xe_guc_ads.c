@@ -218,7 +218,7 @@ static size_t calculate_regset_size(struct xe_gt *gt)
 		xa_for_each(&hwe->reg_sr.xa, sr_idx, sr_entry)
 			count++;
 
-	count += (ADS_REGSET_EXTRA_MAX + GEN9_LNCFCMOCS_REG_COUNT) * XE_NUM_HW_ENGINES;
+	count += (ADS_REGSET_EXTRA_MAX + LNCFCMOCS_REG_COUNT) * XE_NUM_HW_ENGINES;
 
 	return count * sizeof(struct guc_mmio_reg);
 }
@@ -412,7 +412,7 @@ static unsigned int guc_mmio_regset_write(struct xe_guc_ads *ads,
 					  e->reg, e->flags, count++);
 	}
 
-	for (i = 0; i < GEN9_LNCFCMOCS_REG_COUNT; i++) {
+	for (i = 0; i < LNCFCMOCS_REG_COUNT; i++) {
 		guc_mmio_regset_write_one(ads, regset_map,
 					  GEN9_LNCFCMOCS(i).reg, 0, count++);
 	}
