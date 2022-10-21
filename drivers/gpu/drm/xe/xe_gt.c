@@ -354,11 +354,43 @@ int do_gt_reset(struct xe_gt *gt)
 	return err;
 }
 
+static int do_gt_restart(struct xe_gt *gt)
+{
+	struct xe_hw_engine *hwe;
+	enum xe_hw_engine_id id;
+	int err;
+
+	setup_private_ppat(gt);
+
+	xe_reg_sr_apply_mmio(&gt->reg_sr, gt);
+
+	err = xe_wopcm_init(&gt->uc.wopcm);
+	if (err)
+		return err;
+
+	for_each_hw_engine(hwe, gt, id)
+		xe_hw_engine_enable_ring(hwe);
+
+	err = xe_uc_init_hw(&gt->uc);
+	if (err)
+		return err;
+
+	xe_mocs_init(gt);
+	err = xe_uc_start(&gt->uc);
+	if (err)
+		return err;
+
+	for_each_hw_engine(hwe, gt, id) {
+		xe_reg_sr_apply_mmio(&hwe->reg_sr, gt);
+		xe_reg_whitelist_apply(hwe);
+	}
+
+	return 0;
+}
+
 static int gt_reset(struct xe_gt *gt)
 {
 	struct xe_device *xe = gt_to_xe(gt);
-	struct xe_hw_engine *hwe;
-	enum xe_hw_engine_id id;
 	int err;
 
 	/* We only support GT resets with GuC submission */
@@ -384,30 +416,9 @@ static int gt_reset(struct xe_gt *gt)
 	if (err)
 		goto err_out;
 
-	setup_private_ppat(gt);
-
-	xe_reg_sr_apply_mmio(&gt->reg_sr, gt);
-
-	err = xe_wopcm_init(&gt->uc.wopcm);
+	err = do_gt_restart(gt);
 	if (err)
 		goto err_out;
-
-	for_each_hw_engine(hwe, gt, id)
-		xe_hw_engine_enable_ring(hwe);
-
-	err = xe_uc_init_hw(&gt->uc);
-	if (err)
-		goto err_out;
-
-	xe_mocs_init(gt);
-	err = xe_uc_start(&gt->uc);
-	if (err)
-		goto err_out;
-
-	for_each_hw_engine(hwe, gt, id) {
-		xe_reg_sr_apply_mmio(&hwe->reg_sr, gt);
-		xe_reg_whitelist_apply(hwe);
-	}
 
 	xe_device_mem_access_wa_put(gt_to_xe(gt));
 	err = xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL);
@@ -502,7 +513,7 @@ int xe_gt_resume(struct xe_gt *gt)
 	if (err)
 		goto err_msg;
 
-	err = xe_uc_resume(&gt->uc);
+	err = do_gt_restart(gt);
 	if (err)
 		goto err_fw;
 
