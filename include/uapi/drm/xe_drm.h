@@ -210,6 +210,23 @@ struct drm_xe_query_gts {
 	} gts[];
 };
 
+struct drm_xe_query_topology_mask {
+	/** @gt_id: GT ID the mask is associated with */
+	__u16 gt_id;
+
+	/** @type: type of mask */
+	__u16 type;
+#define XE_TOPO_DSS_GEOMETRY	(1 << 0)
+#define XE_TOPO_DSS_COMPUTE	(1 << 1)
+#define XE_TOPO_EU_PER_DSS	(1 << 2)
+
+	/** @num_bytes: number of bytes in requested mask */
+	__u32 num_bytes;
+
+	/** @mask: little-endian mask of @num_bytes */
+	__u8 mask[];
+};
+
 struct drm_xe_device_query {
 	/** @extensions: Pointer to the first extension struct, if any */
 	__u64 extensions;
@@ -222,6 +239,7 @@ struct drm_xe_device_query {
 #define DRM_XE_DEVICE_QUERY_CONFIG	2
 #define DRM_XE_DEVICE_QUERY_GTS		3
 #define DRM_XE_DEVICE_QUERY_HWCONFIG	4
+#define DRM_XE_DEVICE_QUERY_GT_TOPOLOGY	5
 
 	/** @size: Size of the queried data */
 	__u32 size;
