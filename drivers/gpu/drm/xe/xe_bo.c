@@ -1127,6 +1127,7 @@ int xe_bo_vmap(struct xe_bo *bo)
 
 static void __xe_bo_vunmap(struct xe_bo *bo)
 {
+	/* FIXME: W/A for blow up in ttm_bo_vunmap */
 	if (xe_bo_is_pinned(bo) && IS_DGFX(xe_bo_device(bo))) {
 		iosys_map_clear(&bo->vmap);
 		return;
