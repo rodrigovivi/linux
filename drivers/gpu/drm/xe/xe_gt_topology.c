@@ -70,6 +70,7 @@ void
 xe_gt_topology_init(struct xe_gt *gt)
 {
 	struct xe_device *xe = gt_to_xe(gt);
+	struct drm_printer p = drm_debug_printer("GT topology");
 	int num_geometry_regs, num_compute_regs;
 
 	if (GRAPHICS_VERx100(xe) == 1260) {
@@ -89,6 +90,8 @@ xe_gt_topology_init(struct xe_gt *gt)
 		      XEHP_GT_COMPUTE_DSS_ENABLE,
 		      XEHPC_GT_COMPUTE_DSS_ENABLE_EXT);
 	load_eu_mask(gt, gt->fuse_topo.eu_mask_per_dss);
+
+	xe_gt_topology_dump(gt, &p);
 }
 
 unsigned int
@@ -114,4 +117,17 @@ xe_gt_topology_dss_group_mask(xe_dss_mask_t mask, int grpsize)
 	}
 
 	return grpmask;
+}
+
+void
+xe_gt_topology_dump(struct xe_gt *gt, struct drm_printer *p)
+{
+	drm_printf(p, "dss mask (geometry): %*pb\n", XE_MAX_DSS_FUSE_BITS,
+		   gt->fuse_topo.g_dss_mask);
+	drm_printf(p, "dss mask (compute):  %*pb\n", XE_MAX_DSS_FUSE_BITS,
+		   gt->fuse_topo.c_dss_mask);
+
+	drm_printf(p, "EU mask per DSS:     %*pb\n", XE_MAX_EU_FUSE_BITS,
+		   gt->fuse_topo.eu_mask_per_dss);
+
 }

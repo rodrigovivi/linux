@@ -8,6 +8,10 @@
 
 #include "xe_gt_types.h"
 
+struct drm_printer;
+
 void xe_gt_topology_init(struct xe_gt *gt);
+
+void xe_gt_topology_dump(struct xe_gt *gt, struct drm_printer *p);
 
 #endif /* __XE_GT_TOPOLOGY_H__ */
