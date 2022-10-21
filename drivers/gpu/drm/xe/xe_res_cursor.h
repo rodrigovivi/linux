@@ -167,6 +167,7 @@ static inline void xe_res_next(struct xe_res_cursor *cur, u64 size)
 {
 	struct drm_buddy_block *block;
 	struct list_head *next;
+	u64 start;
 
 	XE_BUG_ON(size > cur->remaining);
 
@@ -174,11 +175,13 @@ static inline void xe_res_next(struct xe_res_cursor *cur, u64 size)
 	if (!cur->remaining)
 		return;
 
-	cur->size -= size;
-	if (cur->size) {
+	if (cur->size > size) {
+		cur->size -= size;
 		cur->start += size;
 		return;
-	} else if (cur->sgl) {
+	}
+
+	if (cur->sgl) {
 		cur->start += size;
 		__xe_res_sg_next(cur);
 		return;
@@ -187,15 +190,24 @@ static inline void xe_res_next(struct xe_res_cursor *cur, u64 size)
 	switch (cur->mem_type) {
 	case XE_PL_VRAM0:
 	case XE_PL_VRAM1:
+		start = size - cur->size;
 		block = cur->node;
 
 		next = block->link.next;
 		block = list_entry(next, struct drm_buddy_block, link);
 
-		cur->node = block;
-		cur->start = xe_ttm_vram_mgr_block_start(block);
-		cur->size = min(xe_ttm_vram_mgr_block_size(block),
+
+		while (start >= xe_ttm_vram_mgr_block_size(block)) {
+			start -= xe_ttm_vram_mgr_block_size(block);
+
+			next = block->link.next;
+			block = list_entry(next, struct drm_buddy_block, link);
+		}
+
+		cur->start = xe_ttm_vram_mgr_block_start(block) + start;
+		cur->size = min(xe_ttm_vram_mgr_block_size(block) - start,
 				cur->remaining);
+		cur->node = block;
 		break;
 	default:
 		return;
