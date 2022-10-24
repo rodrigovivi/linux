@@ -339,7 +339,14 @@ static void emit_arb_clear(struct xe_bb *bb)
 
 static u64 xe_migrate_res_sizes(struct xe_res_cursor *cur)
 {
-	return min_t(u64, MAX_PREEMPTDISABLE_TRANSFER, cur->size);
+	/*
+	 * For VRAM we use identity mapped pages so we are limited to current
+	 * cursor size. For system we program the pages ourselves so we have no
+	 * such limitation.
+	 */
+	return min_t(u64, MAX_PREEMPTDISABLE_TRANSFER,
+		     mem_type_is_vram(cur->mem_type) ? cur->size :
+		     cur->remaining);
 }
 
 static u32 pte_update_size(struct xe_migrate *m,

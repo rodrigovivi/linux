@@ -110,6 +110,7 @@ fallback:
 	cur->size = size;
 	cur->remaining = size;
 	cur->node = NULL;
+	cur->mem_type = XE_PL_TT;
 	XE_WARN_ON(res && start + size > res->num_pages << PAGE_SHIFT);
 	return;
 }
@@ -152,6 +153,7 @@ static inline void xe_res_first_sg(const struct sg_table *sg,
 	cur->remaining = size;
 	cur->size = 0;
 	cur->sgl = sg->sgl;
+	cur->mem_type = XE_PL_TT;
 	__xe_res_sg_next(cur);
 }
 
