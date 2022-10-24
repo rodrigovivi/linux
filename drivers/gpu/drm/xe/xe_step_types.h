@@ -12,6 +12,7 @@ struct xe_step_info {
 	u8 graphics;
 	u8 media;
 	u8 display;
+	u8 basedie;
 };
 
 #define STEP_ENUM_VAL(name)  STEP_##name,
@@ -23,6 +24,7 @@ struct xe_step_info {
 	func(B0)			\
 	func(B1)			\
 	func(B2)			\
+	func(B3)			\
 	func(C0)			\
 	func(C1)			\
 	func(D0)			\

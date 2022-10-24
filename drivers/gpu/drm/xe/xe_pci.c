@@ -372,10 +372,11 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		xe->info.media_verx100,
 		xe->info.dma_mask_size, xe->info.tile_count);
 
-	drm_dbg(&xe->drm, "Stepping = (G:%s, M:%s, D:%s)\n",
+	drm_dbg(&xe->drm, "Stepping = (G:%s, M:%s, D:%s, B:%s)\n",
 		xe_step_name(xe->info.step.graphics),
 		xe_step_name(xe->info.step.media),
-		xe_step_name(xe->info.step.display));
+		xe_step_name(xe->info.step.display),
+		xe_step_name(xe->info.step.basedie));
 
 	pci_set_drvdata(pdev, xe);
 	err = pci_enable_device(pdev);

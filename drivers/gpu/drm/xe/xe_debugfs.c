@@ -9,6 +9,7 @@
 #include "xe_device.h"
 #include "xe_debugfs.h"
 #include "xe_gt_debugfs.h"
+#include "xe_step.h"
 
 #ifdef CONFIG_DRM_XE_DEBUG
 #include "xe_bo_evict.h"
@@ -30,8 +31,15 @@ static int info(struct seq_file *m, void *data)
 
 	drm_printf(&p, "graphics_verx100 %d\n", xe->info.graphics_verx100);
 	drm_printf(&p, "media_verx100 %d\n", xe->info.media_verx100);
+	drm_printf(&p, "stepping G:%s M:%s D:%s B:%s\n",
+		   xe_step_name(xe->info.step.graphics),
+		   xe_step_name(xe->info.step.media),
+		   xe_step_name(xe->info.step.display),
+		   xe_step_name(xe->info.step.basedie));
 	drm_printf(&p, "is_dgfx %s\n", xe->info.is_dgfx ? "yes" : "no");
 	drm_printf(&p, "platform %d\n", xe->info.platform);
+	drm_printf(&p, "subplatform %d\n",
+		   xe->info.subplatform > XE_SUBPLATFORM_NONE ? xe->info.subplatform : 0);
 	drm_printf(&p, "devid 0x%x\n", xe->info.devid);
 	drm_printf(&p, "revid %d\n", xe->info.revid);
 	drm_printf(&p, "tile_count %d\n", xe->info.tile_count);
@@ -39,9 +47,13 @@ static int info(struct seq_file *m, void *data)
 	drm_printf(&p, "enable_guc %s\n", xe->info.enable_guc ? "yes" : "no");
 	drm_printf(&p, "supports_usm %s\n",
 		   xe->info.supports_usm ? "yes" : "no");
-	for_each_gt(gt, xe, id)
+	drm_printf(&p, "has_flat_ccs %s\n", xe->info.has_flat_ccs ? "yes" : "no");
+	for_each_gt(gt, xe, id) {
 		drm_printf(&p, "gt%d force wake %d\n", id,
 			   xe_force_wake_ref(gt_to_fw(gt), XE_FW_GT));
+		drm_printf(&p, "gt%d engine_mask 0x%llx\n", id,
+			   gt->info.engine_mask);
+	}
 
 	return 0;
 }
