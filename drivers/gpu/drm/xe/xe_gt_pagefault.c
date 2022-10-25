@@ -182,6 +182,7 @@ retry_userptr:
 	}
 
 	/* Lock VM and BOs dma-resv */
+	bo = vma->bo;
 	if (only_needs_bo_lock(bo)) {
 		/* This path ensures the BO's LRU is updated */
 		ret = xe_bo_lock(bo, &ww, xe->info.tile_count, false);
@@ -608,11 +609,11 @@ static int handle_acc(struct xe_gt *gt, struct acc *acc)
 		goto unlock_vm;
 
 	/* Lock VM and BOs dma-resv */
+	bo = vma->bo;
 	if (only_needs_bo_lock(bo)) {
 		/* This path ensures the BO's LRU is updated */
 		ret = xe_bo_lock(bo, &ww, xe->info.tile_count, false);
 	} else {
-		bo = vma->bo;
 		tv_vm.num_shared = xe->info.tile_count;
 		tv_vm.bo = xe_vm_ttm_bo(vm);
 		list_add(&tv_vm.head, &objs);
