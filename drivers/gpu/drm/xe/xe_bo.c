@@ -223,9 +223,8 @@ struct xe_ttm_tt {
 	struct sg_table *sg;
 };
 
-static int xe_bo_map_sg(struct xe_bo *bo)
+static int xe_tt_map_sg(struct ttm_tt *tt)
 {
-	struct ttm_tt *tt = bo->ttm.ttm;
 	struct xe_ttm_tt *xe_tt = container_of(tt, struct xe_ttm_tt, ttm);
 	unsigned long num_pages = tt->num_pages;
 	int ret;
@@ -293,6 +292,8 @@ static struct ttm_tt *xe_ttm_tt_create(struct ttm_buffer_object *ttm_bo,
 static int xe_ttm_tt_populate(struct ttm_device *ttm_dev, struct ttm_tt *tt,
 			      struct ttm_operation_ctx *ctx)
 {
+	int err;
+
 	/*
 	 * dma-bufs are not populated with pages, and the dma-
 	 * addresses are set up when moved to XE_PL_TT.
@@ -300,7 +301,16 @@ static int xe_ttm_tt_populate(struct ttm_device *ttm_dev, struct ttm_tt *tt,
 	if (tt->page_flags & TTM_TT_FLAG_EXTERNAL)
 		return 0;
 
-	return ttm_pool_alloc(&ttm_dev->pool, tt, ctx);
+	err = ttm_pool_alloc(&ttm_dev->pool, tt, ctx);
+	if (err)
+		return err;
+
+	/* A follow up may move this xe_bo_move when BO is moved to XE_PL_TT */
+	err = xe_tt_map_sg(tt);
+	if (err)
+		ttm_pool_free(&ttm_dev->pool, tt);
+
+	return err;
 }
 
 static void xe_ttm_tt_unpopulate(struct ttm_device *ttm_dev, struct ttm_tt *tt)
@@ -508,12 +518,6 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 
 	needs_clear = (ttm && ttm->page_flags & TTM_TT_FLAG_ZERO_ALLOC) ||
 		(!ttm && ttm_bo->type == ttm_bo_type_device);
-
-	if (new_mem->mem_type == XE_PL_TT) {
-		ret = xe_bo_map_sg(bo);
-		if (ret)
-			goto out;
-	}
 
 	if ((move_lacks_source && !needs_clear) ||
 	    (old_mem->mem_type == XE_PL_SYSTEM &&
