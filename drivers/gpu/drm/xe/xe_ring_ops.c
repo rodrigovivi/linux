@@ -16,21 +16,53 @@
 #include "../i915/gt/intel_gt_regs.h"
 #include "../i915/gt/intel_lrc_reg.h"
 
-#define PIPE_CONTROL_RENDER_ONLY_FLAGS (\
+/*
+ * 3D-related flags that can't be set on _engines_ that lack access to the 3D
+ * pipeline (i.e., CCS engines).
+ */
+#define PIPE_CONTROL_3D_ENGINE_FLAGS (\
 		PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH | \
 		PIPE_CONTROL_DEPTH_CACHE_FLUSH | \
 		PIPE_CONTROL_TILE_CACHE_FLUSH | \
 		PIPE_CONTROL_DEPTH_STALL | \
 		PIPE_CONTROL_STALL_AT_SCOREBOARD | \
-		PIPE_CONTROL_VF_CACHE_INVALIDATE)
+		PIPE_CONTROL_PSD_SYNC | \
+		PIPE_CONTROL_AMFS_FLUSH | \
+		PIPE_CONTROL_VF_CACHE_INVALIDATE | \
+		PIPE_CONTROL_GLOBAL_SNAPSHOT_RESET)
 
+/* 3D-related flags that can't be set on _platforms_ that lack a 3D pipeline */
+#define PIPE_CONTROL_3D_ARCH_FLAGS ( \
+		PIPE_CONTROL_3D_ENGINE_FLAGS | \
+		PIPE_CONTROL_INDIRECT_STATE_DISABLE | \
+		PIPE_CONTROL_FLUSH_ENABLE | \
+		PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE | \
+		PIPE_CONTROL_DC_FLUSH_ENABLE)
+
+static u32 preparser_disable(bool state)
+{
+	return MI_ARB_CHECK | BIT(8) | state;
+}
+
+static int emit_aux_table_inv(struct xe_gt *gt, u32 addr, u32 *dw, int i)
+{
+	dw[i++] = MI_LOAD_REGISTER_IMM(1) | MI_LRI_MMIO_REMAP_EN;
+	dw[i++] = addr + gt->mmio.adj_offset;
+	dw[i++] = AUX_INV;
+	dw[i++] = MI_NOOP;
+
+	return i;
+}
 
 static void invalidate_tlb(struct xe_sched_job *job, u32 *dw, u32 *pi)
 {
+	struct xe_gt *gt = job->engine->gt;
+	struct xe_device *xe = gt_to_xe(gt);
 	u32 i = *pi;
 
-	if (job->engine->class != XE_ENGINE_CLASS_RENDER) {
-		dw[i++] = MI_ARB_CHECK | BIT(8) | BIT(0);
+	if (job->engine->class != XE_ENGINE_CLASS_RENDER &&
+	    job->engine->class != XE_ENGINE_CLASS_COMPUTE) {
+		dw[i++] = preparser_disable(true);
 
 		dw[i] = MI_FLUSH_DW + 1;
 		if (job->engine->class == XE_ENGINE_CLASS_VIDEO_DECODE)
@@ -42,7 +74,19 @@ static void invalidate_tlb(struct xe_sched_job *job, u32 *dw, u32 *pi)
 		dw[i++] = 0;
 		dw[i++] = ~0U;
 
-		dw[i++] = MI_ARB_CHECK | BIT(8);
+		/* Wa_1809175790 */
+		if (!xe->info.has_flat_ccs) {
+			if (job->engine->class ==
+			    XE_ENGINE_CLASS_VIDEO_DECODE)
+				i = emit_aux_table_inv(gt, GEN12_VD0_AUX_NV.reg,
+						       dw, i);
+			else if (job->engine->class ==
+				 XE_ENGINE_CLASS_VIDEO_ENHANCE)
+				i = emit_aux_table_inv(gt, GEN12_VE0_AUX_NV.reg,
+						       dw, i);
+		}
+
+		dw[i++] = preparser_disable(false);
 	} else {
 		u32 flags = PIPE_CONTROL_CS_STALL |
 			PIPE_CONTROL_COMMAND_CACHE_INVALIDATE |
@@ -55,10 +99,12 @@ static void invalidate_tlb(struct xe_sched_job *job, u32 *dw, u32 *pi)
 			PIPE_CONTROL_QW_WRITE |
 			PIPE_CONTROL_STORE_DATA_INDEX;
 
-		if (job->engine->class == XE_ENGINE_CLASS_COMPUTE)
-			flags &= ~PIPE_CONTROL_RENDER_ONLY_FLAGS;
+		if (xe->info.platform == XE_PVC)
+			flags &= ~PIPE_CONTROL_3D_ARCH_FLAGS;
+		else if (job->engine->class == XE_ENGINE_CLASS_COMPUTE)
+			flags &= ~PIPE_CONTROL_3D_ENGINE_FLAGS;
 
-		dw[i++] = MI_ARB_CHECK | BIT(8) | BIT(0);
+		dw[i++] = preparser_disable(true);
 
 		dw[i++] = GFX_OP_PIPE_CONTROL(6);
 		dw[i++] = flags;
@@ -67,12 +113,12 @@ static void invalidate_tlb(struct xe_sched_job *job, u32 *dw, u32 *pi)
 		dw[i++] = 0;
 		dw[i++] = 0;
 
-		dw[i++] = MI_LOAD_REGISTER_IMM(1);
-		dw[i++] = GEN12_GFX_CCS_AUX_NV.reg;
-		dw[i++] = AUX_INV;
-		dw[i++] = MI_NOOP;
+		/* Wa_1809175790 */
+		if (!xe->info.has_flat_ccs)
+			i = emit_aux_table_inv(gt, GEN12_GFX_CCS_AUX_NV.reg,
+					       dw, i);
 
-		dw[i++] = MI_ARB_CHECK | BIT(8);
+		dw[i++] = preparser_disable(false);
 	}
 
 	*pi = i;
