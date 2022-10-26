@@ -287,6 +287,76 @@ static int query_hwconfig(struct xe_device *xe,
 	return 0;
 }
 
+static size_t calc_topo_query_size(struct xe_device *xe)
+{
+	return xe->info.tile_count *
+		(3 * sizeof(struct drm_xe_query_topology_mask) +
+		 sizeof_field(struct xe_gt, fuse_topo.g_dss_mask) +
+		 sizeof_field(struct xe_gt, fuse_topo.c_dss_mask) +
+		 sizeof_field(struct xe_gt, fuse_topo.eu_mask_per_dss));
+}
+
+static void __user *copy_mask(void __user *ptr,
+			      struct drm_xe_query_topology_mask *topo,
+			      void *mask, size_t mask_size)
+{
+	topo->num_bytes = mask_size;
+
+	if (copy_to_user(ptr, topo, sizeof(*topo)))
+		return ERR_PTR(-EFAULT);
+	ptr += sizeof(topo);
+
+	if (copy_to_user(ptr, mask, mask_size))
+		return ERR_PTR(-EFAULT);
+	ptr += mask_size;
+
+	return ptr;
+}
+
+static int query_gt_topology(struct xe_device *xe,
+			     struct drm_xe_device_query *query)
+{
+	void __user *query_ptr = u64_to_user_ptr(query->data);
+	size_t size = calc_topo_query_size(xe);
+	struct drm_xe_query_topology_mask topo;
+	struct xe_gt *gt;
+	int id;
+
+	if (query->size == 0) {
+		query->size = size;
+		return 0;
+	} else if (XE_IOCTL_ERR(xe, query->size != size)) {
+		return -EINVAL;
+	}
+
+	for_each_gt(gt, xe, id) {
+		topo.gt_id = id;
+
+		topo.type = XE_TOPO_DSS_GEOMETRY;
+		query_ptr = copy_mask(query_ptr, &topo,
+				      gt->fuse_topo.g_dss_mask,
+				      sizeof(gt->fuse_topo.g_dss_mask));
+		if (IS_ERR(query_ptr))
+			return PTR_ERR(query_ptr);
+
+		topo.type = XE_TOPO_DSS_COMPUTE;
+		query_ptr = copy_mask(query_ptr, &topo,
+				      gt->fuse_topo.c_dss_mask,
+				      sizeof(gt->fuse_topo.c_dss_mask));
+		if (IS_ERR(query_ptr))
+			return PTR_ERR(query_ptr);
+
+		topo.type = XE_TOPO_EU_PER_DSS;
+		query_ptr = copy_mask(query_ptr, &topo,
+				      gt->fuse_topo.eu_mask_per_dss,
+				      sizeof(gt->fuse_topo.eu_mask_per_dss));
+		if (IS_ERR(query_ptr))
+			return PTR_ERR(query_ptr);
+	}
+
+	return 0;
+}
+
 static int (* const xe_query_funcs[])(struct xe_device *xe,
 				      struct drm_xe_device_query *query) = {
 	query_engines,
@@ -294,6 +364,7 @@ static int (* const xe_query_funcs[])(struct xe_device *xe,
 	query_config,
 	query_gts,
 	query_hwconfig,
+	query_gt_topology,
 };
 
 int xe_query_ioctl(struct drm_device *dev, void *data, struct drm_file *file)

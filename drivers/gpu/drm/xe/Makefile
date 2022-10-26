@@ -55,6 +55,7 @@ xe-y += xe_bb.o \
 	xe_gt_debugfs.o \
 	xe_gt_pagefault.o \
 	xe_gt_sysfs.o \
+	xe_gt_topology.o \
 	xe_guc.o \
 	xe_guc_ads.o \
 	xe_guc_ct.o \

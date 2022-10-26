@@ -29,6 +29,12 @@ enum xe_gt_type {
 	XE_GT_TYPE_MEDIA,
 };
 
+#define XE_MAX_DSS_FUSE_REGS	2
+#define XE_MAX_EU_FUSE_REGS	1
+
+typedef unsigned long xe_dss_mask_t[BITS_TO_LONGS(32 * XE_MAX_DSS_FUSE_REGS)];
+typedef unsigned long xe_eu_mask_t[BITS_TO_LONGS(32 * XE_MAX_DSS_FUSE_REGS)];
+
 /**
  * struct xe_gt - Top level struct of a graphics tile
  *
@@ -244,6 +250,17 @@ struct xe_gt {
 		u8 wb_index;
 	} mocs;
 
+	/** @fuse_topo: GT topology reported by fuse registers */
+	struct {
+		/** @g_dss_mask: dual-subslices usable by geometry */
+		xe_dss_mask_t g_dss_mask;
+
+		/** @c_dss_mask: dual-subslices usable by compute */
+		xe_dss_mask_t c_dss_mask;
+
+		/** @eu_mask_per_dss: EU mask per DSS*/
+		xe_eu_mask_t eu_mask_per_dss;
+	} fuse_topo;
 };
 
 #endif
