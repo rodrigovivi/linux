@@ -199,10 +199,12 @@ int xe_sync_entry_add_deps(struct xe_sync_entry *sync, struct xe_sched_job *job)
 	int err;
 
 	if (sync->fence) {
-		err = drm_sched_job_add_dependency(&job->drm, sync->fence);
-		sync->fence = NULL;
-		if (err)
+		err = drm_sched_job_add_dependency(&job->drm,
+						   dma_fence_get(sync->fence));
+		if (err) {
+			dma_fence_put(sync->fence);
 			return err;
+		}
 	}
 
 	return 0;
