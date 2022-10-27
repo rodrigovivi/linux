@@ -10,6 +10,7 @@
 #include "xe_force_wake.h"
 #include "xe_gt.h"
 #include "xe_gt_debugfs.h"
+#include "xe_gt_mcr.h"
 #include "xe_gt_pagefault.h"
 #include "xe_gt_topology.h"
 #include "xe_hw_engine.h"
@@ -78,6 +79,16 @@ static int topology(struct seq_file *m, void *data)
 	return 0;
 }
 
+static int steering(struct seq_file *m, void *data)
+{
+	struct xe_gt *gt = node_to_gt(m->private);
+	struct drm_printer p = drm_seq_file_printer(m);
+
+	xe_gt_mcr_steering_dump(gt, &p);
+
+	return 0;
+}
+
 #ifdef CONFIG_DRM_XE_DEBUG
 static int invalidate_tlb(struct seq_file *m, void *data)
 {
@@ -100,6 +111,7 @@ static const struct drm_info_list debugfs_list[] = {
 	{"force_reset", force_reset, 0},
 	{"sa_info", sa_info, 0},
 	{"topology", topology, 0},
+	{"steering", steering, 0},
 #ifdef CONFIG_DRM_XE_DEBUG
 	{"invalidate_tlb", invalidate_tlb, 0},
 #endif

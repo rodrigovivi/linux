@@ -535,3 +535,18 @@ void xe_gt_mcr_multicast_write(struct xe_gt *gt, i915_mcr_reg_t reg, u32 value)
 	mcr_unlock(gt);
 }
 
+void xe_gt_mcr_steering_dump(struct xe_gt *gt, struct drm_printer *p)
+{
+	for (int i = 0; i < NUM_STEERING_TYPES; i++) {
+		if (gt->steering[i].ranges) {
+			drm_printf(p, "%s steering: group=%#x, instance=%#x\n",
+				   xe_steering_types[i].name,
+				   gt->steering[i].group_target,
+				   gt->steering[i].instance_target);
+			for (int j = 0; gt->steering[i].ranges[j].end; j++)
+				drm_printf(p, "\t0x%06x - 0x%06x\n",
+					   gt->steering[i].ranges[j].start,
+					   gt->steering[i].ranges[j].end);
+		}
+	}
+}
