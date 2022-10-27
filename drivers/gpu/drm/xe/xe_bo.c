@@ -662,13 +662,14 @@ static vm_fault_t xe_gem_fault(struct vm_fault *vmf)
 
 		trace_xe_bo_cpu_fault(bo);
 
-		if (should_migrate_to_system(bo)) {
+		if (should_migrate_to_system(bo))
 			r = xe_bo_migrate(bo, XE_PL_TT);
-			if (r == -EBUSY || r == -ERESTARTSYS)
-				ret = VM_FAULT_NOPAGE;
-			else if (r)
-				ret = VM_FAULT_SIGBUS;
-		}
+		else
+			r = xe_bo_validate(bo, NULL);
+		if (r == -EBUSY || r == -ERESTARTSYS)
+			ret = VM_FAULT_NOPAGE;
+		else if (r)
+			ret = VM_FAULT_SIGBUS;
 		if (!ret)
 			ret = ttm_bo_vm_fault_reserved(vmf,
 						       vmf->vma->vm_page_prot,
