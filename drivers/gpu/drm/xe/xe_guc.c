@@ -583,8 +583,6 @@ int xe_guc_suspend(struct xe_guc *guc)
 	return 0;
 }
 
-#define MEDIA_GUC_HOST_INTERRUPT        _MMIO(0x190304)
-
 void xe_guc_notify(struct xe_guc *guc)
 {
 	struct xe_gt *gt = guc_to_gt(guc);
