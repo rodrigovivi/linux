@@ -934,10 +934,13 @@ static bool no_in_syncs(struct xe_sync_entry *syncs, u32 num_syncs)
 {
 	int i;
 
-	/* XXX: Further optimization, check if all in fences signaled */
-	for (i = 0; i < num_syncs; i++)
-		if (!(syncs[i].flags & DRM_XE_SYNC_SIGNAL))
+	for (i = 0; i < num_syncs; i++) {
+		struct dma_fence *fence = syncs[i].fence;
+
+		if (fence && !test_bit(DMA_FENCE_FLAG_SIGNALED_BIT,
+				       &fence->flags))
 			return false;
+	}
 
 	return true;
 }
