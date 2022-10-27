@@ -900,7 +900,7 @@ static struct dma_fence *
 xe_migrate_update_pgtables_cpu(struct xe_migrate *m,
 			       struct xe_vm *vm, struct xe_bo *bo,
 			       struct xe_vm_pgtable_update *updates,
-			       u32 num_updates,
+			       u32 num_updates, bool wait_vm,
 			       xe_migrate_populatefn_t populatefn,
 			       void *arg)
 {
@@ -912,6 +912,15 @@ xe_migrate_update_pgtables_cpu(struct xe_migrate *m,
 
 		wait = dma_resv_wait_timeout(bo->ttm.base.resv,
 					     DMA_RESV_USAGE_KERNEL,
+					     true, HZ / 100);
+		if (wait <= 0)
+			return ERR_PTR(-ETIME);
+	}
+	if (wait_vm) {
+		long wait;
+
+		wait = dma_resv_wait_timeout(&vm->resv,
+					     DMA_RESV_USAGE_PREEMPT_FENCE,
 					     true, HZ / 100);
 		if (wait <= 0)
 			return ERR_PTR(-ETIME);
@@ -972,12 +981,14 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	u64 addr;
 	int err = 0;
 	bool usm = !eng && xe->info.supports_usm;
+	bool first_munmap_rebind = vma && vma->first_munmap_rebind;
 
 	/* Use the CPU if no in syncs and engine is idle */
 	if (no_in_syncs(syncs, num_syncs) && engine_is_idle(eng)) {
 		fence =  xe_migrate_update_pgtables_cpu(m, vm, bo, updates,
-							num_updates, populatefn,
-							arg);
+							num_updates,
+							first_munmap_rebind,
+							populatefn, arg);
 		if (!IS_ERR(fence))
 			return fence;
 	}
@@ -1090,7 +1101,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	 * Munmap style VM unbind, need to wait for all jobs to be complete /
 	 * trigger preempts before moving forward
 	 */
-	if (vma && vma->first_munmap_rebind) {
+	if (first_munmap_rebind) {
 		err = job_add_deps(job, &vm->resv,
 				   DMA_RESV_USAGE_PREEMPT_FENCE);
 		if (err)
