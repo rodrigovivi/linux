@@ -561,10 +561,6 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 	bool copy_ccs = xe_device_has_flat_ccs(xe) && xe_bo_needs_ccs_pages(bo);
 	bool copy_system_ccs = copy_ccs && (!src_is_vram || !dst_is_vram);
 
-	err = dma_resv_reserve_fences(bo->ttm.base.resv, 1);
-	if (err)
-		return ERR_PTR(err);
-
 	xe_res_first(src, 0, bo->size, &src_it);
 	xe_res_first(dst, 0, bo->size, &dst_it);
 
@@ -682,9 +678,6 @@ err:
 		return ERR_PTR(err);
 	}
 
-	dma_resv_add_fence(bo->ttm.base.resv, fence,
-			   DMA_RESV_USAGE_KERNEL);
-
 	return fence;
 }
 
@@ -740,10 +733,6 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 	struct ttm_resource *src = dst;
 	int err;
 	int pass = 0;
-
-	err = dma_resv_reserve_fences(bo->ttm.base.resv, 1);
-	if (err)
-		return ERR_PTR(err);
 
 	xe_res_first(src, 0, bo->size, &src_it);
 
@@ -811,13 +800,6 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		}
 
 		xe_sched_job_add_migrate_flush(job, flush_flags);
-		if (!fence) {
-			err = drm_sched_job_add_implicit_dependencies(&job->drm,
-								      &bo->ttm.base,
-								      true);
-			if (err)
-				goto err_job;
-		}
 
 		xe_sched_job_arm(job);
 		fence = dma_fence_get(&job->drm.s_fence->finished);
@@ -831,16 +813,11 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		xe_bb_free(bb, fence);
 		continue;
 
-err_job:
-		xe_sched_job_free(job);
-		mutex_unlock(&m->job_mutex);
 err:
+		mutex_unlock(&m->job_mutex);
 		xe_bb_free(bb, NULL);
 		return ERR_PTR(err);
 	}
-
-	dma_resv_add_fence(bo->ttm.base.resv, fence,
-			   DMA_RESV_USAGE_KERNEL);
 
 	return fence;
 }
