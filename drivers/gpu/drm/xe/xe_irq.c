@@ -331,7 +331,7 @@ static irqreturn_t dg1_irq_handler(int irq, void *arg)
 {
 	struct xe_device *xe = arg;
 	struct xe_gt *gt;
-	u32 master_tile_ctl, master_ctl;
+	u32 master_tile_ctl, master_ctl = 0;
 	long unsigned int intr_dw[2];
 	u32 identity[32];
 	u8 id;
