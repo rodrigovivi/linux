@@ -1026,11 +1026,12 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 		bb->cs[bb->len++] = 0; /* upper_32_bits */
 
 		for (i = 0; i < num_updates; i++) {
-			struct xe_bo *bo = updates[i].pt_bo;
+			struct xe_bo *pt_bo = updates[i].pt_bo;
 
-			BUG_ON(bo->size != SZ_4K);
+			BUG_ON(pt_bo->size != SZ_4K);
 
-			addr = gen8_pte_encode(NULL, bo, 0, XE_CACHE_WB, 0, 0);
+			addr = gen8_pte_encode(NULL, pt_bo, 0, XE_CACHE_WB,
+					       0, 0);
 			bb->cs[bb->len++] = lower_32_bits(addr);
 			bb->cs[bb->len++] = upper_32_bits(addr);
 		}
