@@ -1,5 +1,4 @@
 /*
-   w
  * SPDX-License-Identifier: MIT
  *
  * Copyright © 2022 Intel Corporation
@@ -55,6 +54,19 @@ struct xe_mmio_range {
  * are listed here.
  */
 enum xe_steering_type {
+	L3BANK,
+	MSLICE,
+	LNCF,
+	DSS,
+	OADDRM,
+
+	/*
+	 * On some platforms there are multiple types of MCR registers that
+	 * will always return a non-terminated value at instance (0, 0).  We'll
+	 * lump those all into a single category to keep things simple.
+	 */
+	INSTANCE0,
+
 	NUM_STEERING_TYPES
 };
 
