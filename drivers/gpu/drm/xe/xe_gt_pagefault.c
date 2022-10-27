@@ -154,7 +154,7 @@ static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 	if (vm)
 		xe_vm_get(vm);
 	mutex_unlock(&xe->usm.lock);
-	if (!vm)
+	if (!vm || !xe_vm_in_fault_mode(vm))
 		return -EINVAL;
 
 	down_read(&vm->lock);
@@ -590,7 +590,7 @@ static int handle_acc(struct xe_gt *gt, struct acc *acc)
 	if (vm)
 		xe_vm_get(vm);
 	mutex_unlock(&xe->usm.lock);
-	if (!vm)
+	if (!vm || !xe_vm_in_fault_mode(vm))
 		return -EINVAL;
 
 	down_read(&vm->lock);
