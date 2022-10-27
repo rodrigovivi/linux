@@ -35,7 +35,6 @@ __printf(2, 3)
 static inline void vm_dbg(const struct drm_device *dev,
 			  const char *format, ...)
 { /* noop */ }
-
 #endif
 
 struct xe_pt_dir {
@@ -239,13 +238,6 @@ static int xe_pt_populate_empty(struct xe_gt *gt, struct xe_vm *vm,
 static u64 xe_pt_shift(unsigned int level)
 {
 	return GEN8_PTE_SHIFT + GEN8_PDE_SHIFT * level;
-}
-
-static u64 xe_pt_prev_end(u64 end, unsigned int level)
-{
-	u64 pt_range = 1ull << xe_pt_shift(level);
-
-	return ALIGN_DOWN(end - 1, pt_range);
 }
 
 static void vma_usm_add_leaf(struct xe_gt *gt, struct xe_vma_usm *usm,
@@ -1491,6 +1483,34 @@ xe_pt_prepare_unbind(struct xe_gt *gt, struct xe_vma *vma,
 	XE_BUG_ON(!*num_entries);
 }
 
+static void xe_vm_dbg_print_entries(struct xe_device *xe,
+				    const struct xe_vm_pgtable_update *entries,
+				    unsigned int num_entries)
+#if (IS_ENABLED(CONFIG_DRM_XE_DEBUG_VM))
+{
+	unsigned int i;
+
+	vm_dbg(&xe->drm, "%u entries to update\n", num_entries);
+	for (i = 0; i < num_entries; i++) {
+		const struct xe_vm_pgtable_update *entry = &entries[i];
+		struct xe_pt *xe_pt = entry->pt;
+		u64 page_size = 1ull << xe_pt_shift(xe_pt->level);
+		u64 end;
+		u64 start;
+
+		XE_BUG_ON(entry->pt->is_compact);
+		start = entry->ofs * page_size;
+		end = start + page_size * entry->qwords;
+		vm_dbg(&xe->drm,
+		       "\t%u: Update level %u at (%u + %u) [%llx...%llx) f:%x\n",
+		       i, xe_pt->level, entry->ofs, entry->qwords,
+		       xe_pt_addr(xe_pt) + start, xe_pt_addr(xe_pt) + end, 0);
+	}
+}
+#else
+{}
+#endif
+
 static struct dma_fence *
 __xe_vm_unbind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 		   struct xe_sync_entry *syncs, u32 num_syncs)
@@ -1499,35 +1519,19 @@ __xe_vm_unbind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 	struct xe_vm *vm = vma->vm;
 	u32 num_entries;
 	struct dma_fence *fence = NULL;
-	u32 i;
 
 	xe_bo_assert_held(vma->bo);
 	xe_vm_assert_held(vm);
 	XE_BUG_ON(xe_gt_is_media_type(gt));
 
+	vm_dbg(&vma->vm->xe->drm,
+	       "Preparing unbind, with range [%llx...%llx) engine %p.\n",
+	       vma->start, vma->end, e);
+
 	xe_pt_prepare_unbind(gt, vma, entries, &num_entries);
 	XE_BUG_ON(num_entries > ARRAY_SIZE(entries));
 
-	vm_dbg(&vm->xe->drm, "%u entries to update\n", num_entries);
-	for (i = 0; i < num_entries; i++) {
-		struct xe_vm_pgtable_update *entry = &entries[i];
-		u64 page_size = 1ull << xe_pt_shift(entry->pt->level);
-		u64 end;
-		u64 start;
-		u64 len;
-
-		XE_BUG_ON(entry->pt->is_compact);
-		start = vma->start + entry->ofs * page_size;
-		len = (u64)entry->qwords * page_size;
-
-		start = xe_pt_prev_end(start + 1, entry->pt->level);
-		end = start + len;
-
-		vm_dbg(&vm->xe->drm, "\t%u: Update level %u at (%u + %u) [%llx...%llx) f:%x\n",
-		       i, entry->pt->level, entry->ofs, entry->qwords,
-		       start, end, 0);
-	}
-
+	xe_vm_dbg_print_entries(gt_to_xe(gt), entries, num_entries);
 	/*
 	 * Even if we were already evicted and unbind to destroy, we need to
 	 * clear again here. The eviction may have updated pagetables at a
@@ -1702,9 +1706,6 @@ xe_pt_prepare_bind(struct xe_gt *gt, struct xe_vma *vma,
 {
 	int err;
 
-	vm_dbg(&vma->vm->xe->drm, "Preparing bind, with range [%llx...%llx)\n",
-	       vma->start, vma->end);
-
 	*num_entries = 0;
 	err = xe_pt_stage_bind(gt, vma, entries, num_entries);
 	if (!err)
@@ -1722,7 +1723,7 @@ __xe_vm_bind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 {
 	struct xe_vm_pgtable_update entries[XE_VM_MAX_LEVEL * 2 + 1];
 	struct xe_vm *vm = vma->vm;
-	u32 num_entries, i;
+	u32 num_entries;
 	struct dma_fence *fence;
 	int err;
 
@@ -1730,31 +1731,16 @@ __xe_vm_bind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 	xe_vm_assert_held(vm);
 	XE_BUG_ON(xe_gt_is_media_type(gt));
 
+	vm_dbg(&vma->vm->xe->drm,
+	       "Preparing bind, with range [%llx...%llx) engine %p.\n",
+	       vma->start, vma->end, e);
+
 	err = xe_pt_prepare_bind(gt, vma, entries, &num_entries, rebind);
 	if (err)
 		goto err;
 	XE_BUG_ON(num_entries > ARRAY_SIZE(entries));
 
-	vm_dbg(&vm->xe->drm, "%u entries to update\n", num_entries);
-	for (i = 0; i < num_entries; i++) {
-		struct xe_vm_pgtable_update *entry = &entries[i];
-		u64 page_size = xe_pt_shift(entry->pt->level);
-		u64 start;
-		u64 len;
-		u64 end;
-
-		XE_BUG_ON(entry->pt->is_compact);
-		start = vma->start + entry->ofs * page_size;
-		len = (u64)entry->qwords * page_size;
-
-		start = xe_pt_prev_end(start + 1, entry->pt->level);
-		end = start + len;
-
-		vm_dbg(&vm->xe->drm, "\t%u: Update level %u at (%u + %u) [%llx...%llx)",
-		       i, entry->pt->level, entry->ofs, entry->qwords,
-		       start, end);
-	}
-
+	xe_vm_dbg_print_entries(gt_to_xe(gt), entries, num_entries);
 	fence = xe_migrate_update_pgtables(gt->migrate,
 					   vm, vma->bo,
 					   e ? e: vm->eng[gt->info.id],

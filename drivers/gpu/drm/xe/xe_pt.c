@@ -341,6 +341,9 @@ xe_pt_stage_bind_entry(struct drm_pt *parent, pgoff_t offset,
 		if (IS_ERR(xe_child))
 			return PTR_ERR(xe_child);
 
+		xe_pt_set_addr(xe_child,
+			       round_down(addr, 1ull << walk->shifts[level]));
+
 		if (!covers)
 			xe_pt_init(xe_child, xe_walk);
 

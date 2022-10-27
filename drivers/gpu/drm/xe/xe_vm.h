@@ -120,4 +120,12 @@ static inline bool xe_vma_is_userptr(struct xe_vma *vma)
 int xe_vma_userptr_pin_pages(struct xe_vma *vma);
 int xe_vma_userptr_needs_repin(struct xe_vma *vma);
 
+#if IS_ENABLED(CONFIG_DRM_XE_DEBUG_VM)
+#define xe_pt_set_addr(__xe_pt, __addr) ((__xe_pt)->addr = (__addr))
+#define xe_pt_addr(__xe_pt) ((__xe_pt)->addr)
+#else
+#define xe_pt_set_addr(__xe_pt, __addr)
+#define xe_pt_addr(__xe_pt) 0ull
+#endif
+
 #endif
