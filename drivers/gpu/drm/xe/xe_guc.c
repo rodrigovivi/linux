@@ -822,6 +822,9 @@ void xe_guc_print_info(struct xe_guc *guc, struct drm_printer *p)
 		   (status & GS_UKERNEL_MASK) >> GS_UKERNEL_SHIFT);
 	drm_printf(p, "\tMIA Core status = 0x%x\n",
 		   (status & GS_MIA_MASK) >> GS_MIA_SHIFT);
+	drm_printf(p, "\tLog level = %d\n",
+		   xe_guc_log_get_level(&guc->log));
+
 	drm_puts(p, "\nScratch registers:\n");
 	for (i = 0; i < SOFT_SCRATCH_COUNT; i++) {
 		drm_printf(p, "\t%2d: \t0x%x\n",
