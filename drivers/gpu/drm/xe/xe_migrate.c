@@ -561,10 +561,6 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 	bool copy_ccs = xe_device_has_flat_ccs(xe) && xe_bo_needs_ccs_pages(bo);
 	bool copy_system_ccs = copy_ccs && (!src_is_vram || !dst_is_vram);
 
-	err = dma_resv_reserve_fences(bo->ttm.base.resv, 1);
-	if (err)
-		return ERR_PTR(err);
-
 	xe_res_first(src, 0, bo->size, &src_it);
 	xe_res_first(dst, 0, bo->size, &dst_it);
 
@@ -682,9 +678,6 @@ err:
 		return ERR_PTR(err);
 	}
 
-	dma_resv_add_fence(bo->ttm.base.resv, fence,
-			   DMA_RESV_USAGE_KERNEL);
-
 	return fence;
 }
 
@@ -740,10 +733,6 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 	struct ttm_resource *src = dst;
 	int err;
 	int pass = 0;
-
-	err = dma_resv_reserve_fences(bo->ttm.base.resv, 1);
-	if (err)
-		return ERR_PTR(err);
 
 	xe_res_first(src, 0, bo->size, &src_it);
 
@@ -811,13 +800,6 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		}
 
 		xe_sched_job_add_migrate_flush(job, flush_flags);
-		if (!fence) {
-			err = drm_sched_job_add_implicit_dependencies(&job->drm,
-								      &bo->ttm.base,
-								      true);
-			if (err)
-				goto err_job;
-		}
 
 		xe_sched_job_arm(job);
 		fence = dma_fence_get(&job->drm.s_fence->finished);
@@ -831,16 +813,11 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		xe_bb_free(bb, fence);
 		continue;
 
-err_job:
-		xe_sched_job_free(job);
-		mutex_unlock(&m->job_mutex);
 err:
+		mutex_unlock(&m->job_mutex);
 		xe_bb_free(bb, NULL);
 		return ERR_PTR(err);
 	}
-
-	dma_resv_add_fence(bo->ttm.base.resv, fence,
-			   DMA_RESV_USAGE_KERNEL);
 
 	return fence;
 }
@@ -900,7 +877,7 @@ static struct dma_fence *
 xe_migrate_update_pgtables_cpu(struct xe_migrate *m,
 			       struct xe_vm *vm, struct xe_bo *bo,
 			       struct xe_vm_pgtable_update *updates,
-			       u32 num_updates,
+			       u32 num_updates, bool wait_vm,
 			       xe_migrate_populatefn_t populatefn,
 			       void *arg)
 {
@@ -912,6 +889,15 @@ xe_migrate_update_pgtables_cpu(struct xe_migrate *m,
 
 		wait = dma_resv_wait_timeout(bo->ttm.base.resv,
 					     DMA_RESV_USAGE_KERNEL,
+					     true, HZ / 100);
+		if (wait <= 0)
+			return ERR_PTR(-ETIME);
+	}
+	if (wait_vm) {
+		long wait;
+
+		wait = dma_resv_wait_timeout(&vm->resv,
+					     DMA_RESV_USAGE_PREEMPT_FENCE,
 					     true, HZ / 100);
 		if (wait <= 0)
 			return ERR_PTR(-ETIME);
@@ -934,10 +920,13 @@ static bool no_in_syncs(struct xe_sync_entry *syncs, u32 num_syncs)
 {
 	int i;
 
-	/* XXX: Further optimization, check if all in fences signaled */
-	for (i = 0; i < num_syncs; i++)
-		if (!(syncs[i].flags & DRM_XE_SYNC_SIGNAL))
+	for (i = 0; i < num_syncs; i++) {
+		struct dma_fence *fence = syncs[i].fence;
+
+		if (fence && !test_bit(DMA_FENCE_FLAG_SIGNALED_BIT,
+				       &fence->flags))
 			return false;
+	}
 
 	return true;
 }
@@ -969,12 +958,14 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	u64 addr;
 	int err = 0;
 	bool usm = !eng && xe->info.supports_usm;
+	bool first_munmap_rebind = vma && vma->first_munmap_rebind;
 
 	/* Use the CPU if no in syncs and engine is idle */
 	if (no_in_syncs(syncs, num_syncs) && engine_is_idle(eng)) {
 		fence =  xe_migrate_update_pgtables_cpu(m, vm, bo, updates,
-							num_updates, populatefn,
-							arg);
+							num_updates,
+							first_munmap_rebind,
+							populatefn, arg);
 		if (!IS_ERR(fence))
 			return fence;
 	}
@@ -1035,11 +1026,12 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 		bb->cs[bb->len++] = 0; /* upper_32_bits */
 
 		for (i = 0; i < num_updates; i++) {
-			struct xe_bo *bo = updates[i].pt_bo;
+			struct xe_bo *pt_bo = updates[i].pt_bo;
 
-			BUG_ON(bo->size != SZ_4K);
+			BUG_ON(pt_bo->size != SZ_4K);
 
-			addr = gen8_pte_encode(NULL, bo, 0, XE_CACHE_WB, 0, 0);
+			addr = gen8_pte_encode(NULL, pt_bo, 0, XE_CACHE_WB,
+					       0, 0);
 			bb->cs[bb->len++] = lower_32_bits(addr);
 			bb->cs[bb->len++] = upper_32_bits(addr);
 		}
@@ -1087,7 +1079,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	 * Munmap style VM unbind, need to wait for all jobs to be complete /
 	 * trigger preempts before moving forward
 	 */
-	if (vma && vma->first_munmap_rebind) {
+	if (first_munmap_rebind) {
 		err = job_add_deps(job, &vm->resv,
 				   DMA_RESV_USAGE_PREEMPT_FENCE);
 		if (err)

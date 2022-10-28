@@ -314,6 +314,15 @@ retry:
 		}
 	}
 
+	/* Wait behind munmap style rebinds */
+	if (!xe_vm_no_dma_fences(vm)) {
+		err = drm_sched_job_add_dependencies_resv(&job->drm,
+							  &vm->resv,
+							  DMA_RESV_USAGE_KERNEL);
+		if (err)
+			goto err_put_job;
+	}
+
 	/*
 	 * Point of no return, if we error after this point just set an error on
 	 * the job and let the DRM scheduler / backend clean up the job.
