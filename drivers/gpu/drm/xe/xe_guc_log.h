@@ -10,14 +10,15 @@
 
 struct drm_printer;
 
-/*
- * FIXME: Just picking a reasonable size for now. Eventually connect to modparam
- * or Kconfig option.
- */
+#if IS_ENABLED(CONFIG_DRM_XE_LARGE_GUC_BUFFER)
+#define CRASH_BUFFER_SIZE       SZ_1M
+#define DEBUG_BUFFER_SIZE       SZ_8M
+#define CAPTURE_BUFFER_SIZE     SZ_2M
+#else
 #define CRASH_BUFFER_SIZE	SZ_8K
 #define DEBUG_BUFFER_SIZE	SZ_64K
 #define CAPTURE_BUFFER_SIZE	SZ_16K
-
+#endif
 /*
  * While we're using plain log level in i915, GuC controls are much more...
  * "elaborate"? We have a couple of bits for verbosity, separate bit for actual

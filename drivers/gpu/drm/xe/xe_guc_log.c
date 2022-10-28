@@ -10,6 +10,10 @@
 #include "xe_guc_log.h"
 #include "xe_map.h"
 
+static int xe_guc_log_level = 5;
+module_param_named(guc_log_level, xe_guc_log_level, int, 0600);
+MODULE_PARM_DESC(guc_log_level, "GuC firmware logging level (0=disable, 1..5=enable with verbosity min..max)");
+
 static struct xe_gt *
 log_to_gt(struct xe_guc_log *log)
 {
@@ -98,7 +102,7 @@ int xe_guc_log_init(struct xe_guc_log *log)
 
 	xe_map_memset(xe, &bo->vmap, 0, 0, guc_log_size());
 	log->bo = bo;
-	log->level = 5;	/* FIXME: Connect to modparam / debugfs */
+	log->level = xe_guc_log_level;
 
 	err = drmm_add_action_or_reset(&xe->drm, guc_log_fini, log);
 	if (err)
