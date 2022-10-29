@@ -3,6 +3,8 @@
  * Copyright © 2022 Intel Corporation
  */
 
+#include <linux/string_helpers.h>
+
 #include <drm/drm_debugfs.h>
 
 #include "xe_bo.h"
@@ -36,7 +38,7 @@ static int info(struct seq_file *m, void *data)
 		   xe_step_name(xe->info.step.media),
 		   xe_step_name(xe->info.step.display),
 		   xe_step_name(xe->info.step.basedie));
-	drm_printf(&p, "is_dgfx %s\n", xe->info.is_dgfx ? "yes" : "no");
+	drm_printf(&p, "is_dgfx %s\n", str_yes_no(xe->info.is_dgfx));
 	drm_printf(&p, "platform %d\n", xe->info.platform);
 	drm_printf(&p, "subplatform %d\n",
 		   xe->info.subplatform > XE_SUBPLATFORM_NONE ? xe->info.subplatform : 0);
@@ -44,10 +46,9 @@ static int info(struct seq_file *m, void *data)
 	drm_printf(&p, "revid %d\n", xe->info.revid);
 	drm_printf(&p, "tile_count %d\n", xe->info.tile_count);
 	drm_printf(&p, "vm_max_level %d\n", xe->info.vm_max_level);
-	drm_printf(&p, "enable_guc %s\n", xe->info.enable_guc ? "yes" : "no");
-	drm_printf(&p, "supports_usm %s\n",
-		   xe->info.supports_usm ? "yes" : "no");
-	drm_printf(&p, "has_flat_ccs %s\n", xe->info.has_flat_ccs ? "yes" : "no");
+	drm_printf(&p, "enable_guc %s\n", str_yes_no(xe->info.enable_guc));
+	drm_printf(&p, "supports_usm %s\n", str_yes_no(xe->info.supports_usm));
+	drm_printf(&p, "has_flat_ccs %s\n", str_yes_no(xe->info.has_flat_ccs));
 	for_each_gt(gt, xe, id) {
 		drm_printf(&p, "gt%d force wake %d\n", id,
 			   xe_force_wake_ref(gt_to_fw(gt), XE_FW_GT));
