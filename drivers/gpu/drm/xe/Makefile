@@ -78,6 +78,7 @@ xe-y += xe_bb.o \
 	xe_pcode.o \
 	xe_pm.o \
 	xe_preempt_fence.o \
+	xe_pt.o \
 	xe_query.o \
 	xe_reg_sr.o \
 	xe_rtp.o \

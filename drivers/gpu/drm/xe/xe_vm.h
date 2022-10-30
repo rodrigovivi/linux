@@ -50,11 +50,6 @@ static inline bool xe_vm_is_closed(struct xe_vm *vm)
 struct xe_vma *
 xe_vm_find_overlapping_vma(struct xe_vm *vm, const struct xe_vma *vma);
 
-struct dma_fence *
-__xe_vm_bind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
-		 struct xe_sync_entry *syncs, u32 num_syncs,
-		 bool rebind);
-
 #define xe_vm_assert_held(vm) dma_resv_assert_held(&(vm)->resv)
 
 u64 xe_vm_pdp4_descriptor(struct xe_vm *vm, struct xe_gt *full_gt);
@@ -99,15 +94,6 @@ int xe_vm_invalidate_vma(struct xe_vma *vma);
 
 int xe_vm_async_fence_wait_start(struct dma_fence *fence);
 
-#define xe_pt_write(xe, map, idx, data) \
-	xe_map_wr(xe, map, idx * sizeof(u64), u64, data)
-
-u64 gen8_pde_encode(struct xe_bo *bo, u64 bo_offset,
-		    const enum xe_cache_level level);
-u64 gen8_pte_encode(struct xe_vma *vma, struct xe_bo *bo,
-		    u64 offset, enum xe_cache_level cache,
-		    u32 flags, u32 pt_level);
-
 extern struct ttm_device_funcs xe_ttm_funcs;
 
 struct ttm_buffer_object *xe_vm_ttm_bo(struct xe_vm *vm);
@@ -120,4 +106,12 @@ static inline bool xe_vma_is_userptr(struct xe_vma *vma)
 int xe_vma_userptr_pin_pages(struct xe_vma *vma);
 int xe_vma_userptr_needs_repin(struct xe_vma *vma);
 
+#if IS_ENABLED(CONFIG_DRM_XE_DEBUG_VM)
+#define vm_dbg drm_dbg
+#else
+__printf(2, 3)
+static inline void vm_dbg(const struct drm_device *dev,
+			  const char *format, ...)
+{ /* noop */ }
+#endif
 #endif

@@ -11,15 +11,10 @@
 #include <linux/mmu_notifier.h>
 
 #include "xe_device_types.h"
+#include "xe_pt_types.h"
 
 struct xe_bo;
 struct xe_vm;
-
-enum xe_cache_level {
-	XE_CACHE_NONE,
-	XE_CACHE_WT,
-	XE_CACHE_WB,
-};
 
 struct xe_vma {
 	struct rb_node vm_node;
@@ -108,15 +103,15 @@ struct xe_vma {
 	} userptr;
 
 	/** @usm: unified shared memory state */
-	struct {
+	struct xe_vma_usm {
 		/** @gt_invalidated: VMA has been invalidated */
 		u64 gt_invalidated;
 		/** @gt: state for each GT this VMA is mapped in */
 		struct {
-			/** @num_leafs: the number of leaf pages */
-			int num_leafs;
+			/** @num_leaves: the number of leaf pages */
+			int num_leaves;
 			/**
-			 * @leafs: leafs info, used for invalidating VMAs
+			 * @leaves: leaves info, used for invalidating VMAs
 			 * without a lock in eviction / userptr invalidation
 			 * code. Needed as we can't take the required locks to
 			 * access / change the stored page table structure in
@@ -132,49 +127,15 @@ struct xe_vma {
 				u32 start_ofs;
 				/** @len: length of memory to zero in leaf BO */
 				u32 len;
-#define MAX_LEAFS	7
-			} leafs[MAX_LEAFS];
+#define MAX_LEAVES	(XE_VM_MAX_LEVEL * 2 + 1)
+			} leaves[MAX_LEAVES];
 		} gt[XE_MAX_GT];
 	} usm;
 };
 
 struct xe_device;
 
-struct xe_pt {
-	struct xe_bo *bo;
-	unsigned int level;
-	unsigned int num_live;
-	bool rebind;
-};
-
 #define xe_vm_assert_held(vm) dma_resv_assert_held(&(vm)->resv)
-#define XE_VM_MAX_LEVEL 4
-
-struct xe_vm_pgtable_update {
-	/** @bo: page table bo to write to */
-	struct xe_bo *pt_bo;
-
-	/** @ofs: offset inside this PTE to begin writing to (in qwords) */
-	u32 ofs;
-
-	/** @qwords: number of PTE's to write */
-	u32 qwords;
-
-	/** @pt: opaque pointer useful for the caller of xe_migrate_update_pgtables */
-	struct xe_pt *pt;
-
-	/** @target_vma: Target vma to write */
-	struct xe_vma *target_vma;
-
-	/** @target_offset: Target object offset */
-	u64 target_offset;
-
-	/** @pt_entries: Newly added pagetable entries */
-	struct xe_pt **pt_entries;
-
-	/** @flags: Target flags */
-	u32 flags;
-};
 
 struct xe_vm {
 	struct xe_device *xe;

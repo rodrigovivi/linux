@@ -13,6 +13,7 @@
 #include "xe_lrc.h"
 #include "xe_map.h"
 #include "xe_mocs.h"
+#include "xe_pt.h"
 #include "xe_res_cursor.h"
 #include "xe_sched_job.h"
 #include "xe_sync.h"
@@ -68,11 +69,6 @@ static void xe_migrate_fini(struct drm_device *dev, void *arg)
 	mutex_destroy(&m->job_mutex);
 	xe_vm_close_and_put(m->eng->vm);
 	xe_engine_put(m->eng);
-}
-
-static u64 xe_pt_shift(unsigned int level)
-{
-	return GEN8_PTE_SHIFT + GEN8_PDE_SHIFT * level;
 }
 
 static u64 xe_migrate_vm_addr(u64 slot, u32 level)
