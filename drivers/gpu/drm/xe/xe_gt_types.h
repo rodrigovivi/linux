@@ -1,5 +1,4 @@
 /*
-   w
  * SPDX-License-Identifier: MIT
  *
  * Copyright © 2022 Intel Corporation
@@ -34,6 +33,42 @@ enum xe_gt_type {
 
 typedef unsigned long xe_dss_mask_t[BITS_TO_LONGS(32 * XE_MAX_DSS_FUSE_REGS)];
 typedef unsigned long xe_eu_mask_t[BITS_TO_LONGS(32 * XE_MAX_DSS_FUSE_REGS)];
+
+struct xe_mmio_range {
+	u32 start;
+	u32 end;
+};
+
+/*
+ * The hardware has multiple kinds of multicast register ranges that need
+ * special register steering (and future platforms are expected to add
+ * additional types).
+ *
+ * During driver startup, we initialize the steering control register to
+ * direct reads to a slice/subslice that are valid for the 'subslice' class
+ * of multicast registers.  If another type of steering does not have any
+ * overlap in valid steering targets with 'subslice' style registers, we will
+ * need to explicitly re-steer reads of registers of the other type.
+ *
+ * Only the replication types that may need additional non-default steering
+ * are listed here.
+ */
+enum xe_steering_type {
+	L3BANK,
+	MSLICE,
+	LNCF,
+	DSS,
+	OADDRM,
+
+	/*
+	 * On some platforms there are multiple types of MCR registers that
+	 * will always return a non-terminated value at instance (0, 0).  We'll
+	 * lump those all into a single category to keep things simple.
+	 */
+	INSTANCE0,
+
+	NUM_STEERING_TYPES
+};
 
 /**
  * struct xe_gt - Top level struct of a graphics tile
@@ -261,6 +296,19 @@ struct xe_gt {
 		/** @eu_mask_per_dss: EU mask per DSS*/
 		xe_eu_mask_t eu_mask_per_dss;
 	} fuse_topo;
+
+	struct {
+		const struct xe_mmio_range *ranges;
+
+		u16 group_target;
+		u16 instance_target;
+	} steering[NUM_STEERING_TYPES];
+
+	/**
+	 * @mcr_lock: protects the MCR_SELECTOR register for the duration
+	 *    of a steered operation
+	 */
+	spinlock_t mcr_lock;
 };
 
 #endif

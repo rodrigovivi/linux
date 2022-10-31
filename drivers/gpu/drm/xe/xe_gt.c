@@ -15,6 +15,7 @@
 #include "xe_ggtt.h"
 #include "xe_gt.h"
 #include "xe_gt_clock.h"
+#include "xe_gt_mcr.h"
 #include "xe_gt_pagefault.h"
 #include "xe_gt_sysfs.h"
 #include "xe_gt_topology.h"
@@ -216,6 +217,8 @@ int xe_gt_init_early(struct xe_gt *gt)
 	err = xe_hw_engines_init_early(gt);
 	if (err)
 		goto err_fw;
+
+	xe_gt_mcr_init(gt);
 
 	err = xe_force_wake_put(gt_to_fw(gt), XE_FW_GT);
 	if (err)

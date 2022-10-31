@@ -131,3 +131,14 @@ xe_gt_topology_dump(struct xe_gt *gt, struct drm_printer *p)
 		   gt->fuse_topo.eu_mask_per_dss);
 
 }
+
+/*
+ * Used to obtain the index of the first DSS.  Can start searching from the
+ * beginning of a specific dss group (e.g., gslice, cslice, etc.) if
+ * groupsize and groupnum are non-zero.
+ */
+unsigned int
+xe_dss_mask_group_ffs(xe_dss_mask_t mask, int groupsize, int groupnum)
+{
+	return find_next_bit(mask, XE_MAX_DSS_FUSE_BITS, groupnum * groupsize);
+}
