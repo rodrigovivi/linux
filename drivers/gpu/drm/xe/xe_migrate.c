@@ -837,9 +837,10 @@ err_sync:
 }
 
 static void write_pgtable(struct xe_gt *gt, struct xe_bb *bb, u64 ppgtt_ofs,
-			  struct xe_vm_pgtable_update *update,
-			  xe_migrate_populatefn_t populatefn, void *arg)
+			  const struct xe_vm_pgtable_update *update,
+			  struct xe_migrate_pt_update *pt_update)
 {
+	const struct xe_migrate_pt_update_ops *ops = pt_update->ops;
 	u32 chunk;
 	u32 ofs = update->ofs, size = update->qwords;
 
@@ -874,7 +875,8 @@ static void write_pgtable(struct xe_gt *gt, struct xe_bb *bb, u64 ppgtt_ofs,
 			(chunk * 2 + 1);
 		bb->cs[bb->len++] = lower_32_bits(addr);
 		bb->cs[bb->len++] = upper_32_bits(addr);
-		populatefn(gt, NULL, bb->cs + bb->len, ofs, chunk, update, arg);
+		ops->populate(pt_update, gt, NULL, bb->cs + bb->len, ofs, chunk,
+			      update);
 
 		bb->len += chunk * 2;
 		ofs += chunk;
@@ -890,11 +892,12 @@ struct xe_vm *xe_migrate_get_vm(struct xe_migrate *m)
 static struct dma_fence *
 xe_migrate_update_pgtables_cpu(struct xe_migrate *m,
 			       struct xe_vm *vm, struct xe_bo *bo,
-			       struct xe_vm_pgtable_update *updates,
+			       const struct  xe_vm_pgtable_update *updates,
 			       u32 num_updates, bool wait_vm,
-			       xe_migrate_populatefn_t populatefn,
-			       void *arg)
+			       struct xe_migrate_pt_update *pt_update)
 {
+	const struct xe_migrate_pt_update_ops *ops = pt_update->ops;
+	struct dma_fence *fence;
 	u32 i;
 
 	/* Wait on BO moves for 10 ms, then fall back to GPU job */
@@ -918,16 +921,18 @@ xe_migrate_update_pgtables_cpu(struct xe_migrate *m,
 	}
 
 	for (i = 0; i < num_updates; i++) {
-		struct xe_vm_pgtable_update *update = &updates[i];
+		const struct xe_vm_pgtable_update *update = &updates[i];
 
-		populatefn(m->gt, &update->pt_bo->vmap, NULL, update->ofs,
-			   update->qwords, update, arg);
+		ops->populate(pt_update, m->gt, &update->pt_bo->vmap, NULL,
+			      update->ofs, update->qwords, update);
 	}
 
 	trace_xe_vm_cpu_bind(vm);
 	xe_device_wmb(vm->xe);
 
-	return dma_fence_get_stub();
+	fence = dma_fence_get_stub();
+
+	return fence;
 }
 
 static bool no_in_syncs(struct xe_sync_entry *syncs, u32 num_syncs)
@@ -956,17 +961,17 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 			   struct xe_vm *vm,
 			   struct xe_bo *bo,
 			   struct xe_engine *eng,
-			   struct xe_vm_pgtable_update *updates,
+			   const struct xe_vm_pgtable_update *updates,
 			   u32 num_updates,
 			   struct xe_sync_entry *syncs, u32 num_syncs,
-			   xe_migrate_populatefn_t populatefn, void *arg)
+			   struct xe_migrate_pt_update *pt_update)
 {
 	struct xe_gt *gt = m->gt;
 	struct xe_device *xe = gt_to_xe(gt);
 	struct xe_sched_job *job;
 	struct dma_fence *fence;
 	struct drm_suballoc *sa_bo = NULL;
-	struct xe_vma *vma = arg;
+	struct xe_vma *vma = pt_update->vma;
 	struct xe_bb *bb;
 	u32 i, batch_size, ppgtt_ofs, update_idx, page_ofs = 0;
 	u64 addr;
@@ -979,7 +984,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 		fence =  xe_migrate_update_pgtables_cpu(m, vm, bo, updates,
 							num_updates,
 							first_munmap_rebind,
-							populatefn, arg);
+							pt_update);
 		if (!IS_ERR(fence))
 			return fence;
 	}
@@ -1057,7 +1062,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 			(page_ofs / sizeof(u64)) * GEN8_PAGE_SIZE;
 		for (i = 0; i < num_updates; i++)
 			write_pgtable(m->gt, bb, addr + i * GEN8_PAGE_SIZE,
-				      &updates[i], populatefn, arg);
+				      &updates[i], pt_update);
 	} else {
 		/* phys pages, no preamble required */
 		bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
@@ -1066,8 +1071,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 		/* Preemption is enabled again by the ring ops. */
 		emit_arb_clear(bb);
 		for (i = 0; i < num_updates; i++)
-			write_pgtable(m->gt, bb, 0, &updates[i], populatefn,
-				      arg);
+			write_pgtable(m->gt, bb, 0, &updates[i], pt_update);
 	}
 
 	if (!eng)

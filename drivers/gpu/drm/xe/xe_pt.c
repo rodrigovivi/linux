@@ -917,9 +917,10 @@ static void xe_pt_build_leaves(struct xe_gt *gt, struct xe_vma *vma)
 }
 
 static void
-xe_vm_populate_pgtable(struct xe_gt *gt, struct iosys_map *map, void *data,
+xe_vm_populate_pgtable(struct xe_migrate_pt_update *pt_update, struct xe_gt *gt,
+		       struct iosys_map *map, void *data,
 		       u32 qword_ofs, u32 num_qwords,
-		       struct xe_vm_pgtable_update *update, void *arg)
+		       const struct xe_vm_pgtable_update *update)
 {
 	struct xe_pt_entry *ptes = update->pt_entries;
 	u64 *ptr = data;
@@ -1028,6 +1029,10 @@ static void xe_vm_dbg_print_entries(struct xe_device *xe,
 {}
 #endif
 
+static const struct xe_migrate_pt_update_ops bind_ops = {
+	.populate = xe_vm_populate_pgtable,
+};
+
 /**
  * __xe_pt_bind_vma() - Build and connect a page-table tree for the vma
  * address range.
@@ -1056,6 +1061,10 @@ __xe_pt_bind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 		 bool rebind)
 {
 	struct xe_vm_pgtable_update entries[XE_VM_MAX_LEVEL * 2 + 1];
+	struct xe_migrate_pt_update pt_update = {
+		.ops = &bind_ops,
+		.vma = vma,
+	};
 	struct xe_vm *vm = vma->vm;
 	u32 num_entries;
 	struct dma_fence *fence;
@@ -1080,7 +1089,7 @@ __xe_pt_bind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 					   e ? e : vm->eng[gt->info.id],
 					   entries, num_entries,
 					   syncs, num_syncs,
-					   xe_vm_populate_pgtable, vma);
+					   &pt_update);
 	if (!IS_ERR(fence)) {
 		/* add shared fence now for pagetable delayed destroy */
 		dma_resv_add_fence(&vm->resv, fence, !rebind &&
@@ -1259,12 +1268,12 @@ static unsigned int xe_pt_stage_unbind(struct xe_gt *gt, struct xe_vma *vma,
 }
 
 static void
-xe_migrate_clear_pgtable_callback(struct xe_gt *gt, struct iosys_map *map,
+xe_migrate_clear_pgtable_callback(struct xe_migrate_pt_update *pt_update,
+				  struct xe_gt *gt, struct iosys_map *map,
 				  void *ptr, u32 qword_ofs, u32 num_qwords,
-				  struct xe_vm_pgtable_update *update,
-				  void *arg)
+				  const struct xe_vm_pgtable_update *update)
 {
-	struct xe_vma *vma = arg;
+	struct xe_vma *vma = pt_update->vma;
 	u64 empty = __xe_pt_empty_pte(gt, vma->vm, update->pt->level);
 	int i;
 
@@ -1308,6 +1317,10 @@ xe_pt_commit_unbind(struct xe_vma *vma,
 	}
 }
 
+static const struct xe_migrate_pt_update_ops unbind_ops = {
+	.populate = xe_migrate_clear_pgtable_callback,
+};
+
 /**
  * __xe_pt_unbind_vma() - Disconnect and free a page-table tree for the vma
  * address range.
@@ -1333,6 +1346,10 @@ __xe_pt_unbind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 		   struct xe_sync_entry *syncs, u32 num_syncs)
 {
 	struct xe_vm_pgtable_update entries[XE_VM_MAX_LEVEL * 2 + 1];
+	struct xe_migrate_pt_update pt_update = {
+		.ops = &unbind_ops,
+		.vma = vma,
+	};
 	struct xe_vm *vm = vma->vm;
 	u32 num_entries;
 	struct dma_fence *fence = NULL;
@@ -1360,8 +1377,7 @@ __xe_pt_unbind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 					   vm->eng[gt->info.id],
 					   entries, num_entries,
 					   syncs, num_syncs,
-					   xe_migrate_clear_pgtable_callback,
-					   vma);
+					   &pt_update);
 	if (!IS_ERR(fence)) {
 		/* add shared fence now for pagetable delayed destroy */
 		dma_resv_add_fence(&vm->resv, fence,
