@@ -898,6 +898,7 @@ xe_migrate_update_pgtables_cpu(struct xe_migrate *m,
 {
 	const struct xe_migrate_pt_update_ops *ops = pt_update->ops;
 	struct dma_fence *fence;
+	int err;
 	u32 i;
 
 	/* Wait on BO moves for 10 ms, then fall back to GPU job */
@@ -920,6 +921,11 @@ xe_migrate_update_pgtables_cpu(struct xe_migrate *m,
 			return ERR_PTR(-ETIME);
 	}
 
+	if (ops->pre_commit) {
+		err = ops->pre_commit(pt_update);
+		if (err)
+			return ERR_PTR(err);
+	}
 	for (i = 0; i < num_updates; i++) {
 		const struct xe_vm_pgtable_update *update = &updates[i];
 
@@ -966,6 +972,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 			   struct xe_sync_entry *syncs, u32 num_syncs,
 			   struct xe_migrate_pt_update *pt_update)
 {
+	const struct xe_migrate_pt_update_ops *ops = pt_update->ops;
 	struct xe_gt *gt = m->gt;
 	struct xe_device *xe = gt_to_xe(gt);
 	struct xe_sched_job *job;
@@ -985,7 +992,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 							num_updates,
 							first_munmap_rebind,
 							pt_update);
-		if (!IS_ERR(fence))
+		if (!IS_ERR(fence) || fence == ERR_PTR(-EAGAIN))
 			return fence;
 	}
 
@@ -1110,6 +1117,11 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	if (err)
 		goto err_job;
 
+	if (ops->pre_commit) {
+		err = ops->pre_commit(pt_update);
+		if (err)
+			goto err_job;
+	}
 	xe_sched_job_arm(job);
 	fence = dma_fence_get(&job->drm.s_fence->finished);
 	xe_sched_job_push(job);

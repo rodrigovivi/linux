@@ -42,6 +42,15 @@ struct xe_migrate_pt_update_ops {
 			 struct xe_gt *gt, struct iosys_map *map,
 			 void *pos, u32 ofs, u32 num_qwords,
 			 const struct xe_vm_pgtable_update *update);
+
+	/**
+	 * pre_commit(): Callback to be called just before arming the
+	 * sched_job.
+	 * @pt_update: Pointer to embeddable callback argument.
+	 *
+	 * Return: 0 on success, negative error code on error.
+	 */
+	int (*pre_commit)(struct xe_migrate_pt_update *pt_update);
 };
 
 struct xe_migrate_pt_update {

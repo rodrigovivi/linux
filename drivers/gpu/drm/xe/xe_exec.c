@@ -170,6 +170,7 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	struct ww_acquire_ctx ww;
 	struct list_head objs;
 	struct ttm_validate_buffer tv_vm;
+	bool armed = false;
 	int err = 0;
 
 	if (XE_IOCTL_ERR(xe, args->extensions))
@@ -329,6 +330,7 @@ retry:
 	 */
 
 	xe_sched_job_arm(job);
+	armed = true;
 
 	if (!xe_vm_no_dma_fences(vm)) {
 		/* Block userptr invalidations / BO eviction */
@@ -364,14 +366,16 @@ retry:
 	xe_sched_job_push(job);
 
 err_put_job:
-	if (err && err != -EAGAIN)
+	if (err && !armed)
 		xe_sched_job_free(job);
 err_engine_end:
 	xe_exec_end(engine, &ww, &objs);
 err_unlock_list:
 	up_read(&vm->lock);
-	if (err == -EAGAIN)
+	if (err == -EAGAIN) {
+		armed = false;
 		goto retry;
+	}
 err_syncs:
 	for (i = 0; i < num_syncs; i++)
 		xe_sync_entry_cleanup(&syncs[i]);

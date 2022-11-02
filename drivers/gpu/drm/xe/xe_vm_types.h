@@ -100,6 +100,9 @@ struct xe_vma {
 		bool dirty;
 		/** @initial_bind: user pointer has been bound at least once */
 		bool initial_bind;
+#if IS_ENABLED(CONFIG_DRM_XE_USERPTR_INVAL_INJECT)
+		u32 divisor;
+#endif
 	} userptr;
 
 	/** @usm: unified shared memory state */

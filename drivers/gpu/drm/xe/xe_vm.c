@@ -63,8 +63,8 @@ int xe_vma_userptr_pin_pages(struct xe_vma *vma)
 	int pinned, ret, i;
 	bool read_only = vma->pte_flags & PTE_READ_ONLY;
 
-	XE_BUG_ON(!xe_vma_is_userptr(vma));
 
+	XE_BUG_ON(!xe_vma_is_userptr(vma));
 retry:
 	if (vma->destroyed)
 		return 0;
@@ -555,28 +555,32 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 
 	write_unlock(&vm->userptr.notifier_lock);
 
-	if (xe_vm_in_fault_mode(vm)) {
+	/*
+	 * Preempt fences turn into schedule disables, pipeline these.
+	 * Note that even in fault mode, we need to wait for binds and
+	 * unbinds to complete, and those are attached as BOOKMARK fences
+	 * to the vm.
+	 */
+	dma_resv_iter_begin(&cursor, &vm->resv,
+			    DMA_RESV_USAGE_PREEMPT_FENCE);
+	dma_resv_for_each_fence_unlocked(&cursor, fence)
+		dma_fence_enable_sw_signaling(fence);
+	dma_resv_iter_end(&cursor);
+
+	err = dma_resv_wait_timeout(&vm->resv,
+				    DMA_RESV_USAGE_PREEMPT_FENCE,
+				    false, MAX_SCHEDULE_TIMEOUT);
+	XE_WARN_ON(err <= 0);
+
+	/* If this VM in compute mode, rebind the VMA */
+	if (xe_vm_in_compute_mode(vm)) {
+		queue_work(xe->ordered_wq, &vm->preempt.rebind_work);
+	} else if (xe_vm_in_fault_mode(vm)) {
 		err = xe_vm_invalidate_vma(vma);
 		XE_WARN_ON(err);
-	} else {
-		/* Preempt fences turn into schedule disables, pipeline these */
-		dma_resv_iter_begin(&cursor, &vm->resv,
-				    DMA_RESV_USAGE_PREEMPT_FENCE);
-		dma_resv_for_each_fence_unlocked(&cursor, fence)
-			dma_fence_enable_sw_signaling(fence);
-		dma_resv_iter_end(&cursor);
-
-		err = dma_resv_wait_timeout(&vm->resv,
-					    DMA_RESV_USAGE_PREEMPT_FENCE,
-					    false, MAX_SCHEDULE_TIMEOUT);
-		XE_WARN_ON(err <= 0);
-
-		trace_xe_vma_userptr_invalidate_complete(vma);
-
-		/* If this VM in compute mode, rebind the VMA */
-		if (xe_vm_in_compute_mode(vm))
-			queue_work(xe->ordered_wq, &vm->preempt.rebind_work);
 	}
+
+	trace_xe_vma_userptr_invalidate_complete(vma);
 
 	return true;
 }
@@ -973,14 +977,14 @@ err_scratch_pt:
 		while (i)
 			if (vm->scratch_pt[id][--i])
 				xe_pt_destroy(vm->scratch_pt[id][i],
-					      vm->flags);
+					      vm->flags, NULL);
 		xe_bo_unpin(vm->scratch_bo[id]);
 		xe_bo_put(vm->scratch_bo[id]);
 	}
 err_destroy_root:
 	for_each_gt(gt, xe, id) {
 		if (vm->pt_root[id])
-			xe_pt_destroy(vm->pt_root[id], vm->flags);
+			xe_pt_destroy(vm->pt_root[id], vm->flags, NULL);
 	}
 	dma_resv_unlock(&vm->resv);
 err_put:
@@ -1076,7 +1080,8 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 			xe_bo_unpin(vm->scratch_bo[id]);
 			xe_bo_put(vm->scratch_bo[id]);
 			for (i = 0; i < vm->pt_root[id]->level; i++)
-				xe_pt_destroy(vm->scratch_pt[id][i], vm->flags);
+				xe_pt_destroy(vm->scratch_pt[id][i], vm->flags,
+					      NULL);
 		}
 	}
 	xe_vm_unlock(vm, &ww);
@@ -1136,7 +1141,7 @@ static void vm_destroy_work_func(struct work_struct *w)
 	xe_vm_lock(vm, &ww, 0, false);
 	for_each_gt(gt, xe, id) {
 		if (vm->pt_root[id]) {
-			xe_pt_destroy(vm->pt_root[id], vm->flags);
+			xe_pt_destroy(vm->pt_root[id], vm->flags, NULL);
 			vm->pt_root[id] = NULL;
 		}
 	}
@@ -1220,7 +1225,6 @@ xe_vm_unbind_vma(struct xe_vma *vma, struct xe_engine *e,
 			err = PTR_ERR(fence);
 			goto err_fences;
 		}
-		vma->gt_present &= ~BIT(id);
 
 		if (fences)
 			fences[cur_fence++] = fence;
@@ -1438,38 +1442,6 @@ static int xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma, struct xe_engine *e,
 	}
 
 	return __xe_vm_bind(vm, vma, e, syncs, num_syncs, afence);
-}
-
-static int xe_vm_bind_userptr(struct xe_vm *vm, struct xe_vma *vma,
-			      struct xe_engine *e, struct xe_sync_entry *syncs,
-			      u32 num_syncs, struct async_op_fence *afence)
-{
-	int err;
-
-	err = __xe_vm_bind(vm, vma, e, syncs, num_syncs, afence);
-	if (err)
-		return err;
-
-	/*
-	 * Corner case where initial bind no longer valid, kick preempt fences
-	 * to fix page tables
-	 */
-	if (xe_vm_in_compute_mode(vm) &&
-	    xe_vma_userptr_needs_repin(vma) == -EAGAIN) {
-		struct xe_device *xe = vm->xe;
-		struct dma_resv_iter cursor;
-		struct dma_fence *fence;
-
-		dma_resv_iter_begin(&cursor, &vm->resv,
-				    DMA_RESV_USAGE_PREEMPT_FENCE);
-		dma_resv_for_each_fence_unlocked(&cursor, fence)
-			dma_fence_enable_sw_signaling(fence);
-		dma_resv_iter_end(&cursor);
-
-		queue_work(xe->ordered_wq, &vm->preempt.rebind_work);
-	}
-
-	return 0;
 }
 
 static int xe_vm_unbind(struct xe_vm *vm, struct xe_vma *vma,
@@ -1714,12 +1686,8 @@ static int xe_vm_prefetch(struct xe_vm *vm, struct xe_vma *vma,
 	}
 
 	if (vma->gt_mask != (vma->gt_present & ~vma->usm.gt_invalidated)) {
-		if (xe_vma_is_userptr(vma))
-			return xe_vm_bind_userptr(vm, vma, e, syncs, num_syncs,
-						  afence);
-		else
-			return xe_vm_bind(vm, vma, e, vma->bo, syncs, num_syncs,
-					  afence);
+		return xe_vm_bind(vm, vma, e, vma->bo, syncs, num_syncs,
+				  afence);
 	} else {
 		int i;
 
@@ -1747,7 +1715,7 @@ static int __vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 	case XE_VM_BIND_OP_UNMAP_ALL:
 		return xe_vm_unbind(vm, vma, e, syncs, num_syncs, afence);
 	case XE_VM_BIND_OP_MAP_USERPTR:
-		return xe_vm_bind_userptr(vm, vma, e, syncs, num_syncs, afence);
+		return xe_vm_bind(vm, vma, e, NULL, syncs, num_syncs, afence);
 	case XE_VM_BIND_OP_PREFETCH:
 		return xe_vm_prefetch(vm, vma, e, region, syncs, num_syncs,
 				      afence);
@@ -1828,12 +1796,19 @@ static int vm_bind_ioctl(struct xe_vm *vm, struct xe_vma *vma,
 		list_add(&tv_bo.head, &objs);
 	}
 
+again:
 	err = ttm_eu_reserve_buffers(&ww, &objs, true, &dups);
 	if (!err) {
 		err = __vm_bind_ioctl(vm, vma, e, bo,
 				      bind_op->op, bind_op->region, syncs,
 				      num_syncs, afence);
 		ttm_eu_backoff_reservation(&ww, &objs);
+		if (err == -EAGAIN && xe_vma_is_userptr(vma)) {
+			lockdep_assert_held_write(&vm->lock);
+			err = xe_vma_userptr_pin_pages(vma);
+			if (!err)
+				goto again;
+		}
 	}
 	xe_bo_put(vbo);
 
