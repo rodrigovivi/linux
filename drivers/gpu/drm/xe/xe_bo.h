@@ -238,6 +238,47 @@ static inline size_t xe_bo_ccs_pages_start(struct xe_bo *bo)
 	return PAGE_ALIGN(bo->ttm.base.size);
 }
 
+void __xe_bo_release_dummy(struct kref *kref);
+
+/**
+ * xe_bo_put_deferred() - Put a buffer object with delayed final freeing
+ * @bo: The bo to put.
+ * @deferred: List to which to add the buffer object if we cannot put, or
+ * NULL if the function is to put unconditionally.
+ *
+ * Since the final freeing of an object includes both sleeping and (!)
+ * memory allocation in the dma_resv individualization, it's not ok
+ * to put an object from atomic context nor from within a held lock
+ * tainted by reclaim. In such situations we want to defer the final
+ * freeing until we've exited the restricting context, or in the worst
+ * case to a workqueue.
+ * This function either puts the object if possible without the refcount
+ * reaching zero, or adds it to the @deferred list if that was not possible.
+ * The caller needs to follow up with a call to xe_bo_put_commit() to actually
+ * put the bo iff this function returns true. It's safe to always
+ * follow up with a call to xe_bo_put_commit().
+ * TODO: It's TTM that is the villain here. Perhaps TTM should add an
+ * interface like this.
+ *
+ * Return: true if @bo was the first object put on the @freed list,
+ * false otherwise.
+ */
+static inline bool
+xe_bo_put_deferred(struct xe_bo *bo, struct llist_head *deferred)
+{
+	if (!deferred) {
+		xe_bo_put(bo);
+		return false;
+	}
+
+	if (!kref_put(&bo->ttm.base.refcount, __xe_bo_release_dummy))
+		return false;
+
+	return llist_add(&bo->freed, deferred);
+}
+
+void xe_bo_put_commit(struct llist_head *deferred);
+
 #if IS_ENABLED(CONFIG_DRM_XE_KUNIT_TEST)
 /**
  * xe_bo_is_mem_type - Whether the bo currently resides in the given

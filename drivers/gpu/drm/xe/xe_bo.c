@@ -1362,6 +1362,40 @@ bool xe_bo_needs_ccs_pages(struct xe_bo *bo)
 		(bo->flags & (XE_BO_CREATE_VRAM0_BIT | XE_BO_CREATE_VRAM1_BIT));
 }
 
+/**
+ * __xe_bo_release_dummy() - Dummy kref release function
+ * @kref: The embedded struct kref.
+ *
+ * Dummy release function for xe_bo_put_deferred(). Keep off.
+ */
+void __xe_bo_release_dummy(struct kref *kref)
+{
+}
+
+/**
+ * xe_bo_put_commit() - Put bos whose put was deferred by xe_bo_put_deferred().
+ * @deferred: The lockless list used for the call to xe_bo_put_deferred().
+ *
+ * Puts all bos whose put was deferred by xe_bo_put_deferred().
+ * The @deferred list can be either an onstack local list or a global
+ * shared list used by a workqueue.
+ */
+void xe_bo_put_commit(struct llist_head *deferred)
+{
+	struct llist_node *freed;
+	struct xe_bo *bo, *next;
+
+	if (!deferred)
+		return;
+
+	freed = llist_del_all(deferred);
+	if (!freed)
+		return;
+
+	llist_for_each_entry_safe(bo, next, freed, freed)
+		drm_gem_object_free(&bo->ttm.base.refcount);
+}
+
 #if IS_ENABLED(CONFIG_DRM_XE_KUNIT_TEST)
 #include "tests/xe_bo.c"
 #endif
