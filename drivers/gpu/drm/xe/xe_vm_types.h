@@ -106,33 +106,9 @@ struct xe_vma {
 	} userptr;
 
 	/** @usm: unified shared memory state */
-	struct xe_vma_usm {
+	struct {
 		/** @gt_invalidated: VMA has been invalidated */
 		u64 gt_invalidated;
-		/** @gt: state for each GT this VMA is mapped in */
-		struct {
-			/** @num_leaves: the number of leaf pages */
-			int num_leaves;
-			/**
-			 * @leaves: leaves info, used for invalidating VMAs
-			 * without a lock in eviction / userptr invalidation
-			 * code. Needed as we can't take the required locks to
-			 * access / change the stored page table structure in
-			 * these paths.
-			 */
-			struct {
-				/**
-				 * @bo: buffer object for leaf of page table
-				 * structure
-				 */
-				struct xe_bo *bo;
-				/** @start_ofs: start offset in leaf BO */
-				u32 start_ofs;
-				/** @len: length of memory to zero in leaf BO */
-				u32 len;
-#define MAX_LEAVES	(XE_VM_MAX_LEVEL * 2 + 1)
-			} leaves[MAX_LEAVES];
-		} gt[XE_MAX_GT];
 	} usm;
 };
 

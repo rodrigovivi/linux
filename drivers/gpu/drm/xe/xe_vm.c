@@ -3063,29 +3063,33 @@ int xe_vm_invalidate_vma(struct xe_vma *vma)
 	u32 gt_needs_invalidate = 0;
 	int seqno[XE_MAX_GT];
 	u8 id;
-	int i;
 	int ret;
 
 	XE_BUG_ON(!xe_vm_in_fault_mode(vma->vm));
 	trace_xe_vma_usm_invalidate(vma);
 
-	for_each_gt(gt, xe, id) {
-		for (i = 0; i < vma->usm.gt[id].num_leaves; ++i) {
-			struct iosys_map *map =
-				&vma->usm.gt[id].leaves[i].bo->vmap;
+	/* Check that we don't race with page-table updates */
+	if (IS_ENABLED(CONFIG_PROVE_LOCKING)) {
+		if (xe_vma_is_userptr(vma)) {
+			WARN_ON_ONCE(!mmu_interval_check_retry
+				     (&vma->userptr.notifier,
+				      vma->userptr.notifier_seq));
+			WARN_ON_ONCE(!dma_resv_test_signaled(&vma->vm->resv,
+							     DMA_RESV_USAGE_PREEMPT_FENCE));
 
-			xe_map_memset(xe, map,
-				      vma->usm.gt[id].leaves[i].start_ofs, 0,
-				      vma->usm.gt[id].leaves[i].len);
-			gt_needs_invalidate |= BIT(id);
+		} else {
+			xe_bo_assert_held(vma->bo);
 		}
-		if (gt_needs_invalidate & BIT(id)) {
+	}
+
+	for_each_gt(gt, xe, id) {
+		if (xe_pt_zap_ptes(gt, vma)) {
+			gt_needs_invalidate |= BIT(id);
 			xe_device_wmb(xe);
 			seqno[id] = xe_gt_tlb_invalidation(gt);
 			if (seqno[id] < 0)
 				return seqno[id];
 		}
-		vma->usm.gt[id].num_leaves = 0;
 	}
 
 	for_each_gt(gt, xe, id) {

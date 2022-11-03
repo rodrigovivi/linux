@@ -823,25 +823,7 @@ static bool xe_pt_nonshared_offsets(u64 addr, u64 end, unsigned int level,
 	return *end_offset > *offset;
 }
 
-static void vma_usm_add_leaf(struct xe_gt *gt, struct xe_vma_usm *usm,
-			     struct xe_pt *pt, int start_ofs, int len)
-{
-	struct xe_device *xe = gt_to_xe(gt);
-	int gt_id = gt->info.id;
-	int num_leaves = usm->gt[gt_id].num_leaves;
-
-	XE_BUG_ON(num_leaves >= MAX_LEAVES);
-
-	vm_dbg(&xe->drm, "add leaf=%d, pt->level=%d, start_ofs=%d, len=%d",
-	       num_leaves, pt->level, start_ofs, len);
-
-	usm->gt[gt_id].leaves[num_leaves].bo = pt->bo;
-	usm->gt[gt_id].leaves[num_leaves].start_ofs = start_ofs;
-	usm->gt[gt_id].leaves[num_leaves].len = len;
-	usm->gt[gt_id].num_leaves++;
-}
-
-struct xe_pt_build_leaves_walk {
+struct xe_pt_zap_ptes_walk {
 	/** @drm: The walk base-class */
 	struct drm_pt_walk drm;
 
@@ -850,17 +832,17 @@ struct xe_pt_build_leaves_walk {
 	struct xe_gt *gt;
 
 	/* Output */
-	/** @leaves: Pointer to the leaves structure we're building */
-	struct xe_vma_usm *leaves;
+	/** @needs_invalidate: Whether we need to invalidate TLB*/
+	bool needs_invalidate;
 };
 
-static int xe_pt_build_leaves_entry(struct drm_pt *parent, pgoff_t offset,
-				    unsigned int level, u64 addr, u64 next,
-				    struct drm_pt **child,
-				    enum page_walk_action *action,
-				    struct drm_pt_walk *walk)
+static int xe_pt_zap_ptes_entry(struct drm_pt *parent, pgoff_t offset,
+				unsigned int level, u64 addr, u64 next,
+				struct drm_pt **child,
+				enum page_walk_action *action,
+				struct drm_pt_walk *walk)
 {
-	struct xe_pt_build_leaves_walk *xe_walk =
+	struct xe_pt_zap_ptes_walk *xe_walk =
 		container_of(walk, typeof(*xe_walk), drm);
 	struct xe_pt *xe_child = container_of(*child, typeof(*xe_child), drm);
 	pgoff_t end_offset;
@@ -874,49 +856,55 @@ static int xe_pt_build_leaves_entry(struct drm_pt *parent, pgoff_t offset,
 	 * adjust level down.
 	 */
 	if (xe_pt_nonshared_offsets(addr, next, --level, walk, action, &offset,
-				    &end_offset))
-		vma_usm_add_leaf(xe_walk->gt, xe_walk->leaves, xe_child,
-				 offset * sizeof(u64),
-				 (end_offset - offset) * sizeof(u64));
+				    &end_offset)) {
+		xe_map_memset(gt_to_xe(xe_walk->gt), &xe_child->bo->vmap,
+			      offset * sizeof(u64), 0,
+			      (end_offset - offset) * sizeof(u64));
+		xe_walk->needs_invalidate = true;
+	}
 
 	return 0;
 }
 
-static const struct drm_pt_walk_ops xe_pt_build_leaves_ops = {
-	.pt_entry = xe_pt_build_leaves_entry,
+static const struct drm_pt_walk_ops xe_pt_zap_ptes_ops = {
+	.pt_entry = xe_pt_zap_ptes_entry,
 };
 
 /**
- * xe_pt_build_leaves() - Build leaves information for quick GPU PTE zapping.
- * @gt: The gt we're building for.
- * @vma: GPU VMA detailing address range and holding the usm structure.
+ * xe_pt_zap_ptes() - Zap (zero) gpu ptes of an address range
+ * @gt: The gt we're zapping for.
+ * @vma: GPU VMA detailing address range.
  *
  * Eviction and Userptr invalidation needs to be able to zap the
- * gpu ptes of a given address range with special locking requirements.
- * This is done using the xe_vm_invalidate_vma() function. In order to
- * be able to do that, that function needs access to the shared page-table
- * leaves, so it can either clear the leaf PTEs or clear the pointers to
- * lower-level page-tables. This function builds that necessary information
- * for a pre-existing connected page-table tree. The function needs to be
- * called in the same critical section that commits the bind operation for
- * the vma.
+ * gpu ptes of a given address range in pagefaulting mode.
+ * In order to be able to do that, that function needs access to the shared
+ * page-table entrieaso it can either clear the leaf PTEs or
+ * clear the pointers to lower-level page-tables. The caller is required
+ * to hold the necessary locks to ensure neither the page-table connectivity
+ * nor the page-table entries of the range is updated from under us.
+ *
+ * Return: Whether ptes were actually updated and a TLB invalidation is
+ * required.
  */
-static void xe_pt_build_leaves(struct xe_gt *gt, struct xe_vma *vma)
+bool xe_pt_zap_ptes(struct xe_gt *gt, struct xe_vma *vma)
 {
-	struct xe_pt_build_leaves_walk xe_walk = {
+	struct xe_pt_zap_ptes_walk xe_walk = {
 		.drm = {
-			.ops = &xe_pt_build_leaves_ops,
+			.ops = &xe_pt_zap_ptes_ops,
 			.shifts = xe_normal_pt_shifts,
 			.max_level = XE_PT_HIGHEST_LEVEL,
 		},
 		.gt = gt,
-		.leaves = &vma->usm,
 	};
 	struct xe_pt *pt = vma->vm->pt_root[gt->info.id];
 
-	vma->usm.gt[gt->info.id].num_leaves = 0;
+	if (!(vma->gt_present & BIT(gt->info.id)))
+		return false;
+
 	(void)drm_pt_walk_shared(&pt->drm, pt->level, vma->start, vma->end + 1,
 				 &xe_walk.drm);
+
+	return xe_walk.needs_invalidate;
 }
 
 static void
@@ -1219,8 +1207,6 @@ __xe_pt_bind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 					   DMA_RESV_USAGE_BOOKKEEP);
 		xe_pt_commit_bind(vma, entries, num_entries, rebind,
 				  bind_pt_update.locked ? &deferred : NULL);
-		if (xe_vm_in_fault_mode(vma->vm))
-			xe_pt_build_leaves(gt, vma);
 
 		/* This vma is live (again?) now */
 		vma->userptr.dirty = false;
@@ -1523,7 +1509,6 @@ __xe_pt_unbind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 		if (!xe_vma_is_userptr(vma) && !vma->bo->vm)
 			dma_resv_add_fence(vma->bo->ttm.base.resv, fence,
 					   DMA_RESV_USAGE_BOOKKEEP);
-		vma->usm.gt[gt->info.id].num_leaves = 0;
 		xe_pt_commit_unbind(vma, entries, num_entries,
 				    unbind_pt_update.locked ? &deferred : NULL);
 		vma->gt_present &= ~BIT(gt->info.id);

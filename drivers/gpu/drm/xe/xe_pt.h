@@ -43,6 +43,8 @@ struct dma_fence *
 __xe_pt_unbind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 		   struct xe_sync_entry *syncs, u32 num_syncs);
 
+bool xe_pt_zap_ptes(struct xe_gt *gt, struct xe_vma *vma);
+
 u64 gen8_pde_encode(struct xe_bo *bo, u64 bo_offset,
 		    const enum xe_cache_level level);
 
