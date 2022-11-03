@@ -20,11 +20,74 @@
 #include "../i915/gt/intel_gt_regs.h"
 #include "../i915/i915_reg.h"
 
-/* TODO:
- * - steering:  we probably want that separate, and xe_wa.c only cares about the
- *   value to be added to the table
- * - apply workarounds with and without guc
- * - move tables to single compilation units? or single elf section?
+/**
+ * DOC: Hardware workarounds
+ *
+ * Hardware workarounds are register programming documented to be executed in
+ * the driver that fall outside of the normal programming sequences for a
+ * platform. There are some basic categories of workarounds, depending on
+ * how/when they are applied:
+ *
+ * - Context workarounds: workarounds that touch registers that are
+ *   saved/restored to/from the HW context image. The list is emitted (via Load
+ *   Register Immediate commands) once when initializing the device and saved in
+ *   the default context. That default context is then used on every context
+ *   creation to have a "primed golden context", i.e. a context image that
+ *   already contains the changes needed to all the registers.
+ *
+ *   TODO: Although these workarounds are maintained here, they are not
+ *   currently being applied.
+ *
+ * - Engine workarounds: the list of these WAs is applied whenever the specific
+ *   engine is reset. It's also possible that a set of engine classes share a
+ *   common power domain and they are reset together. This happens on some
+ *   platforms with render and compute engines. In this case (at least) one of
+ *   them need to keeep the workaround programming: the approach taken in the
+ *   driver is to tie those workarounds to the first compute/render engine that
+ *   is registered.  When executing with GuC submission, engine resets are
+ *   outside of kernel driver control, hence the list of registers involved in
+ *   written once, on engine initialization, and then passed to GuC, that
+ *   saves/restores their values before/after the reset takes place. See
+ *   ``drivers/gpu/drm/xe/xe_guc_ads.c`` for reference.
+ *
+ * - GT workarounds: the list of these WAs is applied whenever these registers
+ *   revert to their default values: on GPU reset, suspend/resume [1]_, etc.
+ *
+ * - Register whitelist: some workarounds need to be implemented in userspace,
+ *   but need to touch privileged registers. The whitelist in the kernel
+ *   instructs the hardware to allow the access to happen. From the kernel side,
+ *   this is just a special case of a MMIO workaround (as we write the list of
+ *   these to/be-whitelisted registers to some special HW registers).
+ *
+ * - Workaround batchbuffers: buffers that get executed automatically by the
+ *   hardware on every HW context restore. These buffers are created and
+ *   programmed in the default context so the hardware always go through those
+ *   programming sequences when switching contexts. The support for workaround
+ *   batchbuffers is enabled these hardware mechanisms:
+ *
+ *   #. INDIRECT_CTX: A batchbuffer and an offset are provided in the default
+ *      context, pointing the hardware to jump to that location when that offset
+ *      is reached in the context restore. Workaround batchbuffer in the driver
+ *      currently uses this mechanism for all platforms.
+ *
+ *   #. BB_PER_CTX_PTR: A batchbuffer is provided in the default context,
+ *      pointing the hardware to a buffer to continue executing after the
+ *      engine registers are restored in a context restore sequence. This is
+ *      currently not used in the driver.
+ *
+ * - Other:  There are WAs that, due to their nature, cannot be applied from a
+ *   central place. Those are peppered around the rest of the code, as needed.
+ *   Workarounds related to the display IP are the main example.
+ *
+ * .. [1] Technically, some registers are powercontext saved & restored, so they
+ *    survive a suspend/resume. In practice, writing them again is not too
+ *    costly and simplifies things, so it's the approach taken in the driver.
+ *
+ * .. note::
+ *    Hardware workarounds in xe work the same way as in i915, with the
+ *    difference of how they are maintained in the code. In xe it uses the
+ *    xe_rtp infrastructure so the workarounds can be kept in tables, following
+ *    a more declarative approach rather than procedural.
  */
 
 static bool match_14011060649(const struct xe_gt *gt,
