@@ -67,12 +67,16 @@ struct xe_vma {
 	union {
 		/** @bo_link: link into BO if not a userptr */
 		struct list_head bo_link;
-		/** @userptr_link: link into VM if userptr */
+		/** @userptr_link: link into VM repin list if userptr */
 		struct list_head userptr_link;
 	};
 
-	/** @evict_link: link into VM if this VMA has been evicted */
-	struct list_head evict_link;
+	/**
+	 * @rebind_link: link into VM if this VMA needs rebinding, and
+	 * if it's a bo (not userptr) needs validation after a possible
+	 * eviction. Protected by the vm's resv lock.
+	 */
+	struct list_head rebind_link;
 
 	/**
 	 * @unbind_link: link or list head if an unbind of multiple VMAs, in
@@ -84,6 +88,8 @@ struct xe_vma {
 	struct {
 		/** @ptr: user pointer */
 		uintptr_t ptr;
+		/** @invalidate_link: Link for the vm::userptr.invalidated list */
+		struct list_head invalidate_link;
 		/**
 		 * @notifier: MMU notifier for user pointer (invalidation call back)
 		 */
@@ -96,9 +102,11 @@ struct xe_vma {
 		struct work_struct destroy_work;
 		/** @notifier_seq: notifier sequence number */
 		unsigned long notifier_seq;
-		/** @dirty: user pointer dirty (needs new VM bind) */
-		bool dirty;
-		/** @initial_bind: user pointer has been bound at least once */
+		/**
+		 * @initial_bind: user pointer has been bound at least once.
+		 * write: vm->userptr.notifier_lock in read mode and vm->resv held.
+		 * read: vm->userptr.notifier_lock in write mode or vm->resv held.
+		 */
 		bool initial_bind;
 #if IS_ENABLED(CONFIG_DRM_XE_USERPTR_INVAL_INJECT)
 		u32 divisor;
@@ -155,8 +163,12 @@ struct xe_vm {
 	 */
 	struct rw_semaphore lock;
 
-	/** @evict_list: list of VMAs that have been evicted */
-	struct list_head evict_list;
+	/**
+	 * @rebind_list: list of VMAs that need rebinding, and if they are
+	 * bos (not userptr), need validation after a possible eviction. The
+	 * list is protected by @resv.
+	 */
+	struct list_head rebind_list;
 
 	/** @rebind_fence: rebind fence from execbuf */
 	struct dma_fence *rebind_fence;
@@ -213,12 +225,31 @@ struct xe_vm {
 
 	/** @userptr: user pointer state */
 	struct {
-		/** @list: list of VMAs which are user pointers */
-		struct list_head list;
 		/**
-		 * @notifier_lock: protects notifier
+		 * @userptr.repin_list: list of VMAs which are user pointers,
+		 * and needs repinning. Protected by @lock.
+		 */
+		struct list_head repin_list;
+		/**
+		 * @notifier_lock: protects notifier in write mode and
+		 * submission in read mode.
 		 */
 		rwlock_t notifier_lock;
+		/**
+		 * @userptr.invalidated_lock: Protects the
+		 * @userptr.invalidated list.
+		 */
+		spinlock_t invalidated_lock;
+		/**
+		 * @userptr.invalidated: List of invalidated userptrs, not yet
+		 * picked
+		 * up for revalidation. Protected from access with the
+		 * @invalidated_lock. Removing items from the list
+		 * additionally requires @lock in write mode, and adding
+		 * items to the list requires the @userptr.notifer_lock in
+		 * write mode.
+		 */
+		struct list_head invalidated;
 	} userptr;
 
 	/** @preempt: preempt state */

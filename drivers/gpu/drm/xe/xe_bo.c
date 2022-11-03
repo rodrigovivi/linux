@@ -335,9 +335,9 @@ static int xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo)
 				XE_WARN_ON(ret);
 			}
 		} else {
-			if (list_empty(&vma->evict_link))
-				list_add_tail(&vma->evict_link,
-					      &vma->vm->evict_list);
+			if (list_empty(&vma->rebind_link))
+				list_add_tail(&vma->rebind_link,
+					      &vma->vm->rebind_list);
 			if (xe_vm_in_compute_mode(vma->vm))
 				queue_work(xe->ordered_wq,
 					   &vma->vm->preempt.rebind_work);

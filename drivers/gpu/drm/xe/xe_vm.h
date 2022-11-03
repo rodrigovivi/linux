@@ -80,15 +80,13 @@ static inline bool xe_vm_no_dma_fences(struct xe_vm *vm)
 
 int xe_vm_add_compute_engine(struct xe_vm *vm, struct xe_engine *e);
 
-int xe_vm_userptr_pin(struct xe_vm *vm, bool rebind_worker);
-int xe_vm_userptr_needs_repin(struct xe_vm *vm, bool rebind_worker);
-struct dma_fence *xe_vm_rebind(struct xe_vm *vm, bool rebind_worker);
-static inline bool xe_vm_has_userptr(struct xe_vm *vm)
-{
-	lockdep_assert_held(&vm->lock);
+int xe_vm_userptr_pin(struct xe_vm *vm);
 
-	return !list_empty(&vm->userptr.list);
-}
+int xe_vm_userptr_needs_repin(struct xe_vm *vm);
+
+int xe_vm_userptr_check_repin(struct xe_vm *vm);
+
+struct dma_fence *xe_vm_rebind(struct xe_vm *vm, bool rebind_worker);
 
 int xe_vm_invalidate_vma(struct xe_vma *vma);
 
@@ -104,7 +102,8 @@ static inline bool xe_vma_is_userptr(struct xe_vma *vma)
 }
 
 int xe_vma_userptr_pin_pages(struct xe_vma *vma);
-int xe_vma_userptr_needs_repin(struct xe_vma *vma);
+
+int xe_vma_userptr_check_repin(struct xe_vma *vma);
 
 #if IS_ENABLED(CONFIG_DRM_XE_DEBUG_VM)
 #define vm_dbg drm_dbg

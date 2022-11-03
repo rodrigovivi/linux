@@ -1048,7 +1048,13 @@ static int xe_pt_userptr_inject_eagain(struct xe_vma *vma)
 	static u32 count;
 
 	if (count++ % divisor == divisor - 1) {
+		struct xe_vm *vm = vma->vm;
+
 		vma->userptr.divisor = divisor << 1;
+		spin_lock(&vm->userptr.invalidated_lock);
+		list_move_tail(&vma->userptr.invalidate_link,
+			       &vm->userptr.invalidated);
+		spin_unlock(&vm->userptr.invalidated_lock);
 		return true;
 	}
 
@@ -1209,11 +1215,10 @@ __xe_pt_bind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 				  bind_pt_update.locked ? &deferred : NULL);
 
 		/* This vma is live (again?) now */
-		vma->userptr.dirty = false;
-		vma->userptr.initial_bind = true;
 		vma->gt_present |= BIT(gt->info.id);
 
 		if (bind_pt_update.locked) {
+			vma->userptr.initial_bind = true;
 			read_unlock(&vm->userptr.notifier_lock);
 			xe_bo_put_commit(&deferred);
 		}

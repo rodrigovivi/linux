@@ -27,28 +27,11 @@
 
 #define TEST_VM_ASYNC_OPS_ERROR
 
-static int __vma_userptr_needs_repin(struct xe_vma *vma)
+int xe_vma_userptr_check_repin(struct xe_vma *vma)
 {
-	lockdep_assert_held(&vma->vm->userptr.notifier_lock);
-	XE_BUG_ON(!xe_vma_is_userptr(vma));
-
-	if (mmu_interval_read_retry(&vma->userptr.notifier,
-				    vma->userptr.notifier_seq))
-		return -EAGAIN;
-
-	return 0;
-}
-
-int xe_vma_userptr_needs_repin(struct xe_vma *vma)
-{
-	struct xe_vm *vm = vma->vm;
-	int ret;
-
-	read_lock(&vm->userptr.notifier_lock);
-	ret = __vma_userptr_needs_repin(vma);
-	read_unlock(&vm->userptr.notifier_lock);
-
-	return ret;
+	return mmu_interval_read_retry(&vma->userptr.notifier,
+				       vma->userptr.notifier_seq) ?
+		-EAGAIN : 0;
 }
 
 int xe_vma_userptr_pin_pages(struct xe_vma *vma)
@@ -121,9 +104,7 @@ out:
 
 	if (!(ret < 0)) {
 		vma->userptr.notifier_seq = notifier_seq;
-		vma->userptr.dirty = true;
-		trace_xe_vma_userptr_pin_set_dirty(vma);
-		if (xe_vma_userptr_needs_repin(vma) == -EAGAIN)
+		if (xe_vma_userptr_check_repin(vma) == -EAGAIN)
 			goto retry;
 	}
 
@@ -340,19 +321,8 @@ out_unlock_outer:
 
 static int __xe_vm_userptr_needs_repin(struct xe_vm *vm)
 {
-	struct xe_vma *vma;
-	int err = 0;
-
-	if (!xe_vm_has_userptr(vm))
-		return 0;
-
-	list_for_each_entry(vma, &vm->userptr.list, userptr_link) {
-		err = __vma_userptr_needs_repin(vma);
-		if (err)
-			return err;
-	}
-
-	return 0;
+	return (list_empty(&vm->userptr.repin_list) &&
+		list_empty(&vm->userptr.invalidated)) ? 0 : -EAGAIN;
 }
 
 static void preempt_rebind_work_func(struct work_struct *w)
@@ -366,6 +336,7 @@ static void preempt_rebind_work_func(struct work_struct *w)
 	struct dma_fence *rebind_fence;
 	unsigned int fence_count = 0;
 	LIST_HEAD(preempt_fences);
+	bool write_locked;
 	int i, err;
 	long wait;
 
@@ -378,7 +349,13 @@ retry:
 		return;
 	}
 
-	down_read(&vm->lock);
+	if (xe_vm_userptr_check_repin(vm)) {
+		down_write(&vm->lock);
+		write_locked = true;
+	} else {
+		down_read(&vm->lock);
+		write_locked = false;
+	}
 
 	if (vm->async_ops.error)
 		goto out_unlock_outer;
@@ -391,14 +368,21 @@ retry:
 	 * and trying this again.
 	 */
 	if (vm->async_ops.munmap_rebind_inflight) {
-		up_read(&vm->lock);
+		if (write_locked)
+			up_read(&vm->lock);
+		else
+			up_write(&vm->lock);
 		flush_work(&vm->async_ops.work);
 		goto retry;
 	}
 
-	err = xe_vm_userptr_pin(vm, true);
-	if (err)
-		goto out_unlock_outer;
+	if (write_locked) {
+		err = xe_vm_userptr_pin(vm);
+		downgrade_write(&vm->lock);
+		write_locked = false;
+		if (err)
+			goto out_unlock_outer;
+	}
 
 	if (!tv_bos) {
 		tv_bos = kmalloc(sizeof(*tv_bos) * vm->extobj.entries,
@@ -442,7 +426,10 @@ retry:
 	if (err)
 		goto out_unlock;
 
-	list_for_each_entry(vma, &vm->evict_list, evict_link) {
+	list_for_each_entry(vma, &vm->rebind_list, rebind_link) {
+		if (xe_vma_is_userptr(vma))
+			continue;
+
 		err = xe_bo_validate(vma->bo, vm);
 		if (err)
 			goto out_unlock;
@@ -484,8 +471,10 @@ retry:
 out_unlock:
 	ttm_eu_backoff_reservation(&ww, &objs);
 out_unlock_outer:
-	up_read(&vm->lock);
-
+	if (write_locked)
+		up_write(&vm->lock);
+	else
+		up_read(&vm->lock);
 	if (err == -EAGAIN) {
 		trace_xe_vm_rebind_worker_retry(vm);
 		goto retry;
@@ -511,14 +500,6 @@ static void vma_destroy_work_func(struct work_struct *w)
 
 	XE_BUG_ON(!xe_vma_is_userptr(vma));
 
-	if (!list_empty(&vma->userptr_link)) {
-		down_write(&vm->lock);
-		list_del(&vma->bo_link);
-		up_write(&vm->lock);
-	}
-
-	kfree(vma->userptr.dma_address);
-	mmu_interval_notifier_remove(&vma->userptr.notifier);
 	xe_vm_put(vm);
 	kfree(vma);
 }
@@ -543,9 +524,16 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 	write_lock(&vm->userptr.notifier_lock);
 	mmu_interval_set_seq(mni, cur_seq);
 
+	if (!xe_vm_in_fault_mode(vm)) {
+		spin_lock(&vm->userptr.invalidated_lock);
+		list_move_tail(&vma->userptr.invalidate_link,
+			       &vm->userptr.invalidated);
+		spin_unlock(&vm->userptr.invalidated_lock);
+	}
+
 	/*
 	 * Process exiting, userptr being destroyed, or VMA hasn't gone through
-	 * initial bind, regardless nothing to do
+	 * initial bind, regardless nothing to do. __xe_pt_bind_vma().
 	 */
 	if (current->flags & PF_EXITING || vma->destroyed ||
 	    !vma->userptr.initial_bind) {
@@ -589,34 +577,85 @@ static const struct mmu_interval_notifier_ops vma_userptr_notifier_ops = {
 	.invalidate = vma_userptr_invalidate,
 };
 
-int xe_vm_userptr_pin(struct xe_vm *vm, bool rebind_worker)
+int xe_vm_userptr_pin(struct xe_vm *vm)
 {
-	struct xe_vma *vma;
+	struct xe_vma *vma, *next;
 	int err = 0;
+	LIST_HEAD(tmp_evict);
 
-	lockdep_assert_held(&vm->lock);
-	if (!xe_vm_has_userptr(vm) ||
-	    (xe_vm_no_dma_fences(vm) && !rebind_worker))
-		return 0;
+	lockdep_assert_held_write(&vm->lock);
 
-	list_for_each_entry(vma, &vm->userptr.list, userptr_link) {
+	/* Collect invalidated userptrs */
+	spin_lock(&vm->userptr.invalidated_lock);
+	list_for_each_entry_safe(vma, next, &vm->userptr.invalidated,
+				 userptr.invalidate_link) {
+		list_del_init(&vma->userptr.invalidate_link);
+		list_move_tail(&vma->userptr_link, &vm->userptr.repin_list);
+	}
+	spin_unlock(&vm->userptr.invalidated_lock);
+
+	/* Pin and move to temporary list */
+	list_for_each_entry_safe(vma, next, &vm->userptr.repin_list, userptr_link) {
 		err = xe_vma_userptr_pin_pages(vma);
 		if (err < 0)
-			return err;
+			goto out_err;
+
+		list_del_init(&vma->userptr_link);
+		list_move_tail(&vma->rebind_link, &tmp_evict);
 	}
 
+	/* Take lock and move to rebind_list for rebinding. */
+	err = dma_resv_lock_interruptible(&vm->resv, NULL);
+	if (err)
+		goto out_err;
+
+	list_splice_tail(&tmp_evict, &vm->rebind_list);
+	dma_resv_unlock(&vm->resv);
+
 	return 0;
+
+out_err:
+	list_for_each_entry_safe(vma, next, &tmp_evict, rebind_link) {
+		list_del_init(&vma->rebind_link);
+		list_add_tail(&vma->userptr_link, &vm->userptr.repin_list);
+	}
+
+	return err;
 }
 
-int xe_vm_userptr_needs_repin(struct xe_vm *vm, bool rebind_worker)
+/**
+ * xe_vm_userptr_check_repin() - Check whether the VM might have userptrs
+ * that need repinning.
+ * @vm: The VM.
+ *
+ * This function does an advisory check for whether the VM has userptrs that
+ * need repinning.
+ *
+ * Return: 0 if there are no indications of userptrs needing repinning,
+ * -EAGAIN if there are.
+ */
+int xe_vm_userptr_check_repin(struct xe_vm *vm)
+{
+	return (list_empty_careful(&vm->userptr.repin_list) &&
+		list_empty_careful(&vm->userptr.invalidated)) ? 0 : -EAGAIN;
+}
+
+/**
+ * xe_vm_userptr_needs_repin() - Check whether the VM does have userptrs
+ * that need repinning.
+ * @vm: The VM.
+ *
+ * This function checks for whether the VM has userptrs that need repinning,
+ * and provides a release-type barrier on the userptr.notifier_lock after
+ * checking.
+ *
+ * Return: 0 if there are no userptrs needing repinning, -EAGAIN if there are.
+ */
+int xe_vm_userptr_needs_repin(struct xe_vm *vm)
 {
 	int err;
 
 	lockdep_assert_held(&vm->lock);
-	if (!xe_vm_has_userptr(vm) ||
-	    (xe_vm_no_dma_fences(vm) && !rebind_worker))
-		return 0;
-
 	read_lock(&vm->userptr.notifier_lock);
 	err = __xe_vm_userptr_needs_repin(vm);
 	read_unlock(&vm->userptr.notifier_lock);
@@ -638,29 +677,14 @@ struct dma_fence *xe_vm_rebind(struct xe_vm *vm, bool rebind_worker)
 		return NULL;
 
 	xe_vm_assert_held(vm);
-	list_for_each_entry(vma, &vm->userptr.list, userptr_link) {
-		if (vma->userptr.dirty && vma->userptr.initial_bind) {
-			dma_fence_put(fence);
-			if (rebind_worker)
-				trace_xe_vma_userptr_rebind_worker(vma);
-			else
-				trace_xe_vma_userptr_rebind_exec(vma);
-			fence = xe_vm_bind_vma(vma, NULL, NULL, 0);
-		}
-		if (IS_ERR(fence))
-			return fence;
-	}
-
-	list_for_each_entry_safe(vma, next, &vm->evict_list, evict_link) {
-		list_del_init(&vma->evict_link);
-		if (vma->userptr.initial_bind) {
-			dma_fence_put(fence);
-			if (rebind_worker)
-				trace_xe_vma_rebind_worker(vma);
-			else
-				trace_xe_vma_rebind_exec(vma);
-			fence = xe_vm_bind_vma(vma, NULL, NULL, 0);
-		}
+	list_for_each_entry_safe(vma, next, &vm->rebind_list, rebind_link) {
+		list_del_init(&vma->rebind_link);
+		dma_fence_put(fence);
+		if (rebind_worker)
+			trace_xe_vma_rebind_worker(vma);
+		else
+			trace_xe_vma_rebind_exec(vma);
+		fence = xe_vm_bind_vma(vma, NULL, NULL, 0);
 		if (IS_ERR(fence))
 			return fence;
 	}
@@ -688,9 +712,10 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 		return vma;
 	}
 
-	INIT_LIST_HEAD(&vma->evict_link);
+	INIT_LIST_HEAD(&vma->rebind_link);
 	INIT_LIST_HEAD(&vma->unbind_link);
 	INIT_LIST_HEAD(&vma->userptr_link);
+	INIT_LIST_HEAD(&vma->userptr.invalidate_link);
 
 	vma->vm = vm;
 	vma->start = start;
@@ -748,11 +773,20 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 
 static void xe_vma_destroy(struct xe_vma *vma)
 {
-	lockdep_assert_held(&vma->vm->lock);
+	lockdep_assert_held_write(&vma->vm->lock);
 
 	XE_BUG_ON(!list_empty(&vma->unbind_link));
-	if (!list_empty(&vma->evict_link))
-		list_del(&vma->evict_link);
+
+	if (xe_vma_is_userptr(vma)) {
+		mmu_interval_notifier_remove(&vma->userptr.notifier);
+		spin_lock(&vma->vm->userptr.invalidated_lock);
+		list_del_init(&vma->userptr.invalidate_link);
+		spin_unlock(&vma->vm->userptr.invalidated_lock);
+		list_del(&vma->userptr_link);
+	}
+
+	if (!list_empty(&vma->rebind_link))
+		list_del(&vma->rebind_link);
 
 	if (xe_vma_is_userptr(vma)) {
 		/* FIXME: Probably don't need a worker here anymore */
@@ -860,10 +894,12 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 
 	init_rwsem(&vm->lock);
 
-	INIT_LIST_HEAD(&vm->evict_list);
+	INIT_LIST_HEAD(&vm->rebind_list);
 
-	INIT_LIST_HEAD(&vm->userptr.list);
+	INIT_LIST_HEAD(&vm->userptr.repin_list);
+	INIT_LIST_HEAD(&vm->userptr.invalidated);
 	rwlock_init(&vm->userptr.notifier_lock);
+	spin_lock_init(&vm->userptr.invalidated_lock);
 
 	INIT_LIST_HEAD(&vm->async_ops.pending);
 	INIT_WORK(&vm->async_ops.work, async_op_work_func);
@@ -2350,9 +2386,6 @@ static struct xe_vma *vm_unbind_lookup_vmas(struct xe_vm *vm,
 			err = xe_vma_userptr_pin_pages(new_first);
 			if (err)
 				goto unwind;
-			new_first->userptr.initial_bind = true;
-			list_add_tail(&new_first->userptr_link,
-				      &vm->userptr.list);
 		}
 		err = prep_replacement_vma(vm, new_first);
 		if (err)
@@ -2384,9 +2417,6 @@ static struct xe_vma *vm_unbind_lookup_vmas(struct xe_vm *vm,
 			err = xe_vma_userptr_pin_pages(new_last);
 			if (err)
 				goto unwind;
-			new_last->userptr.initial_bind = true;
-			list_add_tail(&new_last->userptr_link,
-				      &vm->userptr.list);
 		}
 		err = prep_replacement_vma(vm, new_last);
 		if (err)
@@ -2576,7 +2606,6 @@ static struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm,
 			return ERR_PTR(err);
 		} else {
 			xe_vm_insert_vma(vm, vma);
-			list_add_tail(&vma->userptr_link, &vm->userptr.list);
 		}
 		break;
 	default:

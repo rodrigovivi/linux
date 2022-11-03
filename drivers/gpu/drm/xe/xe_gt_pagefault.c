@@ -146,6 +146,7 @@ static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 	struct ttm_validate_buffer tv_bo, tv_vm;
 	struct ww_acquire_ctx ww;
 	struct dma_fence *fence;
+	bool write_locked;
 	int ret = 0;
 	bool atomic;
 
@@ -158,13 +159,24 @@ static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 	if (!vm || !xe_vm_in_fault_mode(vm))
 		return -EINVAL;
 
-	down_read(&vm->lock);
-
+retry_userptr:
+	/*
+	 * TODO: Avoid exclusive lock if VM doesn't have userptrs, or
+	 * start out read-locked?
+	 */
+	down_write(&vm->lock);
+	write_locked = true;
 	vma = lookup_vma(vm, pf->page_addr);
 	if (!vma) {
 		ret = -EINVAL;
 		goto unlock_vm;
 	}
+
+	if (!xe_vma_is_userptr(vma) || !xe_vma_userptr_check_repin(vma)) {
+		downgrade_write(&vm->lock);
+		write_locked = false;
+	}
+
 	trace_xe_vma_pagefault(vma);
 
 	atomic = access_is_atomic(pf->access_type);
@@ -175,11 +187,17 @@ static int handle_pagefault(struct xe_gt *gt, struct pagefault *pf)
 
 	/* TODO: Validate fault */
 
-retry_userptr:
-	if (xe_vma_is_userptr(vma)) {
+	if (xe_vma_is_userptr(vma) && write_locked) {
+		spin_lock(&vm->userptr.invalidated_lock);
+		list_del_init(&vma->userptr.invalidate_link);
+		spin_unlock(&vm->userptr.invalidated_lock);
+
 		ret = xe_vma_userptr_pin_pages(vma);
 		if (ret)
 			goto unlock_vm;
+
+		downgrade_write(&vm->lock);
+		write_locked = false;
 	}
 
 	/* Lock VM and BOs dma-resv */
@@ -236,7 +254,7 @@ retry_userptr:
 	dma_fence_put(fence);
 
 	if (xe_vma_is_userptr(vma))
-		ret = xe_vma_userptr_needs_repin(vma);
+		ret = xe_vma_userptr_check_repin(vma);
 	vma->usm.gt_invalidated &= ~BIT(gt->info.id);
 
 unlock_dma_resv:
@@ -245,11 +263,15 @@ unlock_dma_resv:
 	else
 		ttm_eu_backoff_reservation(&ww, &objs);
 unlock_vm:
-	if (ret == -EAGAIN)
-		goto retry_userptr;
 	if (!ret)
 		vm->usm.last_fault_vma = vma;
-	up_read(&vm->lock);
+	if (write_locked)
+		up_write(&vm->lock);
+	else
+		up_read(&vm->lock);
+	if (ret == -EAGAIN)
+		goto retry_userptr;
+
 	if (!ret) {
 		/*
 		 * FIXME: Doing a full TLB invalidation for now, likely could

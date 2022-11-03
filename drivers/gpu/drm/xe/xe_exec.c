@@ -130,7 +130,10 @@ static int xe_exec_begin(struct xe_engine *e, struct ww_acquire_ctx *ww,
 		 * evicted VMAs are added at the end of the list and the loop
 		 * checks for newly added entries each iteration.
 		 */
-		list_for_each_entry(vma, &vm->evict_list, evict_link) {
+		list_for_each_entry(vma, &vm->rebind_list, rebind_link) {
+			if (xe_vma_is_userptr(vma))
+				continue;
+
 			err = xe_bo_validate(vma->bo, vm);
 			if (err) {
 				/*
@@ -171,6 +174,7 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	struct list_head objs;
 	struct ttm_validate_buffer tv_vm;
 	bool armed = false;
+	bool write_locked;
 	int err = 0;
 
 	if (XE_IOCTL_ERR(xe, args->extensions))
@@ -239,7 +243,14 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	}
 
 retry:
-	err = down_read_interruptible(&vm->lock);
+	if (!xe_vm_no_dma_fences(vm) && xe_vm_userptr_check_repin(vm)) {
+		err = down_write_killable(&vm->lock);
+		write_locked = true;
+	} else {
+		/* We don't allow execs while the VM is in error state */
+		err = down_read_interruptible(&vm->lock);
+		write_locked = false;
+	}
 	if (err)
 		goto err_syncs;
 
@@ -257,14 +268,21 @@ retry:
 	 * flushing the worker and retrying the exec.
 	 */
 	if (vm->async_ops.munmap_rebind_inflight) {
-		up_read(&vm->lock);
+		if (write_locked)
+			up_write(&vm->lock);
+		else
+			up_read(&vm->lock);
 		flush_work(&vm->async_ops.work);
 		goto retry;
 	}
 
-	err = xe_vm_userptr_pin(vm, false);
-	if (err)
-		goto err_unlock_list;
+	if (write_locked) {
+		err = xe_vm_userptr_pin(vm);
+		downgrade_write(&vm->lock);
+		write_locked = false;
+		if (err)
+			goto err_unlock_list;
+	}
 
 	err = xe_exec_begin(engine, &ww, &tv_vm, &objs);
 	if (err)
@@ -328,7 +346,6 @@ retry:
 	 * Point of no return, if we error after this point just set an error on
 	 * the job and let the DRM scheduler / backend clean up the job.
 	 */
-
 	xe_sched_job_arm(job);
 	armed = true;
 
@@ -350,8 +367,8 @@ retry:
 					   DMA_RESV_USAGE_WRITE);
 		}
 	}
-
-	err = xe_vm_userptr_needs_repin(vm, false);
+	if (!xe_vm_no_dma_fences(vm))
+		err = xe_vm_userptr_needs_repin(vm);
 
 	for (i = 0; i < num_syncs && !err; i++)
 		err = xe_sync_entry_add_deps(&syncs[i], job);
@@ -371,7 +388,10 @@ err_put_job:
 err_engine_end:
 	xe_exec_end(engine, &ww, &objs);
 err_unlock_list:
-	up_read(&vm->lock);
+	if (write_locked)
+		up_write(&vm->lock);
+	else
+		up_read(&vm->lock);
 	if (err == -EAGAIN) {
 		armed = false;
 		goto retry;
