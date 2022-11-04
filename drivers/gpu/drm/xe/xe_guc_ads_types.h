@@ -16,6 +16,7 @@ struct xe_bo;
 struct xe_guc_ads {
 	/** @bo: XE BO for GuC ads blob */
 	struct xe_bo *bo;
+	/** @regset_size: size of register set passed to GuC for save/restore */
 	u32 regset_size;
 };
 
