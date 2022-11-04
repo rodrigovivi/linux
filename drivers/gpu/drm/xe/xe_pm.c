@@ -66,7 +66,7 @@ int xe_pm_suspend(struct xe_device *xe)
 }
 
 /**
- * xe_pm_suspend - Helper for System resume S3->S0 / S2idle->S0
+ * xe_pm_resume - Helper for System resume S3->S0 / S2idle->S0
  * @xe: xe device instance
  *
  * Return: 0 on success
