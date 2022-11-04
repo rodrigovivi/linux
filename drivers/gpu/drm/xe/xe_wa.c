@@ -261,24 +261,55 @@ static const struct xe_rtp_entry register_whitelist[] = {
 	{}
 };
 
+/**
+ * xe_wa_process_gt - process GT workaround table
+ * @gt: GT instance to process workarounds for
+ *
+ * Process GT workaround table for this platform, saving in @gt all the
+ * workarounds that need to be applied at the GT level.
+ */
 void xe_wa_process_gt(struct xe_gt *gt)
 {
 	xe_rtp_process(gt_was, &gt->reg_sr, gt, NULL);
 }
 
+/**
+ * xe_wa_process_engine - process engine workaround table
+ * @hwe: engine instance to process workarounds for
+ *
+ * Process engine workaround table for this platform, saving in @hwe all the
+ * workarounds that need to be applied at the engine level that match this
+ * engine.
+ */
 void xe_wa_process_engine(struct xe_hw_engine *hwe)
 {
 	xe_rtp_process(engine_was, &hwe->reg_sr, hwe->gt, hwe);
 }
 
-void xe_reg_whitelist_process_engine(struct xe_hw_engine *hwe)
-{
-	xe_rtp_process(register_whitelist, &hwe->reg_whitelist, hwe->gt, hwe);
-}
-
+/**
+ * xe_wa_process_ctx - process context workaround table
+ * @hwe: engine instance to process workarounds for
+ *
+ * Process context workaround table for this platform, saving in @hwe all the
+ * workarounds that need to be applied on context restore. These are workarounds
+ * touching registers that are part of the HW context image.
+ */
 void xe_wa_process_ctx(struct xe_hw_engine *hwe)
 {
 	//xe_rtp_process(context_was, &hwe->reg_sr, gt, hwe);
+}
+
+/**
+ * xe_reg_whitelist_process_engine - process table of registers to whitelist
+ * @hwe: engine instance to process whitelist for
+ *
+ * Process wwhitelist table for this platform, saving in @hwe all the
+ * registers that need to be whitelisted by the hardware so they can be accessed
+ * by userspace.
+ */
+void xe_reg_whitelist_process_engine(struct xe_hw_engine *hwe)
+{
+	xe_rtp_process(register_whitelist, &hwe->reg_whitelist, hwe->gt, hwe);
 }
 
 void xe_reg_whitelist_apply(struct xe_hw_engine *hwe)
