@@ -96,4 +96,6 @@ static inline bool xe_mmio_in_range(const struct xe_mmio_range *range, u32 reg)
 	return range && reg >= range->start && reg <= range->end;
 }
 
+int xe_mmio_probe_vram(struct xe_device *xe);
+
 #endif
