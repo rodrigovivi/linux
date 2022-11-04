@@ -37,6 +37,8 @@
 /**
  * xe_pm_suspend - Helper for System suspend, i.e. S0->S3 / S0->S2idle
  * @xe: xe device instance
+ *
+ * Return: 0 on success
  */
 int xe_pm_suspend(struct xe_device *xe)
 {
@@ -66,6 +68,8 @@ int xe_pm_suspend(struct xe_device *xe)
 /**
  * xe_pm_suspend - Helper for System resume S3->S0 / S2idle->S0
  * @xe: xe device instance
+ *
+ * Return: 0 on success
  */
 int xe_pm_resume(struct xe_device *xe)
 {
