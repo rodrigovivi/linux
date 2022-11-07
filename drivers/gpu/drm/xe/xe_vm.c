@@ -3076,3 +3076,43 @@ int xe_vm_invalidate_vma(struct xe_vma *vma)
 
 	return 0;
 }
+
+#if IS_ENABLED(CONFIG_DRM_XE_SIMPLE_ERROR_CAPTURE)
+int xe_analyze_vm(struct drm_printer *p, struct xe_vm *vm, int gt_id)
+{
+	if (vm && !(vm->error_capture_flag & XE_ERROR_CAPTURE_FLAG_DUMP_VMA)) {
+		struct rb_node *node;
+		bool is_lmem;
+		uint64_t addr;
+
+		down_read(&vm->lock);
+		vm->error_capture_flag |= XE_ERROR_CAPTURE_FLAG_DUMP_VMA;
+		if (vm->pt_root[gt_id]) {
+			addr = xe_bo_addr(vm->pt_root[gt_id]->bo, 0, GEN8_PAGE_SIZE, &is_lmem);
+			drm_printf(p, " VM root: A:0x%llx %s\n", addr, is_lmem ? "LMEM" : "SYS");
+		}
+
+		for (node = rb_first(&vm->vmas); node; node = rb_next(node)) {
+			struct xe_vma *vma = to_xe_vma(node);
+			bool is_userptr = false;
+
+			if (xe_vma_is_userptr(vma)) {
+				is_userptr = true;
+				addr = vma->userptr.dma_address[0];
+			} else
+				addr = xe_bo_addr(vma->bo, 0, GEN8_PAGE_SIZE, &is_lmem);
+
+			drm_printf(p, " [%016llx-%016llx] S:0x%016llx A:%016llx %s\n",
+				   vma->start, vma->end, vma->end - vma->start + 1ull,
+				   addr, is_userptr ? "USR" : is_lmem ? "LMEM" : "SYS");
+		}
+		up_read(&vm->lock);
+	}
+	return 0;
+}
+#else
+int xe_analyze_vm(struct drm_printer *p, struct xe_vm *vm, int gt_id)
+{
+	return 0;
+}
+#endif

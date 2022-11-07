@@ -279,6 +279,10 @@ struct xe_vm {
 		 */
 		struct xe_vma *last_fault_vma;
 	} usm;
+
+	/** @error_capture_flag: allow to track errors once */
+#define XE_ERROR_CAPTURE_FLAG_DUMP_VMA		BIT(0)
+	u32  error_capture_flag;
 };
 
 #endif
