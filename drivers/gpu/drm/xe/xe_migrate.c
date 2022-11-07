@@ -575,8 +575,6 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 		u32 ccs_pt;
 		bool usm = xe->info.supports_usm;
 
-		dma_fence_put(fence);
-
 		src_L0 = xe_migrate_res_sizes(&src_it);
 		dst_L0 = xe_migrate_res_sizes(&dst_it);
 
@@ -606,8 +604,10 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 			(xe_device_has_flat_ccs(xe) ? EMIT_COPY_CCS_DW : 0);
 
 		bb = xe_bb_new(gt, batch_size, usm);
-		if (IS_ERR(bb))
-			return ERR_CAST(bb);
+		if (IS_ERR(bb)) {
+			err = PTR_ERR(bb);
+			goto err_sync;
+		}
 
 		/* Preemption is enabled again by the ring ops. */
 		if (!src_is_vram || !dst_is_vram)
@@ -654,6 +654,7 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 		}
 
 		xe_sched_job_arm(job);
+		dma_fence_put(fence);
 		fence = dma_fence_get(&job->drm.s_fence->finished);
 		xe_sched_job_push(job);
 
@@ -671,6 +672,14 @@ err_job:
 err:
 		mutex_unlock(&m->job_mutex);
 		xe_bb_free(bb, NULL);
+
+err_sync:
+		/* Sync partial copy if any. */
+		if (fence) {
+			dma_fence_wait(fence, false);
+			dma_fence_put(fence);
+		}
+
 		return ERR_PTR(err);
 	}
 
@@ -754,14 +763,15 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 			batch_size += EMIT_COPY_CCS_DW;
 
 		/* Clear commands */
-		dma_fence_put(fence);
 
 		if (WARN_ON_ONCE(!clear_L0))
 			break;
 
 		bb = xe_bb_new(gt, batch_size, usm);
-		if (IS_ERR(bb))
-			return ERR_CAST(bb);
+		if (IS_ERR(bb)) {
+			err = PTR_ERR(bb);
+			goto err_sync;
+		}
 
 		size -= clear_L0;
 
@@ -798,6 +808,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		xe_sched_job_add_migrate_flush(job, flush_flags);
 
 		xe_sched_job_arm(job);
+		dma_fence_put(fence);
 		fence = dma_fence_get(&job->drm.s_fence->finished);
 		xe_sched_job_push(job);
 
@@ -812,6 +823,13 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 err:
 		mutex_unlock(&m->job_mutex);
 		xe_bb_free(bb, NULL);
+err_sync:
+		/* Sync partial copies if any. */
+		if (fence) {
+			dma_fence_wait(m->fence, false);
+			dma_fence_put(fence);
+		}
+
 		return ERR_PTR(err);
 	}
 
