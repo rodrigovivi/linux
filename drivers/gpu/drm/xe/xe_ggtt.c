@@ -23,7 +23,7 @@
 #define MTL_GGTT_PTE_PAT0	BIT(52)
 #define MTL_GGTT_PTE_PAT1	BIT(53)
 
-static u64 gen8_pte_encode(struct xe_bo *bo, u64 bo_offset)
+u64 xe_ggtt_pte_encode(struct xe_bo *bo, u64 bo_offset)
 {
 	struct xe_device *xe = xe_bo_device(bo);
 	u64 pte;
@@ -53,7 +53,7 @@ static unsigned int probe_gsm_size(struct pci_dev *pdev)
 	return ggms ? SZ_1M << ggms : 0;
 }
 
-static void xe_ggtt_set_pte(struct xe_ggtt *ggtt, u64 addr, u64 pte)
+void xe_ggtt_set_pte(struct xe_ggtt *ggtt, u64 addr, u64 pte)
 {
 	XE_BUG_ON(addr & GEN8_PTE_MASK);
 	XE_BUG_ON(addr >= ggtt->size);
@@ -68,7 +68,7 @@ static void xe_ggtt_clear(struct xe_ggtt *ggtt, u64 start, u64 size)
 
 	XE_BUG_ON(start >= end);
 
-	scratch_pte = gen8_pte_encode(ggtt->scratch, 0);
+	scratch_pte = xe_ggtt_pte_encode(ggtt->scratch, 0);
 
 	while (start < end) {
 		xe_ggtt_set_pte(ggtt, start, scratch_pte);
@@ -161,7 +161,7 @@ err_iomap:
 #define PVC_GUC_TLB_INV_DESC1			_MMIO(0xcf80)
 #define   PVC_GUC_TLB_INV_DESC1_INVALIDATE	 (1 << 6)
 
-static void xe_ggtt_invalidate(struct xe_gt *gt)
+void xe_ggtt_invalidate(struct xe_gt *gt)
 {
 	/* TODO: vfunc for GuC vs. non-GuC */
 
@@ -188,7 +188,7 @@ void xe_ggtt_printk(struct xe_ggtt *ggtt, const char *prefix)
 {
 	u64 addr, scratch_pte;
 
-	scratch_pte = gen8_pte_encode(ggtt->scratch, 0);
+	scratch_pte = xe_ggtt_pte_encode(ggtt->scratch, 0);
 
 	printk("%sGlobal GTT:", prefix);
 	for (addr = 0; addr < ggtt->size; addr += GEN8_PAGE_SIZE) {
@@ -203,14 +203,21 @@ void xe_ggtt_printk(struct xe_ggtt *ggtt, const char *prefix)
 	}
 }
 
+int xe_ggtt_insert_special_node_locked(struct xe_ggtt *ggtt, struct drm_mm_node *node,
+				       u32 size, u32 align, u32 mm_flags)
+{
+	return drm_mm_insert_node_generic(&ggtt->mm, node, size, align, 0,
+					  mm_flags);
+}
+
 int xe_ggtt_insert_special_node(struct xe_ggtt *ggtt, struct drm_mm_node *node,
 				u32 size, u32 align)
 {
 	int ret;
 
 	mutex_lock(&ggtt->lock);
-	ret = drm_mm_insert_node_generic(&ggtt->mm, node, size, align, 0,
-					 DRM_MM_INSERT_HIGH);
+	ret = xe_ggtt_insert_special_node_locked(ggtt, node, size,
+						 align, DRM_MM_INSERT_HIGH);
 	mutex_unlock(&ggtt->lock);
 
 	return ret;
@@ -222,7 +229,7 @@ void xe_ggtt_map_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 	u64 offset, pte;
 
 	for (offset = 0; offset < bo->size; offset += GEN8_PAGE_SIZE) {
-		pte = gen8_pte_encode(bo, offset);
+		pte = xe_ggtt_pte_encode(bo, offset);
 		xe_ggtt_set_pte(ggtt, start + offset, pte);
 	}
 
