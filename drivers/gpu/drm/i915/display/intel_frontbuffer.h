@@ -28,6 +28,10 @@
 #include <linux/bits.h>
 #include <linux/kref.h>
 
+#ifndef I915
+#include "xe_bo.h"
+#endif
+
 #include "i915_active_types.h"
 
 struct drm_i915_private;
@@ -43,7 +47,9 @@ enum fb_op_origin {
 struct intel_frontbuffer {
 	struct kref ref;
 	atomic_t bits;
+#ifdef I915
 	struct i915_active write;
+#endif
 	struct drm_i915_gem_object *obj;
 	struct rcu_head rcu;
 };
