@@ -16,7 +16,7 @@
 #include "skl_watermark.h"
 
 #include "i915_drv.h"
-#include "i915_fixed.h"
+#include "../i915/i915_fixed.h"
 #include "i915_reg.h"
 #include "intel_pm.h"
 
