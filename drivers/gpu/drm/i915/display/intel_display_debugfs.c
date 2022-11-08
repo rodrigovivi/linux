@@ -8,7 +8,11 @@
 #include <drm/drm_debugfs.h>
 #include <drm/drm_fourcc.h>
 
+#ifdef I915
 #include "i915_debugfs.h"
+#else
+#define i915_debugfs_describe_obj(a, b) do { } while (0)
+#endif
 #include "i915_irq.h"
 #include "i915_reg.h"
 #include "intel_de.h"
@@ -51,6 +55,7 @@ static int i915_frontbuffer_tracking(struct seq_file *m, void *unused)
 
 static int i915_ips_status(struct seq_file *m, void *unused)
 {
+#ifdef I915
 	struct drm_i915_private *dev_priv = node_to_i915(m->private);
 	intel_wakeref_t wakeref;
 
@@ -74,6 +79,9 @@ static int i915_ips_status(struct seq_file *m, void *unused)
 	intel_runtime_pm_put(&dev_priv->runtime_pm, wakeref);
 
 	return 0;
+#else
+	return -ENODEV;
+#endif
 }
 
 static int i915_sr_status(struct seq_file *m, void *unused)

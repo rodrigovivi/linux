@@ -17,6 +17,7 @@
 #include "intel_display_power.h"
 #include "intel_display_types.h"
 #include "intel_fb.h"
+
 #include "intel_pm.h"
 #include "intel_wm.h"
 #include "skl_watermark.h"

@@ -46,6 +46,7 @@
 #include <drm/i915_mei_hdcp_interface.h>
 #include <media/cec-notifier.h>
 
+#include "i915_utils.h"
 #include "i915_vma.h"
 #include "i915_vma_types.h"
 #include "intel_bios.h"
@@ -142,7 +143,9 @@ struct intel_framebuffer {
 		struct intel_fb_view remapped_view;
 	};
 
+#ifdef I915
 	struct i915_address_space *dpt_vm;
+#endif
 };
 
 enum intel_hotplug_state {
@@ -654,7 +657,9 @@ struct intel_atomic_state {
 
 	bool rps_interactive;
 
+#ifdef I915
 	struct i915_sw_fence commit_ready;
+#endif
 
 	struct llist_node freed;
 };
@@ -680,7 +685,11 @@ struct intel_plane_state {
 	} hw;
 
 	struct i915_vma *ggtt_vma;
+#ifdef I915
 	struct i915_vma *dpt_vma;
+#else
+	struct i915_vma embed_vma;
+#endif
 	unsigned long flags;
 #define PLANE_HAS_FENCE BIT(0)
 
@@ -740,9 +749,9 @@ struct intel_plane_state {
 	 * this plane. They're calculated by the linked plane's wm code.
 	 */
 	u32 planar_slave;
-
+#ifdef I915
 	struct drm_intel_sprite_colorkey ckey;
-
+#endif
 	struct drm_rect psr2_sel_fetch_area;
 
 	/* Clear Color Value */
@@ -852,6 +861,7 @@ struct skl_pipe_wm {
 	bool use_sagv_wm;
 };
 
+#ifdef I915
 enum vlv_wm_level {
 	VLV_WM_LEVEL_PM2,
 	VLV_WM_LEVEL_PM5,
@@ -885,6 +895,7 @@ struct g4x_wm_state {
 	bool hpll_en;
 	bool fbc_en;
 };
+#endif
 
 struct intel_crtc_wm_state {
 	union {
@@ -928,7 +939,7 @@ struct intel_crtc_wm_state {
 			/* pre-icl: for planar Y */
 			struct skl_ddb_entry plane_ddb_y[I915_MAX_PLANES];
 		} skl;
-
+#ifdef I915
 		struct {
 			struct g4x_pipe_wm raw[NUM_VLV_WM_LEVELS]; /* not inverted */
 			struct vlv_wm_state intermediate; /* inverted */
@@ -941,6 +952,7 @@ struct intel_crtc_wm_state {
 			struct g4x_wm_state intermediate;
 			struct g4x_wm_state optimal;
 		} g4x;
+#endif
 	};
 
 	/*
@@ -1393,6 +1405,7 @@ struct intel_crtc {
 	bool pch_fifo_underrun_disabled;
 
 	/* per-pipe watermark state */
+#ifdef I915
 	struct {
 		/* watermarks currently being used  */
 		union {
@@ -1401,6 +1414,7 @@ struct intel_crtc {
 			struct g4x_wm_state g4x;
 		} active;
 	} wm;
+#endif
 
 	struct {
 		struct mutex mutex;
@@ -2048,7 +2062,11 @@ intel_crtc_needs_color_update(const struct intel_crtc_state *crtc_state)
 
 static inline u32 intel_plane_ggtt_offset(const struct intel_plane_state *plane_state)
 {
+#ifdef I915
 	return i915_ggtt_offset(plane_state->ggtt_vma);
+#else
+	return plane_state->ggtt_vma->node.start;
+#endif
 }
 
 #endif /*  __INTEL_DISPLAY_TYPES_H__ */

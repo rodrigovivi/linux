@@ -6,7 +6,10 @@
 #include "i915_drv.h"
 #include "i915_reg.h"
 
+#ifdef I915
 #include "vlv_sideband_reg.h"
+#else
+#endif
 
 #include "intel_display_power_map.h"
 #include "intel_display_power_well.h"
@@ -198,6 +201,7 @@ I915_DECL_PW_DOMAINS(vlv_pwdoms_dpio_tx_bc_lanes,
 	POWER_DOMAIN_INIT);
 
 static const struct i915_power_well_desc vlv_power_wells_main[] = {
+#ifdef I915
 	{
 		.instances = &I915_PW_INSTANCES(
 			I915_PW("display", &vlv_pwdoms_display,
@@ -225,6 +229,7 @@ static const struct i915_power_well_desc vlv_power_wells_main[] = {
 		),
 		.ops = &vlv_dpio_cmn_power_well_ops,
 	},
+#endif
 };
 
 static const struct i915_power_well_desc_list vlv_power_wells[] = {
@@ -275,6 +280,7 @@ I915_DECL_PW_DOMAINS(chv_pwdoms_dpio_cmn_d,
 	POWER_DOMAIN_INIT);
 
 static const struct i915_power_well_desc chv_power_wells_main[] = {
+#ifdef I915
 	{
 		/*
 		 * Pipe A power well is the new disp2d well. Pipe B and C
@@ -296,6 +302,7 @@ static const struct i915_power_well_desc chv_power_wells_main[] = {
 		),
 		.ops = &chv_dpio_cmn_power_well_ops,
 	},
+#endif
 };
 
 static const struct i915_power_well_desc_list chv_power_wells[] = {
