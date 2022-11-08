@@ -12,8 +12,10 @@
 #include <drm/drm_vblank_work.h>
 
 #include "i915_irq.h"
+#ifdef I915
 #include "i915_vgpu.h"
 #include "i9xx_plane.h"
+#endif
 #include "icl_dsi.h"
 #include "intel_atomic.h"
 #include "intel_atomic_plane.h"
@@ -308,7 +310,11 @@ int intel_crtc_init(struct drm_i915_private *dev_priv, enum pipe pipe)
 		primary = skl_universal_plane_create(dev_priv, pipe,
 						     PLANE_PRIMARY);
 	else
+#ifdef I915
 		primary = intel_primary_plane_create(dev_priv, pipe);
+#else
+		BUG_ON(1);
+#endif
 	if (IS_ERR(primary)) {
 		ret = PTR_ERR(primary);
 		goto fail;
@@ -659,13 +665,15 @@ void intel_pipe_update_end(struct intel_crtc_state *new_crtc_state)
 					 drm_crtc_accurate_vblank_count(&crtc->base) + 1,
 					 false);
 	} else if (new_crtc_state->uapi.event) {
+		unsigned long flags;
+
 		drm_WARN_ON(&dev_priv->drm,
 			    drm_crtc_vblank_get(&crtc->base) != 0);
 
-		spin_lock(&crtc->base.dev->event_lock);
+		spin_lock_irqsave(&crtc->base.dev->event_lock, flags);
 		drm_crtc_arm_vblank_event(&crtc->base,
 					  new_crtc_state->uapi.event);
-		spin_unlock(&crtc->base.dev->event_lock);
+		spin_unlock_irqrestore(&crtc->base.dev->event_lock, flags);
 
 		new_crtc_state->uapi.event = NULL;
 	}
@@ -696,8 +704,10 @@ void intel_pipe_update_end(struct intel_crtc_state *new_crtc_state)
 
 	local_irq_enable();
 
+#ifdef I915
 	if (intel_vgpu_active(dev_priv))
 		return;
+#endif
 
 	if (crtc->debug.start_vbl_count &&
 	    crtc->debug.start_vbl_count != end_vbl_count) {

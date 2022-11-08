@@ -45,12 +45,26 @@
 #include <drm/drm_probe_helper.h>
 #include <drm/drm_rect.h>
 
+#ifdef I915
+#include "intel_crt.h"
+#include "intel_dvo.h"
+#include "intel_overlay.h"
+#include "intel_sdvo.h"
+#include "intel_tv.h"
+
 #include "gem/i915_gem_lmem.h"
 #include "gem/i915_gem_object.h"
 
 #include "g4x_dp.h"
 #include "g4x_hdmi.h"
 #include "hsw_ips.h"
+#include "i9xx_plane.h"
+#include "vlv_dsi.h"
+#include "vlv_dsi_pll.h"
+#include "vlv_dsi_regs.h"
+#include "vlv_sideband.h"
+#endif
+
 #include "i915_drv.h"
 #include "i915_reg.h"
 #include "i915_utils.h"
@@ -64,7 +78,6 @@
 #include "intel_bw.h"
 #include "intel_cdclk.h"
 #include "intel_color.h"
-#include "intel_crt.h"
 #include "intel_crtc.h"
 #include "intel_crtc_state_dump.h"
 #include "intel_ddi.h"
@@ -82,7 +95,6 @@
 #include "intel_dpt.h"
 #include "intel_drrs.h"
 #include "intel_dsi.h"
-#include "intel_dvo.h"
 #include "intel_fb.h"
 #include "intel_fbc.h"
 #include "intel_fbdev.h"
@@ -98,7 +110,6 @@
 #include "intel_lvds_regs.h"
 #include "intel_modeset_setup.h"
 #include "intel_modeset_verify.h"
-#include "intel_overlay.h"
 #include "intel_panel.h"
 #include "intel_pch_display.h"
 #include "intel_pch_refclk.h"
@@ -108,10 +119,8 @@
 #include "intel_pps.h"
 #include "intel_psr.h"
 #include "intel_quirks.h"
-#include "intel_sdvo.h"
 #include "intel_snps_phy.h"
 #include "intel_tc.h"
-#include "intel_tv.h"
 #include "intel_vblank.h"
 #include "intel_vdsc.h"
 #include "intel_vdsc_regs.h"
@@ -121,10 +130,6 @@
 #include "skl_scaler.h"
 #include "skl_universal_plane.h"
 #include "skl_watermark.h"
-#include "vlv_dsi.h"
-#include "vlv_dsi_pll.h"
-#include "vlv_dsi_regs.h"
-#include "vlv_sideband.h"
 
 static void intel_set_transcoder_timings(const struct intel_crtc_state *crtc_state);
 static void intel_set_pipe_src_size(const struct intel_crtc_state *crtc_state);
@@ -132,6 +137,7 @@ static void hsw_set_transconf(const struct intel_crtc_state *crtc_state);
 static void bdw_set_pipe_misc(const struct intel_crtc_state *crtc_state);
 static void ilk_pfit_enable(const struct intel_crtc_state *crtc_state);
 
+#ifdef I915
 /* returns HPLL frequency in kHz */
 int vlv_get_hpll_vco(struct drm_i915_private *dev_priv)
 {
@@ -188,6 +194,7 @@ static void intel_update_czclk(struct drm_i915_private *dev_priv)
 	drm_dbg(&dev_priv->drm, "CZ clock rate: %d kHz\n",
 		dev_priv->czclk_freq);
 }
+#endif
 
 static bool is_hdr_mode(const struct intel_crtc_state *crtc_state)
 {
@@ -750,14 +757,17 @@ __intel_display_resume(struct drm_i915_private *i915,
 	return intel_display_commit_duplicated_state(to_intel_atomic_state(state), ctx);
 }
 
+#ifdef I915
 static bool gpu_reset_clobbers_display(struct drm_i915_private *dev_priv)
 {
 	return (INTEL_INFO(dev_priv)->gpu_reset_clobbers_display &&
 		intel_has_gpu_reset(to_gt(dev_priv)));
 }
+#endif
 
 void intel_display_prepare_reset(struct drm_i915_private *dev_priv)
 {
+#ifdef I915
 	struct drm_modeset_acquire_ctx *ctx = &dev_priv->display.restore.reset_ctx;
 	struct drm_atomic_state *state;
 	int ret;
@@ -816,10 +826,12 @@ void intel_display_prepare_reset(struct drm_i915_private *dev_priv)
 
 	dev_priv->display.restore.modeset_state = state;
 	state->acquire_ctx = ctx;
+#endif
 }
 
 void intel_display_finish_reset(struct drm_i915_private *i915)
 {
+#ifdef I915
 	struct drm_modeset_acquire_ctx *ctx = &i915->display.restore.reset_ctx;
 	struct drm_atomic_state *state;
 	int ret;
@@ -867,6 +879,7 @@ unlock:
 	mutex_unlock(&i915->drm.mode_config.mutex);
 
 	clear_bit_unlock(I915_RESET_MODESET, &to_gt(i915)->reset.flags);
+#endif
 }
 
 static void icl_set_pipe_chicken(const struct intel_crtc_state *crtc_state)
@@ -3015,6 +3028,7 @@ static void i9xx_get_pfit_config(struct intel_crtc_state *crtc_state)
 		intel_de_read(dev_priv, PFIT_PGM_RATIOS);
 }
 
+#ifdef I915
 static void vlv_crtc_clock_get(struct intel_crtc *crtc,
 			       struct intel_crtc_state *pipe_config)
 {
@@ -3075,6 +3089,7 @@ static void chv_crtc_clock_get(struct intel_crtc *crtc,
 
 	pipe_config->port_clock = chv_calc_dpll_params(refclk, &clock);
 }
+#endif
 
 static enum intel_output_format
 bdw_get_pipe_misc_output_format(struct intel_crtc *crtc)
@@ -3179,7 +3194,7 @@ static bool i9xx_get_pipe_config(struct intel_crtc *crtc,
 	intel_get_pipe_src_size(crtc, pipe_config);
 
 	i9xx_get_pfit_config(pipe_config);
-
+#ifdef I915
 	if (DISPLAY_VER(dev_priv) >= 4) {
 		/* No way to read it out on pipes B and C */
 		if (IS_CHERRYVIEW(dev_priv) && crtc->pipe != PIPE_A)
@@ -3221,6 +3236,7 @@ static bool i9xx_get_pipe_config(struct intel_crtc *crtc,
 	else if (IS_VALLEYVIEW(dev_priv))
 		vlv_crtc_clock_get(crtc, pipe_config);
 	else
+#endif
 		i9xx_crtc_clock_get(crtc, pipe_config);
 
 	/*
@@ -3879,6 +3895,7 @@ static bool bxt_get_dsi_transcoder_state(struct intel_crtc *crtc,
 					 struct intel_crtc_state *pipe_config,
 					 struct intel_display_power_domain_set *power_domain_set)
 {
+#ifdef I915
 	struct drm_device *dev = crtc->base.dev;
 	struct drm_i915_private *dev_priv = to_i915(dev);
 	enum transcoder cpu_transcoder;
@@ -3917,6 +3934,7 @@ static bool bxt_get_dsi_transcoder_state(struct intel_crtc *crtc,
 		pipe_config->cpu_transcoder = cpu_transcoder;
 		break;
 	}
+#endif
 
 	return transcoder_is_dsi(pipe_config->cpu_transcoder);
 }
@@ -4021,7 +4039,9 @@ static bool hsw_get_pipe_config(struct intel_crtc *crtc,
 			ilk_get_pfit_config(pipe_config);
 	}
 
+#ifdef I915
 	hsw_ips_get_config(pipe_config);
+#endif
 
 	if (pipe_config->cpu_transcoder != TRANSCODER_EDP &&
 	    !transcoder_is_dsi(pipe_config->cpu_transcoder)) {
@@ -4654,8 +4674,8 @@ static u16 hsw_linetime_wm(const struct intel_crtc_state *crtc_state)
 	return min(linetime_wm, 0x1ff);
 }
 
-static u16 hsw_ips_linetime_wm(const struct intel_crtc_state *crtc_state,
-			       const struct intel_cdclk_state *cdclk_state)
+static inline u16 hsw_ips_linetime_wm(const struct intel_crtc_state *crtc_state,
+				      const struct intel_cdclk_state *cdclk_state)
 {
 	const struct drm_display_mode *pipe_mode =
 		&crtc_state->hw.pipe_mode;
@@ -4698,13 +4718,14 @@ static int hsw_compute_linetime_wm(struct intel_atomic_state *state,
 	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
 	struct intel_crtc_state *crtc_state =
 		intel_atomic_get_new_crtc_state(state, crtc);
-	const struct intel_cdclk_state *cdclk_state;
+	__maybe_unused const struct intel_cdclk_state *cdclk_state;
 
 	if (DISPLAY_VER(dev_priv) >= 9)
 		crtc_state->linetime = skl_linetime_wm(crtc_state);
 	else
 		crtc_state->linetime = hsw_linetime_wm(crtc_state);
 
+#ifdef I915
 	if (!hsw_crtc_supports_ips(crtc))
 		return 0;
 
@@ -4714,6 +4735,7 @@ static int hsw_compute_linetime_wm(struct intel_atomic_state *state,
 
 	crtc_state->ips_linetime = hsw_ips_linetime_wm(crtc_state,
 						       cdclk_state);
+#endif
 
 	return 0;
 }
@@ -4782,11 +4804,13 @@ static int intel_crtc_atomic_check(struct intel_atomic_state *state,
 			return ret;
 	}
 
+#ifdef I915
 	if (HAS_IPS(dev_priv)) {
 		ret = hsw_ips_compute_config(state, crtc);
 		if (ret)
 			return ret;
 	}
+#endif
 
 	if (DISPLAY_VER(dev_priv) >= 9 ||
 	    IS_BROADWELL(dev_priv) || IS_HASWELL(dev_priv)) {
@@ -5446,6 +5470,7 @@ pipe_config_mismatch(bool fastset, const struct intel_crtc *crtc,
 
 static bool fastboot_enabled(struct drm_i915_private *dev_priv)
 {
+#ifdef I915
 	if (dev_priv->params.fastboot != -1)
 		return dev_priv->params.fastboot;
 
@@ -5459,6 +5484,9 @@ static bool fastboot_enabled(struct drm_i915_private *dev_priv)
 
 	/* Disabled by default on all others */
 	return false;
+#else
+	return true;
+#endif
 }
 
 bool
@@ -7241,6 +7269,7 @@ static void skl_commit_modeset_enables(struct intel_atomic_state *state)
 	drm_WARN_ON(&dev_priv->drm, update_pipes);
 }
 
+#ifdef I915
 static void intel_atomic_helper_free_state(struct drm_i915_private *dev_priv)
 {
 	struct intel_atomic_state *state, *next;
@@ -7258,9 +7287,11 @@ static void intel_atomic_helper_free_state_worker(struct work_struct *work)
 
 	intel_atomic_helper_free_state(dev_priv);
 }
+#endif
 
 static void intel_atomic_commit_fence_wait(struct intel_atomic_state *intel_state)
 {
+#ifdef I915
 	struct wait_queue_entry wait_fence, wait_reset;
 	struct drm_i915_private *dev_priv = to_i915(intel_state->base.dev);
 
@@ -7284,6 +7315,24 @@ static void intel_atomic_commit_fence_wait(struct intel_atomic_state *intel_stat
 	finish_wait(bit_waitqueue(&to_gt(dev_priv)->reset.flags,
 				  I915_RESET_MODESET),
 		    &wait_reset);
+#else
+	struct intel_plane_state *plane_state;
+	struct intel_plane *plane;
+	int i;
+
+	for_each_new_intel_plane_in_state(intel_state, plane, plane_state, i) {
+		struct xe_bo *bo;
+
+		if (plane_state->uapi.fence)
+			dma_fence_wait(plane_state->uapi.fence, false);
+		bo = intel_fb_obj(plane_state->hw.fb);
+		if (!bo)
+			continue;
+
+		/* TODO: May deadlock, need to grab all fences in prepare_plane_fb */
+		dma_resv_wait_timeout(bo->ttm.base.resv, DMA_RESV_USAGE_KERNEL, false, MAX_SCHEDULE_TIMEOUT);
+	}
+#endif
 }
 
 static void intel_atomic_cleanup_work(struct work_struct *work)
@@ -7302,8 +7351,44 @@ static void intel_atomic_cleanup_work(struct work_struct *work)
 	drm_atomic_helper_commit_cleanup_done(&state->base);
 	drm_atomic_state_put(&state->base);
 
+#ifdef I915
 	intel_atomic_helper_free_state(i915);
+#endif
 }
+
+#ifndef I915
+static int i915_gem_object_read_from_page(struct xe_bo *bo,
+					  u32 ofs, u64 *ptr, u32 size)
+{
+	struct ttm_bo_kmap_obj map;
+	void *virtual;
+	bool is_iomem;
+	int ret;
+	struct ww_acquire_ctx ww;
+
+	XE_BUG_ON(size != 8);
+
+	ret = xe_bo_lock(bo, &ww, 0, true);
+	if (ret)
+		return ret;
+
+	ret = ttm_bo_kmap(&bo->ttm, ofs >> PAGE_SHIFT, 1, &map);
+	if (ret)
+		goto out_unlock;
+
+	ofs &= ~PAGE_MASK;
+	virtual = ttm_kmap_obj_virtual(&map, &is_iomem);
+	if (is_iomem)
+		*ptr = readq((void __iomem *)(virtual + ofs));
+	else
+		*ptr = *(u64 *)(virtual + ofs);
+
+	ttm_bo_kunmap(&map);
+out_unlock:
+	xe_bo_unlock(bo, &ww);
+	return ret;
+}
+#endif
 
 static void intel_atomic_prepare_plane_clear_colors(struct intel_atomic_state *state)
 {
@@ -7557,6 +7642,7 @@ static void intel_atomic_commit_work(struct work_struct *work)
 	intel_atomic_commit_tail(state);
 }
 
+#ifdef I915
 static int
 intel_atomic_commit_ready(struct i915_sw_fence *fence,
 			  enum i915_sw_fence_notify notify)
@@ -7581,6 +7667,7 @@ intel_atomic_commit_ready(struct i915_sw_fence *fence,
 
 	return NOTIFY_DONE;
 }
+#endif
 
 static void intel_atomic_track_fbs(struct intel_atomic_state *state)
 {
@@ -7605,9 +7692,11 @@ static int intel_atomic_commit(struct drm_device *dev,
 
 	state->wakeref = intel_runtime_pm_get(&dev_priv->runtime_pm);
 
+#ifdef I915
 	drm_atomic_state_get(&state->base);
 	i915_sw_fence_init(&state->commit_ready,
 			   intel_atomic_commit_ready);
+#endif
 
 	/*
 	 * The intel_legacy_cursor_update() fast path takes care
@@ -7711,7 +7800,7 @@ static void intel_plane_possible_crtcs_init(struct drm_i915_private *dev_priv)
 	}
 }
 
-
+#ifdef I915
 int intel_get_pipe_from_crtc_id_ioctl(struct drm_device *dev, void *data,
 				      struct drm_file *file)
 {
@@ -7728,6 +7817,7 @@ int intel_get_pipe_from_crtc_id_ioctl(struct drm_device *dev, void *data,
 
 	return 0;
 }
+#endif
 
 static u32 intel_encoder_possible_clones(struct intel_encoder *encoder)
 {
@@ -7755,7 +7845,7 @@ static u32 intel_encoder_possible_crtcs(struct intel_encoder *encoder)
 	return possible_crtcs;
 }
 
-static bool ilk_has_edp_a(struct drm_i915_private *dev_priv)
+static inline bool ilk_has_edp_a(struct drm_i915_private *dev_priv)
 {
 	if (!IS_MOBILE(dev_priv))
 		return false;
@@ -7769,7 +7859,7 @@ static bool ilk_has_edp_a(struct drm_i915_private *dev_priv)
 	return true;
 }
 
-static bool intel_ddi_crt_present(struct drm_i915_private *dev_priv)
+static inline bool intel_ddi_crt_present(struct drm_i915_private *dev_priv)
 {
 	if (DISPLAY_VER(dev_priv) >= 9)
 		return false;
@@ -7794,7 +7884,6 @@ static bool intel_ddi_crt_present(struct drm_i915_private *dev_priv)
 static void intel_setup_outputs(struct drm_i915_private *dev_priv)
 {
 	struct intel_encoder *encoder;
-	bool dpd_is_edp = false;
 
 	intel_pps_unlock_regs_wa(dev_priv);
 
@@ -7854,7 +7943,9 @@ static void intel_setup_outputs(struct drm_i915_private *dev_priv)
 		intel_ddi_init(dev_priv, PORT_A);
 		intel_ddi_init(dev_priv, PORT_B);
 		intel_ddi_init(dev_priv, PORT_C);
+#ifdef I915
 		vlv_dsi_init(dev_priv);
+#endif
 	} else if (DISPLAY_VER(dev_priv) >= 9) {
 		intel_ddi_init(dev_priv, PORT_A);
 		intel_ddi_init(dev_priv, PORT_B);
@@ -7863,9 +7954,10 @@ static void intel_setup_outputs(struct drm_i915_private *dev_priv)
 		intel_ddi_init(dev_priv, PORT_E);
 	} else if (HAS_DDI(dev_priv)) {
 		u32 found;
-
+#ifdef I915
 		if (intel_ddi_crt_present(dev_priv))
 			intel_crt_init(dev_priv);
+#endif
 
 		/* Haswell uses DDI functions to detect digital outputs. */
 		found = intel_de_read(dev_priv, DDI_BUF_CTL(PORT_A)) & DDI_INIT_DISPLAY_DETECTED;
@@ -7881,7 +7973,9 @@ static void intel_setup_outputs(struct drm_i915_private *dev_priv)
 			intel_ddi_init(dev_priv, PORT_D);
 		if (found & SFUSE_STRAP_DDIF_DETECTED)
 			intel_ddi_init(dev_priv, PORT_F);
+#ifdef I915
 	} else if (HAS_PCH_SPLIT(dev_priv)) {
+		bool dpd_is_edp = false;
 		int found;
 
 		/*
@@ -8018,6 +8112,7 @@ static void intel_setup_outputs(struct drm_i915_private *dev_priv)
 
 		intel_crt_init(dev_priv);
 		intel_dvo_init(dev_priv);
+#endif
 	}
 
 	for_each_intel_encoder(&dev_priv->drm, encoder) {
@@ -8204,6 +8299,10 @@ static const struct intel_display_funcs skl_display_funcs = {
 	.commit_modeset_enables = skl_commit_modeset_enables,
 	.get_initial_plane_config = skl_get_initial_plane_config,
 };
+
+#ifndef I915
+#define i9xx_get_initial_plane_config skl_get_initial_plane_config
+#endif
 
 static const struct intel_display_funcs ddi_display_funcs = {
 	.get_pipe_config = hsw_get_pipe_config,
@@ -8475,9 +8574,11 @@ int intel_modeset_init_noirq(struct drm_i915_private *i915)
 	if (ret)
 		goto cleanup_vga_client_pw_domain_dmc;
 
+#ifdef I915
 	init_llist_head(&i915->display.atomic_helper.free_list);
 	INIT_WORK(&i915->display.atomic_helper.free_work,
 		  intel_atomic_helper_free_state_worker);
+#endif
 
 	intel_init_quirks(i915);
 
@@ -8531,7 +8632,9 @@ int intel_modeset_init_nogem(struct drm_i915_private *i915)
 	intel_shared_dpll_init(i915);
 	intel_fdi_pll_freq_update(i915);
 
+#ifdef I915
 	intel_update_czclk(i915);
+#endif
 	intel_modeset_init_hw(i915);
 	intel_dpll_update_ref_clks(i915);
 
@@ -8746,10 +8849,13 @@ void intel_display_resume(struct drm_device *dev)
 		drm_atomic_state_put(state);
 }
 
-static void intel_hpd_poll_fini(struct drm_i915_private *i915)
+void intel_hpd_poll_fini(struct drm_i915_private *i915)
 {
 	struct intel_connector *connector;
 	struct drm_connector_list_iter conn_iter;
+
+	if (!HAS_DISPLAY(i915))
+		return;
 
 	/* Kill all the work that may have been queued by hpd. */
 	drm_connector_list_iter_begin(&i915->drm, &conn_iter);
@@ -8773,8 +8879,10 @@ void intel_modeset_driver_remove(struct drm_i915_private *i915)
 	flush_workqueue(i915->display.wq.flip);
 	flush_workqueue(i915->display.wq.modeset);
 
+#ifdef I915
 	flush_work(&i915->display.atomic_helper.free_work);
 	drm_WARN_ON(&i915->drm, !llist_empty(&i915->display.atomic_helper.free_list));
+#endif
 
 	/*
 	 * MST topology needs to be suspended so we don't have any calls to
@@ -8834,12 +8942,14 @@ bool intel_modeset_probe_defer(struct pci_dev *pdev)
 {
 	struct drm_privacy_screen *privacy_screen;
 
+#ifdef I915
 	/*
 	 * apple-gmux is needed on dual GPU MacBook Pro
 	 * to probe the panel if we're the inactive GPU.
 	 */
 	if (vga_switcheroo_client_probe_defer(pdev))
 		return true;
+#endif
 
 	/* If the LCD panel has a privacy-screen, wait for it */
 	privacy_screen = drm_privacy_screen_get(&pdev->dev, NULL);
