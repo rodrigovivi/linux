@@ -1032,10 +1032,11 @@ static int
 intel_prepare_plane_fb(struct drm_plane *_plane,
 		       struct drm_plane_state *_new_plane_state)
 {
-	struct i915_sched_attr attr = { .priority = I915_PRIORITY_DISPLAY };
-	struct intel_plane *plane = to_intel_plane(_plane);
 	struct intel_plane_state *new_plane_state =
 		to_intel_plane_state(_new_plane_state);
+#ifdef I915
+	struct i915_sched_attr attr = { .priority = I915_PRIORITY_DISPLAY };
+	struct intel_plane *plane = to_intel_plane(_plane);
 	struct intel_atomic_state *state =
 		to_intel_atomic_state(new_plane_state->uapi.state);
 	struct drm_i915_private *dev_priv = to_i915(plane->base.dev);
@@ -1131,6 +1132,12 @@ unpin_fb:
 	intel_plane_unpin_fb(new_plane_state);
 
 	return ret;
+#else
+	if (!intel_fb_obj(new_plane_state->hw.fb))
+		return 0;
+
+	return intel_plane_pin_fb(new_plane_state);
+#endif
 }
 
 /**
@@ -1146,9 +1153,9 @@ intel_cleanup_plane_fb(struct drm_plane *plane,
 {
 	struct intel_plane_state *old_plane_state =
 		to_intel_plane_state(_old_plane_state);
-	struct intel_atomic_state *state =
+	__maybe_unused struct intel_atomic_state *state =
 		to_intel_atomic_state(old_plane_state->uapi.state);
-	struct drm_i915_private *dev_priv = to_i915(plane->dev);
+	__maybe_unused struct drm_i915_private *dev_priv = to_i915(plane->dev);
 	struct drm_i915_gem_object *obj = intel_fb_obj(old_plane_state->hw.fb);
 
 	if (!obj)
