@@ -7,6 +7,7 @@
 #define __INTEL_DPIO_PHY_H__
 
 #include <linux/types.h>
+#include "intel_display.h"
 
 enum pipe;
 enum port;

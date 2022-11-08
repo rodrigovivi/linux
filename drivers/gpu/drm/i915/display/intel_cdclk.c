@@ -33,8 +33,8 @@
 #include "intel_crtc.h"
 #include "intel_de.h"
 #include "intel_display_types.h"
-#include "intel_mchbar_regs.h"
-#include "intel_pci_config.h"
+#include "../i915/intel_mchbar_regs.h"
+#include "../i915/intel_pci_config.h"
 #include "intel_psr.h"
 #include "vlv_sideband.h"
 

@@ -45,8 +45,10 @@
 #include <drm/drm_probe_helper.h>
 #include <drm/drm_rect.h>
 
+#ifdef I915
 #include "gem/i915_gem_lmem.h"
 #include "gem/i915_gem_object.h"
+#endif
 
 #include "g4x_dp.h"
 #include "g4x_hdmi.h"
@@ -750,6 +752,7 @@ __intel_display_resume(struct drm_i915_private *i915,
 	return intel_display_commit_duplicated_state(to_intel_atomic_state(state), ctx);
 }
 
+#ifdef I915
 static bool gpu_reset_clobbers_display(struct drm_i915_private *dev_priv)
 {
 	return (INTEL_INFO(dev_priv)->gpu_reset_clobbers_display &&
@@ -868,6 +871,7 @@ unlock:
 
 	clear_bit_unlock(I915_RESET_MODESET, &to_gt(i915)->reset.flags);
 }
+#endif
 
 static void icl_set_pipe_chicken(const struct intel_crtc_state *crtc_state)
 {
@@ -4654,8 +4658,8 @@ static u16 hsw_linetime_wm(const struct intel_crtc_state *crtc_state)
 	return min(linetime_wm, 0x1ff);
 }
 
-static u16 hsw_ips_linetime_wm(const struct intel_crtc_state *crtc_state,
-			       const struct intel_cdclk_state *cdclk_state)
+static inline u16 hsw_ips_linetime_wm(const struct intel_crtc_state *crtc_state,
+				      const struct intel_cdclk_state *cdclk_state)
 {
 	const struct drm_display_mode *pipe_mode =
 		&crtc_state->hw.pipe_mode;
@@ -4698,7 +4702,7 @@ static int hsw_compute_linetime_wm(struct intel_atomic_state *state,
 	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
 	struct intel_crtc_state *crtc_state =
 		intel_atomic_get_new_crtc_state(state, crtc);
-	const struct intel_cdclk_state *cdclk_state;
+	__maybe_unused const struct intel_cdclk_state *cdclk_state;
 
 	if (DISPLAY_VER(dev_priv) >= 9)
 		crtc_state->linetime = skl_linetime_wm(crtc_state);
@@ -5446,6 +5450,7 @@ pipe_config_mismatch(bool fastset, const struct intel_crtc *crtc,
 
 static bool fastboot_enabled(struct drm_i915_private *dev_priv)
 {
+#ifdef I915
 	if (dev_priv->params.fastboot != -1)
 		return dev_priv->params.fastboot;
 
@@ -5459,6 +5464,9 @@ static bool fastboot_enabled(struct drm_i915_private *dev_priv)
 
 	/* Disabled by default on all others */
 	return false;
+#else
+	return true;
+#endif
 }
 
 bool
@@ -7261,6 +7269,7 @@ static void intel_atomic_helper_free_state_worker(struct work_struct *work)
 
 static void intel_atomic_commit_fence_wait(struct intel_atomic_state *intel_state)
 {
+#ifdef I915
 	struct wait_queue_entry wait_fence, wait_reset;
 	struct drm_i915_private *dev_priv = to_i915(intel_state->base.dev);
 
@@ -7284,6 +7293,24 @@ static void intel_atomic_commit_fence_wait(struct intel_atomic_state *intel_stat
 	finish_wait(bit_waitqueue(&to_gt(dev_priv)->reset.flags,
 				  I915_RESET_MODESET),
 		    &wait_reset);
+#else
+	struct intel_plane_state *plane_state;
+	struct intel_plane *plane;
+	int i;
+
+	for_each_new_intel_plane_in_state(intel_state, plane, plane_state, i) {
+		struct xe_bo *bo;
+
+		if (plane_state->uapi.fence)
+			dma_fence_wait(plane_state->uapi.fence, false);
+		bo = intel_fb_obj(plane_state->hw.fb);
+		if (!bo)
+			continue;
+
+		/* TODO: May deadlock, need to grab all fences in prepare_plane_fb */
+		dma_resv_wait_timeout(bo->ttm.base.resv, DMA_RESV_USAGE_KERNEL, false, MAX_SCHEDULE_TIMEOUT);
+	}
+#endif
 }
 
 static void intel_atomic_cleanup_work(struct work_struct *work)
@@ -7304,6 +7331,40 @@ static void intel_atomic_cleanup_work(struct work_struct *work)
 
 	intel_atomic_helper_free_state(i915);
 }
+
+#ifndef I915
+static int i915_gem_object_read_from_page(struct xe_bo *bo,
+					  u32 ofs, u64 *ptr, u32 size)
+{
+	struct ttm_bo_kmap_obj map;
+	void *virtual;
+	bool is_iomem;
+	int ret;
+	struct ww_acquire_ctx ww;
+
+	XE_BUG_ON(size != 8);
+
+	ret = xe_bo_lock(bo, &ww, 0, true);
+	if (ret)
+		return ret;
+
+	ret = ttm_bo_kmap(&bo->ttm, ofs >> PAGE_SHIFT, 1, &map);
+	if (ret)
+		goto out_unlock;
+
+	ofs &= ~PAGE_MASK;
+	virtual = ttm_kmap_obj_virtual(&map, &is_iomem);
+	if (is_iomem)
+		*ptr = readq((void __iomem *)(virtual + ofs));
+	else
+		*ptr = *(u64 *)(virtual + ofs);
+
+	ttm_bo_kunmap(&map);
+out_unlock:
+	xe_bo_unlock(bo, &ww);
+	return ret;
+}
+#endif
 
 static void intel_atomic_prepare_plane_clear_colors(struct intel_atomic_state *state)
 {
@@ -7557,6 +7618,7 @@ static void intel_atomic_commit_work(struct work_struct *work)
 	intel_atomic_commit_tail(state);
 }
 
+#ifdef I915
 static int
 intel_atomic_commit_ready(struct i915_sw_fence *fence,
 			  enum i915_sw_fence_notify notify)
@@ -7581,6 +7643,7 @@ intel_atomic_commit_ready(struct i915_sw_fence *fence,
 
 	return NOTIFY_DONE;
 }
+#endif
 
 static void intel_atomic_track_fbs(struct intel_atomic_state *state)
 {
@@ -7605,9 +7668,11 @@ static int intel_atomic_commit(struct drm_device *dev,
 
 	state->wakeref = intel_runtime_pm_get(&dev_priv->runtime_pm);
 
+#ifdef I915
 	drm_atomic_state_get(&state->base);
 	i915_sw_fence_init(&state->commit_ready,
 			   intel_atomic_commit_ready);
+#endif
 
 	/*
 	 * The intel_legacy_cursor_update() fast path takes care
@@ -7711,7 +7776,6 @@ static void intel_plane_possible_crtcs_init(struct drm_i915_private *dev_priv)
 	}
 }
 
-
 int intel_get_pipe_from_crtc_id_ioctl(struct drm_device *dev, void *data,
 				      struct drm_file *file)
 {
@@ -7755,7 +7819,7 @@ static u32 intel_encoder_possible_crtcs(struct intel_encoder *encoder)
 	return possible_crtcs;
 }
 
-static bool ilk_has_edp_a(struct drm_i915_private *dev_priv)
+static inline bool ilk_has_edp_a(struct drm_i915_private *dev_priv)
 {
 	if (!IS_MOBILE(dev_priv))
 		return false;
@@ -7769,7 +7833,7 @@ static bool ilk_has_edp_a(struct drm_i915_private *dev_priv)
 	return true;
 }
 
-static bool intel_ddi_crt_present(struct drm_i915_private *dev_priv)
+static inline bool intel_ddi_crt_present(struct drm_i915_private *dev_priv)
 {
 	if (DISPLAY_VER(dev_priv) >= 9)
 		return false;
@@ -7794,7 +7858,6 @@ static bool intel_ddi_crt_present(struct drm_i915_private *dev_priv)
 static void intel_setup_outputs(struct drm_i915_private *dev_priv)
 {
 	struct intel_encoder *encoder;
-	bool dpd_is_edp = false;
 
 	intel_pps_unlock_regs_wa(dev_priv);
 
@@ -7882,6 +7945,7 @@ static void intel_setup_outputs(struct drm_i915_private *dev_priv)
 		if (found & SFUSE_STRAP_DDIF_DETECTED)
 			intel_ddi_init(dev_priv, PORT_F);
 	} else if (HAS_PCH_SPLIT(dev_priv)) {
+		bool dpd_is_edp = false;
 		int found;
 
 		/*
@@ -8532,6 +8596,7 @@ int intel_modeset_init_nogem(struct drm_i915_private *i915)
 	intel_fdi_pll_freq_update(i915);
 
 	intel_update_czclk(i915);
+
 	intel_modeset_init_hw(i915);
 	intel_dpll_update_ref_clks(i915);
 
@@ -8746,10 +8811,13 @@ void intel_display_resume(struct drm_device *dev)
 		drm_atomic_state_put(state);
 }
 
-static void intel_hpd_poll_fini(struct drm_i915_private *i915)
+void intel_hpd_poll_fini(struct drm_i915_private *i915)
 {
 	struct intel_connector *connector;
 	struct drm_connector_list_iter conn_iter;
+
+	if (!HAS_DISPLAY(i915))
+		return;
 
 	/* Kill all the work that may have been queued by hpd. */
 	drm_connector_list_iter_begin(&i915->drm, &conn_iter);
@@ -8834,12 +8902,14 @@ bool intel_modeset_probe_defer(struct pci_dev *pdev)
 {
 	struct drm_privacy_screen *privacy_screen;
 
+#ifdef I915
 	/*
 	 * apple-gmux is needed on dual GPU MacBook Pro
 	 * to probe the panel if we're the inactive GPU.
 	 */
 	if (vga_switcheroo_client_probe_defer(pdev))
 		return true;
+#endif
 
 	/* If the LCD panel has a privacy-screen, wait for it */
 	privacy_screen = drm_privacy_screen_get(&pdev->dev, NULL);
