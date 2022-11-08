@@ -8,11 +8,7 @@
 
 #include "i915_reg_defs.h"
 
-#ifdef I915
 #define DISPLAY_MMIO_BASE(dev_priv)	(INTEL_INFO(dev_priv)->display.mmio_offset)
-#else
-#define DISPLAY_MMIO_BASE(dev_priv)    ((dev_priv) ? 0U : 0U)
-#endif
 
 #define VLV_DISPLAY_BASE		0x180000
 

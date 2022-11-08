@@ -46,6 +46,7 @@
 #include <drm/i915_hdcp_interface.h>
 #include <media/cec-notifier.h>
 
+#include "i915_utils.h"
 #include "i915_vma.h"
 #include "i915_vma_types.h"
 #include "intel_bios.h"
@@ -143,7 +144,9 @@ struct intel_framebuffer {
 		struct intel_fb_view remapped_view;
 	};
 
+#ifdef I915
 	struct i915_address_space *dpt_vm;
+#endif
 };
 
 enum intel_hotplug_state {
@@ -658,7 +661,9 @@ struct intel_atomic_state {
 
 	bool rps_interactive;
 
+#ifdef I915
 	struct i915_sw_fence commit_ready;
+#endif
 
 	struct llist_node freed;
 };
@@ -684,7 +689,11 @@ struct intel_plane_state {
 	} hw;
 
 	struct i915_vma *ggtt_vma;
+#ifdef I915
 	struct i915_vma *dpt_vma;
+#else
+	struct i915_vma embed_vma;
+#endif
 	unsigned long flags;
 #define PLANE_HAS_FENCE BIT(0)
 
@@ -744,9 +753,7 @@ struct intel_plane_state {
 	 * this plane. They're calculated by the linked plane's wm code.
 	 */
 	u32 planar_slave;
-
 	struct drm_intel_sprite_colorkey ckey;
-
 	struct drm_rect psr2_sel_fetch_area;
 
 	/* Clear Color Value */
@@ -2078,7 +2085,11 @@ intel_crtc_needs_color_update(const struct intel_crtc_state *crtc_state)
 
 static inline u32 intel_plane_ggtt_offset(const struct intel_plane_state *plane_state)
 {
+#ifdef I915
 	return i915_ggtt_offset(plane_state->ggtt_vma);
+#else
+	return plane_state->ggtt_vma->node.start;
+#endif
 }
 
 static inline struct intel_frontbuffer *
