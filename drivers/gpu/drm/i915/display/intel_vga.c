@@ -101,6 +101,7 @@ void intel_vga_reset_io_mem(struct drm_i915_private *i915)
 static int
 intel_vga_set_state(struct drm_i915_private *i915, bool enable_decode)
 {
+#ifdef I915
 	unsigned int reg = DISPLAY_VER(i915) >= 6 ? SNB_GMCH_CTRL : INTEL_GMCH_CTRL;
 	u16 gmch_ctrl;
 
@@ -123,6 +124,10 @@ intel_vga_set_state(struct drm_i915_private *i915, bool enable_decode)
 	}
 
 	return 0;
+#else
+	/* Only works on some machines because bios forgets to lock the reg. */
+	return -EIO;
+#endif
 }
 
 static unsigned int
