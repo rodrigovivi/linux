@@ -59,7 +59,7 @@ static bool pcode_mailbox_done(struct xe_gt *gt)
 }
 
 static int pcode_mailbox_rw(struct xe_gt *gt, u32 mbox, u32 *data0, u32 *data1,
-			    unsigned int timeout, bool return_data)
+			    unsigned int timeout, bool return_data, bool atomic)
 {
 	lockdep_assert_held(&gt->pcode.lock);
 
@@ -70,7 +70,10 @@ static int pcode_mailbox_rw(struct xe_gt *gt, u32 mbox, u32 *data0, u32 *data1,
 	xe_mmio_write32(gt, PCODE_DATA1.reg, data1 ? *data1 : 0);
 	xe_mmio_write32(gt, PCODE_MAILBOX.reg, PCODE_READY | mbox);
 
-	wait_for(pcode_mailbox_done(gt), timeout);
+	if (atomic)
+		_wait_for_atomic(pcode_mailbox_done(gt), timeout * 1000, 1);
+	else
+		wait_for(pcode_mailbox_done(gt), timeout);
 
 	if (return_data) {
 		*data0 = xe_mmio_read32(gt, PCODE_DATA0.reg);
@@ -81,12 +84,106 @@ static int pcode_mailbox_rw(struct xe_gt *gt, u32 mbox, u32 *data0, u32 *data1,
 	return pcode_mailbox_status(gt);
 }
 
-static int pcode_mailbox_write(struct xe_gt *gt, u32 mbox, u32 data,
-			       unsigned int timeout)
+int xe_pcode_write_timeout(struct xe_gt *gt, u32 mbox, u32 data, int timeout)
 {
-	return pcode_mailbox_rw(gt, mbox, &data, NULL, timeout, false);
+	int err;
+
+	mutex_lock(&gt->pcode.lock);
+	err = pcode_mailbox_rw(gt, mbox, &data, NULL, timeout, false, false);
+	mutex_unlock(&gt->pcode.lock);
+
+	return err;
 }
 
+int xe_pcode_read(struct xe_gt *gt, u32 mbox, u32 *val, u32 *val1)
+{
+	int err;
+
+	mutex_lock(&gt->pcode.lock);
+	err = pcode_mailbox_rw(gt, mbox, val, val1, 1, true, false);
+	mutex_unlock(&gt->pcode.lock);
+
+	return err;
+}
+
+static bool xe_pcode_try_request(struct xe_gt *gt, u32 mbox,
+				  u32 request, u32 reply_mask, u32 reply,
+				  u32 *status, bool atomic)
+{
+	*status = pcode_mailbox_rw(gt, mbox, &request, NULL, 1, true, atomic);
+
+	return (*status == 0) && ((request & reply_mask) == reply);
+}
+
+/**
+ * xe_pcode_request - send PCODE request until acknowledgment
+ * @gt: gt
+ * @mbox: PCODE mailbox ID the request is targeted for
+ * @request: request ID
+ * @reply_mask: mask used to check for request acknowledgment
+ * @reply: value used to check for request acknowledgment
+ * @timeout_base_ms: timeout for polling with preemption enabled
+ *
+ * Keep resending the @request to @mbox until PCODE acknowledges it, PCODE
+ * reports an error or an overall timeout of @timeout_base_ms+50 ms expires.
+ * The request is acknowledged once the PCODE reply dword equals @reply after
+ * applying @reply_mask. Polling is first attempted with preemption enabled
+ * for @timeout_base_ms and if this times out for another 50 ms with
+ * preemption disabled.
+ *
+ * Returns 0 on success, %-ETIMEDOUT in case of a timeout, <0 in case of some
+ * other error as reported by PCODE.
+ */
+int xe_pcode_request(struct xe_gt *gt, u32 mbox, u32 request,
+		      u32 reply_mask, u32 reply, int timeout_base_ms)
+{
+	u32 status;
+	int ret;
+	bool atomic = false;
+
+	mutex_lock(&gt->pcode.lock);
+
+#define COND \
+	xe_pcode_try_request(gt, mbox, request, reply_mask, reply, &status, atomic)
+
+	/*
+	 * Prime the PCODE by doing a request first. Normally it guarantees
+	 * that a subsequent request, at most @timeout_base_ms later, succeeds.
+	 * _wait_for() doesn't guarantee when its passed condition is evaluated
+	 * first, so send the first request explicitly.
+	 */
+	if (COND) {
+		ret = 0;
+		goto out;
+	}
+	ret = _wait_for(COND, timeout_base_ms * 1000, 10, 10);
+	if (!ret)
+		goto out;
+
+	/*
+	 * The above can time out if the number of requests was low (2 in the
+	 * worst case) _and_ PCODE was busy for some reason even after a
+	 * (queued) request and @timeout_base_ms delay. As a workaround retry
+	 * the poll with preemption disabled to maximize the number of
+	 * requests. Increase the timeout from @timeout_base_ms to 50ms to
+	 * account for interrupts that could reduce the number of these
+	 * requests, and for any quirks of the PCODE firmware that delays
+	 * the request completion.
+	 */
+	drm_err(&gt_to_xe(gt)->drm,
+		"PCODE timeout, retrying with preemption disabled\n");
+	drm_WARN_ON_ONCE(&gt_to_xe(gt)->drm, timeout_base_ms > 1);
+	preempt_disable();
+	atomic = true;
+	ret = wait_for_atomic(COND, 50);
+	atomic = false;
+	preempt_enable();
+
+out:
+	mutex_unlock(&gt->pcode.lock);
+	return status ? status : ret;
+#undef COND
+}
 /**
  * xe_pcode_init_min_freq_table - Initialize PCODE's QOS frequency table
  * @gt: gt instance
@@ -126,9 +223,10 @@ int xe_pcode_init_min_freq_table(struct xe_gt *gt, u32 min_gt_freq,
 
 	mutex_lock(&gt->pcode.lock);
 	for (freq = min_gt_freq; freq <= max_gt_freq; freq++) {
-		ret = pcode_mailbox_write(gt, PCODE_WRITE_MIN_FREQ_TABLE,
-					  freq << PCODE_FREQ_RING_RATIO_SHIFT |
-					  freq, 500);
+		u32 data = freq << PCODE_FREQ_RING_RATIO_SHIFT | freq;
+
+		ret = pcode_mailbox_rw(gt, PCODE_WRITE_MIN_FREQ_TABLE,
+				       &data, NULL, 1, false, false);
 		if (ret)
 			goto unlock;
 	}
@@ -142,7 +240,7 @@ static bool pcode_dgfx_status_complete(struct xe_gt *gt)
 {
 	u32 data = DGFX_GET_INIT_STATUS;
 	int status = pcode_mailbox_rw(gt, DGFX_PCODE_STATUS,
-				      &data, NULL, 500, true);
+				      &data, NULL, 1, true, false);
 
 	return status == 0 &&
 		(data & DGFX_INIT_STATUS_COMPLETE) == DGFX_INIT_STATUS_COMPLETE;
