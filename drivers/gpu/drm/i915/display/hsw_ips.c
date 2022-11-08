@@ -8,7 +8,6 @@
 #include "i915_reg.h"
 #include "intel_de.h"
 #include "intel_display_types.h"
-#include "intel_pcode.h"
 
 static void hsw_ips_enable(const struct intel_crtc_state *crtc_state)
 {
@@ -28,8 +27,8 @@ static void hsw_ips_enable(const struct intel_crtc_state *crtc_state)
 
 	if (IS_BROADWELL(i915)) {
 		drm_WARN_ON(&i915->drm,
-			    snb_pcode_write(&i915->uncore, DISPLAY_IPS_CONTROL,
-					    IPS_ENABLE | IPS_PCODE_CONTROL));
+			    intel_de_pcode_write(i915, DISPLAY_IPS_CONTROL,
+						 IPS_ENABLE | IPS_PCODE_CONTROL));
 		/*
 		 * Quoting Art Runyan: "its not safe to expect any particular
 		 * value in IPS_CTL bit 31 after enabling IPS through the
@@ -62,7 +61,7 @@ bool hsw_ips_disable(const struct intel_crtc_state *crtc_state)
 
 	if (IS_BROADWELL(i915)) {
 		drm_WARN_ON(&i915->drm,
-			    snb_pcode_write(&i915->uncore, DISPLAY_IPS_CONTROL, 0));
+			    intel_de_pcode_write(i915, DISPLAY_IPS_CONTROL, 0));
 		/*
 		 * Wait for PCODE to finish disabling IPS. The BSpec specified
 		 * 42ms timeout value leads to occasional timeouts so use 100ms
