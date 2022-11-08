@@ -37,9 +37,6 @@ intel_pin_fb_obj_dpt(struct drm_framebuffer *fb,
 	 */
 	GEM_WARN_ON(vm->bind_async_flags);
 
-	if (WARN_ON(!i915_gem_object_is_framebuffer(obj)))
-		return ERR_PTR(-EINVAL);
-
 	alignment = 4096 * 512;
 
 	atomic_inc(&dev_priv->gpu_error.pending_fb_pin);
@@ -118,9 +115,6 @@ intel_pin_and_fence_fb_obj(struct drm_framebuffer *fb,
 	unsigned int pinctl;
 	u32 alignment;
 	int ret;
-
-	if (drm_WARN_ON(dev, !i915_gem_object_is_framebuffer(obj)))
-		return ERR_PTR(-EINVAL);
 
 	if (phys_cursor)
 		alignment = intel_cursor_alignment(dev_priv);
