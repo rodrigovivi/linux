@@ -292,6 +292,32 @@ static int pc_set_max_freq(struct xe_guc_pc *pc, u32 freq)
 				   freq);
 }
 
+static void pc_update_rp_values(struct xe_guc_pc *pc)
+{
+	struct xe_gt *gt = pc_to_gt(pc);
+	struct xe_device *xe = gt_to_xe(gt);
+	u32 reg;
+
+	/*
+	 * For PVC we still need to use fused RP1 as the approximation for RPe
+	 * For other platforms than PVC we get the resolved RPe directly from
+	 * PCODE at a different register
+	 */
+	if (xe->info.platform == XE_PVC)
+		reg = xe_mmio_read32(gt, PVC_RP_STATE_CAP.reg);
+	else
+		reg = xe_mmio_read32(gt, GEN10_FREQ_INFO_REC.reg);
+
+	pc->rpe_freq = REG_FIELD_GET(RPE_MASK, reg) * GT_FREQUENCY_MULTIPLIER;
+
+	/*
+	 * RPe is decided at runtime by PCODE. In the rare case where that's
+	 * smaller than the fused min, we will trust the PCODE and use that
+	 * as our minimum one.
+	 */
+	pc->rpn_freq = min(pc->rpn_freq, pc->rpe_freq);
+}
+
 static ssize_t freq_act_show(struct device *dev,
 			     struct device_attribute *attr, char *buf)
 {
@@ -356,6 +382,7 @@ static ssize_t freq_rpe_show(struct device *dev,
 {
 	struct xe_guc_pc *pc = dev_to_pc(dev);
 
+	pc_update_rp_values(pc);
 	return sysfs_emit(buf, "%d\n", pc->rpe_freq);
 }
 static DEVICE_ATTR_RO(freq_rpe);
@@ -541,7 +568,7 @@ static const struct attribute *pc_attrs[] = {
 	NULL
 };
 
-static void pc_init_rp_values(struct xe_guc_pc *pc)
+static void pc_init_fused_rp_values(struct xe_guc_pc *pc)
 {
 	struct xe_gt *gt = pc_to_gt(pc);
 	struct xe_device *xe = gt_to_xe(gt);
@@ -553,15 +580,6 @@ static void pc_init_rp_values(struct xe_guc_pc *pc)
 		reg = xe_mmio_read32(gt, GEN6_RP_STATE_CAP.reg);
 	pc->rp0_freq = REG_FIELD_GET(RP0_MASK, reg) * GT_FREQUENCY_MULTIPLIER;
 	pc->rpn_freq = REG_FIELD_GET(RPN_MASK, reg) * GT_FREQUENCY_MULTIPLIER;
-
-	/*
-	 * For PVC we still need to use fused RP1 as the approximation for RPe
-	 * For other platforms than PVC we get the resolved RPe directly from
-	 * PCODE at a different register
-	 */
-	if (xe->info.platform != XE_PVC)
-		reg = xe_mmio_read32(gt, GEN10_FREQ_INFO_REC.reg);
-	pc->rpe_freq = REG_FIELD_GET(RPE_MASK, reg) * GT_FREQUENCY_MULTIPLIER;
 }
 
 static int pc_adjust_freq_bounds(struct xe_guc_pc *pc)
@@ -588,10 +606,6 @@ static int pc_adjust_freq_bounds(struct xe_guc_pc *pc)
 	 */
 	if (pc_get_min_freq(pc) > pc->rp0_freq)
 		pc_set_min_freq(pc, pc->rp0_freq);
-
-	/* This shouldn't ever happen */
-	XE_WARN_ON(pc_get_min_freq(pc) < pc->rpn_freq ||
-		   pc_get_max_freq(pc) < pc->rpn_freq);
 
 	return 0;
 }
@@ -660,6 +674,8 @@ static int pc_init_freqs(struct xe_guc_pc *pc)
 	if (ret)
 		goto out;
 
+	pc_update_rp_values(pc);
+
 	pc_init_pcode_freq(pc);
 
 	/*
@@ -685,8 +701,6 @@ int xe_guc_pc_start(struct xe_guc_pc *pc)
 	int ret;
 
 	XE_WARN_ON(!xe_device_guc_submission_enabled(xe));
-
-	pc_init_rp_values(pc);
 
 	memset(pc->bo->vmap.vaddr, 0, size);
 	slpc_shared_data_write(pc, header.size, size);
@@ -786,6 +800,8 @@ int xe_guc_pc_init(struct xe_guc_pc *pc)
 		return PTR_ERR(bo);
 
 	pc->bo = bo;
+
+	pc_init_fused_rp_values(pc);
 
 	err = sysfs_create_files(gt->sysfs, pc_attrs);
 	if (err)
