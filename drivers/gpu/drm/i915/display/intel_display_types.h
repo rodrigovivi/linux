@@ -2111,7 +2111,11 @@ intel_crtc_needs_color_update(const struct intel_crtc_state *crtc_state)
 
 static inline u32 intel_plane_ggtt_offset(const struct intel_plane_state *plane_state)
 {
+#ifdef I915
 	return i915_ggtt_offset(plane_state->ggtt_vma);
+#else
+	return plane_state->ggtt_vma->node.start;
+#endif
 }
 
 static inline struct intel_frontbuffer *

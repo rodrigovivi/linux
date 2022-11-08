@@ -28,6 +28,10 @@
 #include <linux/bits.h>
 #include <linux/kref.h>
 
+#ifndef I915
+#include "xe_bo.h"
+#endif
+
 #include "i915_active_types.h"
 
 struct drm_i915_private;

@@ -453,6 +453,7 @@ static void g4x_fbc_program_cfb(struct intel_fbc *fbc)
 
 	intel_de_write(i915, DPFC_CB_BASE,
 		       i915_gem_stolen_node_offset(&fbc->compressed_fb));
+
 }
 
 static const struct intel_fbc_funcs g4x_fbc_funcs = {
@@ -799,6 +800,7 @@ static int intel_fbc_alloc_cfb(struct intel_fbc *fbc,
 	drm_dbg_kms(&i915->drm,
 		    "reserved %llu bytes of contiguous stolen space for FBC, limit: %d\n",
 		    i915_gem_stolen_node_size(&fbc->compressed_fb), fbc->limit);
+
 	return 0;
 
 err_llb:
