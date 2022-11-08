@@ -1548,6 +1548,37 @@ void xe_bo_put_commit(struct llist_head *deferred)
 		drm_gem_object_free(&bo->ttm.base.refcount);
 }
 
+/**
+ * xe_bo_dumb_create - Create a dumb bo as backing for a fb
+ */
+int xe_bo_dumb_create(struct drm_file *file_priv,
+		      struct drm_device *dev,
+		      struct drm_mode_create_dumb *args)
+{
+	struct xe_device *xe = to_xe_device(dev);
+	struct xe_bo *bo;
+	uint32_t handle;
+	int cpp = DIV_ROUND_UP(args->bpp, 8);
+	int err;
+
+	/* Align to ggtt page size, which we start requiring for xe display */
+	args->pitch = ALIGN(args->width * cpp, GEN8_PAGE_SIZE);
+	args->size = mul_u32_u32(args->pitch, args->height);
+
+	bo = xe_bo_create(xe, NULL, NULL, args->size, ttm_bo_type_device,
+			  XE_BO_CREATE_VRAM_IF_DGFX(to_gt(xe)) |
+			  XE_BO_CREATE_USER_BIT);
+	if (IS_ERR(bo))
+		return PTR_ERR(bo);
+
+	err = drm_gem_handle_create(file_priv, &bo->ttm.base, &handle);
+	/* drop reference from allocate - handle holds it now */
+	drm_gem_object_put(&bo->ttm.base);
+	if (!err)
+		args->handle = handle;
+	return err;
+}
+
 #if IS_ENABLED(CONFIG_DRM_XE_KUNIT_TEST)
 #include "tests/xe_bo.c"
 #endif
