@@ -102,6 +102,7 @@ void intel_vga_reset_io_mem(struct drm_i915_private *i915)
 static unsigned int
 intel_vga_set_decode(struct pci_dev *pdev, bool enable_decode)
 {
+#ifdef I915
 	struct drm_i915_private *i915 = pdev_to_i915(pdev);
 
 	intel_gmch_vga_set_state(i915, enable_decode);
@@ -111,6 +112,9 @@ intel_vga_set_decode(struct pci_dev *pdev, bool enable_decode)
 		       VGA_RSRC_NORMAL_IO | VGA_RSRC_NORMAL_MEM;
 	else
 		return VGA_RSRC_NORMAL_IO | VGA_RSRC_NORMAL_MEM;
+#else
+	return -EIO;
+#endif
 }
 
 int intel_vga_register(struct drm_i915_private *i915)

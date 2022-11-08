@@ -23,7 +23,6 @@
 
 #include <linux/time.h>
 
-#include "hsw_ips.h"
 #include "i915_reg.h"
 #include "intel_atomic.h"
 #include "intel_atomic_plane.h"
@@ -33,10 +32,14 @@
 #include "intel_crtc.h"
 #include "intel_de.h"
 #include "intel_display_types.h"
-#include "intel_mchbar_regs.h"
-#include "intel_pci_config.h"
+#include "../i915/intel_mchbar_regs.h"
+#include "../i915/intel_pci_config.h"
 #include "intel_psr.h"
+
+#ifdef I915
+#include "hsw_ips.h"
 #include "vlv_sideband.h"
+#endif
 
 /**
  * DOC: CDCLK / RAWCLK
@@ -474,6 +477,7 @@ static void hsw_get_cdclk(struct drm_i915_private *dev_priv,
 		cdclk_config->cdclk = 540000;
 }
 
+#ifdef I915
 static int vlv_calc_cdclk(struct drm_i915_private *dev_priv, int min_cdclk)
 {
 	int freq_320 = (dev_priv->hpll_freq <<  1) % 320000 != 0 ?
@@ -712,6 +716,7 @@ static void chv_set_cdclk(struct drm_i915_private *dev_priv,
 
 	intel_display_power_put(dev_priv, POWER_DOMAIN_DISPLAY_CORE, wakeref);
 }
+#endif
 
 static int bdw_calc_cdclk(int min_cdclk)
 {
@@ -2410,9 +2415,11 @@ int intel_crtc_compute_min_cdclk(const struct intel_crtc_state *crtc_state)
 
 	min_cdclk = intel_pixel_rate_to_cdclk(crtc_state);
 
+#ifdef I915
 	/* pixel rate mustn't exceed 95% of cdclk with IPS on BDW */
 	if (IS_BROADWELL(dev_priv) && hsw_crtc_state_ips_capable(crtc_state))
 		min_cdclk = DIV_ROUND_UP(min_cdclk * 100, 95);
+#endif
 
 	/* BSpec says "Do not use DisplayPort with CDCLK less than 432 MHz,
 	 * audio enabled, port width x4, and link rate HBR2 (5.4 GHz), or else
@@ -2606,6 +2613,7 @@ static int bxt_compute_min_voltage_level(struct intel_cdclk_state *cdclk_state)
 	return min_voltage_level;
 }
 
+#ifdef I915
 static int vlv_modeset_calc_cdclk(struct intel_cdclk_state *cdclk_state)
 {
 	struct intel_atomic_state *state = cdclk_state->base.state;
@@ -2634,6 +2642,7 @@ static int vlv_modeset_calc_cdclk(struct intel_cdclk_state *cdclk_state)
 
 	return 0;
 }
+#endif
 
 static int bdw_modeset_calc_cdclk(struct intel_cdclk_state *cdclk_state)
 {
@@ -3136,12 +3145,14 @@ static int pch_rawclk(struct drm_i915_private *dev_priv)
 	return (intel_de_read(dev_priv, PCH_RAWCLK_FREQ) & RAWCLK_FREQ_MASK) * 1000;
 }
 
+#ifdef I915
 static int vlv_hrawclk(struct drm_i915_private *dev_priv)
 {
 	/* RAWCLK_FREQ_VLV register updated from power well code */
 	return vlv_get_cck_clock_hpll(dev_priv, "hrawclk",
 				      CCK_DISPLAY_REF_CLOCK_CONTROL);
 }
+#endif
 
 static int i9xx_hrawclk(struct drm_i915_private *dev_priv)
 {
@@ -3223,8 +3234,10 @@ u32 intel_read_rawclk(struct drm_i915_private *dev_priv)
 		freq = cnp_rawclk(dev_priv);
 	else if (HAS_PCH_SPLIT(dev_priv))
 		freq = pch_rawclk(dev_priv);
+#ifdef I915
 	else if (IS_VALLEYVIEW(dev_priv) || IS_CHERRYVIEW(dev_priv))
 		freq = vlv_hrawclk(dev_priv);
+#endif
 	else if (DISPLAY_VER(dev_priv) >= 3)
 		freq = i9xx_hrawclk(dev_priv);
 	else
@@ -3281,6 +3294,7 @@ static const struct intel_cdclk_funcs bdw_cdclk_funcs = {
 	.modeset_calc_cdclk = bdw_modeset_calc_cdclk,
 };
 
+#ifdef I915
 static const struct intel_cdclk_funcs chv_cdclk_funcs = {
 	.get_cdclk = vlv_get_cdclk,
 	.set_cdclk = chv_set_cdclk,
@@ -3292,6 +3306,7 @@ static const struct intel_cdclk_funcs vlv_cdclk_funcs = {
 	.set_cdclk = vlv_set_cdclk,
 	.modeset_calc_cdclk = vlv_modeset_calc_cdclk,
 };
+#endif
 
 static const struct intel_cdclk_funcs hsw_cdclk_funcs = {
 	.get_cdclk = hsw_get_cdclk,
@@ -3415,10 +3430,12 @@ void intel_init_cdclk_hooks(struct drm_i915_private *dev_priv)
 		dev_priv->display.funcs.cdclk = &bdw_cdclk_funcs;
 	} else if (IS_HASWELL(dev_priv)) {
 		dev_priv->display.funcs.cdclk = &hsw_cdclk_funcs;
+#ifdef I915
 	} else if (IS_CHERRYVIEW(dev_priv)) {
 		dev_priv->display.funcs.cdclk = &chv_cdclk_funcs;
 	} else if (IS_VALLEYVIEW(dev_priv)) {
 		dev_priv->display.funcs.cdclk = &vlv_cdclk_funcs;
+#endif
 	} else if (IS_SANDYBRIDGE(dev_priv) || IS_IVYBRIDGE(dev_priv)) {
 		dev_priv->display.funcs.cdclk = &fixed_400mhz_cdclk_funcs;
 	} else if (IS_IRONLAKE(dev_priv)) {

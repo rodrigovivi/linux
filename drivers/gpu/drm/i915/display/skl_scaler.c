@@ -277,6 +277,7 @@ int skl_update_scaler_plane(struct intel_crtc_state *crtc_state,
 	if (ret || plane_state->scaler_id < 0)
 		return ret;
 
+#ifdef I915
 	/* check colorkey */
 	if (plane_state->ckey.flags) {
 		drm_dbg_kms(&dev_priv->drm,
@@ -285,6 +286,7 @@ int skl_update_scaler_plane(struct intel_crtc_state *crtc_state,
 			    intel_plane->base.name);
 		return -EINVAL;
 	}
+#endif
 
 	/* Check src format */
 	switch (fb->format->format) {

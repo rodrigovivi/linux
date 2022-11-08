@@ -186,6 +186,7 @@ TRACE_EVENT(intel_memory_cxsr,
 		      __entry->frame[PIPE_C], __entry->scanline[PIPE_C])
 );
 
+#ifdef I915
 TRACE_EVENT(g4x_wm,
 	    TP_PROTO(struct intel_crtc *crtc, const struct g4x_wm_values *wm),
 	    TP_ARGS(crtc, wm),
@@ -278,6 +279,7 @@ TRACE_EVENT(vlv_wm,
 		      __entry->primary, __entry->sprite0, __entry->sprite1, __entry->cursor,
 		      __entry->sr_plane, __entry->sr_cursor)
 );
+#endif
 
 TRACE_EVENT(vlv_fifo_size,
 	    TP_PROTO(struct intel_crtc *crtc, u32 sprite0_start, u32 sprite1_start, u32 fifo_size),

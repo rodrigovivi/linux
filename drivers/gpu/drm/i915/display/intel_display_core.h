@@ -249,11 +249,13 @@ struct intel_wm {
 	u16 skl_latency[8];
 
 	/* current hardware state */
+#ifdef I915
 	union {
 		struct ilk_wm_values hw;
 		struct vlv_wm_values vlv;
 		struct g4x_wm_values g4x;
 	};
+#endif
 
 	u8 num_levels;
 
@@ -263,6 +265,9 @@ struct intel_wm {
 	 * crtc_state->wm.need_postvbl_update.
 	 */
 	struct mutex wm_mutex;
+
+	/* protects DSPARB registers on pre-g4x/vlv/chv */
+	spinlock_t dsparb_lock;
 
 	bool ipc_enabled;
 };
@@ -296,10 +301,12 @@ struct intel_display {
 	} funcs;
 
 	/* Grouping using anonymous structs. Keep sorted. */
+#ifdef I915
 	struct intel_atomic_helper {
 		struct llist_head free_list;
 		struct work_struct free_work;
 	} atomic_helper;
+#endif
 
 	struct {
 		/* backlight registers and fields in struct intel_panel */

@@ -5,7 +5,11 @@
 
 #include "i915_drv.h"
 #include "i915_reg.h"
+#ifdef I915
 #include "i915_trace.h"
+#else
+#define trace_i915_reg_rw(a...) do { } while (0)
+#endif
 #include "intel_bios.h"
 #include "intel_de.h"
 #include "intel_display_types.h"
