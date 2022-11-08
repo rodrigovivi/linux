@@ -5322,8 +5322,8 @@ intel_edp_add_properties(struct intel_dp *intel_dp)
 static void intel_edp_backlight_setup(struct intel_dp *intel_dp,
 				      struct intel_connector *connector)
 {
-	struct drm_i915_private *i915 = dp_to_i915(intel_dp);
 	enum pipe pipe = INVALID_PIPE;
+	struct drm_i915_private *i915 = dp_to_i915(intel_dp);
 
 	if (IS_VALLEYVIEW(i915) || IS_CHERRYVIEW(i915)) {
 		/*

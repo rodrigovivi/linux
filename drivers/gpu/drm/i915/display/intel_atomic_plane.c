@@ -108,7 +108,9 @@ intel_plane_duplicate_state(struct drm_plane *plane)
 	__drm_atomic_helper_plane_duplicate_state(plane, &intel_state->uapi);
 
 	intel_state->ggtt_vma = NULL;
+#ifdef I915
 	intel_state->dpt_vma = NULL;
+#endif
 	intel_state->flags = 0;
 
 	/* add reference to fb */
@@ -133,7 +135,9 @@ intel_plane_destroy_state(struct drm_plane *plane,
 	struct intel_plane_state *plane_state = to_intel_plane_state(state);
 
 	drm_WARN_ON(plane->dev, plane_state->ggtt_vma);
+#ifdef I915
 	drm_WARN_ON(plane->dev, plane_state->dpt_vma);
+#endif
 
 	__drm_atomic_helper_plane_destroy_state(&plane_state->uapi);
 	if (plane_state->hw.fb)
@@ -1015,10 +1019,11 @@ static int
 intel_prepare_plane_fb(struct drm_plane *_plane,
 		       struct drm_plane_state *_new_plane_state)
 {
-	struct i915_sched_attr attr = { .priority = I915_PRIORITY_DISPLAY };
-	struct intel_plane *plane = to_intel_plane(_plane);
 	struct intel_plane_state *new_plane_state =
 		to_intel_plane_state(_new_plane_state);
+#ifdef I915
+	struct i915_sched_attr attr = { .priority = I915_PRIORITY_DISPLAY };
+	struct intel_plane *plane = to_intel_plane(_plane);
 	struct intel_atomic_state *state =
 		to_intel_atomic_state(new_plane_state->uapi.state);
 	struct drm_i915_private *dev_priv = to_i915(plane->base.dev);
@@ -1114,6 +1119,12 @@ unpin_fb:
 	intel_plane_unpin_fb(new_plane_state);
 
 	return ret;
+#else
+	if (!intel_fb_obj(new_plane_state->hw.fb))
+		return 0;
+
+	return intel_plane_pin_fb(new_plane_state);
+#endif
 }
 
 /**
@@ -1129,9 +1140,9 @@ intel_cleanup_plane_fb(struct drm_plane *plane,
 {
 	struct intel_plane_state *old_plane_state =
 		to_intel_plane_state(_old_plane_state);
-	struct intel_atomic_state *state =
+	__maybe_unused struct intel_atomic_state *state =
 		to_intel_atomic_state(old_plane_state->uapi.state);
-	struct drm_i915_private *dev_priv = to_i915(plane->dev);
+	__maybe_unused struct drm_i915_private *dev_priv = to_i915(plane->dev);
 	struct drm_i915_gem_object *obj = intel_fb_obj(old_plane_state->hw.fb);
 
 	if (!obj)
