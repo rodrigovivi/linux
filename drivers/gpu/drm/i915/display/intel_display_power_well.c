@@ -8,7 +8,6 @@
 #include "intel_backlight_regs.h"
 #include "intel_combo_phy.h"
 #include "intel_combo_phy_regs.h"
-#include "intel_crt.h"
 #include "intel_de.h"
 #include "intel_display_power_well.h"
 #include "intel_display_types.h"
@@ -22,8 +21,12 @@
 #include "intel_tc.h"
 #include "intel_vga.h"
 #include "skl_watermark.h"
+
+#ifdef I915
+#include "intel_crt.h"
 #include "vlv_sideband.h"
 #include "vlv_sideband_reg.h"
+#endif
 
 struct i915_power_well_regs {
 	i915_reg_t bios;
@@ -1053,6 +1056,7 @@ static void i830_pipes_power_well_sync_hw(struct drm_i915_private *dev_priv,
 		i830_pipes_power_well_disable(dev_priv, power_well);
 }
 
+#ifdef I915
 static void vlv_set_power_well(struct drm_i915_private *dev_priv,
 			       struct i915_power_well *power_well, bool enable)
 {
@@ -1705,6 +1709,7 @@ static void chv_pipe_power_well_disable(struct drm_i915_private *dev_priv,
 
 	chv_set_pipe_power_well(dev_priv, power_well, false);
 }
+#endif
 
 static void
 tgl_tc_cold_request(struct drm_i915_private *i915, bool block)
@@ -1829,17 +1834,21 @@ const struct i915_power_well_ops i9xx_always_on_power_well_ops = {
 };
 
 const struct i915_power_well_ops chv_pipe_power_well_ops = {
+#ifdef I915
 	.sync_hw = chv_pipe_power_well_sync_hw,
 	.enable = chv_pipe_power_well_enable,
 	.disable = chv_pipe_power_well_disable,
 	.is_enabled = chv_pipe_power_well_enabled,
+#endif
 };
 
 const struct i915_power_well_ops chv_dpio_cmn_power_well_ops = {
 	.sync_hw = i9xx_power_well_sync_hw_noop,
+#ifdef I915
 	.enable = chv_dpio_cmn_power_well_enable,
 	.disable = chv_dpio_cmn_power_well_disable,
 	.is_enabled = vlv_power_well_enabled,
+#endif
 };
 
 const struct i915_power_well_ops i830_pipes_power_well_ops = {
@@ -1880,23 +1889,29 @@ const struct i915_power_well_ops bxt_dpio_cmn_power_well_ops = {
 
 const struct i915_power_well_ops vlv_display_power_well_ops = {
 	.sync_hw = i9xx_power_well_sync_hw_noop,
+#ifdef I915
 	.enable = vlv_display_power_well_enable,
 	.disable = vlv_display_power_well_disable,
 	.is_enabled = vlv_power_well_enabled,
+#endif
 };
 
 const struct i915_power_well_ops vlv_dpio_cmn_power_well_ops = {
 	.sync_hw = i9xx_power_well_sync_hw_noop,
+#ifdef I915
 	.enable = vlv_dpio_cmn_power_well_enable,
 	.disable = vlv_dpio_cmn_power_well_disable,
 	.is_enabled = vlv_power_well_enabled,
+#endif
 };
 
 const struct i915_power_well_ops vlv_dpio_power_well_ops = {
 	.sync_hw = i9xx_power_well_sync_hw_noop,
+#ifdef I915
 	.enable = vlv_power_well_enable,
 	.disable = vlv_power_well_disable,
 	.is_enabled = vlv_power_well_enabled,
+#endif
 };
 
 static const struct i915_power_well_regs icl_aux_power_well_regs = {

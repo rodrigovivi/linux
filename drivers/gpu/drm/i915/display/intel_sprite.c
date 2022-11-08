@@ -40,7 +40,12 @@
 
 #include "i915_drv.h"
 #include "i915_reg.h"
+
+#ifdef I915
+#include "i915_vgpu.h"
 #include "i9xx_plane.h"
+#endif
+
 #include "intel_atomic_plane.h"
 #include "intel_de.h"
 #include "intel_display_types.h"
@@ -48,6 +53,7 @@
 #include "intel_frontbuffer.h"
 #include "intel_sprite.h"
 
+#ifdef I915
 static void i9xx_plane_linear_gamma(u16 gamma[8])
 {
 	/* The points are not evenly spaced. */
@@ -261,6 +267,7 @@ static u32 vlv_sprite_ctl_crtc(const struct intel_crtc_state *crtc_state)
 static u32 vlv_sprite_ctl(const struct intel_crtc_state *crtc_state,
 			  const struct intel_plane_state *plane_state)
 {
+#ifdef I915
 	const struct drm_framebuffer *fb = plane_state->hw.fb;
 	unsigned int rotation = plane_state->hw.rotation;
 	const struct drm_intel_sprite_colorkey *key = &plane_state->ckey;
@@ -332,6 +339,9 @@ static u32 vlv_sprite_ctl(const struct intel_crtc_state *crtc_state,
 		sprctl |= SP_SOURCE_KEY;
 
 	return sprctl;
+#else
+	return 0;
+#endif
 }
 
 static void vlv_sprite_update_gamma(const struct intel_plane_state *plane_state)
@@ -383,6 +393,7 @@ vlv_sprite_update_arm(struct intel_plane *plane,
 		      const struct intel_crtc_state *crtc_state,
 		      const struct intel_plane_state *plane_state)
 {
+#ifdef I915
 	struct drm_i915_private *dev_priv = to_i915(plane->base.dev);
 	enum pipe pipe = plane->pipe;
 	enum plane_id plane_id = plane->id;
@@ -422,6 +433,7 @@ vlv_sprite_update_arm(struct intel_plane *plane,
 	intel_de_write_fw(dev_priv, SPCNTR(pipe, plane_id), sprctl);
 	intel_de_write_fw(dev_priv, SPSURF(pipe, plane_id),
 			  intel_plane_ggtt_offset(plane_state) + sprsurf_offset);
+#endif
 
 	vlv_sprite_update_clrc(plane_state);
 	vlv_sprite_update_gamma(plane_state);
@@ -647,6 +659,7 @@ static bool ivb_need_sprite_gamma(const struct intel_plane_state *plane_state)
 static u32 ivb_sprite_ctl(const struct intel_crtc_state *crtc_state,
 			  const struct intel_plane_state *plane_state)
 {
+#ifdef I915
 	struct drm_i915_private *dev_priv =
 		to_i915(plane_state->uapi.plane->dev);
 	const struct drm_framebuffer *fb = plane_state->hw.fb;
@@ -716,6 +729,9 @@ static u32 ivb_sprite_ctl(const struct intel_crtc_state *crtc_state,
 		sprctl |= SPRITE_SOURCE_KEY;
 
 	return sprctl;
+#else
+	return 0;
+#endif
 }
 
 static void ivb_sprite_linear_gamma(const struct intel_plane_state *plane_state,
@@ -1542,10 +1558,13 @@ static const struct drm_plane_funcs vlv_sprite_funcs = {
 	.format_mod_supported = vlv_sprite_format_mod_supported,
 };
 
+#endif
+
 struct intel_plane *
 intel_sprite_plane_create(struct drm_i915_private *dev_priv,
 			  enum pipe pipe, int sprite)
 {
+#ifdef I915
 	struct intel_plane *plane;
 	const struct drm_plane_funcs *plane_funcs;
 	unsigned int supported_rotations;
@@ -1665,4 +1684,9 @@ fail:
 	intel_plane_free(plane);
 
 	return ERR_PTR(ret);
+#else
+	BUG_ON(1);
+	return ERR_PTR(-ENODEV);
+#endif
 }
+

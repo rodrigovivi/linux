@@ -23,6 +23,12 @@ intel_de_read8(struct drm_i915_private *i915, i915_reg_t reg)
 	return intel_uncore_read8(&i915->uncore, reg);
 }
 
+static inline u8
+intel_de_read64(struct drm_i915_private *i915, i915_reg_t reg)
+{
+	return intel_uncore_read64(&i915->uncore, reg);
+}
+
 static inline u64
 intel_de_read64_2x32(struct drm_i915_private *i915,
 		     i915_reg_t lower_reg, i915_reg_t upper_reg)
@@ -110,6 +116,12 @@ intel_de_write_fw(struct drm_i915_private *i915, i915_reg_t reg, u32 val)
 {
 	trace_i915_reg_rw(true, reg, val, sizeof(val), true);
 	intel_uncore_write_fw(&i915->uncore, reg, val);
+}
+
+static inline void
+intel_de_posting_read_fw(struct drm_i915_private *i915, i915_reg_t reg)
+{
+	intel_uncore_posting_read_fw(&i915->uncore, reg);
 }
 
 static inline u32
