@@ -1834,8 +1834,7 @@ static void intel_user_framebuffer_destroy(struct drm_framebuffer *fb)
 	if (intel_fb_uses_dpt(fb))
 		intel_dpt_destroy(intel_fb->dpt_vm);
 
-	intel_frontbuffer_put(intel_fb->frontbuffer);
-
+	drm_gem_object_put(fb->obj[0]);
 	kfree(intel_fb);
 }
 
@@ -1864,7 +1863,7 @@ static int intel_user_framebuffer_dirty(struct drm_framebuffer *fb,
 	struct drm_i915_gem_object *obj = intel_fb_obj(fb);
 
 	i915_gem_object_flush_if_display(obj);
-	intel_frontbuffer_flush(to_intel_frontbuffer(fb), ORIGIN_DIRTYFB);
+	intel_frontbuffer_flush(to_intel_framebuffer(fb), ORIGIN_DIRTYFB);
 
 	return 0;
 }
@@ -1885,10 +1884,6 @@ int intel_framebuffer_init(struct intel_framebuffer *intel_fb,
 	unsigned int tiling, stride;
 	int ret = -EINVAL;
 	int i;
-
-	intel_fb->frontbuffer = intel_frontbuffer_get(obj);
-	if (!intel_fb->frontbuffer)
-		return -ENOMEM;
 
 	i915_gem_object_lock(obj, NULL);
 	tiling = i915_gem_object_get_tiling(obj);
@@ -2023,13 +2018,13 @@ int intel_framebuffer_init(struct intel_framebuffer *intel_fb,
 		goto err_free_dpt;
 	}
 
+	drm_gem_object_get(fb->obj[0]);
 	return 0;
 
 err_free_dpt:
 	if (intel_fb_uses_dpt(fb))
 		intel_dpt_destroy(intel_fb->dpt_vm);
 err:
-	intel_frontbuffer_put(intel_fb->frontbuffer);
 	return ret;
 }
 
