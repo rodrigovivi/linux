@@ -760,12 +760,9 @@ xe_pt_stage_bind(struct xe_gt *gt, struct xe_vma *vma,
 	else if (xe_bo_is_vram(bo))
 		xe_res_first(bo->ttm.resource, vma->bo_offset,
 			     vma->end - vma->start + 1, &curs);
-	else if (xe_bo_get_sg(bo))
+	else
 		xe_res_first_sg(xe_bo_get_sg(bo), vma->bo_offset,
 				vma->end - vma->start + 1, &curs);
-	else
-		xe_res_first_dma(bo->ttm.ttm->dma_address, vma->bo_offset,
-				 vma->end - vma->start + 1, &curs);
 
 	ret = drm_pt_walk_range(&pt->drm, pt->level, vma->start, vma->end + 1,
 				&xe_walk.drm);

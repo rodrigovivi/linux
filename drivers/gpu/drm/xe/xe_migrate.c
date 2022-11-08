@@ -380,7 +380,7 @@ static void emit_pte(struct xe_migrate *m,
 		     struct xe_bb *bb, u32 at_pt,
 		     bool is_vram,
 		     struct xe_res_cursor *cur,
-		     u32 size, struct ttm_tt *ttm, struct xe_bo *bo)
+		     u32 size, struct xe_bo *bo)
 {
 	u32 ptes;
 	u64 ofs = at_pt * GEN8_PAGE_SIZE;
@@ -408,9 +408,9 @@ static void emit_pte(struct xe_migrate *m,
 		ptes -= chunk;
 
 		while (chunk--) {
-			unsigned long offset = cur->start &
-				(PAGE_SIZE - 1);
 			u64 addr;
+
+			XE_BUG_ON(cur->start & (PAGE_SIZE - 1));
 
 			if (is_vram) {
 				addr = cur->start;
@@ -423,13 +423,8 @@ static void emit_pte(struct xe_migrate *m,
 				}
 
 				addr |= GEN12_PPGTT_PTE_LM;
-			} else if (xe_bo_get_sg(bo)) {
-				addr = xe_res_dma(cur) + offset;
 			} else {
-				unsigned long page = cur->start >> PAGE_SHIFT;
-
-				XE_BUG_ON(page >= ttm->num_pages);
-				addr = ttm->dma_address[page] + offset;
+				addr = xe_res_dma(cur);
 			}
 			addr |= PPAT_CACHED | GEN8_PAGE_PRESENT | GEN8_PAGE_RW;
 			bb->cs[bb->len++] = lower_32_bits(addr);
@@ -548,7 +543,6 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 	struct dma_fence *fence = NULL;
 	u64 size = bo->size;
 	struct xe_res_cursor src_it, dst_it, ccs_it;
-	struct ttm_tt *ttm = bo->ttm.ttm;
 	u64 src_L0_ofs, dst_L0_ofs;
 	u32 src_L0_pt, dst_L0_pt;
 	u64 src_L0, dst_L0;
@@ -623,19 +617,18 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 
 		if (!src_is_vram)
 			emit_pte(m, bb, src_L0_pt, src_is_vram, &src_it, src_L0,
-				 ttm, bo);
+				 bo);
 		else
 			xe_res_next(&src_it, src_L0);
 
 		if (!dst_is_vram)
 			emit_pte(m, bb, dst_L0_pt, dst_is_vram, &dst_it, src_L0,
-				 ttm, bo);
+				 bo);
 		else
 			xe_res_next(&dst_it, src_L0);
 
 		if (copy_system_ccs)
-			emit_pte(m, bb, ccs_pt, false, &ccs_it, ccs_size, ttm,
-				 bo);
+			emit_pte(m, bb, ccs_pt, false, &ccs_it, ccs_size, bo);
 
 		bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
 		update_idx = bb->len;
@@ -793,7 +786,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		if (!clear_vram) {
 			emit_arb_clear(bb);
 			emit_pte(m, bb, clear_L0_pt, clear_vram, &src_it, clear_L0,
-				 bo->ttm.ttm, bo);
+				 bo);
 		} else {
 			xe_res_next(&src_it, clear_L0);
 		}
