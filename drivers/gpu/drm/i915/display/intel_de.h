@@ -9,11 +9,18 @@
 #include "i915_drv.h"
 #include "i915_trace.h"
 #include "intel_uncore.h"
+#include "intel_pcode.h"
 
 static inline u32
 intel_de_read(struct drm_i915_private *i915, i915_reg_t reg)
 {
 	return intel_uncore_read(&i915->uncore, reg);
+}
+
+static inline u8
+intel_de_read8(struct drm_i915_private *i915, i915_reg_t reg)
+{
+	return intel_uncore_read8(&i915->uncore, reg);
 }
 
 static inline void
@@ -39,6 +46,23 @@ intel_de_wait_for_register(struct drm_i915_private *i915, i915_reg_t reg,
 			   u32 mask, u32 value, unsigned int timeout)
 {
 	return intel_wait_for_register(&i915->uncore, reg, mask, value, timeout);
+}
+
+static inline int
+intel_de_wait_for_register_fw(struct drm_i915_private *i915, i915_reg_t reg,
+			      u32 mask, u32 value, unsigned int timeout)
+{
+	return intel_wait_for_register_fw(&i915->uncore, reg, mask, value, timeout);
+}
+
+static inline int
+__intel_de_wait_for_register(struct drm_i915_private *i915, i915_reg_t reg,
+			     u32 mask, u32 value,
+			     unsigned int fast_timeout_us,
+			     unsigned int slow_timeout_ms, u32 *out_value)
+{
+	return __intel_wait_for_register(&i915->uncore, reg, mask, value,
+					 fast_timeout_us, slow_timeout_ms, out_value);
 }
 
 static inline int
@@ -79,6 +103,55 @@ intel_de_write_fw(struct drm_i915_private *i915, i915_reg_t reg, u32 val)
 {
 	trace_i915_reg_rw(true, reg, val, sizeof(val), true);
 	intel_uncore_write_fw(&i915->uncore, reg, val);
+}
+
+static inline void
+intel_de_write_samevalue(struct drm_i915_private *i915, i915_reg_t reg)
+{
+	spin_lock_irq(&i915->uncore.lock);
+	intel_de_write_fw(i915, reg, intel_de_read_fw(i915, reg));
+	spin_unlock_irq(&i915->uncore.lock);
+}
+
+static inline u32
+intel_de_read_notrace(struct drm_i915_private *i915, i915_reg_t reg)
+{
+	return intel_uncore_read_notrace(&i915->uncore, reg);
+}
+
+static inline void
+intel_de_write_notrace(struct drm_i915_private *i915, i915_reg_t reg, u32 val)
+{
+	intel_uncore_write_notrace(&i915->uncore, reg, val);
+}
+
+static inline int
+intel_de_pcode_write_timeout(struct drm_i915_private *i915, u32 mbox, u32 val,
+			    int fast_timeout_us, int slow_timeout_ms)
+{
+	return snb_pcode_write_timeout(&i915->uncore, mbox, val,
+				       fast_timeout_us, slow_timeout_ms);
+}
+
+static inline int
+intel_de_pcode_write(struct drm_i915_private *i915, u32 mbox, u32 val)
+{
+
+	return snb_pcode_write(&i915->uncore, mbox, val);
+}
+
+static inline int
+intel_de_pcode_read(struct drm_i915_private *i915, u32 mbox, u32 *val, u32 *val1)
+{
+	return snb_pcode_read(&i915->uncore, mbox, val, val1);
+}
+
+static inline int intel_de_pcode_request(struct drm_i915_private *i915, u32 mbox,
+					 u32 request, u32 reply_mask, u32 reply,
+					 int timeout_base_ms)
+{
+	return skl_pcode_request(&i915->uncore, mbox, request, reply_mask, reply,
+				 timeout_base_ms);
 }
 
 #endif /* __INTEL_DE_H__ */
