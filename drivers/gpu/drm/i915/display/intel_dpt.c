@@ -3,17 +3,19 @@
  * Copyright © 2021 Intel Corporation
  */
 
-#include "gem/i915_gem_domain.h"
-#include "gem/i915_gem_internal.h"
-#include "gem/i915_gem_lmem.h"
-#include "gt/gen8_ppgtt.h"
-
 #include "i915_drv.h"
 #include "i915_reg.h"
 #include "intel_de.h"
 #include "intel_display_types.h"
 #include "intel_dpt.h"
 #include "intel_fb.h"
+
+#ifdef I915
+
+#include "gem/i915_gem_domain.h"
+#include "gem/i915_gem_internal.h"
+#include "gem/i915_gem_lmem.h"
+#include "gt/gen8_ppgtt.h"
 
 struct i915_dpt {
 	struct i915_address_space vm;
@@ -317,6 +319,8 @@ void intel_dpt_destroy(struct i915_address_space *vm)
 	dpt->obj->is_dpt = false;
 	i915_vm_put(&dpt->vm);
 }
+
+#endif
 
 void intel_dpt_configure(struct intel_crtc *crtc)
 {

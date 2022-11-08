@@ -8,8 +8,7 @@
 
 #include <linux/err.h>
 #include <linux/types.h>
-
-struct drm_i915_private;
+#include "i915_drv.h"
 
 struct intel_hdcp_gsc_message {
 	struct i915_vma *vma;
@@ -17,7 +16,11 @@ struct intel_hdcp_gsc_message {
 	void *hdcp_cmd_out;
 };
 
-bool intel_hdcp_gsc_cs_required(struct drm_i915_private *i915);
+static inline bool intel_hdcp_gsc_cs_required(struct drm_i915_private *i915)
+{
+	return DISPLAY_VER(i915) >= 14;
+}
+
 ssize_t intel_hdcp_gsc_msg_send(struct drm_i915_private *i915, u8 *msg_in,
 				size_t msg_in_len, u8 *msg_out,
 				size_t msg_out_len);
