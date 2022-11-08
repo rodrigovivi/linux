@@ -35,7 +35,6 @@
 #include "intel_display_types.h"
 #include "intel_mchbar_regs.h"
 #include "intel_pci_config.h"
-#include "intel_pcode.h"
 #include "intel_psr.h"
 #include "vlv_sideband.h"
 
@@ -801,7 +800,7 @@ static void bdw_set_cdclk(struct drm_i915_private *dev_priv,
 		     "trying to change cdclk frequency with cdclk not enabled\n"))
 		return;
 
-	ret = snb_pcode_write(&dev_priv->uncore, BDW_PCODE_DISPLAY_FREQ_CHANGE_REQ, 0x0);
+	ret = intel_de_pcode_write(dev_priv, BDW_PCODE_DISPLAY_FREQ_CHANGE_REQ, 0x0);
 	if (ret) {
 		drm_err(&dev_priv->drm,
 			"failed to inform pcode about cdclk change\n");
@@ -829,8 +828,8 @@ static void bdw_set_cdclk(struct drm_i915_private *dev_priv,
 			 LCPLL_CD_SOURCE_FCLK_DONE) == 0, 1))
 		drm_err(&dev_priv->drm, "Switching back to LCPLL failed\n");
 
-	snb_pcode_write(&dev_priv->uncore, HSW_PCODE_DE_WRITE_FREQ_REQ,
-			cdclk_config->voltage_level);
+	intel_de_pcode_write(dev_priv, HSW_PCODE_DE_WRITE_FREQ_REQ,
+			     cdclk_config->voltage_level);
 
 	intel_de_write(dev_priv, CDCLK_FREQ,
 		       DIV_ROUND_CLOSEST(cdclk, 1000) - 1);
@@ -1087,10 +1086,10 @@ static void skl_set_cdclk(struct drm_i915_private *dev_priv,
 	drm_WARN_ON_ONCE(&dev_priv->drm,
 			 IS_SKYLAKE(dev_priv) && vco == 8640000);
 
-	ret = skl_pcode_request(&dev_priv->uncore, SKL_PCODE_CDCLK_CONTROL,
-				SKL_CDCLK_PREPARE_FOR_CHANGE,
-				SKL_CDCLK_READY_FOR_CHANGE,
-				SKL_CDCLK_READY_FOR_CHANGE, 3);
+	ret = intel_de_pcode_request(dev_priv, SKL_PCODE_CDCLK_CONTROL,
+				     SKL_CDCLK_PREPARE_FOR_CHANGE,
+				     SKL_CDCLK_READY_FOR_CHANGE,
+				     SKL_CDCLK_READY_FOR_CHANGE, 3);
 	if (ret) {
 		drm_err(&dev_priv->drm,
 			"Failed to inform PCU about cdclk change (%d)\n", ret);
@@ -1133,8 +1132,8 @@ static void skl_set_cdclk(struct drm_i915_private *dev_priv,
 	intel_de_posting_read(dev_priv, CDCLK_CTL);
 
 	/* inform PCU of the change */
-	snb_pcode_write(&dev_priv->uncore, SKL_PCODE_CDCLK_CONTROL,
-			cdclk_config->voltage_level);
+	intel_de_pcode_write(dev_priv, SKL_PCODE_CDCLK_CONTROL,
+			     cdclk_config->voltage_level);
 
 	intel_update_cdclk(dev_priv);
 }
@@ -1899,18 +1898,18 @@ static void bxt_set_cdclk(struct drm_i915_private *dev_priv,
 	if (DISPLAY_VER(dev_priv) >= 14)
 		/* NOOP */;
 	else if (DISPLAY_VER(dev_priv) >= 11)
-		ret = skl_pcode_request(&dev_priv->uncore, SKL_PCODE_CDCLK_CONTROL,
-					SKL_CDCLK_PREPARE_FOR_CHANGE,
-					SKL_CDCLK_READY_FOR_CHANGE,
-					SKL_CDCLK_READY_FOR_CHANGE, 3);
+		ret = intel_de_pcode_request(dev_priv, SKL_PCODE_CDCLK_CONTROL,
+					     SKL_CDCLK_PREPARE_FOR_CHANGE,
+					     SKL_CDCLK_READY_FOR_CHANGE,
+					     SKL_CDCLK_READY_FOR_CHANGE, 3);
 	else
 		/*
 		 * BSpec requires us to wait up to 150usec, but that leads to
 		 * timeouts; the 2ms used here is based on experiment.
 		 */
-		ret = snb_pcode_write_timeout(&dev_priv->uncore,
-					      HSW_PCODE_DE_WRITE_FREQ_REQ,
-					      0x80000000, 150, 2);
+		ret = intel_de_pcode_write_timeout(dev_priv,
+						   HSW_PCODE_DE_WRITE_FREQ_REQ,
+						   0x80000000, 150, 2);
 
 	if (ret) {
 		drm_err(&dev_priv->drm,
@@ -1933,8 +1932,8 @@ static void bxt_set_cdclk(struct drm_i915_private *dev_priv,
 		 * Display versions 14 and beyond
 		 */;
 	else if (DISPLAY_VER(dev_priv) >= 11)
-		ret = snb_pcode_write(&dev_priv->uncore, SKL_PCODE_CDCLK_CONTROL,
-				      cdclk_config->voltage_level);
+		ret = intel_de_pcode_write(dev_priv, SKL_PCODE_CDCLK_CONTROL,
+					   cdclk_config->voltage_level);
 	else
 		/*
 		 * The timeout isn't specified, the 2ms used here is based on
@@ -1942,10 +1941,10 @@ static void bxt_set_cdclk(struct drm_i915_private *dev_priv,
 		 * FIXME: Waiting for the request completion could be delayed
 		 * until the next PCODE request based on BSpec.
 		 */
-		ret = snb_pcode_write_timeout(&dev_priv->uncore,
-					      HSW_PCODE_DE_WRITE_FREQ_REQ,
-					      cdclk_config->voltage_level,
-					      150, 2);
+		ret = intel_de_pcode_write_timeout(dev_priv,
+						   HSW_PCODE_DE_WRITE_FREQ_REQ,
+						   cdclk_config->voltage_level,
+						   150, 2);
 
 	if (ret) {
 		drm_err(&dev_priv->drm,
