@@ -428,6 +428,7 @@ int vlv_get_cck_clock(struct drm_i915_private *dev_priv,
 		      const char *name, u32 reg, int ref_freq);
 int vlv_get_cck_clock_hpll(struct drm_i915_private *dev_priv,
 			   const char *name, u32 reg);
+void intel_hpd_poll_fini(struct drm_i915_private *i915);
 void intel_init_display_hooks(struct drm_i915_private *dev_priv);
 unsigned int intel_fb_xy_to_linear(int x, int y,
 				   const struct intel_plane_state *state,
@@ -545,10 +546,16 @@ void assert_transcoder(struct drm_i915_private *dev_priv,
  * enable distros and users to tailor their preferred amount of i915 abrt
  * spam.
  */
+#ifdef I915
+#define i915_display_verbose_check (i915_modparams.verbose_state_checks)
+#else
+#define i915_display_verbose_check 1
+#endif
+
 #define I915_STATE_WARN(condition, format...) ({			\
 	int __ret_warn_on = !!(condition);				\
 	if (unlikely(__ret_warn_on))					\
-		if (!WARN(i915_modparams.verbose_state_checks, format))	\
+		if (!WARN(i915_display_verbose_check, format))	\
 			DRM_ERROR(format);				\
 	unlikely(__ret_warn_on);					\
 })

@@ -7,6 +7,7 @@
 #include <drm/drm_vblank.h>
 
 #include "gt/intel_rps.h"
+
 #include "i915_drv.h"
 #include "intel_display_rps.h"
 #include "intel_display_types.h"

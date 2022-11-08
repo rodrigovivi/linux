@@ -2056,7 +2056,6 @@ void i9xx_disable_pll(const struct intel_crtc_state *crtc_state)
 	intel_de_posting_read(dev_priv, DPLL(pipe));
 }
 
-
 /**
  * vlv_force_pll_off - forcibly disable just the PLL
  * @dev_priv: i915 private structure
