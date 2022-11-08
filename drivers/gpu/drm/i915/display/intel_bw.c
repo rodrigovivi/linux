@@ -15,7 +15,7 @@
 #include "intel_display_core.h"
 #include "intel_display_types.h"
 #include "skl_watermark.h"
-#include "intel_mchbar_regs.h"
+#include "../i915/intel_mchbar_regs.h"
 
 /* Parameters for Qclk Geyserville (QGV) */
 struct intel_qgv_point {

@@ -30,7 +30,7 @@
  *
  * Please do NOT include anywhere else.
  */
-#ifndef _INTEL_BIOS_PRIVATE
+#if !defined(_INTEL_BIOS_PRIVATE) && !defined(HDRTEST)
 #error "intel_vbt_defs.h is private to intel_bios.c"
 #endif
 

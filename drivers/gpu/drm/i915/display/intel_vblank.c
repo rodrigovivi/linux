@@ -262,7 +262,9 @@ static bool i915_get_crtc_scanoutpos(struct drm_crtc *_crtc,
 	enum pipe pipe = crtc->pipe;
 	int position;
 	int vbl_start, vbl_end, hsync_start, htotal, vtotal;
+#ifdef I915
 	unsigned long irqflags;
+#endif
 	bool use_scanline_counter = DISPLAY_VER(dev_priv) >= 5 ||
 		IS_G4X(dev_priv) || DISPLAY_VER(dev_priv) == 2 ||
 		crtc->mode_flags & I915_MODE_FLAG_USE_SCANLINE_COUNTER;
@@ -291,8 +293,9 @@ static bool i915_get_crtc_scanoutpos(struct drm_crtc *_crtc,
 	 * register reads, potentially with preemption disabled, so the
 	 * following code must not block on uncore.lock.
 	 */
+#ifdef I915
 	spin_lock_irqsave(&dev_priv->uncore.lock, irqflags);
-
+#endif
 	/* preempt_disable_rt() should go right here in PREEMPT_RT patchset. */
 
 	/* Get optional system timestamp before query. */
@@ -360,8 +363,9 @@ static bool i915_get_crtc_scanoutpos(struct drm_crtc *_crtc,
 
 	/* preempt_enable_rt() should go right here in PREEMPT_RT patchset. */
 
+#ifdef I915
 	spin_unlock_irqrestore(&dev_priv->uncore.lock, irqflags);
-
+#endif
 	/*
 	 * While in vblank, position will be negative
 	 * counting up towards 0 at vbl_end. And outside
@@ -394,14 +398,17 @@ bool intel_crtc_get_vblank_timestamp(struct drm_crtc *crtc, int *max_error,
 
 int intel_get_crtc_scanline(struct intel_crtc *crtc)
 {
+	int position;
+#ifdef I915
 	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
 	unsigned long irqflags;
-	int position;
 
 	spin_lock_irqsave(&dev_priv->uncore.lock, irqflags);
 	position = __intel_get_crtc_scanline(crtc);
 	spin_unlock_irqrestore(&dev_priv->uncore.lock, irqflags);
-
+#else
+	position = __intel_get_crtc_scanline(crtc);
+#endif
 	return position;
 }
 
