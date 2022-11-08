@@ -7,6 +7,7 @@
 #define __INTEL_DPIO_PHY_H__
 
 #include <linux/types.h>
+#include "intel_display.h"
 
 enum pipe;
 enum port;
@@ -26,6 +27,7 @@ enum dpio_phy {
 	DPIO_PHY2,
 };
 
+#ifdef I915
 void bxt_port_to_phy_channel(struct drm_i915_private *dev_priv, enum port port,
 			     enum dpio_phy *phy, enum dpio_channel *ch);
 void bxt_ddi_phy_set_signal_levels(struct intel_encoder *encoder,
@@ -70,5 +72,18 @@ void vlv_phy_pre_encoder_enable(struct intel_encoder *encoder,
 				const struct intel_crtc_state *crtc_state);
 void vlv_phy_reset_lanes(struct intel_encoder *encoder,
 			 const struct intel_crtc_state *old_crtc_state);
+
+#else
+#define bxt_port_to_phy_channel(xe, port, phy, ch) do { *phy = 0; *ch = 0; } while (xe && port && 0)
+static inline void bxt_ddi_phy_set_signal_levels(struct intel_encoder *x,
+						 const struct intel_crtc_state *y) {}
+#define bxt_ddi_phy_init(xe, phy) do { } while (xe && phy && 0)
+#define bxt_ddi_phy_uninit(xe, phy) do { } while (xe && phy && 0)
+#define bxt_ddi_phy_is_enabled(xe, phy) (xe && phy && 0)
+static inline bool bxt_ddi_phy_verify_state(struct xe_device *xe, enum dpio_phy phy) { return false; }
+#define bxt_ddi_phy_calc_lane_lat_optim_mask(x) (x && 0)
+#define bxt_ddi_phy_set_lane_optim_mask(x, y) do { } while (x && y && 0)
+#define bxt_ddi_phy_get_lane_lat_optim_mask(x) (x && 0)
+#endif
 
 #endif /* __INTEL_DPIO_PHY_H__ */
