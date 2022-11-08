@@ -109,7 +109,8 @@ static int i915_component_master_match(struct device *dev, int subcomponent,
 	hdac_pci = to_pci_dev(bus->dev);
 	i915_pci = to_pci_dev(dev);
 
-	if (!strcmp(dev->driver->name, "i915") &&
+	if ((!strcmp(dev->driver->name, "i915") ||
+	     !strcmp(dev->driver->name, "xe")) &&
 	    subcomponent == I915_COMPONENT_AUDIO &&
 	    connectivity_check(i915_pci, hdac_pci))
 		return 1;
@@ -183,20 +184,10 @@ int snd_hdac_i915_init(struct hdac_bus *bus)
 	if (err < 0)
 		return err;
 	acomp = bus->audio_component;
-	if (!acomp)
-		return -ENODEV;
-	if (!acomp->ops) {
-		if (!IS_ENABLED(CONFIG_MODULES) ||
-		    !request_module("i915")) {
-			/* 60s timeout */
-			wait_for_completion_killable_timeout(&acomp->master_bind_complete,
-							     msecs_to_jiffies(60 * 1000));
-		}
-	}
-	if (!acomp->ops) {
+	if (!acomp || !acomp->ops) {
 		dev_info(bus->dev, "couldn't bind with audio component\n");
 		snd_hdac_acomp_exit(bus);
-		return -ENODEV;
+		return -EPROBE_DEFER;
 	}
 	return 0;
 }
