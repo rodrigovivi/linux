@@ -11,11 +11,6 @@
 #include "i915_drv.h"
 #include "i915_utils.h"
 
-bool intel_hdcp_gsc_cs_required(struct drm_i915_private *i915)
-{
-	return DISPLAY_VER(i915) >= 14;
-}
-
 static int
 gsc_hdcp_initiate_session(struct device *dev, struct hdcp_port_data *data,
 			  struct hdcp2_ake_init *ake_data)
