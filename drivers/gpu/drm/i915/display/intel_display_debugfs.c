@@ -9,7 +9,13 @@
 #include <drm/drm_fourcc.h>
 
 #include "hsw_ips.h"
+
+#ifdef I915
 #include "i915_debugfs.h"
+#else
+#define i915_debugfs_describe_obj(a, b) do { } while (0)
+#endif
+
 #include "i915_irq.h"
 #include "i915_reg.h"
 #include "intel_de.h"
@@ -1091,8 +1097,9 @@ void intel_display_debugfs_register(struct drm_i915_private *i915)
 	drm_debugfs_create_files(intel_display_debugfs_list,
 				 ARRAY_SIZE(intel_display_debugfs_list),
 				 minor->debugfs_root, minor);
-
+#ifdef I915
 	hsw_ips_debugfs_register(i915);
+#endif
 	intel_dmc_debugfs_register(i915);
 	intel_fbc_debugfs_register(i915);
 	intel_hpd_debugfs_register(i915);

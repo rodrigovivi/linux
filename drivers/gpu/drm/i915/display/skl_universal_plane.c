@@ -21,7 +21,11 @@
 #include "skl_scaler.h"
 #include "skl_universal_plane.h"
 #include "skl_watermark.h"
+#ifdef I915
 #include "pxp/intel_pxp.h"
+#else
+// TODO: pxp?
+#endif
 
 static const u32 skl_plane_formats[] = {
 	DRM_FORMAT_C8,
@@ -894,7 +898,9 @@ static u32 skl_plane_ctl(const struct intel_crtc_state *crtc_state,
 		to_i915(plane_state->uapi.plane->dev);
 	const struct drm_framebuffer *fb = plane_state->hw.fb;
 	unsigned int rotation = plane_state->hw.rotation;
+#ifdef I915
 	const struct drm_intel_sprite_colorkey *key = &plane_state->ckey;
+#endif
 	u32 plane_ctl;
 
 	plane_ctl = PLANE_CTL_ENABLE;
@@ -918,10 +924,12 @@ static u32 skl_plane_ctl(const struct intel_crtc_state *crtc_state,
 		plane_ctl |= icl_plane_ctl_flip(rotation &
 						DRM_MODE_REFLECT_MASK);
 
+#ifdef I915
 	if (key->flags & I915_SET_COLORKEY_DESTINATION)
 		plane_ctl |= PLANE_CTL_KEY_ENABLE_DESTINATION;
 	else if (key->flags & I915_SET_COLORKEY_SOURCE)
 		plane_ctl |= PLANE_CTL_KEY_ENABLE_SOURCE;
+#endif
 
 	/* Wa_22012358565:adl-p */
 	if (DISPLAY_VER(dev_priv) == 13)
@@ -998,9 +1006,13 @@ static u32 skl_surf_address(const struct intel_plane_state *plane_state,
 		 * The DPT object contains only one vma, so the VMA's offset
 		 * within the DPT is always 0.
 		 */
-		drm_WARN_ON(&i915->drm, plane_state->dpt_vma->node.start);
 		drm_WARN_ON(&i915->drm, offset & 0x1fffff);
+#ifdef I915
+		drm_WARN_ON(&i915->drm, plane_state->dpt_vma->node.start);
 		return offset >> 9;
+#else
+		return 0;
+#endif
 	} else {
 		drm_WARN_ON(&i915->drm, offset & 0xfff);
 		return offset;
@@ -1043,26 +1055,35 @@ static u32 skl_plane_aux_dist(const struct intel_plane_state *plane_state,
 
 static u32 skl_plane_keyval(const struct intel_plane_state *plane_state)
 {
+#ifdef I915
 	const struct drm_intel_sprite_colorkey *key = &plane_state->ckey;
 
 	return key->min_value;
+#else
+	return 0;
+#endif
 }
 
 static u32 skl_plane_keymax(const struct intel_plane_state *plane_state)
 {
-	const struct drm_intel_sprite_colorkey *key = &plane_state->ckey;
 	u8 alpha = plane_state->hw.alpha >> 8;
+#ifdef I915
+	const struct drm_intel_sprite_colorkey *key = &plane_state->ckey;
 
 	return (key->max_value & 0xffffff) | PLANE_KEYMAX_ALPHA(alpha);
+#else
+	return PLANE_KEYMAX_ALPHA(alpha);
+#endif
 }
 
 static u32 skl_plane_keymsk(const struct intel_plane_state *plane_state)
 {
-	const struct drm_intel_sprite_colorkey *key = &plane_state->ckey;
 	u8 alpha = plane_state->hw.alpha >> 8;
-	u32 keymsk;
-
+	u32 keymsk = 0;
+#ifdef I915
+	const struct drm_intel_sprite_colorkey *key = &plane_state->ckey;
 	keymsk = key->channel_mask & 0x7ffffff;
+#endif
 	if (alpha < 0xff)
 		keymsk |= PLANE_KEYMSK_ALPHA_ENABLE;
 
@@ -1320,7 +1341,7 @@ skl_plane_async_flip(struct intel_plane *plane,
 			  skl_plane_surf(plane_state, 0));
 }
 
-static bool intel_format_is_p01x(u32 format)
+static inline bool intel_format_is_p01x(u32 format)
 {
 	switch (format) {
 	case DRM_FORMAT_P010:
@@ -1403,6 +1424,7 @@ static int skl_plane_check_fb(const struct intel_crtc_state *crtc_state,
 		return -EINVAL;
 	}
 
+#ifdef I915
 	/* Wa_1606054188:tgl,adl-s */
 	if ((IS_ALDERLAKE_S(dev_priv) || IS_TIGERLAKE(dev_priv)) &&
 	    plane_state->ckey.flags & I915_SET_COLORKEY_SOURCE &&
@@ -1411,6 +1433,7 @@ static int skl_plane_check_fb(const struct intel_crtc_state *crtc_state,
 			    "Source color keying not supported with P01x formats\n");
 		return -EINVAL;
 	}
+#endif
 
 	return 0;
 }
@@ -1848,9 +1871,14 @@ static bool skl_fb_scalable(const struct drm_framebuffer *fb)
 
 static bool bo_has_valid_encryption(struct drm_i915_gem_object *obj)
 {
+#ifdef I915
 	struct drm_i915_private *i915 = to_i915(obj->base.dev);
 
 	return intel_pxp_key_check(i915->pxp, obj, false) == 0;
+#else
+#define i915_gem_object_is_protected(x) ((x) && 0)
+	return false;
+#endif
 }
 
 static bool pxp_is_borked(struct drm_i915_gem_object *obj)
@@ -1873,7 +1901,12 @@ static int skl_plane_check(struct intel_crtc_state *crtc_state,
 		return ret;
 
 	/* use scaler when colorkey is not required */
-	if (!plane_state->ckey.flags && skl_fb_scalable(fb)) {
+#ifdef I915
+	if (!plane_state->ckey.flags && skl_fb_scalable(fb))
+#else
+	if (skl_fb_scalable(fb))
+#endif
+	{
 		min_scale = 1;
 		max_scale = skl_plane_max_scale(dev_priv, fb);
 	}
@@ -2436,11 +2469,15 @@ skl_get_initial_plane_config(struct intel_crtc *crtc,
 		fb->modifier = DRM_FORMAT_MOD_LINEAR;
 		break;
 	case PLANE_CTL_TILED_X:
+#ifdef I915
 		plane_config->tiling = I915_TILING_X;
+#endif
 		fb->modifier = I915_FORMAT_MOD_X_TILED;
 		break;
 	case PLANE_CTL_TILED_Y:
+#ifdef I915
 		plane_config->tiling = I915_TILING_Y;
+#endif
 		if (val & PLANE_CTL_RENDER_DECOMPRESSION_ENABLE)
 			if (DISPLAY_VER(dev_priv) >= 12)
 				fb->modifier = I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS;

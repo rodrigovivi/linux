@@ -43,8 +43,10 @@
 #include <drm/drm_edid.h>
 #include <drm/drm_probe_helper.h>
 
+#ifdef I915
 #include "g4x_dp.h"
 #include "i915_debugfs.h"
+#endif
 #include "i915_drv.h"
 #include "i915_reg.h"
 #include "intel_atomic.h"
@@ -2189,8 +2191,10 @@ intel_dp_compute_config(struct intel_encoder *encoder,
 	if (pipe_config->splitter.enable)
 		pipe_config->dp_m_n.data_m *= pipe_config->splitter.link_count;
 
+#ifdef I915
 	if (!HAS_DDI(dev_priv))
 		g4x_dp_set_clock(encoder, pipe_config);
+#endif
 
 	intel_vrr_compute_config(pipe_config, conn_state);
 	intel_psr_compute_config(intel_dp, pipe_config, conn_state);
@@ -5259,8 +5263,10 @@ intel_edp_add_properties(struct intel_dp *intel_dp)
 static void intel_edp_backlight_setup(struct intel_dp *intel_dp,
 				      struct intel_connector *connector)
 {
-	struct drm_i915_private *i915 = dp_to_i915(intel_dp);
 	enum pipe pipe = INVALID_PIPE;
+
+#ifdef I915
+	struct drm_i915_private *i915 = dp_to_i915(intel_dp);
 
 	if (IS_VALLEYVIEW(i915) || IS_CHERRYVIEW(i915)) {
 		/*
@@ -5276,6 +5282,7 @@ static void intel_edp_backlight_setup(struct intel_dp *intel_dp,
 		if (pipe != PIPE_A && pipe != PIPE_B)
 			pipe = PIPE_A;
 	}
+#endif
 
 	intel_backlight_setup(connector, pipe);
 }
@@ -5471,8 +5478,10 @@ intel_dp_init_connector(struct intel_digital_port *dig_port,
 	intel_dp_set_default_sink_rates(intel_dp);
 	intel_dp_set_default_max_sink_lane_count(intel_dp);
 
+#ifdef I915
 	if (IS_VALLEYVIEW(dev_priv) || IS_CHERRYVIEW(dev_priv))
 		intel_dp->pps.active_pipe = vlv_active_pipe(intel_dp);
+#endif
 
 	drm_dbg_kms(&dev_priv->drm,
 		    "Adding %s connector on [ENCODER:%d:%s]\n",
