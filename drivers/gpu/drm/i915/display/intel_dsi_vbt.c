@@ -44,9 +44,11 @@
 #include "intel_display_types.h"
 #include "intel_dsi.h"
 #include "intel_dsi_vbt.h"
+#ifdef I915
 #include "vlv_dsi.h"
 #include "vlv_dsi_regs.h"
 #include "vlv_sideband.h"
+#endif
 
 #define MIPI_TRANSFER_MODE_SHIFT	0
 #define MIPI_VIRTUAL_CHANNEL_SHIFT	1
@@ -74,6 +76,7 @@ struct gpio_map {
 	bool init;
 };
 
+#ifdef I915
 static struct gpio_map vlv_gpio_table[] = {
 	{ VLV_GPIO_NC_0_HV_DDI0_HPD },
 	{ VLV_GPIO_NC_1_HV_DDI0_DDC_SDA },
@@ -88,6 +91,7 @@ static struct gpio_map vlv_gpio_table[] = {
 	{ VLV_GPIO_NC_10_PANEL1_BKLTEN },
 	{ VLV_GPIO_NC_11_PANEL1_BKLTCTL },
 };
+#endif
 
 struct i2c_adapter_lookup {
 	u16 slave_addr;
@@ -217,10 +221,10 @@ static const u8 *mipi_exec_send_packet(struct intel_dsi *intel_dsi,
 		mipi_dsi_dcs_write_buffer(dsi_device, data, len);
 		break;
 	}
-
+#ifdef I915
 	if (DISPLAY_VER(dev_priv) < 11)
 		vlv_dsi_wait_for_fifo_empty(intel_dsi, port);
-
+#endif
 out:
 	data += len;
 
@@ -240,6 +244,7 @@ static const u8 *mipi_exec_delay(struct intel_dsi *intel_dsi, const u8 *data)
 	return data;
 }
 
+#ifdef I915
 static void vlv_exec_gpio(struct intel_connector *connector,
 			  u8 gpio_source, u8 gpio_index, bool value)
 {
@@ -368,6 +373,7 @@ static void bxt_exec_gpio(struct intel_connector *connector,
 
 	gpiod_set_value(gpio_desc, value);
 }
+#endif
 
 static void icl_exec_gpio(struct intel_connector *connector,
 			  u8 gpio_source, u8 gpio_index, bool value)
@@ -403,12 +409,14 @@ static const u8 *mipi_exec_gpio(struct intel_dsi *intel_dsi, const u8 *data)
 
 	if (DISPLAY_VER(dev_priv) >= 11)
 		icl_exec_gpio(connector, gpio_source, gpio_index, value);
+#ifdef I915
 	else if (IS_VALLEYVIEW(dev_priv))
 		vlv_exec_gpio(connector, gpio_source, gpio_number, value);
 	else if (IS_CHERRYVIEW(dev_priv))
 		chv_exec_gpio(connector, gpio_source, gpio_number, value);
 	else
 		bxt_exec_gpio(connector, gpio_source, gpio_index, value);
+#endif
 
 	return data;
 }
@@ -733,8 +741,10 @@ void intel_dsi_log_params(struct intel_dsi *intel_dsi)
 		    intel_dsi->clk_lp_to_hs_count);
 	drm_dbg_kms(&i915->drm, "HS to LP Clock Count 0x%x\n",
 		    intel_dsi->clk_hs_to_lp_count);
+#ifdef I915
 	drm_dbg_kms(&i915->drm, "BTA %s\n",
 		    str_enabled_disabled(!(intel_dsi->video_frmt_cfg_bits & DISABLE_VIDEO_BTA)));
+#endif
 }
 
 bool intel_dsi_vbt_init(struct intel_dsi *intel_dsi, u16 panel_id)
@@ -753,9 +763,7 @@ bool intel_dsi_vbt_init(struct intel_dsi *intel_dsi, u16 panel_id)
 	intel_dsi->eotp_pkt = mipi_config->eot_pkt_disabled ? 0 : 1;
 	intel_dsi->clock_stop = mipi_config->enable_clk_stop ? 1 : 0;
 	intel_dsi->lane_count = mipi_config->lane_cnt + 1;
-	intel_dsi->pixel_format =
-			pixel_format_from_register_bits(
-				mipi_config->videomode_color_format << 7);
+	intel_dsi->pixel_format = mipi_config->videomode_color_format << 7;
 
 	intel_dsi->dual_link = mipi_config->dual_link;
 	intel_dsi->pixel_overlap = mipi_config->pixel_overlap;
@@ -769,7 +777,7 @@ bool intel_dsi_vbt_init(struct intel_dsi *intel_dsi, u16 panel_id)
 	intel_dsi->init_count = mipi_config->master_init_timer;
 	intel_dsi->bw_timer = mipi_config->dbi_bw_timer;
 	intel_dsi->video_frmt_cfg_bits =
-		mipi_config->bta_enabled ? DISABLE_VIDEO_BTA : 0;
+		mipi_config->bta_enabled ? BIT(3) : 0;
 	intel_dsi->bgr_enabled = mipi_config->rgb_flip;
 
 	/* Starting point, adjusted depending on dual link and burst mode */
@@ -852,6 +860,7 @@ bool intel_dsi_vbt_init(struct intel_dsi *intel_dsi, u16 panel_id)
  * If the GOP did not initialize the panel (HDMI inserted) we may need to also
  * change the pinmux for the SoC's PWM0 pin from GPIO to PWM.
  */
+#ifdef I915
 static struct gpiod_lookup_table pmic_panel_gpio_table = {
 	/* Intel GFX is consumer */
 	.dev_id = "0000:00:02.0",
@@ -875,9 +884,11 @@ static const struct pinctrl_map soc_pwm_pinctrl_map[] = {
 	PIN_MAP_MUX_GROUP("0000:00:02.0", "soc_pwm0", "INT33FC:00",
 			  "pwm0_grp", "pwm"),
 };
+#endif
 
 void intel_dsi_vbt_gpio_init(struct intel_dsi *intel_dsi, bool panel_is_on)
 {
+#ifdef I915
 	struct drm_device *dev = intel_dsi->base.base.dev;
 	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct intel_connector *connector = intel_dsi->attached_connector;
@@ -930,10 +941,12 @@ void intel_dsi_vbt_gpio_init(struct intel_dsi *intel_dsi, bool panel_is_on)
 			intel_dsi->gpio_backlight = NULL;
 		}
 	}
+#endif
 }
 
 void intel_dsi_vbt_gpio_cleanup(struct intel_dsi *intel_dsi)
 {
+#ifdef I915
 	struct drm_device *dev = intel_dsi->base.base.dev;
 	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct intel_connector *connector = intel_dsi->attached_connector;
@@ -957,4 +970,5 @@ void intel_dsi_vbt_gpio_cleanup(struct intel_dsi *intel_dsi)
 		pinctrl_unregister_mappings(soc_pwm_pinctrl_map);
 		gpiod_remove_lookup_table(&soc_panel_gpio_table);
 	}
+#endif
 }

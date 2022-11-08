@@ -6,6 +6,10 @@
 #ifndef __INTEL_DISPLAY_POWER_H__
 #define __INTEL_DISPLAY_POWER_H__
 
+#include <linux/types.h>
+#include <linux/bitops.h>
+#include <linux/mutex.h>
+#include <linux/workqueue.h>
 #include "intel_runtime_pm.h"
 
 enum aux_ch;
