@@ -13,20 +13,27 @@
 struct xe_hw_engine;
 struct xe_gt;
 
+/**
+ * struct xe_rtp_regval - register and value for rtp table
+ */
 struct xe_rtp_regval {
+	/** @reg: Register */
 	i915_reg_t	reg;
 	/*
 	 * TODO: maybe we need a union here with a func pointer for cases
 	 * that are too specific to be generalized
 	 */
+	/** @clr_bits: bits to clear when updating register */
 	u32		clr_bits;
+	/** @set_bits: bits to set when updating register */
 	u32		set_bits;
-	/* Mask for bits to consider when reading value back */
 #define XE_RTP_NOCHECK		.read_mask = 0
+	/** @read_mask: mask for bits to consider when reading value back */
 	u32		read_mask;
 #define XE_RTP_FLAG_FOREACH_ENGINE	BIT(0)
 #define XE_RTP_FLAG_MASKED_REG		BIT(1)
 #define XE_RTP_FLAG_ENGINE_BASE		BIT(2)
+	/** @flags: flags to apply on rule evaluation or action */
 	u8		flags;
 };
 
@@ -45,6 +52,7 @@ enum {
 	XE_RTP_MATCH_FUNC,
 };
 
+/** struct xe_rtp_rule - match rule for processing entry */
 struct xe_rtp_rule {
 	u8 match_type;
 
@@ -79,9 +87,7 @@ struct xe_rtp_rule {
 	};
 };
 
-/*
- * Single table entry with all the registers and rules to process
- */
+/** struct xe_rtp_entry - Entry in an rtp table */
 struct xe_rtp_entry {
 	const char *name;
 	const struct xe_rtp_regval regval;
