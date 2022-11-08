@@ -164,6 +164,10 @@ void intel_frontbuffer_flip(struct drm_i915_private *i915,
 	frontbuffer_flush(i915, frontbuffer_bits, ORIGIN_FLIP);
 }
 
+#ifndef I915
+#define intel_bo_to_i915(obj) to_i915((obj)->ttm.base.dev)
+#endif
+
 void __intel_fb_invalidate(struct intel_frontbuffer *front,
 			   enum fb_op_origin origin,
 			   unsigned int frontbuffer_bits)
@@ -189,7 +193,7 @@ void __intel_fb_flush(struct intel_frontbuffer *front,
 		      enum fb_op_origin origin,
 		      unsigned int frontbuffer_bits)
 {
-	struct drm_i915_private *i915 = intel_bo_to_i915(front->obj);
+	struct drm_i915_private *i915 = intel_bo_to_i915((front->obj));
 
 	if (origin == ORIGIN_CS) {
 		spin_lock(&i915->display.fb_tracking.lock);
@@ -230,6 +234,7 @@ void intel_frontbuffer_queue_flush(struct intel_frontbuffer *front)
 		intel_frontbuffer_put(front);
 }
 
+#ifdef I915
 static int frontbuffer_active(struct i915_active *ref)
 {
 	struct intel_frontbuffer *front =
@@ -247,6 +252,7 @@ static void frontbuffer_retire(struct i915_active *ref)
 	intel_frontbuffer_flush(front, ORIGIN_CS);
 	intel_frontbuffer_put(front);
 }
+#endif
 
 static void frontbuffer_release(struct kref *ref)
 	__releases(&intel_bo_to_i915(front->obj)->display.fb_tracking.lock)
@@ -257,26 +263,35 @@ static void frontbuffer_release(struct kref *ref)
 
 	drm_WARN_ON(&intel_bo_to_i915(obj)->drm, atomic_read(&front->bits));
 
+#ifdef I915
 	i915_ggtt_clear_scanout(obj);
 
 	i915_gem_object_set_frontbuffer(obj, NULL);
+#endif
 	spin_unlock(&intel_bo_to_i915(obj)->display.fb_tracking.lock);
 
+#ifdef I915
 	i915_active_fini(&front->write);
 
 	i915_gem_object_put(obj);
+#endif
 	kfree_rcu(front, rcu);
 }
 
 struct intel_frontbuffer *
 intel_frontbuffer_get(struct drm_i915_gem_object *obj)
 {
+#ifdef I915
 	struct drm_i915_private *i915 = intel_bo_to_i915(obj);
-	struct intel_frontbuffer *front, *cur;
+	struct intel_frontbuffer *cur;
+#endif
+	struct intel_frontbuffer *front;
 
+#ifdef I915
 	front = i915_gem_object_get_frontbuffer(obj);
 	if (front)
 		return front;
+#endif
 
 	front = kmalloc(sizeof(*front), GFP_KERNEL);
 	if (!front)
@@ -285,6 +300,7 @@ intel_frontbuffer_get(struct drm_i915_gem_object *obj)
 	front->obj = obj;
 	kref_init(&front->ref);
 	atomic_set(&front->bits, 0);
+#ifdef I915
 	i915_active_init(&front->write,
 			 frontbuffer_active,
 			 frontbuffer_retire,
@@ -297,6 +313,9 @@ intel_frontbuffer_get(struct drm_i915_gem_object *obj)
 	if (cur != front)
 		kfree(front);
 	return cur;
+#endif
+
+	return front;
 }
 
 void intel_frontbuffer_put(struct intel_frontbuffer *front)
@@ -338,7 +357,7 @@ void intel_frontbuffer_track(struct intel_frontbuffer *old,
 	}
 
 	if (new) {
-		drm_WARN_ON(&intel_bo_to_i915(new->obj)->drm,
+		drm_WARN_ON(&intel_bo_to_i915(old->obj)->drm,
 			    atomic_read(&new->bits) & frontbuffer_bits);
 		atomic_or(frontbuffer_bits, &new->bits);
 	}
