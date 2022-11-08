@@ -28,7 +28,12 @@
 #include <linux/bits.h>
 #include <linux/kref.h>
 
+#ifdef I915
 #include "gem/i915_gem_object_types.h"
+#else
+#include "xe_bo.h"
+#endif
+
 #include "i915_active_types.h"
 
 struct drm_i915_private;
@@ -44,7 +49,9 @@ enum fb_op_origin {
 struct intel_frontbuffer {
 	struct kref ref;
 	atomic_t bits;
+#ifdef I915
 	struct i915_active write;
+#endif
 	struct drm_i915_gem_object *obj;
 	struct rcu_head rcu;
 };
@@ -75,6 +82,7 @@ void intel_frontbuffer_flip(struct drm_i915_private *i915,
 
 void intel_frontbuffer_put(struct intel_frontbuffer *front);
 
+#ifdef I915
 static inline struct intel_frontbuffer *
 __intel_frontbuffer_get(const struct drm_i915_gem_object *obj)
 {
@@ -101,6 +109,7 @@ __intel_frontbuffer_get(const struct drm_i915_gem_object *obj)
 
 	return front;
 }
+#endif
 
 struct intel_frontbuffer *
 intel_frontbuffer_get(struct drm_i915_gem_object *obj);
