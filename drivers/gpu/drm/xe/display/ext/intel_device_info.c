@@ -126,3 +126,10 @@ bool i915_vtd_active(struct drm_i915_private *i915)
 	/* Running as a guest, we assume the host is enforcing VT'd */
 	return i915_run_as_guest();
 }
+
+/* i915 specific, just put here for shutting it up */
+int __i915_inject_probe_error(struct drm_i915_private *i915, int err,
+							  const char *func, int line)
+{
+	return 0;
+}
