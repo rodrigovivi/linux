@@ -1,3 +1,5 @@
+#include <linux/types.h>
+#include <linux/build_bug.h>
 
 /* XX: Figure out how to handle this vma mapping in xe */
 struct intel_remapped_plane_info {
