@@ -134,7 +134,7 @@ struct intel_fb_view {
 
 struct intel_framebuffer {
 	struct drm_framebuffer base;
-	struct intel_frontbuffer *frontbuffer;
+	atomic_t bits;
 
 	/* Params to remap the FB pages and program the plane registers in each view. */
 	struct intel_fb_view normal_view;
@@ -2079,12 +2079,6 @@ intel_crtc_needs_color_update(const struct intel_crtc_state *crtc_state)
 static inline u32 intel_plane_ggtt_offset(const struct intel_plane_state *plane_state)
 {
 	return i915_ggtt_offset(plane_state->ggtt_vma);
-}
-
-static inline struct intel_frontbuffer *
-to_intel_frontbuffer(struct drm_framebuffer *fb)
-{
-	return fb ? to_intel_framebuffer(fb)->frontbuffer : NULL;
 }
 
 #endif /*  __INTEL_DISPLAY_TYPES_H__ */

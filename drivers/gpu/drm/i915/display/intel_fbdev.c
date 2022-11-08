@@ -74,14 +74,9 @@ static struct intel_fbdev *to_intel_fbdev(struct drm_fb_helper *fb_helper)
 	return container_of(fb_helper, struct intel_fbdev, helper);
 }
 
-static struct intel_frontbuffer *to_frontbuffer(struct intel_fbdev *ifbdev)
-{
-	return ifbdev->fb->frontbuffer;
-}
-
 static void intel_fbdev_invalidate(struct intel_fbdev *ifbdev)
 {
-	intel_frontbuffer_invalidate(to_frontbuffer(ifbdev), ORIGIN_CPU);
+	intel_frontbuffer_invalidate(ifbdev->fb, ORIGIN_CPU);
 }
 
 static int intel_fbdev_set_par(struct fb_info *info)

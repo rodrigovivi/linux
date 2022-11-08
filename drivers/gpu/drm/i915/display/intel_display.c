@@ -7138,8 +7138,8 @@ static void intel_atomic_track_fbs(struct intel_atomic_state *state)
 
 	for_each_oldnew_intel_plane_in_state(state, plane, old_plane_state,
 					     new_plane_state, i)
-		intel_frontbuffer_track(to_intel_frontbuffer(old_plane_state->hw.fb),
-					to_intel_frontbuffer(new_plane_state->hw.fb),
+		intel_frontbuffer_track(to_intel_framebuffer(old_plane_state->hw.fb),
+					to_intel_framebuffer(new_plane_state->hw.fb),
 					plane->frontbuffer_bit);
 }
 
