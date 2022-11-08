@@ -30,15 +30,17 @@ static const u32 intel_cursor_formats[] = {
 
 static u32 intel_cursor_base(const struct intel_plane_state *plane_state)
 {
-	struct drm_i915_private *dev_priv =
+	__maybe_unused struct drm_i915_private *dev_priv =
 		to_i915(plane_state->uapi.plane->dev);
-	const struct drm_framebuffer *fb = plane_state->hw.fb;
-	const struct drm_i915_gem_object *obj = intel_fb_obj(fb);
+	__maybe_unused const struct drm_framebuffer *fb = plane_state->hw.fb;
+	__maybe_unused const struct drm_i915_gem_object *obj = intel_fb_obj(fb);
 	u32 base;
 
+#ifdef I915
 	if (DISPLAY_INFO(dev_priv)->cursor_needs_physical)
 		base = sg_dma_address(obj->mm.pages->sgl);
 	else
+#endif
 		base = intel_plane_ggtt_offset(plane_state);
 
 	return base + plane_state->view.color_plane[0].offset;

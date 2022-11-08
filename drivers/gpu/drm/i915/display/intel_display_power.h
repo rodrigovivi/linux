@@ -10,6 +10,11 @@
 #include <linux/workqueue.h>
 
 #include "intel_wakeref.h"
+#include <linux/types.h>
+#include <linux/bitops.h>
+#include <linux/mutex.h>
+#include <linux/workqueue.h>
+#include "intel_runtime_pm.h"
 
 enum aux_ch;
 enum port;
