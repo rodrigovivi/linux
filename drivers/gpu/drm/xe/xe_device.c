@@ -25,6 +25,13 @@
 #include "xe_vm_madvise.h"
 #include "xe_wait_user_fence.h"
 
+#include "display/intel_bw.h"
+#include "display/intel_display.h"
+#include "display/intel_opregion.h"
+#include "display/ext/i915_irq.h"
+#include "display/ext/intel_dram.h"
+#include "display/ext/intel_pm.h"
+
 /* FIXME: Move to common param infrastructure */
 static bool enable_guc = true;
 module_param_named_unsafe(enable_guc, enable_guc, bool, 0444);
@@ -125,6 +132,7 @@ static const struct drm_driver driver = {
 	 */
 	.driver_features =
 	    DRIVER_GEM |
+	    DRIVER_MODESET | DRIVER_ATOMIC |
 	    DRIVER_RENDER | DRIVER_SYNCOBJ |
 	    DRIVER_SYNCOBJ_TIMELINE,
 	.open = xe_file_open,
@@ -190,6 +198,29 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 	INIT_LIST_HEAD(&xe->pinned.evicted);
 
 	xe->ordered_wq = alloc_ordered_workqueue("xe-ordered-wq", 0);
+	xe->display.hotplug.dp_wq = alloc_ordered_workqueue("xe-dp", 0);
+
+	/* Initialize display parts here.. */
+	spin_lock_init(&xe->display.fb_tracking.lock);
+
+	mutex_init(&xe->sb_lock);
+	mutex_init(&xe->display.backlight.lock);
+	mutex_init(&xe->display.audio.mutex);
+	mutex_init(&xe->display.wm.wm_mutex);
+	mutex_init(&xe->display.pps.mutex);
+	mutex_init(&xe->display.hdcp.comp_mutex);
+	xe->enabled_irq_mask = ~0;
+
+	xe->params.invert_brightness = -1;
+	xe->params.vbt_sdvo_panel_type = -1;
+	xe->params.disable_power_well = -1;
+	xe->params.enable_dc = -1;
+	xe->params.enable_dpcd_backlight = -1;
+	xe->params.enable_dp_mst = -1;
+	xe->params.enable_fbc = -1;
+	xe->params.enable_psr = -1;
+	xe->params.enable_psr2_sel_fetch = -1;
+	xe->params.panel_use_ssc = -1;
 
 	return xe;
 
@@ -205,6 +236,16 @@ int xe_device_probe(struct xe_device *xe)
 	u8 id;
 
 	xe->info.mem_region_mask = 1;
+
+	/* This must be called before any calls to HAS_PCH_* */
+	intel_detect_pch(xe);
+	intel_display_irq_init(xe);
+
+	err = intel_power_domains_init(xe);
+	if (err)
+		return err;
+
+	intel_init_display_hooks(xe);
 
 	for_each_gt(gt, xe, id) {
 		err = xe_gt_alloc(xe, gt);
@@ -222,9 +263,36 @@ int xe_device_probe(struct xe_device *xe)
 			return err;
 	}
 
+	/* Early display init.. */
+	intel_opregion_setup(xe);
+
+	/*
+	 * Fill the dram structure to get the system dram info. This will be
+	 * used for memory latency calculation.
+	 */
+	intel_dram_detect(xe);
+
+	intel_bw_init_hw(xe);
+
+	intel_device_info_runtime_init(xe);
+
+	err = drm_aperture_remove_conflicting_pci_framebuffers(to_pci_dev(xe->drm.dev),
+							       xe->drm.driver);
+	if (err)
+		return err;
+
+	err = intel_modeset_init_noirq(xe);
+	if (err)
+		return err;
+	/* Done first part of display init */
+
 	err = xe_irq_install(xe);
 	if (err)
 		return err;
+
+	err = intel_modeset_init_nogem(xe);
+	if (err)
+		goto err_irq_shutdown;
 
 	for_each_gt(gt, xe, id) {
 		err = xe_gt_init_early(gt);
@@ -242,9 +310,15 @@ int xe_device_probe(struct xe_device *xe)
 			goto err_irq_shutdown;
 	}
 
+	err = intel_modeset_init(xe);
+	if (err)
+		goto err_irq_shutdown;
+
 	err = drm_dev_register(&xe->drm, 0);
 	if (err)
 		goto err_irq_shutdown;
+
+	intel_display_driver_register(xe);
 
 	xe_debugfs_register(xe);
 
@@ -257,6 +331,7 @@ err_irq_shutdown:
 
 void xe_device_remove(struct xe_device *xe)
 {
+	destroy_workqueue(xe->display.hotplug.dp_wq);
 	destroy_workqueue(xe->ordered_wq);
 	mutex_destroy(&xe->persitent_engines.lock);
 	xe_irq_shutdown(xe);

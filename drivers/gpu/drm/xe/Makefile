@@ -101,6 +101,92 @@ xe-y += xe_bb.o \
 	xe_wa.o \
 	xe_wopcm.o
 
+# i915 compat #defines and #includes
+subdir-ccflags-y += -I$(srctree)/$(src)/display/ext \
+	-Ddrm_i915_gem_object=xe_bo \
+	-Ddrm_i915_private=xe_device \
+	-Dirq_lock=irq.lock
+
+CFLAGS_display/intel_fbdev.o = $(call cc-disable-warning, override-init)
+
+# Display..
+xe-y += \
+	display/icl_dsi.o \
+	display/intel_acpi.o \
+	display/intel_atomic.o \
+	display/intel_atomic_plane.o \
+	display/intel_audio.o \
+	display/intel_backlight.o \
+	display/intel_bios.o \
+	display/intel_bw.o \
+	display/intel_cdclk.o \
+	display/intel_color.o \
+	display/intel_combo_phy.o \
+	display/intel_connector.o \
+	display/intel_crtc_state_dump.o \
+	display/intel_crtc.o \
+	display/intel_cursor.o \
+	display/intel_ddi_buf_trans.o \
+	display/intel_ddi.o \
+	display/intel_display.o \
+	display/intel_display_debugfs.o \
+	display/intel_display_power.o \
+	display/intel_display_power_map.o \
+	display/intel_display_power_well.o \
+	display/intel_display_trace.o \
+	display/intel_dmc.o \
+	display/intel_dp_aux_backlight.o \
+	display/intel_dp_aux.o \
+	display/intel_dp.o \
+	display/intel_dp_hdcp.o \
+	display/intel_dp_link_training.o \
+	display/intel_dpll.o \
+	display/intel_dpll_mgr.o \
+	display/intel_dp_mst.o \
+	display/intel_drrs.o \
+	display/intel_dsb.o \
+	display/intel_dsi.o \
+	display/intel_dsi_dcs_backlight.o \
+	display/intel_dsi_vbt.o \
+	display/intel_fb.o \
+	display/intel_fbc.o \
+	display/intel_fbdev.o \
+	display/intel_fdi.o \
+	display/intel_fifo_underrun.o \
+	display/intel_frontbuffer.o \
+	display/intel_global_state.o \
+	display/intel_gmbus.o \
+	display/intel_hdcp.o \
+	display/intel_hdmi.o \
+	display/intel_hotplug.o \
+	display/intel_lspcon.o \
+	display/intel_lvds.o \
+	display/intel_modeset_setup.o \
+	display/intel_modeset_verify.o \
+	display/intel_opregion.o \
+	display/intel_panel.o \
+	display/intel_pipe_crc.o \
+	display/intel_pps_stub.o \
+	display/intel_psr.o \
+	display/intel_qp_tables.o \
+	display/intel_quirks.o \
+	display/intel_snps_phy.o \
+	display/intel_sprite.o \
+	display/intel_tc.o \
+	display/intel_vdsc.o \
+	display/intel_vga.o \
+	display/intel_vrr.o \
+	display/xe_fb_pin.o \
+	display/xe_plane_initial.o \
+	display/skl_scaler.o \
+	display/skl_universal_plane.o \
+	display/skl_watermark.o \
+	display/ext/i915_irq.o \
+	display/ext/intel_device_info.o \
+	display/ext/intel_dram.o \
+	display/ext/intel_pch.o \
+	display/ext/intel_pm.o
+
 obj-$(CONFIG_DRM_XE) += xe.o
 obj-$(CONFIG_DRM_XE_KUNIT_TEST) += tests/
 

@@ -14,6 +14,9 @@
 #include "xe_hw_engine.h"
 #include "xe_mmio.h"
 
+#include "display/intel_opregion.h"
+#include "display/ext/i915_irq.h"
+
 #include "../i915/i915_reg.h"
 #include "../i915/gt/intel_gt_regs.h"
 
@@ -78,6 +81,21 @@ static u32 gen11_intr_disable(struct xe_gt *gt)
 	 * and will generate new interrupt after enabling master.
 	 */
 	return xe_mmio_read32(gt, GEN11_GFX_MSTR_IRQ.reg);
+}
+
+static u32
+gen11_gu_misc_irq_ack(struct xe_gt *gt, const u32 master_ctl)
+{
+	u32 iir;
+
+	if (!(master_ctl & GEN11_GU_MISC_IRQ))
+		return 0;
+
+	iir = xe_mmio_read32(gt, GEN11_GU_MISC_IIR.reg);
+	if (likely(iir))
+		xe_mmio_write32(gt, GEN11_GU_MISC_IIR.reg, iir);
+
+	return iir;
 }
 
 static inline void gen11_intr_enable(struct xe_gt *gt, bool stall)
@@ -155,8 +173,6 @@ static void gen11_irq_postinstall(struct xe_device *xe, struct xe_gt *gt)
 	/* TODO: PCH */
 
 	gen11_gt_irq_postinstall(xe, gt);
-
-	/* TODO: Display */
 
 	GEN3_IRQ_INIT(gt, GEN11_GU_MISC_, ~GEN11_GU_MISC_GSE,
 		      GEN11_GU_MISC_GSE);
@@ -268,7 +284,7 @@ static irqreturn_t gen11_irq_handler(int irq, void *arg)
 {
 	struct xe_device *xe = arg;
 	struct xe_gt *gt = xe_device_get_gt(xe, 0);	/* Only 1 GT here */
-	u32 master_ctl;
+	u32 master_ctl, gu_misc_iir;
 	long unsigned int intr_dw[2];
 	u32 identity[32];
 
@@ -280,9 +296,15 @@ static irqreturn_t gen11_irq_handler(int irq, void *arg)
 
 	gen11_gt_irq_handler(xe, gt, master_ctl, intr_dw, identity);
 
+	if (master_ctl & GEN11_DISPLAY_IRQ)
+		gen11_display_irq_handler(xe);
+
+	gu_misc_iir = gen11_gu_misc_irq_ack(gt, master_ctl);
+
 	gen11_intr_enable(gt, false);
 
-	/* TODO: Handle display interrupts */
+	if (gu_misc_iir & GEN11_GU_MISC_GSE)
+		intel_opregion_asle_intr(xe);
 
 	return IRQ_HANDLED;
 }
@@ -321,8 +343,6 @@ static void dg1_irq_postinstall(struct xe_device *xe, struct xe_gt *gt)
 	GEN3_IRQ_INIT(gt, GEN11_GU_MISC_, ~GEN11_GU_MISC_GSE,
 		      GEN11_GU_MISC_GSE);
 
-	/* TODO: Display */
-
 	if (gt->info.id + 1 == xe->info.tile_count)
 		dg1_intr_enable(xe, true);
 }
@@ -331,7 +351,7 @@ static irqreturn_t dg1_irq_handler(int irq, void *arg)
 {
 	struct xe_device *xe = arg;
 	struct xe_gt *gt;
-	u32 master_tile_ctl, master_ctl = 0;
+	u32 master_tile_ctl, master_ctl = 0, gu_misc_iir;
 	long unsigned int intr_dw[2];
 	u32 identity[32];
 	u8 id;
@@ -367,9 +387,15 @@ static irqreturn_t dg1_irq_handler(int irq, void *arg)
 		gen11_gt_irq_handler(xe, gt, master_ctl, intr_dw, identity);
 	}
 
+	if (master_ctl & GEN11_DISPLAY_IRQ)
+		gen11_display_irq_handler(xe);
+
+	gu_misc_iir = gen11_gu_misc_irq_ack(gt, master_ctl);
+
 	dg1_intr_enable(xe, false);
 
-	/* TODO: Handle display interrupts */
+	if (gu_misc_iir & GEN11_GU_MISC_GSE)
+		intel_opregion_asle_intr(xe);
 
 	return IRQ_HANDLED;
 }
@@ -422,8 +448,6 @@ static void gen11_irq_reset(struct xe_gt *gt)
 
 	gen11_gt_irq_reset(gt);
 
-	/* TODO: Display */
-
 	GEN3_IRQ_RESET(gt, GEN11_GU_MISC_);
 	GEN3_IRQ_RESET(gt, GEN8_PCU_);
 }
@@ -434,8 +458,6 @@ static void dg1_irq_reset(struct xe_gt *gt)
 		dg1_intr_disable(gt_to_xe(gt));
 
 	gen11_gt_irq_reset(gt);
-
-	/* TODO: Display */
 
 	GEN3_IRQ_RESET(gt, GEN11_GU_MISC_);
 	GEN3_IRQ_RESET(gt, GEN8_PCU_);
@@ -455,6 +477,7 @@ void xe_irq_reset(struct xe_device *xe)
 			drm_err(&xe->drm, "No interrupt reset hook");
 		}
 	}
+	gen11_display_irq_reset(xe);
 }
 
 void xe_irq_postinstall(struct xe_device *xe)
@@ -471,6 +494,8 @@ void xe_irq_postinstall(struct xe_device *xe)
 			drm_err(&xe->drm, "No interrupt postinstall hook");
 		}
 	}
+
+	gen11_display_irq_postinstall(xe);
 }
 
 static irq_handler_t xe_irq_handler(struct xe_device *xe)
