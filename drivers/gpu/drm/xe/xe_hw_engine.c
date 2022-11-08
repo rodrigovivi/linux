@@ -613,15 +613,15 @@ void xe_hw_engine_print_state(struct xe_hw_engine *hwe, struct drm_printer *p)
 	drm_printf(p, "\tRING_EIR:   0x%08x\n",
 		   hw_engine_mmio_read32(hwe, RING_EIR(0).reg));
 
-	drm_printf(p, "\tACTHD:  0x%08x%08x\n",
-		   hw_engine_mmio_read32(hwe, RING_ACTHD_UDW(0).reg),
-		   hw_engine_mmio_read32(hwe, RING_ACTHD(0).reg));
-	drm_printf(p, "\tBBADDR: 0x%08x%08x\n",
-		   hw_engine_mmio_read32(hwe, RING_BBADDR_UDW(0).reg),
-		   hw_engine_mmio_read32(hwe, RING_BBADDR(0).reg));
-	drm_printf(p, "\tDMA_FADDR: 0x%08x%08x\n",
-		   hw_engine_mmio_read32(hwe, RING_DMA_FADD_UDW(0).reg),
-		   hw_engine_mmio_read32(hwe, RING_DMA_FADD(0).reg));
+        drm_printf(p, "\tACTHD:  0x%08x_%08x\n",
+                   hw_engine_mmio_read32(hwe, RING_ACTHD(0).reg),
+		   hw_engine_mmio_read32(hwe, RING_ACTHD_UDW(0).reg));
+        drm_printf(p, "\tBBADDR: 0x%08x_%08x\n",
+                   hw_engine_mmio_read32(hwe, RING_BBADDR(0).reg),
+		   hw_engine_mmio_read32(hwe, RING_BBADDR_UDW(0).reg));
+        drm_printf(p, "\tDMA_FADDR: 0x%08x_%08x\n",
+                   hw_engine_mmio_read32(hwe, RING_DMA_FADD(0).reg),
+		   hw_engine_mmio_read32(hwe, RING_DMA_FADD_UDW(0).reg));
 
 	drm_printf(p, "\tIPEIR: 0x%08x\n",
 		   hw_engine_mmio_read32(hwe, IPEIR(0).reg));

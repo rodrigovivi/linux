@@ -11,7 +11,6 @@
 #include "xe_vm_types.h"
 
 struct drm_device;
-struct drm_printer;
 struct drm_file;
 
 struct ttm_buffer_object;
@@ -106,8 +105,6 @@ static inline bool xe_vma_is_userptr(struct xe_vma *vma)
 
 int xe_vma_userptr_pin_pages(struct xe_vma *vma);
 int xe_vma_userptr_needs_repin(struct xe_vma *vma);
-
-int xe_analyze_vm(struct drm_printer *p, struct xe_vm *vm, int gt_id);
 
 #if IS_ENABLED(CONFIG_DRM_XE_DEBUG_VM)
 #define vm_dbg drm_dbg
