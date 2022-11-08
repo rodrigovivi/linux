@@ -18,7 +18,7 @@
 #include "intel_dp_aux_backlight.h"
 #include "intel_dsi_dcs_backlight.h"
 #include "intel_panel.h"
-#include "intel_pci_config.h"
+#include "../i915/intel_pci_config.h"
 #include "intel_pps.h"
 #include "intel_quirks.h"
 
@@ -921,13 +921,13 @@ static int intel_backlight_device_get_brightness(struct backlight_device *bd)
 	with_intel_runtime_pm(&dev_priv->runtime_pm, wakeref) {
 		u32 hw_level;
 
-		drm_modeset_lock(&dev->mode_config.connection_mutex, NULL);
+		drm_modeset_lock(&dev_priv->drm.mode_config.connection_mutex, NULL);
 
 		hw_level = intel_panel_get_backlight(connector);
 		ret = scale_hw_to_user(connector,
 				       hw_level, bd->props.max_brightness);
 
-		drm_modeset_unlock(&dev->mode_config.connection_mutex);
+		drm_modeset_unlock(&dev_priv->drm.mode_config.connection_mutex);
 	}
 
 	return ret;

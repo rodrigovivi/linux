@@ -603,6 +603,7 @@ static void hsw_ddi_spll_enable(struct drm_i915_private *dev_priv,
 static void hsw_ddi_wrpll_disable(struct drm_i915_private *dev_priv,
 				  struct intel_shared_dpll *pll)
 {
+#ifdef I915
 	const enum intel_dpll_id id = pll->info->id;
 	u32 val;
 
@@ -616,11 +617,13 @@ static void hsw_ddi_wrpll_disable(struct drm_i915_private *dev_priv,
 	 */
 	if (dev_priv->pch_ssc_use & BIT(id))
 		intel_init_pch_refclk(dev_priv);
+#endif
 }
 
 static void hsw_ddi_spll_disable(struct drm_i915_private *dev_priv,
 				 struct intel_shared_dpll *pll)
 {
+#ifdef I915
 	enum intel_dpll_id id = pll->info->id;
 	u32 val;
 
@@ -634,6 +637,7 @@ static void hsw_ddi_spll_disable(struct drm_i915_private *dev_priv,
 	 */
 	if (dev_priv->pch_ssc_use & BIT(id))
 		intel_init_pch_refclk(dev_priv);
+#endif
 }
 
 static bool hsw_ddi_wrpll_get_hw_state(struct drm_i915_private *dev_priv,

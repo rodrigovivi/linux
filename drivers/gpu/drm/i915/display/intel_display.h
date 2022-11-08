@@ -703,10 +703,16 @@ void assert_transcoder(struct drm_i915_private *dev_priv,
  * enable distros and users to tailor their preferred amount of i915 abrt
  * spam.
  */
+#ifdef I915
+#define i915_display_verbose_check (i915_modparams.verbose_state_checks)
+#else
+#define i915_display_verbose_check 1
+#endif
+
 #define I915_STATE_WARN(condition, format...) ({			\
 	int __ret_warn_on = !!(condition);				\
 	if (unlikely(__ret_warn_on))					\
-		if (!WARN(i915_modparams.verbose_state_checks, format))	\
+		if (!WARN(i915_display_verbose_check, format))	\
 			DRM_ERROR(format);				\
 	unlikely(__ret_warn_on);					\
 })
