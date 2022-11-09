@@ -113,18 +113,17 @@ static void guc_ct_fini(struct drm_device *drm, void *arg)
 	xe_bo_unpin_map_no_vm(ct->bo);
 }
 
+static void g2h_worker_func(struct work_struct *w);
+
 static void primelockdep(struct xe_guc_ct *ct)
 {
-#if IS_ENABLED(CONFIG_LOCKDEP)
-	bool cookie = dma_fence_begin_signalling();
+	if (!IS_ENABLED(CONFIG_LOCKDEP))
+		return;
 
+	fs_reclaim_acquire(GFP_KERNEL);
 	might_lock(&ct->lock);
-
-	dma_fence_end_signalling(cookie);
-#endif
+	fs_reclaim_release(GFP_KERNEL);
 }
-
-static void g2h_worker_func(struct work_struct *w);
 
 int xe_guc_ct_init(struct xe_guc_ct *ct)
 {
@@ -598,7 +597,6 @@ broken:
 static int guc_ct_send(struct xe_guc_ct *ct, const u32 *action, u32 len,
 		       u32 g2h_len, u32 num_g2h, struct g2h_fence *g2h_fence)
 {
-	bool cookie = dma_fence_begin_signalling();
 	int ret;
 
 	XE_BUG_ON(g2h_len && g2h_fence);
@@ -606,8 +604,6 @@ static int guc_ct_send(struct xe_guc_ct *ct, const u32 *action, u32 len,
 	mutex_lock(&ct->lock);
 	ret = guc_ct_send_locked(ct, action, len, g2h_len, num_g2h, g2h_fence);
 	mutex_unlock(&ct->lock);
-
-	dma_fence_end_signalling(cookie);
 
 	return ret;
 }
@@ -1065,7 +1061,6 @@ static int dequeue_one_g2h(struct xe_guc_ct *ct)
 static void g2h_worker_func(struct work_struct *w)
 {
 	struct xe_guc_ct *ct = container_of(w, struct xe_guc_ct, g2h_worker);
-	bool cookie = dma_fence_begin_signalling();
 	int ret;
 
 	xe_device_mem_access_wa_get(ct_to_xe(ct));
@@ -1083,8 +1078,6 @@ static void g2h_worker_func(struct work_struct *w)
 		}
 	} while (ret == 1);
 	xe_device_mem_access_wa_put(ct_to_xe(ct));
-
-	dma_fence_end_signalling(cookie);
 }
 
 static void guc_ct_ctb_print(struct xe_device *xe, struct guc_ctb *ctb,

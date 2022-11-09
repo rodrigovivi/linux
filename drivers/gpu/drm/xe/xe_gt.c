@@ -405,14 +405,13 @@ static int gt_reset(struct xe_gt *gt)
 
 	drm_info(&xe->drm, "GT reset started\n");
 
-	xe_gt_pagefault_reset(gt);
-
 	xe_device_mem_access_wa_get(gt_to_xe(gt));
 	err = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 	if (err)
 		goto err_msg;
 
 	xe_uc_stop_prepare(&gt->uc);
+	xe_gt_pagefault_reset(gt);
 
 	err = xe_uc_stop(&gt->uc);
 	if (err)

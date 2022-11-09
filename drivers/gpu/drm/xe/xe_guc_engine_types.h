@@ -33,12 +33,6 @@ struct xe_guc_engine {
 	struct drm_sched_msg static_msgs[MAX_STATIC_MSG_TYPE];
 	/** @fini_async: do final fini async from this worker */
 	struct work_struct fini_async;
-	/** @static_fence: static fence used for suspend */
-	struct dma_fence static_fence;
-	/**
-	 * @suspend_fence: suspend fence, only non-NULL when suspend in flight
-	 */
-	struct dma_fence *suspend_fence;
 	/** @resume_time: time of last resume */
 	u64 resume_time;
 	/** @state: GuC specific state for this xe_engine */
@@ -49,6 +43,10 @@ struct xe_guc_engine {
 	u32 wqi_tail;
 	/** @id: GuC id for this xe_engine */
 	u16 id;
+	/** @suspend_wait: wait queue used to wait on pending suspends */
+	wait_queue_head_t suspend_wait;
+	/** @suspend_pending: a suspend of the engine is pending */
+	bool suspend_pending;
 };
 
 #endif
