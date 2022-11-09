@@ -12,3 +12,5 @@ DG2, etc is provided to prototype the driver.
    :titlesonly:
 
    xe_pm
+   xe_wa
+   xe_rtp
