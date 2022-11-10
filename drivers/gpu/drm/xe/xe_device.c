@@ -232,6 +232,10 @@ int xe_device_probe(struct xe_device *xe)
 			goto err_irq_shutdown;
 	}
 
+	err = xe_mmio_probe_vram(xe);
+	if (err)
+		goto err_irq_shutdown;
+
 	for_each_gt(gt, xe, id) {
 		err = xe_gt_init(gt);
 		if (err)

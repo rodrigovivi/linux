@@ -10,10 +10,12 @@
 
 #include "xe_device.h"
 #include "xe_gt.h"
+#include "xe_gt_mcr.h"
 #include "xe_macros.h"
 
 #include "../i915/i915_reg.h"
 #include "../i915/gt/intel_engine_regs.h"
+#include "../i915/gt/intel_gt_regs.h"
 
 #define XEHP_MTCFG_ADDR		_MMIO(0x101800)
 #define TILE_COUNT		REG_GENMASK(15, 8)
@@ -44,7 +46,7 @@ mask_err:
 	return err;
 }
 
-static void xe_mmio_probe_vram(struct xe_device *xe)
+int xe_mmio_probe_vram(struct xe_device *xe)
 {
 	struct pci_dev *pdev = to_pci_dev(xe->drm.dev);
 	struct xe_gt *gt;
@@ -60,7 +62,7 @@ static void xe_mmio_probe_vram(struct xe_device *xe)
 			gt->mem.vram.size = 0;
 			gt->mem.vram.io_start = 0;
 		}
-		return;
+		return 0;
 	}
 
 	gt = xe_device_get_gt(xe, 0);
@@ -79,6 +81,31 @@ static void xe_mmio_probe_vram(struct xe_device *xe)
 
 	drm_info(&xe->drm, "TOTAL VRAM: %pa, %pa\n",
 		 &xe->mem.vram.io_start, &xe->mem.vram.size);
+
+	if (xe->info.has_flat_ccs)  {
+		int err;
+		u64 lmem_size;
+		u64 flat_ccs_base;
+		u64 remove_len = 0;
+		u32 reg;
+
+		err = xe_force_wake_get(gt_to_fw(gt), XE_FW_GT);
+		if (err)
+			return err;
+		reg = xe_gt_mcr_unicast_read_any(gt, XEHP_TILE0_ADDR_RANGE);
+		lmem_size = (u64)REG_FIELD_GET(GENMASK(14, 8), reg) * SZ_1G;
+		reg = xe_gt_mcr_unicast_read_any(gt, XEHP_FLAT_CCS_BASE_ADDR);
+		flat_ccs_base = (u64)REG_FIELD_GET(GENMASK(31, 8), reg) * SZ_64K;
+		if (lmem_size > flat_ccs_base)
+			remove_len = lmem_size - flat_ccs_base;
+		xe->mem.vram.size -= remove_len;
+		drm_info(&xe->drm, "lmem_size: 0x%llx flat_ccs_base: 0x%llx remove_len: 0x%llx\n",
+			 lmem_size, flat_ccs_base, remove_len);
+
+		err = xe_force_wake_put(gt_to_fw(gt), XE_FW_GT);
+		if (err)
+			return err;
+	}
 
 	/* FIXME: Assuming equally partitioned VRAM, incorrect */
 	if (xe->info.tile_count > 1) {
@@ -114,6 +141,7 @@ static void xe_mmio_probe_vram(struct xe_device *xe)
 
 		drm_info(&xe->drm, "VRAM: %pa\n", &gt->mem.vram.size);
 	}
+	return 0;
 }
 
 static void xe_mmio_probe_tiles(struct xe_device *xe)
@@ -212,7 +240,6 @@ int xe_mmio_init(struct xe_device *xe)
 		return err;
 
 	xe_mmio_probe_tiles(xe);
-	xe_mmio_probe_vram(xe);
 
 	return 0;
 }
