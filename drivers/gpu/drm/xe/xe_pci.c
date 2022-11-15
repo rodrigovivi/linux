@@ -8,7 +8,6 @@
 #include <linux/device/driver.h>
 #include <linux/module.h>
 #include <linux/pci.h>
-#include <linux/vga_switcheroo.h>
 
 #include <drm/drm_drv.h>
 #include <drm/drm_color_mgmt.h>
@@ -380,21 +379,6 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	struct xe_gt *gt;
 	u8 id;
 	int err;
-
-	/* Only bind to function 0 of the device. Early generations
-	 * used function 1 as a placeholder for multi-head. This causes
-	 * us confusion instead, especially on the systems where both
-	 * functions have the same PCI-ID!
-	 */
-	if (PCI_FUNC(pdev->devfn))
-		return -ENODEV;
-
-	/*
-	 * apple-gmux is needed on dual GPU MacBook Pro
-	 * to probe the panel if we're the inactive GPU.
-	 */
-	if (vga_switcheroo_client_probe_defer(pdev))
-		return -EPROBE_DEFER;
 
 	xe = xe_device_create(pdev, ent);
 	if (IS_ERR(xe))
