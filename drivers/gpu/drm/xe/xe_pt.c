@@ -771,6 +771,7 @@ xe_pt_stage_bind(struct xe_gt *gt, struct xe_vma *vma,
  * @end: The end address within the non-shared pagetable.
  * @level: The level of the non-shared pagetable.
  * @walk: Walk info. The function adjusts the walk action.
+ * @action: next action to perform (see enum page_walk_action)
  * @offset: Ignored on input, First non-shared entry on output.
  * @end_offset: Ignored on input, Last non-shared entry + 1 on output.
  *
