@@ -297,10 +297,14 @@ struct xe_gt {
 		xe_eu_mask_t eu_mask_per_dss;
 	} fuse_topo;
 
+	/** @steering: register steering for individual HW units */
 	struct {
+		/* @ranges: register ranges used for this steering type */
 		const struct xe_mmio_range *ranges;
 
+		/** @group_target: target to steer accesses to */
 		u16 group_target;
+		/** @instance_target: instance to steer accesses to */
 		u16 instance_target;
 	} steering[NUM_STEERING_TYPES];
 
