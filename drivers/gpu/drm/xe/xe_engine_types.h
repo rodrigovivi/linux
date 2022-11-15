@@ -68,7 +68,7 @@ struct xe_engine {
 	union {
 		/** @multi_gt_list: list head for VM bind engines if multi-GT */
 		struct list_head multi_gt_list;
-		/** @multi_gt_list: link for VM bind engines if multi-GT */
+		/** @multi_gt_link: link for VM bind engines if multi-GT */
 		struct list_head multi_gt_link;
 	};
 
@@ -161,7 +161,7 @@ struct xe_engine_ops {
 	int (*init)(struct xe_engine *e);
 	/** @kill: Kill inflight submissions for backend */
 	void (*kill)(struct xe_engine *e);
-	/** @init: Fini engine for submission backend */
+	/** @fini: Fini engine for submission backend */
 	void (*fini)(struct xe_engine *e);
 	/** @set_priority: Set priority for engine */
 	int (*set_priority)(struct xe_engine *e,

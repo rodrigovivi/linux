@@ -243,7 +243,7 @@ static inline size_t xe_bo_ccs_pages_start(struct xe_bo *bo)
  * xe_bo_is_mem_type - Whether the bo currently resides in the given
  * TTM memory type
  * @bo: The bo to check.
- * @mem_type The TTM memory type.
+ * @mem_type: The TTM memory type.
  *
  * Return: true iff the bo resides in @mem_type, false otherwise.
  */

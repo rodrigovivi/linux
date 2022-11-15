@@ -124,13 +124,11 @@ static u64 __gen8_pte_encode(u64 pte, enum xe_cache_level cache, u32 flags,
 }
 
 /**
- * gen8_pde_encode() - Encode a page-table entry pointing to memory.
+ * gen8_pte_encode() - Encode a page-table entry pointing to memory.
  * @vma: The vma representing the memory to point to.
  * @bo: If @vma is NULL, representing the memory to point to.
  * @offset: The offset into @vma or @bo.
  * @cache: The cache level indicating
- * @bo_offset: Offset in the page-table bo to point to.
- * @cache: The cache level indicating the caching of @bo.
  * @flags: Currently only supports PTE_READ_ONLY for read-only access.
  * @pt_level: The page-table level of the page-table into which the entry
  * is to be inserted.
@@ -1035,8 +1033,8 @@ static void xe_vm_dbg_print_entries(struct xe_device *xe,
  * @gt: The gt to bind for.
  * @vma: The vma to bind.
  * @e: The engine with which to do pipelined page-table updates.
- * @sync: Entries to sync on before binding the built tree to the live vm tree.
- * @num_sync: Number of @sync entries.
+ * @syncs: Entries to sync on before binding the built tree to the live vm tree.
+ * @num_syncs: Number of @sync entries.
  * @rebind: Whether we're rebinding this vma to the same address range without
  * an unbind in-between.
  *
@@ -1315,8 +1313,8 @@ xe_pt_commit_unbind(struct xe_vma *vma,
  * @gt: The gt to unbind for.
  * @vma: The vma to unbind.
  * @e: The engine with which to do pipelined page-table updates.
- * @sync: Entries to sync on before disconnecting the tree to be destroyed.
- * @num_sync: Number of @sync entries.
+ * @syncs: Entries to sync on before disconnecting the tree to be destroyed.
+ * @num_syncs: Number of @sync entries.
  *
  * This function builds a the xe_vm_pgtable_update entries abstracting the
  * operations needed to detach the page-table tree to be destroyed from the

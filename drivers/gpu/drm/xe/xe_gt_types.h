@@ -186,7 +186,7 @@ struct xe_gt {
 		/** @acc_wq: access counter work queue, unbound, high priority */
 		struct workqueue_struct *acc_wq;
 		/**
-		 * pf_queue: Page fault queue used to sync faults so faults can
+		 * @pf_queue: Page fault queue used to sync faults so faults can
 		 * be processed not under the GuC CT lock. The queue is sized so
 		 * it can sync all possible faults (1 per physical engine).
 		 * Multiple queues exists for page faults from different VMs are
@@ -215,7 +215,7 @@ struct xe_gt {
 #define NUM_PF_QUEUE	4
 		} pf_queue[NUM_PF_QUEUE];
 		/**
-		 * acc_queue: Same as page fault queue, cannot process access
+		 * @acc_queue: Same as page fault queue, cannot process access
 		 * counters under CT lock.
 		 */
 		struct acc_queue {
@@ -262,7 +262,7 @@ struct xe_gt {
 	/** @hw_engines: hardware engines on the GT */
 	struct xe_hw_engine hw_engines[XE_NUM_HW_ENGINES];
 
-	/** kernel_bb_pool: Pool from which batchbuffers are allocated */
+	/** @kernel_bb_pool: Pool from which batchbuffers are allocated */
 	struct xe_sa_manager kernel_bb_pool;
 
 	/** @migrate: Migration helper for vram blits and clearing */

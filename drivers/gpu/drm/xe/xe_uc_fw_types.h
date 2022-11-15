@@ -76,7 +76,7 @@ struct xe_uc_fw {
 	/** @size: size of uC firmware including css header */
 	size_t size;
 
-	/** @obj: XE BO for uC firmware */
+	/** @bo: XE BO for uC firmware */
 	struct xe_bo *bo;
 
 	/*
