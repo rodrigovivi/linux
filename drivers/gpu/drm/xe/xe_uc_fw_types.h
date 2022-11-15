@@ -66,8 +66,13 @@ struct xe_uc_fw {
 	/** @type: type uC firmware */
 	enum xe_uc_fw_type type;
 	union {
+		/** @status: firmware load status */
 		const enum xe_uc_fw_status status;
-		enum xe_uc_fw_status __status; /* no accidental overwrites */
+		/**
+		 * @__status: private firmware load status - only to be used
+		 * by firmware laoding code
+		 */
+		enum xe_uc_fw_status __status;
 	};
 	/** @path: path to uC firmware */
 	const char *path;
@@ -80,13 +85,19 @@ struct xe_uc_fw {
 	struct xe_bo *bo;
 
 	/*
-	 * The firmware build process will generate a version header file with major and
-	 * minor version defined. The versions are built into CSS header of firmware.
-	 * i915 kernel driver set the minimal firmware version required per platform.
+	 * The firmware build process will generate a version header file with
+	 * major and minor version defined. The versions are built into CSS
+	 * header of firmware. The xe kernel driver set the minimal firmware
+	 * version required per platform.
 	 */
+
+	/** @major_ver_wanted: major firmware version wanted by platform */
 	u16 major_ver_wanted;
+	/** @minor_ver_wanted: minor firmware version wanted by platform */
 	u16 minor_ver_wanted;
+	/** @major_ver_found: major version found in firmware blob */
 	u16 major_ver_found;
+	/** @minor_ver_found: major version found in firmware blob */
 	u16 minor_ver_found;
 
 	/** @rsa_size: RSA size */
