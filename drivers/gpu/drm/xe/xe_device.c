@@ -9,6 +9,7 @@
 #include <drm/drm_aperture.h>
 #include <drm/drm_ioctl.h>
 #include <drm/xe_drm.h>
+#include <drm/drm_managed.h>
 
 #include "xe_bo.h"
 #include "xe_debugfs.h"
@@ -229,13 +230,16 @@ err_put:
 	return ERR_PTR(err);
 }
 
-int xe_device_probe(struct xe_device *xe)
+static void xe_device_fini_display_nommio(struct drm_device *dev, void *dummy)
 {
-	struct xe_gt *gt;
-	int err;
-	u8 id;
+	struct xe_device *xe = to_xe_device(dev);
 
-	xe->info.mem_region_mask = 1;
+	intel_power_domains_cleanup(xe);
+}
+
+static int xe_device_init_display_nommio(struct xe_device *xe)
+{
+	int err;
 
 	/* This must be called before any calls to HAS_PCH_* */
 	intel_detect_pch(xe);
@@ -247,21 +251,19 @@ int xe_device_probe(struct xe_device *xe)
 
 	intel_init_display_hooks(xe);
 
-	for_each_gt(gt, xe, id) {
-		err = xe_gt_alloc(xe, gt);
-		if (err)
-			return err;
-	}
+	return drmm_add_action_or_reset(&xe->drm, xe_device_fini_display_nommio, xe);
+}
 
-	err = xe_mmio_init(xe);
-	if (err)
-		return err;
+static void xe_device_fini_display_noirq(struct drm_device *dev, void *dummy)
+{
+	struct xe_device *xe = to_xe_device(dev);
 
-	for_each_gt(gt, xe, id) {
-		err = xe_pcode_probe(gt);
-		if (err)
-			return err;
-	}
+	intel_modeset_driver_remove_noirq(xe);
+}
+
+static int xe_device_init_display_noirq(struct xe_device *xe)
+{
+	int err;
 
 	/* Early display init.. */
 	intel_opregion_setup(xe);
@@ -284,13 +286,78 @@ int xe_device_probe(struct xe_device *xe)
 	err = intel_modeset_init_noirq(xe);
 	if (err)
 		return err;
-	/* Done first part of display init */
+
+	return drmm_add_action_or_reset(&xe->drm, xe_device_fini_display_noirq, xe);
+}
+
+static void xe_device_fini_display_early(struct drm_device *dev, void *dummy)
+{
+	struct xe_device *xe = to_xe_device(dev);
+
+	intel_modeset_driver_remove_nogem(xe);
+}
+
+static int xe_device_init_display_early(struct xe_device *xe)
+{
+	int err = intel_modeset_init_nogem(xe);
+	if (err)
+		return err;
+
+	return drmm_add_action_or_reset(&xe->drm, xe_device_fini_display_early, NULL);
+}
+
+static void xe_device_fini_display_late(struct drm_device *dev, void *dummy)
+{
+	struct xe_device *xe = to_xe_device(dev);
+
+	intel_modeset_driver_remove(xe);
+}
+
+static int xe_device_init_display_late(struct xe_device *xe)
+{
+	int err = intel_modeset_init(xe);
+	if (err)
+		return err;
+
+	return drmm_add_action_or_reset(&xe->drm, xe_device_fini_display_late, NULL);
+}
+
+int xe_device_probe(struct xe_device *xe)
+{
+	struct xe_gt *gt;
+	int err;
+	u8 id;
+
+	xe->info.mem_region_mask = 1;
+	err = xe_device_init_display_nommio(xe);
+	if (err)
+		return err;
+
+	for_each_gt(gt, xe, id) {
+		err = xe_gt_alloc(xe, gt);
+		if (err)
+			return err;
+	}
+
+	err = xe_mmio_init(xe);
+	if (err)
+		return err;
+
+	for_each_gt(gt, xe, id) {
+		err = xe_pcode_probe(gt);
+		if (err)
+			return err;
+	}
+
+	err = xe_device_init_display_noirq(xe);
+	if (err)
+		return err;
 
 	err = xe_irq_install(xe);
 	if (err)
 		return err;
 
-	err = intel_modeset_init_nogem(xe);
+	err = xe_device_init_display_early(xe);
 	if (err)
 		goto err_irq_shutdown;
 
@@ -310,7 +377,7 @@ int xe_device_probe(struct xe_device *xe)
 			goto err_irq_shutdown;
 	}
 
-	err = intel_modeset_init(xe);
+	err = xe_device_init_display_late(xe);
 	if (err)
 		goto err_irq_shutdown;
 
@@ -329,8 +396,16 @@ err_irq_shutdown:
 	return err;
 }
 
+static void xe_device_remove_display(struct xe_device *xe)
+{
+	intel_power_domains_disable(xe);
+	intel_display_driver_unregister(xe);
+}
+
 void xe_device_remove(struct xe_device *xe)
 {
+	xe_device_remove_display(xe);
+
 	destroy_workqueue(xe->display.hotplug.dp_wq);
 	destroy_workqueue(xe->ordered_wq);
 	mutex_destroy(&xe->persitent_engines.lock);
