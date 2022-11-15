@@ -788,7 +788,7 @@ xe_pt_stage_bind(struct xe_gt *gt, struct xe_vma *vma,
  *
  * Return: true if there were non-shared entries, false otherwise.
  */
-static bool xe_pt_nonshared_offsets(u64 addr, u64 next, unsigned int level,
+static bool xe_pt_nonshared_offsets(u64 addr, u64 end, unsigned int level,
 				    struct drm_pt_walk *walk,
 				    enum page_walk_action *action,
 				    pgoff_t *offset, pgoff_t *end_offset)
@@ -796,7 +796,7 @@ static bool xe_pt_nonshared_offsets(u64 addr, u64 next, unsigned int level,
 	u64 size = 1ull << walk->shifts[level];
 
 	*offset = drm_pt_offset(addr, level, walk);
-	*end_offset = drm_pt_num_entries(addr, next, level, walk) + *offset;
+	*end_offset = drm_pt_num_entries(addr, end, level, walk) + *offset;
 
 	if (!level)
 		return true;
@@ -811,7 +811,7 @@ static bool xe_pt_nonshared_offsets(u64 addr, u64 next, unsigned int level,
 		(*offset)++;
 	}
 
-	if (!IS_ALIGNED(next, size)) {
+	if (!IS_ALIGNED(end, size)) {
 		*action = ACTION_SUBTREE;
 		(*end_offset)--;
 	}
