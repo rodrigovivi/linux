@@ -19,6 +19,11 @@
 
 #define XEHP_MTCFG_ADDR		_MMIO(0x101800)
 #define TILE_COUNT		REG_GENMASK(15, 8)
+#define GEN12_LMEM_BAR		2
+
+static u32 xe_force_lmem_bar_size;
+module_param_named(lmem_bar_size, xe_force_lmem_bar_size, uint, 0600);
+MODULE_PARM_DESC(lmem_bar_size, "Set the lmem bar size(in MiB)");
 
 static int xe_set_dma_info(struct xe_device *xe)
 {
@@ -46,11 +51,118 @@ mask_err:
 	return err;
 }
 
+#ifdef CONFIG_64BIT
+static int
+_resize_bar(struct xe_device *xe, int resno, resource_size_t size)
+{
+	struct pci_dev *pdev = to_pci_dev(xe->drm.dev);
+	int bar_size = pci_rebar_bytes_to_size(size);
+	int ret;
+
+	if (pci_resource_len(pdev, resno))
+		pci_release_resource(pdev, resno);
+
+	ret = pci_resize_resource(pdev, resno, bar_size);
+	if (ret) {
+		drm_info(&xe->drm, "Failed to resize BAR%d to %dM (%pe)\n",
+			 resno, 1 << bar_size, ERR_PTR(ret));
+		return -1;
+	}
+
+	drm_info(&xe->drm, "BAR%d resized to %dM\n", resno, 1 << bar_size);
+	return 1;
+}
+
+static int xe_resize_lmem_bar(struct xe_device *xe, resource_size_t lmem_size)
+{
+	struct pci_dev *pdev = to_pci_dev(xe->drm.dev);
+	struct pci_bus *root = pdev->bus;
+	struct resource *root_res;
+	resource_size_t rebar_size;
+	resource_size_t current_size;
+	u32 pci_cmd;
+	int i;
+	int ret;
+	u64 force_lmem_bar_size = xe_force_lmem_bar_size;
+
+	current_size = roundup_pow_of_two(pci_resource_len(pdev, GEN12_LMEM_BAR));
+
+	if (force_lmem_bar_size) {
+		u32 bar_sizes;
+
+		rebar_size = force_lmem_bar_size * (resource_size_t)SZ_1M;
+		bar_sizes = pci_rebar_get_possible_sizes(pdev, GEN12_LMEM_BAR);
+
+		if (rebar_size == current_size)
+			return 0;
+
+		if (!(bar_sizes & BIT(pci_rebar_bytes_to_size(rebar_size))) ||
+		    rebar_size >= roundup_pow_of_two(lmem_size)) {
+			rebar_size = lmem_size;
+			drm_info(&xe->drm,
+				 "Given bar size is not within supported size, setting it to default: %llu\n",
+				 (u64)lmem_size >> 20);
+		}
+	} else {
+		rebar_size = current_size;
+
+		if (rebar_size != roundup_pow_of_two(lmem_size))
+			rebar_size = lmem_size;
+		else
+			return 0;
+	}
+
+	while (root->parent)
+		root = root->parent;
+
+	pci_bus_for_each_resource(root, root_res, i) {
+		if (root_res && root_res->flags & (IORESOURCE_MEM | IORESOURCE_MEM_64) &&
+		    root_res->start > 0x100000000ull)
+			break;
+	}
+
+	if (!root_res) {
+		drm_info(&xe->drm, "Can't resize LMEM BAR - platform support is missing\n");
+		return -1;
+	}
+
+	pci_read_config_dword(pdev, PCI_COMMAND, &pci_cmd);
+	pci_write_config_dword(pdev, PCI_COMMAND, pci_cmd & ~PCI_COMMAND_MEMORY);
+
+	ret = _resize_bar(xe, GEN12_LMEM_BAR, rebar_size);
+
+	pci_assign_unassigned_bus_resources(pdev->bus);
+	pci_write_config_dword(pdev, PCI_COMMAND, pci_cmd);
+	return ret;
+}
+#else
+static int xe_resize_lmem_bar(struct xe_device *xe, resource_size_t lmem_size) { return 0; }
+#endif
+
+static bool xe_pci_resource_valid(struct pci_dev *pdev, int bar)
+{
+	if (!pci_resource_flags(pdev, bar))
+		return false;
+
+	if (pci_resource_flags(pdev, bar) & IORESOURCE_UNSET)
+		return false;
+
+	if (!pci_resource_len(pdev, bar))
+		return false;
+
+	return true;
+}
+
 int xe_mmio_probe_vram(struct xe_device *xe)
 {
 	struct pci_dev *pdev = to_pci_dev(xe->drm.dev);
 	struct xe_gt *gt;
 	u8 id;
+	u64 lmem_size;
+	u64 original_size;
+	u64 current_size;
+	u64 flat_ccs_base;
+	int resize_result;
 
 	if (!IS_DGFX(xe)) {
 		xe->mem.vram.mapping = 0;
@@ -65,28 +177,18 @@ int xe_mmio_probe_vram(struct xe_device *xe)
 		return 0;
 	}
 
-	gt = xe_device_get_gt(xe, 0);
-	xe->mem.vram.size = xe_mmio_read64(gt, GEN12_GSMBASE.reg);
-	xe->mem.vram.io_start = pci_resource_start(pdev, 2);
-
-	if (xe->mem.vram.size > pci_resource_len(pdev, 2)) {
-		xe->mem.vram.size = pci_resource_len(pdev, 2);
-		drm_warn(&xe->drm, "Restricting VRAM size to PCI resource size.\n");
+	if (!xe_pci_resource_valid(pdev, GEN12_LMEM_BAR)) {
+		drm_err(&xe->drm, "pci resource is not valid\n");
+		return -ENXIO;
 	}
 
-#ifdef CONFIG_64BIT
-	xe->mem.vram.mapping = ioremap_wc(xe->mem.vram.io_start,
-					  xe->mem.vram.size);
-#endif
+	gt = xe_device_get_gt(xe, 0);
+	lmem_size = xe_mmio_read64(gt, GEN12_GSMBASE.reg);
 
-	drm_info(&xe->drm, "TOTAL VRAM: %pa, %pa\n",
-		 &xe->mem.vram.io_start, &xe->mem.vram.size);
+	original_size = pci_resource_len(pdev, GEN12_LMEM_BAR);
 
 	if (xe->info.has_flat_ccs)  {
 		int err;
-		u64 lmem_size;
-		u64 flat_ccs_base;
-		u64 remove_len = 0;
 		u32 reg;
 
 		err = xe_force_wake_get(gt_to_fw(gt), XE_FW_GT);
@@ -96,16 +198,44 @@ int xe_mmio_probe_vram(struct xe_device *xe)
 		lmem_size = (u64)REG_FIELD_GET(GENMASK(14, 8), reg) * SZ_1G;
 		reg = xe_gt_mcr_unicast_read_any(gt, XEHP_FLAT_CCS_BASE_ADDR);
 		flat_ccs_base = (u64)REG_FIELD_GET(GENMASK(31, 8), reg) * SZ_64K;
-		if (lmem_size > flat_ccs_base)
-			remove_len = lmem_size - flat_ccs_base;
-		xe->mem.vram.size -= remove_len;
-		drm_info(&xe->drm, "lmem_size: 0x%llx flat_ccs_base: 0x%llx remove_len: 0x%llx\n",
-			 lmem_size, flat_ccs_base, remove_len);
+
+		drm_info(&xe->drm, "lmem_size: 0x%llx flat_ccs_base: 0x%llx\n",
+			 lmem_size, flat_ccs_base);
 
 		err = xe_force_wake_put(gt_to_fw(gt), XE_FW_GT);
 		if (err)
 			return err;
+	} else {
+		flat_ccs_base = lmem_size;
 	}
+
+	resize_result = xe_resize_lmem_bar(xe, lmem_size);
+	current_size = pci_resource_len(pdev, GEN12_LMEM_BAR);
+	xe->mem.vram.io_start = pci_resource_start(pdev, GEN12_LMEM_BAR);
+
+	xe->mem.vram.size = min(current_size, lmem_size);
+
+	if (!xe->mem.vram.size)
+		return -EIO;
+
+	if (resize_result > 0)
+		drm_info(&xe->drm, "Successfully resize LMEM from %lluMiB to %lluMiB\n",
+			 (u64)original_size >> 20,
+			 (u64)current_size >> 20);
+	else if (xe->mem.vram.size < lmem_size && !xe_force_lmem_bar_size)
+		drm_info(&xe->drm, "Using a reduced BAR size of %lluMiB. Consider enabling 'Resizable BAR' support in your BIOS.\n",
+			 (u64)xe->mem.vram.size >> 20);
+	if (xe->mem.vram.size < lmem_size)
+		drm_warn(&xe->drm, "Restricting VRAM size to PCI resource size (0x%llx->0x%llx)\n",
+			 lmem_size, xe->mem.vram.size);
+
+#ifdef CONFIG_64BIT
+	xe->mem.vram.mapping = ioremap_wc(xe->mem.vram.io_start, xe->mem.vram.size);
+#endif
+
+	xe->mem.vram.size = min_t(u64, xe->mem.vram.size, flat_ccs_base);
+
+	drm_info(&xe->drm, "TOTAL VRAM: %pa, %pa\n", &xe->mem.vram.io_start, &xe->mem.vram.size);
 
 	/* FIXME: Assuming equally partitioned VRAM, incorrect */
 	if (xe->info.tile_count > 1) {
