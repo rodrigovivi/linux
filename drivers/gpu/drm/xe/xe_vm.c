@@ -148,46 +148,71 @@ static bool preempt_fences_waiting(struct xe_vm *vm)
 	return false;
 }
 
-static int alloc_preempt_fences(struct xe_vm *vm)
+static void free_preempt_fences(struct list_head *list)
 {
-	struct xe_engine *e;
-	bool wait = false;
-	long timeout;
+	struct list_head *link, *next;
 
+	list_for_each_safe(link, next, list)
+		xe_preempt_fence_free(link);
+}
+
+static int alloc_preempt_fences(struct xe_vm *vm, struct list_head *list,
+				unsigned int *count)
+{
 	lockdep_assert_held(&vm->lock);
 	xe_vm_assert_held(vm);
 
-	/*
-	 * We test for a corner case where the rebind worker is queue'd twice
-	 * in a row but the first run of the worker fixes all the page tables.
-	 * If any of pfences are NULL or is signaling is enabled on pfence we
-	 * know that their are page tables which need fixing.
-	 */
-	wait = preempt_fences_waiting(vm);
-	if (!wait)
-		return 1;	/* nothing to do */
+	if (*count >= vm->preempt.num_engines)
+		return 0;
+
+	for (; *count < vm->preempt.num_engines; ++(*count)) {
+		struct list_head *link = xe_preempt_fence_alloc();
+
+		if (IS_ERR(link))
+			return PTR_ERR(link);
+
+		list_move_tail(link, list);
+	}
+
+	return 0;
+}
+
+static int wait_for_existing_preempt_fences(struct xe_vm *vm)
+{
+	struct xe_engine *e;
+
+	xe_vm_assert_held(vm);
 
 	list_for_each_entry(e, &vm->preempt.engines, compute.link) {
-		struct dma_fence *pfence;
-
 		if (e->compute.pfence) {
-			timeout = dma_fence_wait(e->compute.pfence, false);
+			long timeout = dma_fence_wait(e->compute.pfence, false);
+
 			if (timeout < 0)
 				return -ETIME;
 			dma_fence_put(e->compute.pfence);
 			e->compute.pfence = NULL;
 		}
-
-		pfence = xe_preempt_fence_create(e, e->compute.context,
-						 ++e->compute.seqno);
-		XE_WARN_ON(!pfence);
-		if (!pfence)
-			return -ENOMEM;
-
-		e->compute.pfence = pfence;
 	}
 
 	return 0;
+}
+
+static void arm_preempt_fences(struct xe_vm *vm, struct list_head *list)
+{
+	struct list_head *link;
+	struct xe_engine *e;
+
+	list_for_each_entry(e, &vm->preempt.engines, compute.link) {
+		struct dma_fence *pfence;
+
+		link = list->next;
+		XE_BUG_ON(link == list);
+
+		pfence = xe_preempt_fence_arm(link, e, e->compute.context,
+					      ++e->compute.seqno);
+		dma_fence_put(e->compute.pfence);
+		e->compute.pfence = pfence;
+	}
 }
 
 static int add_preempt_fences(struct xe_vm *vm, struct xe_bo *bo)
@@ -211,7 +236,7 @@ static int add_preempt_fences(struct xe_vm *vm, struct xe_bo *bo)
 	return 0;
 }
 
-static void reinstall_preempt_fences(struct xe_vm *vm)
+static void resume_and_reinstall_preempt_fences(struct xe_vm *vm)
 {
 	struct xe_engine *e;
 	int i;
@@ -313,6 +338,23 @@ out_unlock_outer:
 	return err;
 }
 
+static int __xe_vm_userptr_needs_repin(struct xe_vm *vm)
+{
+	struct xe_vma *vma;
+	int err = 0;
+
+	if (!xe_vm_has_userptr(vm))
+		return 0;
+
+	list_for_each_entry(vma, &vm->userptr.list, userptr_link) {
+		err = __vma_userptr_needs_repin(vma);
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+
 static void preempt_rebind_work_func(struct work_struct *w)
 {
 	struct xe_vm *vm = container_of(w, struct xe_vm, preempt.rebind_work);
@@ -322,6 +364,8 @@ static void preempt_rebind_work_func(struct work_struct *w)
 	struct ww_acquire_ctx ww;
 	struct list_head objs, dups;
 	struct dma_fence *rebind_fence;
+	unsigned int fence_count = 0;
+	LIST_HEAD(preempt_fences);
 	int i, err;
 	long wait;
 
@@ -382,10 +426,21 @@ retry:
 	if (err)
 		goto out_unlock_outer;
 
-	err = alloc_preempt_fences(vm);
+	/* Fresh preempt fences already installed. Everyting is running. */
+	if (!preempt_fences_waiting(vm))
+		goto out_unlock;
+
+	/*
+	 * This makes sure vm is completely suspended and also balances
+	 * xe_engine suspend- and resume; we resume *all* vm engines below.
+	 */
+	err = wait_for_existing_preempt_fences(vm);
 	if (err)
 		goto out_unlock;
-	vm->preempt.resume_go = 0;
+
+	err = alloc_preempt_fences(vm, &preempt_fences, &fence_count);
+	if (err)
+		goto out_unlock;
 
 	list_for_each_entry(vma, &vm->evict_list, evict_link) {
 		err = xe_bo_validate(vma->bo, vm);
@@ -413,12 +468,18 @@ retry:
 		goto out_unlock;
 	}
 
-	reinstall_preempt_fences(vm);
-	err = xe_vm_userptr_needs_repin(vm, true);
+	read_lock(&vm->userptr.notifier_lock);
+	if (__xe_vm_userptr_needs_repin(vm)) {
+		read_unlock(&vm->userptr.notifier_lock);
+		err = -EAGAIN;
+		goto out_unlock;
+	}
 
-	vm->preempt.resume_go = err == -EAGAIN ? -1 : 1;
-	smp_mb();
-	wake_up_all(&vm->preempt.resume_wq);
+	/* Point of no return. */
+	arm_preempt_fences(vm, &preempt_fences);
+	vm->preempt.resume_go = 1;
+	resume_and_reinstall_preempt_fences(vm);
+	read_unlock(&vm->userptr.notifier_lock);
 
 out_unlock:
 	ttm_eu_backoff_reservation(&ww, &objs);
@@ -426,18 +487,12 @@ out_unlock_outer:
 	up_read(&vm->lock);
 
 	if (err == -EAGAIN) {
-		wait = dma_resv_wait_timeout(&vm->resv,
-					     DMA_RESV_USAGE_PREEMPT_FENCE,
-					     false, MAX_SCHEDULE_TIMEOUT);
-		if (wait <= 0) {
-			err = -ETIME;
-			goto free;
-		}
 		trace_xe_vm_rebind_worker_retry(vm);
 		goto retry;
 	}
 
-free:
+	free_preempt_fences(&preempt_fences);
+
 	kfree(tv_bos);
 	XE_WARN_ON(err < 0);	/* TODO: Kill VM or put in error state */
 	trace_xe_vm_rebind_worker_exit(vm);
@@ -551,8 +606,7 @@ int xe_vm_userptr_pin(struct xe_vm *vm, bool rebind_worker)
 
 int xe_vm_userptr_needs_repin(struct xe_vm *vm, bool rebind_worker)
 {
-	struct xe_vma *vma;
-	int err = 0;
+	int err;
 
 	lockdep_assert_held(&vm->lock);
 	if (!xe_vm_has_userptr(vm) ||
@@ -560,14 +614,9 @@ int xe_vm_userptr_needs_repin(struct xe_vm *vm, bool rebind_worker)
 		return 0;
 
 	read_lock(&vm->userptr.notifier_lock);
-	list_for_each_entry(vma, &vm->userptr.list, userptr_link) {
-		err = __vma_userptr_needs_repin(vma);
-		if (err)
-			goto out_unlock;
-	}
-
-out_unlock:
+	err = __xe_vm_userptr_needs_repin(vm);
 	read_unlock(&vm->userptr.notifier_lock);
+
 	return err;
 }
 
