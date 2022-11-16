@@ -103,8 +103,6 @@ struct xe_bo *xe_bo_create_from_data(struct xe_device *xe, struct xe_gt *gt,
 int xe_bo_placement_for_flags(struct xe_device *xe, struct xe_bo *bo,
 			      u32 bo_flags);
 
-void xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo);
-
 static inline struct xe_bo *ttm_to_xe_bo(const struct ttm_buffer_object *bo)
 {
 	return container_of(bo, struct xe_bo, ttm);
