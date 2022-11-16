@@ -66,7 +66,7 @@ struct xe_guc_ct {
 	struct work_struct g2h_worker;
 	/** @enabled: CT enabled */
 	bool enabled;
-	/** @fence: G2H fence seqno - 16 bits used by CT */
+	/** @fence_seqno: G2H fence seqno - 16 bits used by CT */
 	u32 fence_seqno;
 	/** @fence_context: context for G2H fence */
 	u64 fence_context;

@@ -26,7 +26,7 @@ struct xe_guc {
 	struct xe_guc_log log;
 	/** @ads: GuC ads */
 	struct xe_guc_ads ads;
-	/** @log: GuC ct */
+	/** @ct: GuC ct */
 	struct xe_guc_ct ct;
 	/** @pc: GuC Power Conservation */
 	struct xe_guc_pc pc;
@@ -52,7 +52,7 @@ struct xe_guc {
 			u32 seqno;
 		} suspend;
 	} submission_state;
-	/** @hwconfig_state: Hardware config state */
+	/** @hwconfig: Hardware config state */
 	struct {
 		/** @bo: buffer object of the hardware config */
 		struct xe_bo *bo;

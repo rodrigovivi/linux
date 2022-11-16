@@ -124,13 +124,11 @@ static u64 __gen8_pte_encode(u64 pte, enum xe_cache_level cache, u32 flags,
 }
 
 /**
- * gen8_pde_encode() - Encode a page-table entry pointing to memory.
+ * gen8_pte_encode() - Encode a page-table entry pointing to memory.
  * @vma: The vma representing the memory to point to.
  * @bo: If @vma is NULL, representing the memory to point to.
  * @offset: The offset into @vma or @bo.
  * @cache: The cache level indicating
- * @bo_offset: Offset in the page-table bo to point to.
- * @cache: The cache level indicating the caching of @bo.
  * @flags: Currently only supports PTE_READ_ONLY for read-only access.
  * @pt_level: The page-table level of the page-table into which the entry
  * is to be inserted.
@@ -773,6 +771,7 @@ xe_pt_stage_bind(struct xe_gt *gt, struct xe_vma *vma,
  * @end: The end address within the non-shared pagetable.
  * @level: The level of the non-shared pagetable.
  * @walk: Walk info. The function adjusts the walk action.
+ * @action: next action to perform (see enum page_walk_action)
  * @offset: Ignored on input, First non-shared entry on output.
  * @end_offset: Ignored on input, Last non-shared entry + 1 on output.
  *
@@ -790,7 +789,7 @@ xe_pt_stage_bind(struct xe_gt *gt, struct xe_vma *vma,
  *
  * Return: true if there were non-shared entries, false otherwise.
  */
-static bool xe_pt_nonshared_offsets(u64 addr, u64 next, unsigned int level,
+static bool xe_pt_nonshared_offsets(u64 addr, u64 end, unsigned int level,
 				    struct drm_pt_walk *walk,
 				    enum page_walk_action *action,
 				    pgoff_t *offset, pgoff_t *end_offset)
@@ -798,7 +797,7 @@ static bool xe_pt_nonshared_offsets(u64 addr, u64 next, unsigned int level,
 	u64 size = 1ull << walk->shifts[level];
 
 	*offset = drm_pt_offset(addr, level, walk);
-	*end_offset = drm_pt_num_entries(addr, next, level, walk) + *offset;
+	*end_offset = drm_pt_num_entries(addr, end, level, walk) + *offset;
 
 	if (!level)
 		return true;
@@ -813,7 +812,7 @@ static bool xe_pt_nonshared_offsets(u64 addr, u64 next, unsigned int level,
 		(*offset)++;
 	}
 
-	if (!IS_ALIGNED(next, size)) {
+	if (!IS_ALIGNED(end, size)) {
 		*action = ACTION_SUBTREE;
 		(*end_offset)--;
 	}
@@ -1035,8 +1034,8 @@ static void xe_vm_dbg_print_entries(struct xe_device *xe,
  * @gt: The gt to bind for.
  * @vma: The vma to bind.
  * @e: The engine with which to do pipelined page-table updates.
- * @sync: Entries to sync on before binding the built tree to the live vm tree.
- * @num_sync: Number of @sync entries.
+ * @syncs: Entries to sync on before binding the built tree to the live vm tree.
+ * @num_syncs: Number of @sync entries.
  * @rebind: Whether we're rebinding this vma to the same address range without
  * an unbind in-between.
  *
@@ -1315,8 +1314,8 @@ xe_pt_commit_unbind(struct xe_vma *vma,
  * @gt: The gt to unbind for.
  * @vma: The vma to unbind.
  * @e: The engine with which to do pipelined page-table updates.
- * @sync: Entries to sync on before disconnecting the tree to be destroyed.
- * @num_sync: Number of @sync entries.
+ * @syncs: Entries to sync on before disconnecting the tree to be destroyed.
+ * @num_syncs: Number of @sync entries.
  *
  * This function builds a the xe_vm_pgtable_update entries abstracting the
  * operations needed to detach the page-table tree to be destroyed from the

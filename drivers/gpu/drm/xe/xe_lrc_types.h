@@ -20,7 +20,7 @@ struct xe_lrc {
 	 */
 	struct xe_bo *bo;
 
-	/** @gt: full GT which this LRC belongs to */
+	/** @full_gt: full GT which this LRC belongs to */
 	struct xe_gt *full_gt;
 
 	/** @flags: LRC flags */

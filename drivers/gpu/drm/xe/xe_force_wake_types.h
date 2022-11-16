@@ -53,17 +53,17 @@ enum xe_force_wake_domains {
  * struct xe_force_wake_domain - XE force wake domains
  */
 struct xe_force_wake_domain {
-	/** id: domain force wake id */
+	/** @id: domain force wake id */
 	enum xe_force_wake_domain_id id;
-	/** reg_ctl: domain wake control register address */
+	/** @reg_ctl: domain wake control register address */
 	u32 reg_ctl;
-	/** reg_ack: domain ack register address */
+	/** @reg_ack: domain ack register address */
 	u32 reg_ack;
-	/** val: domain wake write value */
+	/** @val: domain wake write value */
 	u32 val;
-	/** mask: domain mask */
+	/** @mask: domain mask */
 	u32 mask;
-	/** ref: domain reference */
+	/** @ref: domain reference */
 	u32 ref;
 };
 

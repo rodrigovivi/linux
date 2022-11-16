@@ -11,6 +11,15 @@
 #include "xe_macros.h"
 #include "xe_reg_sr.h"
 
+/**
+ * DOC: Register Table Processing
+ *
+ * Internal infrastructure to define how registers should be updated based on
+ * rules and actions. This can be used to define tables with multiple entries
+ * (one per register) that will be walked over at some point in time to apply
+ * the values to the registers that have matching rules.
+ */
+
 static bool rule_matches(struct xe_gt *gt,
 			 struct xe_hw_engine *hwe,
 			 const struct xe_rtp_entry *entry)
@@ -93,6 +102,19 @@ static void rtp_add_sr_entry(const struct xe_rtp_entry *entry,
 	xe_reg_sr_add(sr, reg, &sr_entry);
 }
 
+/**
+ * xe_rtp_process - Process all rtp @entries, adding the matching ones to @sr
+ * @entries: Table with RTP definitions
+ * @sr: Where to add an entry to with the values for matching. This can be
+ *      viewed as the "coalesced view" of multiple the tables. The bits for each
+ *      register set are expected not to collide with previously added entries
+ * @gt: The GT to be used for matching rules
+ * @hwe: Engine instance to use for matching rules and as mmio base
+ *
+ * Walk the table pointed by @entries (with an empty sentinel) and add all
+ * entries with matching rules to @sr. If @hwe is not NULL, its mmio_base is
+ * used to calculate the right register offset
+ */
 void xe_rtp_process(const struct xe_rtp_entry *entries, struct xe_reg_sr *sr,
 		    struct xe_gt *gt, struct xe_hw_engine *hwe)
 {

@@ -28,8 +28,10 @@ void xe_gt_migrate_wait(struct xe_gt *gt);
 struct xe_gt *xe_find_full_gt(struct xe_gt *gt);
 
 /**
- * xe_gt_any_hw_engine_by_reset_domain: scan the list of engines and return the
+ * xe_gt_any_hw_engine_by_reset_domain - scan the list of engines and return the
  * first that matches the same reset domain as @class
+ * @gt: GT structure
+ * @class: hw engine class to lookup
  */
 struct xe_hw_engine *
 xe_gt_any_hw_engine_by_reset_domain(struct xe_gt *gt, enum xe_engine_class class);

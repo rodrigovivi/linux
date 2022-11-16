@@ -119,7 +119,7 @@ struct xe_device {
 		} vram;
 	} mem;
 
-	/** @um: unified memory state */
+	/** @usm: unified memory state */
 	struct {
 		/** @asid: convert a ASID to VM */
 		struct xarray asid_to_vm;

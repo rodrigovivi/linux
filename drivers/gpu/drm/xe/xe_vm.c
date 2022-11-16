@@ -3023,7 +3023,7 @@ void xe_vm_unlock(struct xe_vm *vm, struct ww_acquire_ctx *ww)
 }
 
 /**
- * xm_vm_invalidate_vma - invalidate GPU mappings for VMA without a lock
+ * xe_vm_invalidate_vma - invalidate GPU mappings for VMA without a lock
  * @vma: VMA to invalidate
  *
  * Walks a list of page tables leaves which it memset the entries owned by this
