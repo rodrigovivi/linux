@@ -52,7 +52,7 @@ static int __xe_pin_fb_vma_dpt(struct intel_framebuffer *fb,
 		u32 x;
 
 		dpt_size = ALIGN(size / GEN8_PAGE_SIZE * 8, GEN8_PAGE_SIZE);
-		dpt = xe_bo_create_pin_map(xe, NULL, NULL, dpt_size,
+		dpt = xe_bo_create_pin_map(xe, to_gt(xe), NULL, dpt_size,
 					  ttm_bo_type_kernel,
 					  XE_BO_CREATE_VRAM_IF_DGFX(to_gt(xe)) |
 					  XE_BO_CREATE_GGTT_BIT);
@@ -66,9 +66,9 @@ static int __xe_pin_fb_vma_dpt(struct intel_framebuffer *fb,
 		const struct intel_rotation_info *rot_info = &view->rotated;
 		u32 i, dpt_ofs = 0;
 
-		/* display uses 4K tiles instead of bytes here, we just need number of entrie.. */
+		/* display uses 4K tiles instead of bytes here, convert to entries.. */
 		dpt_size = ALIGN(intel_rotation_info_size(rot_info) * 8, GEN8_PAGE_SIZE);
-		dpt = xe_bo_create_pin_map(xe, NULL, NULL, dpt_size,
+		dpt = xe_bo_create_pin_map(xe, to_gt(xe), NULL, dpt_size,
 					  ttm_bo_type_kernel,
 					  XE_BO_CREATE_VRAM_IF_DGFX(to_gt(xe)) |
 					  XE_BO_CREATE_GGTT_BIT);
@@ -84,6 +84,8 @@ static int __xe_pin_fb_vma_dpt(struct intel_framebuffer *fb,
 					  rot_info->plane[i].dst_stride);
 	}
 
+	vma->dpt = dpt;
+	vma->node = dpt->ggtt_node;
 	return 0;
 }
 
@@ -219,9 +221,10 @@ static void __xe_unpin_fb_vma(struct i915_vma *vma)
 	struct xe_device *xe = to_xe_device(vma->bo->ttm.base.dev);
 	struct xe_ggtt *ggtt = to_gt(xe)->mem.ggtt;
 
-	xe_bo_unpin_map_no_vm(vma->dpt);
-
-	xe_ggtt_remove_node(ggtt, &vma->node);
+	if (vma->dpt)
+		xe_bo_unpin_map_no_vm(vma->dpt);
+	else
+		xe_ggtt_remove_node(ggtt, &vma->node);
 
 	ttm_bo_reserve(&vma->bo->ttm, false, false, NULL);
 	ttm_bo_unpin(&vma->bo->ttm);

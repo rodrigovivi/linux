@@ -150,6 +150,8 @@ struct xe_device {
 		bool enable_guc;
 		/** @has_flat_ccs: Whether flat CCS metadata is used */
 		bool has_flat_ccs;
+		/** @has_4tile: Whether tile-4 tiling is supported */
+		bool has_4tile;
 
 		struct xe_device_display_info {
 			u8 ver;

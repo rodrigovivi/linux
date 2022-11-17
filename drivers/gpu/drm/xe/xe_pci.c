@@ -69,6 +69,7 @@ struct xe_device_desc {
 
 	bool supports_usm;
 	bool has_flat_ccs;
+	bool has_4tile;
 };
 
 #define PLATFORM(x)		\
@@ -217,27 +218,42 @@ static const u16 dg2_g10_ids[] = { XE_DG2_G10_IDS(NOP), XE_ATS_M150_IDS(NOP), 0 
 static const u16 dg2_g11_ids[] = { XE_DG2_G11_IDS(NOP), XE_ATS_M75_IDS(NOP), 0 };
 static const u16 dg2_g12_ids[] = { XE_DG2_G12_IDS(NOP), 0 };
 
+#define DG2_FEATURES \
+	DGFX_FEATURES, \
+	.graphics_rel = 55, \
+	.media_rel = 55, \
+	PLATFORM(XE_DG2), \
+	.subplatforms = (const struct xe_subplatform_desc[]) { \
+		{ XE_SUBPLATFORM_DG2_G10, "G10", dg2_g10_ids }, \
+		{ XE_SUBPLATFORM_DG2_G11, "G11", dg2_g11_ids }, \
+		{ XE_SUBPLATFORM_DG2_G12, "G12", dg2_g12_ids }, \
+		{ } \
+	}, \
+	.platform_engine_mask = \
+		BIT(XE_HW_ENGINE_RCS0) | BIT(XE_HW_ENGINE_BCS0) | \
+		BIT(XE_HW_ENGINE_VECS0) | BIT(XE_HW_ENGINE_VECS1) | \
+		BIT(XE_HW_ENGINE_VCS0) | BIT(XE_HW_ENGINE_VCS2) | \
+		BIT(XE_HW_ENGINE_CCS0) | BIT(XE_HW_ENGINE_CCS1) | \
+		BIT(XE_HW_ENGINE_CCS2) | BIT(XE_HW_ENGINE_CCS3), \
+	.require_force_probe = true, \
+	.vram_flags = XE_VRAM_FLAGS_NEED64K, \
+	.has_4tile = 1
+
 static const struct xe_device_desc ats_m_desc = {
 	XE_HP_FEATURES,
 	XE_HPM_FEATURES,
-	DGFX_FEATURES,
-	.graphics_rel = 55,
-	.media_rel = 55,
-	PLATFORM(XE_DG2),
-	.subplatforms = (const struct xe_subplatform_desc[]) {
-		{ XE_SUBPLATFORM_DG2_G10, "G10", dg2_g10_ids },
-		{ XE_SUBPLATFORM_DG2_G11, "G11", dg2_g11_ids },
-		{ XE_SUBPLATFORM_DG2_G12, "G12", dg2_g12_ids },
-		{ }
-	},
-	.platform_engine_mask =
-		BIT(XE_HW_ENGINE_RCS0) | BIT(XE_HW_ENGINE_BCS0) |
-		BIT(XE_HW_ENGINE_VECS0) | BIT(XE_HW_ENGINE_VECS1) |
-		BIT(XE_HW_ENGINE_VCS0) | BIT(XE_HW_ENGINE_VCS2) |
-		BIT(XE_HW_ENGINE_CCS0) | BIT(XE_HW_ENGINE_CCS1) |
-		BIT(XE_HW_ENGINE_CCS2) | BIT(XE_HW_ENGINE_CCS3),
-	.require_force_probe = true,
-	.vram_flags = XE_VRAM_FLAGS_NEED64K,
+
+	DG2_FEATURES,
+};
+
+static const struct xe_device_desc dg2_desc = {
+	XE_HP_FEATURES,
+	XE_HPM_FEATURES,
+
+	DG2_FEATURES,
+	GEN13_DISPLAY,
+	.display.cpu_transcoder_mask = BIT(TRANSCODER_A) | BIT(TRANSCODER_B) |
+				       BIT(TRANSCODER_C) | BIT(TRANSCODER_D),
 };
 
 #define PVC_ENGINES \
@@ -334,7 +350,7 @@ static const struct pci_device_id pciidlist[] = {
 	XE_TGL_GT2_IDS(INTEL_VGA_DEVICE, &tgl_desc),
 	XE_DG1_IDS(INTEL_VGA_DEVICE, &dg1_desc),
 	XE_ATS_M_IDS(INTEL_VGA_DEVICE, &ats_m_desc),
-	XE_DG2_IDS(INTEL_VGA_DEVICE, &ats_m_desc), /* TODO: switch to proper dg2_desc */
+	XE_DG2_IDS(INTEL_VGA_DEVICE, &dg2_desc),
 	XE_ADLS_IDS(INTEL_VGA_DEVICE, &adl_s_desc),
 	XE_ADLP_IDS(INTEL_VGA_DEVICE, &adl_p_desc),
 	XE_PVC_IDS(INTEL_VGA_DEVICE, &pvc_desc),
@@ -397,6 +413,7 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	xe->info.media_ver = desc->media_ver;
 	xe->info.supports_usm = desc->supports_usm;
 	xe->info.has_flat_ccs = desc->has_flat_ccs;
+	xe->info.has_4tile = desc->has_4tile;
 	xe->info.display = desc->display;
 
 	spd = subplatform_get(xe, desc);
