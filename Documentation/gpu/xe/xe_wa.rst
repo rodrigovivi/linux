@@ -3,6 +3,9 @@
 Hardware workarounds
 ====================
 
+.. kernel-doc:: drivers/gpu/drm/xe/xe_wa.c
+   :doc: Hardware workarounds
+
 Internal API
 ------------
 
