@@ -24,10 +24,10 @@ struct xe_preempt_fence {
 	struct list_head link;
 	/** @engine: xe engine for this preempt fence */
 	struct xe_engine *engine;
-	/** @sfence: suspend fence returned from backend suspend vfunc */
-	struct dma_fence *sfence;
 	/** @preempt_work: work struct which issues preemption */
 	struct work_struct preempt_work;
+	/** @error: preempt fence is in error state */
+	int error;
 };
 
 #endif

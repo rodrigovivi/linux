@@ -15,13 +15,12 @@ static void preempt_fence_work_func(struct work_struct *w)
 	struct xe_preempt_fence *pfence =
 		container_of(w, typeof(*pfence), preempt_work);
 	struct xe_engine *e = pfence->engine;
-	struct dma_fence *sfence = pfence->sfence;
 	struct ww_acquire_ctx ww;
 
-	if (IS_ERR(sfence))
-		dma_fence_set_error(&pfence->base, PTR_ERR(sfence));
+	if (pfence->error)
+		dma_fence_set_error(&pfence->base, pfence->error);
 	else
-		dma_fence_wait(sfence, false);
+		e->ops->suspend_wait(e);
 
 	dma_fence_signal(&pfence->base);
 	dma_fence_end_signalling(cookie);
@@ -60,7 +59,7 @@ static bool preempt_fence_enable_signaling(struct dma_fence *fence)
 		container_of(fence, typeof(*pfence), base);
 	struct xe_engine *e = pfence->engine;
 
-	pfence->sfence = e->ops->suspend(e);
+	pfence->error = e->ops->suspend(e);
 	queue_work(system_unbound_wq, &pfence->preempt_work);
 	return true;
 }

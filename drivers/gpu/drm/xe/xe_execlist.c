@@ -450,11 +450,16 @@ static int execlist_engine_set_job_timeout(struct xe_engine *e,
 	return 0;
 }
 
-static struct dma_fence *
-execlist_engine_suspend(struct xe_engine *e)
+static int execlist_engine_suspend(struct xe_engine *e)
 {
 	/* NIY */
-	return NULL;
+	return 0;
+}
+
+static void execlist_engine_suspend_wait(struct xe_engine *e)
+
+{
+	/* NIY */
 }
 
 static void execlist_engine_resume(struct xe_engine *e)
@@ -471,6 +476,7 @@ static const struct xe_engine_ops execlist_engine_ops = {
 	.set_preempt_timeout = execlist_engine_set_preempt_timeout,
 	.set_job_timeout = execlist_engine_set_job_timeout,
 	.suspend = execlist_engine_suspend,
+	.suspend_wait = execlist_engine_suspend_wait,
 	.resume = execlist_engine_resume,
 };
 
