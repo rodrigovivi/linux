@@ -502,6 +502,8 @@ pcim_iomap()
 Not using these wrappers may make drivers unusable on certain platforms with
 stricter rules for mapping I/O memory.
 
+.. _iosys-map:
+
 Generalizing Access to System and I/O Memory
 ============================================
 

@@ -7,7 +7,7 @@
 #define _XE_BO_DOC_H_
 
 /**
- * DOC: XE buffer objects (BO)
+ * DOC: Buffer Objects (BO)
  *
  * BO management
  * =============
@@ -174,7 +174,6 @@
  *
  * Some kernel BOs do not need to be restored on resume (e.g. GuC ADS as that is
  * repopulated on resume), add flag to mark such objects as no save / restore.
- *
  */
 
 #endif

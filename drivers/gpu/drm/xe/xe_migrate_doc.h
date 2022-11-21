@@ -7,7 +7,7 @@
 #define _XE_MIGRATE_DOC_H_
 
 /**
- * DOC: XE migrate layer
+ * DOC: Migrate Layer
  *
  * The XE migrate layer is used generate jobs which can copy memory (eviction),
  * clear memory, or program tables (binds). This layer exists in every GT, has
@@ -83,7 +83,6 @@
  * Using large pages for sysmem mappings.
  *
  * Is it possible to identity map the sysmem? We should explore this.
- *
  */
 
 #endif

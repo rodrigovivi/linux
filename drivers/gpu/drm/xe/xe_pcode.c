@@ -12,7 +12,7 @@
 #include <linux/errno.h>
 
 /**
- * DOC: Xe PCODE
+ * DOC: PCODE
  *
  * Xe PCODE is the component responsible for interfacing with the PCODE
  * firmware.
