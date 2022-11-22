@@ -57,10 +57,10 @@ static int run_sanity_job(struct xe_migrate *m, struct xe_device *xe,
 }
 
 static void
-sanity_populate_cb(struct xe_gt *gt, struct iosys_map *map, void *dst,
+sanity_populate_cb(struct xe_migrate_pt_update *pt_update,
+		   struct xe_gt *gt, struct iosys_map *map, void *dst,
 		   u32 qword_ofs, u32 num_qwords,
-		   struct xe_vm_pgtable_update *update,
-		   void *arg)
+		   const struct xe_vm_pgtable_update *update)
 {
 	int i;
 	u64 *ptr = dst;
@@ -68,6 +68,10 @@ sanity_populate_cb(struct xe_gt *gt, struct iosys_map *map, void *dst,
 	for (i = 0; i < num_qwords; i++)
 		ptr[i] = (qword_ofs + i - update->ofs) * 0x1111111111111111ULL;
 }
+
+static const struct xe_migrate_pt_update_ops sanity_ops = {
+	.populate = sanity_populate_cb,
+};
 
 #define check(_retval, _expected, str, _test)				\
 	do { if ((_retval) != (_expected)) {				\
@@ -176,14 +180,16 @@ static void test_pt_update(struct xe_migrate *m, struct xe_bo *pt,
 		.qwords = 0x10,
 		.pt_bo = pt,
 	};
+	struct xe_migrate_pt_update pt_update = {
+		.ops = &sanity_ops,
+	};
 
 	/* Test xe_migrate_update_pgtables() updates the pagetable as expected */
 	expected = 0xf0f0f0f0f0f0f0f0ULL;
 	xe_map_memset(xe, &pt->vmap, 0, (u8)expected, pt->size);
 
 	fence = xe_migrate_update_pgtables(m, NULL, NULL, m->eng, &update, 1,
-					   NULL, 0, sanity_populate_cb,
-					   NULL);
+					   NULL, 0, &pt_update);
 	if (sanity_fence_failed(xe, fence, "Migration pagetable update", test))
 		return;
 

@@ -307,12 +307,12 @@ static int xe_ttm_io_mem_reserve(struct ttm_device *bdev,
 	return 0;
 }
 
-void xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo)
+static int xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo)
 {
 	struct dma_resv_iter cursor;
 	struct dma_fence *fence;
 	struct xe_vma *vma;
-	int ret;
+	int ret = 0;
 
 	if (!xe_device_in_fault_mode(xe) && !list_empty(&bo->vmas)) {
 		dma_resv_iter_begin(&cursor, bo->ttm.base.resv,
@@ -326,17 +326,25 @@ void xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo)
 		trace_xe_vma_evict(vma);
 
 		if (xe_device_in_fault_mode(xe)) {
-			ret = xe_vm_invalidate_vma(vma);
-			XE_WARN_ON(ret);
+			/* Wait for pending binds / unbinds. */
+			ret = dma_resv_wait_timeout(bo->ttm.base.resv,
+						    DMA_RESV_USAGE_BOOKKEEP,
+						    true, MAX_SCHEDULE_TIMEOUT);
+			if (!ret) {
+				ret = xe_vm_invalidate_vma(vma);
+				XE_WARN_ON(ret);
+			}
 		} else {
-			if (list_empty(&vma->evict_link))
-				list_add_tail(&vma->evict_link,
-					      &vma->vm->evict_list);
+			if (list_empty(&vma->rebind_link))
+				list_add_tail(&vma->rebind_link,
+					      &vma->vm->rebind_list);
 			if (xe_vm_in_compute_mode(vma->vm))
 				queue_work(xe->ordered_wq,
 					   &vma->vm->preempt.rebind_work);
 		}
 	}
+
+	return ret;
 }
 
 /*
@@ -398,11 +406,15 @@ out:
  *
  * A subsystem may commence access to the object after obtaining
  * bindings to the new backing memory under the object lock.
+ *
+ * Return: 0 on success, -EINTR or -ERESTARTSYS if interrupted in fault mode,
+ * negative error code on error.
  */
-static void xe_bo_move_notify(struct xe_bo *bo)
+static int xe_bo_move_notify(struct xe_bo *bo)
 {
 	struct ttm_buffer_object *ttm_bo = &bo->ttm;
 	struct xe_device *xe = ttm_to_xe_device(ttm_bo->bdev);
+	int ret;
 
 	/*
 	 * If this starts to call into many components, consider
@@ -410,13 +422,17 @@ static void xe_bo_move_notify(struct xe_bo *bo)
 	 */
 
 	if (xe_bo_is_pinned(bo))
-		return;
+		return -EINVAL;
 
-	xe_bo_trigger_rebind(xe, bo);
+	ret = xe_bo_trigger_rebind(xe, bo);
+	if (ret)
+		return ret;
 
 	/* Don't call move_notify() for imported dma-bufs. */
 	if (ttm_bo->base.dma_buf && !ttm_bo->base.import_attach)
 		dma_buf_move_notify(ttm_bo->base.dma_buf);
+
+	return 0;
 }
 
 static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
@@ -436,8 +452,9 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 	int ret = 0;
 
 	if (ttm_bo->type == ttm_bo_type_sg) {
-		xe_bo_move_notify(bo);
-		ret = xe_bo_move_dmabuf(ttm_bo, old_mem, new_mem);
+		ret = xe_bo_move_notify(bo);
+		if (!ret)
+			ret = xe_bo_move_dmabuf(ttm_bo, old_mem, new_mem);
 		goto out;
 	}
 
@@ -454,8 +471,12 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 		goto out;
 	}
 
-	if (!move_lacks_source)
-		xe_bo_move_notify(bo);
+	if (!move_lacks_source) {
+		ret = xe_bo_move_notify(bo);
+		if (ret)
+			goto out;
+	}
+
 	if (old_mem->mem_type == XE_PL_TT &&
 	    new_mem->mem_type == XE_PL_SYSTEM) {
 		long timeout = dma_resv_wait_timeout(ttm_bo->base.resv,
@@ -1360,6 +1381,40 @@ bool xe_bo_needs_ccs_pages(struct xe_bo *bo)
 	return bo->ttm.type == ttm_bo_type_device &&
 		!(bo->flags & XE_BO_CREATE_SYSTEM_BIT) &&
 		(bo->flags & (XE_BO_CREATE_VRAM0_BIT | XE_BO_CREATE_VRAM1_BIT));
+}
+
+/**
+ * __xe_bo_release_dummy() - Dummy kref release function
+ * @kref: The embedded struct kref.
+ *
+ * Dummy release function for xe_bo_put_deferred(). Keep off.
+ */
+void __xe_bo_release_dummy(struct kref *kref)
+{
+}
+
+/**
+ * xe_bo_put_commit() - Put bos whose put was deferred by xe_bo_put_deferred().
+ * @deferred: The lockless list used for the call to xe_bo_put_deferred().
+ *
+ * Puts all bos whose put was deferred by xe_bo_put_deferred().
+ * The @deferred list can be either an onstack local list or a global
+ * shared list used by a workqueue.
+ */
+void xe_bo_put_commit(struct llist_head *deferred)
+{
+	struct llist_node *freed;
+	struct xe_bo *bo, *next;
+
+	if (!deferred)
+		return;
+
+	freed = llist_del_all(deferred);
+	if (!freed)
+		return;
+
+	llist_for_each_entry_safe(bo, next, freed, freed)
+		drm_gem_object_free(&bo->ttm.base.refcount);
 }
 
 #if IS_ENABLED(CONFIG_DRM_XE_KUNIT_TEST)

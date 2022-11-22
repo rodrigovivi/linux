@@ -394,11 +394,6 @@ DEFINE_EVENT(xe_vma, xe_vma_evict,
 	     TP_ARGS(vma)
 );
 
-DEFINE_EVENT(xe_vma, xe_vma_userptr_pin_set_dirty,
-	     TP_PROTO(struct xe_vma *vma),
-	     TP_ARGS(vma)
-);
-
 DEFINE_EVENT(xe_vma, xe_vma_userptr_invalidate_complete,
 	     TP_PROTO(struct xe_vma *vma),
 	     TP_ARGS(vma)

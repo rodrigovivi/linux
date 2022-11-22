@@ -84,3 +84,13 @@ config DRM_XE_LARGE_GUC_BUFFER
           Recommended for driver developers only.
 
           If in doubt, say "N".
+
+config DRM_XE_USERPTR_INVAL_INJECT
+       bool "Inject userptr invalidation -EINVAL errors"
+       default n
+       help
+         Choose this option when debugging error paths that
+	 are hit during checks for userptr invalidations.
+
+	 Recomended for driver developers only.
+	 If in doubt, say "N".

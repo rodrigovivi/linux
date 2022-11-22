@@ -64,6 +64,8 @@ struct xe_bo {
 		 */
 		bool device_atomic;
 	} props;
+	/** @freed: List node for delayed put. */
+	struct llist_node freed;
 	/** @created: Whether the bo has passed initial creation */
 	bool created;
 };

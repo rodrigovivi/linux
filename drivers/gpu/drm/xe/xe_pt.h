@@ -32,7 +32,7 @@ int xe_pt_create_scratch(struct xe_device *xe, struct xe_gt *gt,
 void xe_pt_populate_empty(struct xe_gt *gt, struct xe_vm *vm,
 			  struct xe_pt *pt);
 
-void xe_pt_destroy(struct xe_pt *pt, u32 flags);
+void xe_pt_destroy(struct xe_pt *pt, u32 flags, struct llist_head *deferred);
 
 struct dma_fence *
 __xe_pt_bind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
@@ -42,6 +42,8 @@ __xe_pt_bind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 struct dma_fence *
 __xe_pt_unbind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 		   struct xe_sync_entry *syncs, u32 num_syncs);
+
+bool xe_pt_zap_ptes(struct xe_gt *gt, struct xe_vma *vma);
 
 u64 gen8_pde_encode(struct xe_bo *bo, u64 bo_offset,
 		    const enum xe_cache_level level);
