@@ -67,25 +67,25 @@ ct_to_xe(struct xe_guc_ct *ct)
 }
 
 /**
- * DOC: CTB Blob
+ * DOC: GuC CTB Blob
  *
  * We allocate single blob to hold both CTB descriptors and buffers:
  *
  *      +--------+-----------------------------------------------+------+
  *      | offset | contents                                      | size |
  *      +========+===============================================+======+
- *      | 0x0000 | H2G `CTB Descriptor`_ (send)                  |      |
+ *      | 0x0000 | H2G CTB Descriptor (send)                     |      |
  *      +--------+-----------------------------------------------+  4K  |
- *      | 0x0800 | G2H `CTB Descriptor`_ (g2h)                  |      |
+ *      | 0x0800 | G2H CTB Descriptor (g2h)                      |      |
  *      +--------+-----------------------------------------------+------+
- *      | 0x1000 | H2G `CT Buffer`_ (send)                       | n*4K |
+ *      | 0x1000 | H2G CT Buffer (send)                          | n*4K |
  *      |        |                                               |      |
  *      +--------+-----------------------------------------------+------+
- *      | 0x1000 | G2H `CT Buffer`_ (g2h)                       | m*4K |
+ *      | 0x1000 | G2H CT Buffer (g2h)                           | m*4K |
  *      | + n*4K |                                               |      |
  *      +--------+-----------------------------------------------+------+
  *
- * Size of each `CT Buffer`_ must be multiple of 4K.
+ * Size of each ``CT Buffer`` must be multiple of 4K.
  * We don't expect too many messages in flight at any time, unless we are
  * using the GuC submission. In that case each request requires a minimum
  * 2 dwords which gives us a maximum 256 queue'd requests. Hopefully this

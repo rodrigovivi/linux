@@ -350,7 +350,7 @@ int xe_pt_create_scratch(struct xe_device *xe, struct xe_gt *gt,
 }
 
 /**
- * DOC: pagetable building
+ * DOC: Pagetable building
  *
  * Below we use the term "page-table" for both page-directories, containing
  * pointers to lower level page-directories or page-tables, and level 0
