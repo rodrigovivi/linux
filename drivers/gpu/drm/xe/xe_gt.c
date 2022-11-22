@@ -294,10 +294,12 @@ int emit_wa_job(struct xe_gt *gt, struct xe_engine *e)
 	xa_for_each(&sr->xa, reg, entry)
 		++count;
 
-	bb->cs[bb->len++] = MI_LOAD_REGISTER_IMM(count);
-	xa_for_each(&sr->xa, reg, entry) {
-		bb->cs[bb->len++] = reg;
-		bb->cs[bb->len++] = entry->set_bits;
+	if (count) {
+		bb->cs[bb->len++] = MI_LOAD_REGISTER_IMM(count);
+		xa_for_each(&sr->xa, reg, entry) {
+			bb->cs[bb->len++] = reg;
+			bb->cs[bb->len++] = entry->set_bits;
+		}
 	}
 	bb->cs[bb->len++] = MI_NOOP;
 	bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
