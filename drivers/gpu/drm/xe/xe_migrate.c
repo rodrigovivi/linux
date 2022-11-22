@@ -493,7 +493,7 @@ static int job_add_deps(struct xe_sched_job *job, struct dma_resv *resv,
 	return drm_sched_job_add_dependencies_resv(&job->drm, resv, usage);
 }
 
-u64 xe_migrate_batch_base(struct xe_migrate *m, bool usm)
+static u64 xe_migrate_batch_base(struct xe_migrate *m, bool usm)
 {
 	return usm ? m->usm_batch_base_ofs : m->batch_base_ofs;
 }

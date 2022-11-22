@@ -253,7 +253,7 @@ int emit_nop_job(struct xe_gt *gt, struct xe_engine *e)
 	if (IS_ERR(bb))
 		return PTR_ERR(bb);
 
-	batch_ofs = xe_migrate_batch_base(gt->migrate, false);
+	batch_ofs = xe_bo_ggtt_addr(gt->kernel_bb_pool.bo);
 	job = xe_bb_create_wa_job(e, bb, batch_ofs);
 	if (IS_ERR(job)) {
 		xe_bb_free(bb, NULL);
@@ -294,11 +294,6 @@ int emit_wa_job(struct xe_gt *gt, struct xe_engine *e)
 	xa_for_each(&sr->xa, reg, entry)
 		++count;
 
-	/*
-	 * XXX: Are we allowed to do this from the BB. e.g. Do we need to set a
-	 * bit in the LRC to allow these commands or do we need to do this from
-	 * the ring? If it is the later xe_ring_ops will need to be updated.
-	 */
 	bb->cs[bb->len++] = MI_LOAD_REGISTER_IMM(count);
 	xa_for_each(&sr->xa, reg, entry) {
 		bb->cs[bb->len++] = reg;
@@ -307,7 +302,7 @@ int emit_wa_job(struct xe_gt *gt, struct xe_engine *e)
 	bb->cs[bb->len++] = MI_NOOP;
 	bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
 
-	batch_ofs = xe_migrate_batch_base(gt->migrate, false);
+	batch_ofs = xe_bo_ggtt_addr(gt->kernel_bb_pool.bo);
 	job = xe_bb_create_wa_job(e, bb, batch_ofs);
 	if (IS_ERR(job)) {
 		xe_bb_free(bb, NULL);
@@ -334,12 +329,12 @@ int xe_gt_record_default_lrcs(struct xe_gt *gt)
 	struct xe_device *xe = gt_to_xe(gt);
 	struct xe_hw_engine *hwe;
 	enum xe_hw_engine_id id;
+	int err = 0;
 
 	for_each_hw_engine(hwe, gt, id) {
 		struct xe_engine *e, *nop_e;
 		struct xe_vm *vm;
 		void *default_lrc;
-		int err = 0;
 
 		if (gt->default_lrc[hwe->class])
 			continue;
@@ -366,8 +361,8 @@ int xe_gt_record_default_lrcs(struct xe_gt *gt)
 		if (err)
 			goto put_engine;
 
-		nop_e = xe_engine_create(xe, vm, BIT(hwe->logical_instance), 1,
-					 hwe, ENGINE_FLAG_WA);
+		nop_e = xe_engine_create(xe, vm, BIT(hwe->logical_instance),
+					 1, hwe, ENGINE_FLAG_WA);
 		if (IS_ERR(nop_e)) {
 			err = PTR_ERR(nop_e);
 			goto put_engine;
@@ -396,10 +391,10 @@ put_engine:
 put_vm:
 		xe_vm_put(vm);
 		if (err)
-			return err;
+			break;
 	}
 
-	return 0;
+	return err;
 }
 
 int xe_gt_init(struct xe_gt *gt)

@@ -137,11 +137,16 @@ static int emit_pipe_imm_ggtt(u32 addr, u32 value, bool stall_only, u32 *dw,
 	return i;
 }
 
+static u32 get_ppgtt_flag(struct xe_sched_job *job)
+{
+	return !(job->engine->flags & ENGINE_FLAG_WA) ? BIT(8) : 0;
+}
+
 static void __emit_job_gen12_copy(struct xe_sched_job *job, struct xe_lrc *lrc,
 				  u64 batch_addr, u32 seqno)
 {
 	u32 dw[MAX_JOB_SIZE_DW], i = 0;
-	u32 ppgtt_flag = job->engine->vm ? BIT(8) : 0;
+	u32 ppgtt_flag = get_ppgtt_flag(job);
 
 	/* XXX: Conditional flushing possible */
 	dw[i++] = preparser_disable(true);
@@ -171,7 +176,7 @@ static void __emit_job_gen12_video(struct xe_sched_job *job, struct xe_lrc *lrc,
 				   u64 batch_addr, u32 seqno)
 {
 	u32 dw[MAX_JOB_SIZE_DW], i = 0;
-	u32 ppgtt_flag = job->engine->vm ? BIT(8) : 0;
+	u32 ppgtt_flag = get_ppgtt_flag(job);
 	struct xe_gt *gt = job->engine->gt;
 	struct xe_device *xe = gt_to_xe(gt);
 	bool decode = job->engine->class == XE_ENGINE_CLASS_VIDEO_DECODE;
@@ -235,7 +240,7 @@ static void __emit_job_gen12_render_compute(struct xe_sched_job *job,
 					    u64 batch_addr, u32 seqno)
 {
 	u32 dw[MAX_JOB_SIZE_DW], i = 0;
-	u32 ppgtt_flag = job->engine->vm ? BIT(8) : 0;
+	u32 ppgtt_flag = get_ppgtt_flag(job);
 	struct xe_gt *gt = job->engine->gt;
 	struct xe_device *xe = gt_to_xe(gt);
 	bool pvc = xe->info.platform == XE_PVC;

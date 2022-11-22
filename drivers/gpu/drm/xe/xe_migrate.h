@@ -70,7 +70,6 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 				   struct ttm_resource *dst,
 				   u32 value);
 
-u64 xe_migrate_batch_base(struct xe_migrate *m, bool usm);
 struct xe_vm *xe_migrate_get_vm(struct xe_migrate *m);
 
 struct dma_fence *
