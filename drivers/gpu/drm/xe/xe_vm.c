@@ -455,9 +455,9 @@ retry:
 		goto out_unlock;
 	}
 
-	read_lock(&vm->userptr.notifier_lock);
+	down_read(&vm->userptr.notifier_lock);
 	if (__xe_vm_userptr_needs_repin(vm)) {
-		read_unlock(&vm->userptr.notifier_lock);
+		up_read(&vm->userptr.notifier_lock);
 		err = -EAGAIN;
 		goto out_unlock;
 	}
@@ -466,7 +466,7 @@ retry:
 	arm_preempt_fences(vm, &preempt_fences);
 	vm->preempt.resume_go = 1;
 	resume_and_reinstall_preempt_fences(vm);
-	read_unlock(&vm->userptr.notifier_lock);
+	up_read(&vm->userptr.notifier_lock);
 
 out_unlock:
 	ttm_eu_backoff_reservation(&ww, &objs);
@@ -521,7 +521,7 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 	if (!mmu_notifier_range_blockable(range))
 		return false;
 
-	write_lock(&vm->userptr.notifier_lock);
+	down_write(&vm->userptr.notifier_lock);
 	mmu_interval_set_seq(mni, cur_seq);
 
 	if (!xe_vm_in_fault_mode(vm)) {
@@ -537,11 +537,11 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 	 */
 	if (current->flags & PF_EXITING || vma->destroyed ||
 	    !vma->userptr.initial_bind) {
-		write_unlock(&vm->userptr.notifier_lock);
+		up_write(&vm->userptr.notifier_lock);
 		return true;
 	}
 
-	write_unlock(&vm->userptr.notifier_lock);
+	up_write(&vm->userptr.notifier_lock);
 
 	/*
 	 * Preempt fences turn into schedule disables, pipeline these.
@@ -656,9 +656,9 @@ int xe_vm_userptr_needs_repin(struct xe_vm *vm)
 	int err;
 
 	lockdep_assert_held(&vm->lock);
-	read_lock(&vm->userptr.notifier_lock);
+	down_read(&vm->userptr.notifier_lock);
 	err = __xe_vm_userptr_needs_repin(vm);
-	read_unlock(&vm->userptr.notifier_lock);
+	up_read(&vm->userptr.notifier_lock);
 
 	return err;
 }
@@ -898,7 +898,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 
 	INIT_LIST_HEAD(&vm->userptr.repin_list);
 	INIT_LIST_HEAD(&vm->userptr.invalidated);
-	rwlock_init(&vm->userptr.notifier_lock);
+	init_rwsem(&vm->userptr.notifier_lock);
 	spin_lock_init(&vm->userptr.invalidated_lock);
 
 	INIT_LIST_HEAD(&vm->async_ops.pending);

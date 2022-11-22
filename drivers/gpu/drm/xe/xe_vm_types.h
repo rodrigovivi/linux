@@ -234,7 +234,7 @@ struct xe_vm {
 		 * @notifier_lock: protects notifier in write mode and
 		 * submission in read mode.
 		 */
-		rwlock_t notifier_lock;
+		struct rw_semaphore notifier_lock;
 		/**
 		 * @userptr.invalidated_lock: Protects the
 		 * @userptr.invalidated list.
