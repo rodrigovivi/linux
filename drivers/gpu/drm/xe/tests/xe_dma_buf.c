@@ -23,7 +23,7 @@ static void check_residency(struct kunit *test, struct xe_bo *exported,
 			    struct xe_bo *imported, struct dma_buf *dmabuf)
 {
 	static struct ttm_operation_ctx ctx = {.interruptible = true};
-	struct dma_buf_test_params *params = test->priv;
+	struct dma_buf_test_params *params = to_dma_buf_test_params(test->priv);
 	u32 mem_type;
 	int ret;
 
@@ -103,7 +103,7 @@ static void check_residency(struct kunit *test, struct xe_bo *exported,
 static void xe_test_dmabuf_import_same_driver(struct xe_device *xe)
 {
 	struct kunit *test = xe_cur_kunit();
-	struct dma_buf_test_params *params = test->priv;
+	struct dma_buf_test_params *params = to_dma_buf_test_params(test->priv);
 	struct drm_gem_object *import;
 	struct dma_buf *dmabuf;
 	struct xe_bo *bo;
@@ -242,7 +242,10 @@ static int dma_buf_run_device(struct xe_device *xe)
 	struct kunit *test = xe_cur_kunit();
 
 	for (params = test_params; params->mem_mask; ++params) {
-		test->priv = (void __force *)params;
+		struct dma_buf_test_params p = *params;
+
+		p.base.id = XE_TEST_LIVE_DMA_BUF;
+		test->priv = &p;
 		xe_test_dmabuf_import_same_driver(xe);
 	}
 
