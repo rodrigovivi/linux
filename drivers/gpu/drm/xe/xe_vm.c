@@ -510,7 +510,6 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 {
 	struct xe_vma *vma = container_of(mni, struct xe_vma, userptr.notifier);
 	struct xe_vm *vm = vma->vm;
-	struct xe_device *xe = vm->xe;
 	struct dma_resv_iter cursor;
 	struct dma_fence *fence;
 	long err;
@@ -560,10 +559,7 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 				    false, MAX_SCHEDULE_TIMEOUT);
 	XE_WARN_ON(err <= 0);
 
-	/* If this VM in compute mode, rebind the VMA */
-	if (xe_vm_in_compute_mode(vm)) {
-		queue_work(xe->ordered_wq, &vm->preempt.rebind_work);
-	} else if (xe_vm_in_fault_mode(vm)) {
+	if (xe_vm_in_fault_mode(vm)) {
 		err = xe_vm_invalidate_vma(vma);
 		XE_WARN_ON(err);
 	}
