@@ -615,7 +615,7 @@ int xe_guc_send_mmio(struct xe_guc *guc, const u32 *request, u32 len)
 	int ret;
 	int i;
 
-	XE_BUG_ON(guc->ct.enabled);
+	//XE_BUG_ON(guc->ct.enabled);	/* FIXME - add this back once driver load order is fixed */
 	XE_BUG_ON(!len);
 	XE_BUG_ON(len > GEN11_SOFT_SCRATCH_COUNT);
 	XE_BUG_ON(len > MEDIA_SOFT_SCRATCH_COUNT);
