@@ -9067,6 +9067,7 @@ void intel_modeset_driver_remove(struct drm_i915_private *i915)
 #ifdef I915
 	flush_work(&i915->display.atomic_helper.free_work);
 	drm_WARN_ON(&i915->drm, !llist_empty(&i915->display.atomic_helper.free_list));
+#endif
 
 	/*
 	 * MST topology needs to be suspended so we don't have any calls to
@@ -9074,7 +9075,6 @@ void intel_modeset_driver_remove(struct drm_i915_private *i915)
 	 * drm_mode_config_cleanup()
 	 */
 	intel_dp_mst_suspend(i915);
-#endif
 }
 
 /* part #2: call after irq uninstall */

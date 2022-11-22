@@ -10,6 +10,7 @@
 #include <drm/drm_ioctl.h>
 #include <drm/xe_drm.h>
 #include <drm/drm_managed.h>
+#include <drm/drm_atomic_helper.h>
 
 #include "xe_bo.h"
 #include "xe_debugfs.h"
@@ -26,6 +27,7 @@
 #include "xe_vm_madvise.h"
 #include "xe_wait_user_fence.h"
 
+#include "display/intel_acpi.h"
 #include "display/intel_bw.h"
 #include "display/intel_display.h"
 #include "display/intel_opregion.h"
@@ -159,6 +161,16 @@ static const struct drm_driver driver = {
 	.patchlevel = DRIVER_PATCHLEVEL,
 };
 
+static void xe_device_destroy(struct drm_device *dev, void *dummy)
+{
+	struct xe_device *xe = to_xe_device(dev);
+
+	destroy_workqueue(xe->display.hotplug.dp_wq);
+	destroy_workqueue(xe->ordered_wq);
+	mutex_destroy(&xe->persitent_engines.lock);
+	ttm_device_fini(&xe->ttm);
+}
+
 struct xe_device *xe_device_create(struct pci_dev *pdev,
 				   const struct pci_device_id *ent)
 {
@@ -223,10 +235,15 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 	xe->params.enable_psr2_sel_fetch = -1;
 	xe->params.panel_use_ssc = -1;
 
+	err = drmm_add_action_or_reset(&xe->drm, xe_device_destroy, NULL);
+	if (err)
+		goto err;
+
 	return xe;
 
 err_put:
 	drm_dev_put(&xe->drm);
+err:
 	return ERR_PTR(err);
 }
 
@@ -259,6 +276,7 @@ static void xe_device_fini_display_noirq(struct drm_device *dev, void *dummy)
 	struct xe_device *xe = to_xe_device(dev);
 
 	intel_modeset_driver_remove_noirq(xe);
+	intel_power_domains_driver_remove(xe);
 }
 
 static int xe_device_init_display_noirq(struct xe_device *xe)
@@ -306,20 +324,9 @@ static int xe_device_init_display_early(struct xe_device *xe)
 	return drmm_add_action_or_reset(&xe->drm, xe_device_fini_display_early, NULL);
 }
 
-static void xe_device_fini_display_late(struct drm_device *dev, void *dummy)
-{
-	struct xe_device *xe = to_xe_device(dev);
-
-	intel_modeset_driver_remove(xe);
-}
-
 static int xe_device_init_display_late(struct xe_device *xe)
 {
-	int err = intel_modeset_init(xe);
-	if (err)
-		return err;
-
-	return drmm_add_action_or_reset(&xe->drm, xe_device_fini_display_late, NULL);
+	return intel_modeset_init(xe);
 }
 
 int xe_device_probe(struct xe_device *xe)
@@ -379,18 +386,22 @@ int xe_device_probe(struct xe_device *xe)
 
 	err = xe_device_init_display_late(xe);
 	if (err)
-		goto err_irq_shutdown;
+		goto err_fini_display;
 
 	err = drm_dev_register(&xe->drm, 0);
 	if (err)
 		goto err_irq_shutdown;
 
 	intel_display_driver_register(xe);
+	intel_register_dsm_handler();
+	intel_power_domains_enable(xe);
 
 	xe_debugfs_register(xe);
 
 	return 0;
 
+err_fini_display:
+	intel_modeset_driver_remove(xe);
 err_irq_shutdown:
 	xe_irq_shutdown(xe);
 	return err;
@@ -398,20 +409,20 @@ err_irq_shutdown:
 
 static void xe_device_remove_display(struct xe_device *xe)
 {
+	intel_unregister_dsm_handler();
 	intel_power_domains_disable(xe);
 	intel_display_driver_unregister(xe);
+
+	drm_dev_unplug(&xe->drm);
+
+	intel_modeset_driver_remove(xe);
 }
 
 void xe_device_remove(struct xe_device *xe)
 {
 	xe_device_remove_display(xe);
 
-	destroy_workqueue(xe->display.hotplug.dp_wq);
-	destroy_workqueue(xe->ordered_wq);
-	mutex_destroy(&xe->persitent_engines.lock);
 	xe_irq_shutdown(xe);
-	drm_dev_unregister(&xe->drm);
-	ttm_device_fini(&xe->ttm);
 }
 
 void xe_device_shutdown(struct xe_device *xe)
