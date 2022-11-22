@@ -493,7 +493,7 @@ static int job_add_deps(struct xe_sched_job *job, struct dma_resv *resv,
 	return drm_sched_job_add_dependencies_resv(&job->drm, resv, usage);
 }
 
-static u64 migrate_batch_base(struct xe_migrate *m, bool usm)
+u64 xe_migrate_batch_base(struct xe_migrate *m, bool usm)
 {
 	return usm ? m->usm_batch_base_ofs : m->batch_base_ofs;
 }
@@ -638,7 +638,7 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 
 		mutex_lock(&m->job_mutex);
 		job = xe_bb_create_migration_job(m->eng, bb,
-						 migrate_batch_base(m, usm),
+						 xe_migrate_batch_base(m, usm),
 						 update_idx);
 		if (IS_ERR(job)) {
 			err = PTR_ERR(job);
@@ -798,7 +798,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 
 		mutex_lock(&m->job_mutex);
 		job = xe_bb_create_migration_job(m->eng, bb,
-						 migrate_batch_base(m, usm),
+						 xe_migrate_batch_base(m, usm),
 						 update_idx);
 		if (IS_ERR(job)) {
 			err = PTR_ERR(job);
@@ -1085,7 +1085,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 		mutex_lock(&m->job_mutex);
 
 	job = xe_bb_create_migration_job(eng ?: m->eng, bb,
-					 migrate_batch_base(m, usm),
+					 xe_migrate_batch_base(m, usm),
 					 update_idx);
 	if (IS_ERR(job)) {
 		err = PTR_ERR(job);

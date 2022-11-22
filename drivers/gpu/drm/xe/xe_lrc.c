@@ -34,7 +34,7 @@ lrc_to_xe(struct xe_lrc *lrc)
 	return gt_to_xe(lrc->fence_ctx.gt);
 }
 
-static u32 lrc_size(struct xe_device *xe, enum xe_engine_class class)
+size_t xe_lrc_size(struct xe_device *xe, enum xe_engine_class class)
 {
 	switch (class) {
 	case XE_ENGINE_CLASS_RENDER:
@@ -475,37 +475,53 @@ static inline u32 __xe_lrc_ring_offset(struct xe_lrc *lrc)
 	return 0;
 }
 
-static inline u32 __xe_lrc_pphwsp_offset(struct xe_lrc *lrc)
+u32 xe_lrc_pphwsp_offset(struct xe_lrc *lrc)
 {
 	return lrc->ring.size;
 }
+
+/* Make the magic macros work */
+#define __xe_lrc_pphwsp_offset xe_lrc_pphwsp_offset
 
 #define LRC_SEQNO_PPHWSP_OFFSET 512
 #define LRC_START_SEQNO_PPHWSP_OFFSET LRC_SEQNO_PPHWSP_OFFSET + 8
 #define LRC_PARALLEL_PPHWSP_OFFSET 2048
 #define LRC_PPHWSP_SIZE SZ_4K
 
+static size_t lrc_reg_size(struct xe_device *xe)
+{
+	if (GRAPHICS_VERx100(xe) >= 1250)
+		return 96 * sizeof(u32);
+	else
+		return 80 * sizeof(u32);
+}
+
+size_t xe_lrc_skip_size(struct xe_device *xe)
+{
+	return LRC_PPHWSP_SIZE + lrc_reg_size(xe);
+}
+
 static inline u32 __xe_lrc_seqno_offset(struct xe_lrc *lrc)
 {
 	/* The seqno is stored in the driver-defined portion of PPHWSP */
-	return __xe_lrc_pphwsp_offset(lrc) + LRC_SEQNO_PPHWSP_OFFSET;
+	return xe_lrc_pphwsp_offset(lrc) + LRC_SEQNO_PPHWSP_OFFSET;
 }
 
 static inline u32 __xe_lrc_start_seqno_offset(struct xe_lrc *lrc)
 {
 	/* The start seqno is stored in the driver-defined portion of PPHWSP */
-	return __xe_lrc_pphwsp_offset(lrc) + LRC_START_SEQNO_PPHWSP_OFFSET;
+	return xe_lrc_pphwsp_offset(lrc) + LRC_START_SEQNO_PPHWSP_OFFSET;
 }
 
 static inline u32 __xe_lrc_parallel_offset(struct xe_lrc *lrc)
 {
 	/* The parallel is stored in the driver-defined portion of PPHWSP */
-	return __xe_lrc_pphwsp_offset(lrc) + LRC_PARALLEL_PPHWSP_OFFSET;
+	return xe_lrc_pphwsp_offset(lrc) + LRC_PARALLEL_PPHWSP_OFFSET;
 }
 
 static inline u32 __xe_lrc_regs_offset(struct xe_lrc *lrc)
 {
-	return __xe_lrc_pphwsp_offset(lrc) + LRC_PPHWSP_SIZE;
+	return xe_lrc_pphwsp_offset(lrc) + LRC_PPHWSP_SIZE;
 }
 
 #define DECL_MAP_ADDR_HELPERS(elem) \
@@ -562,7 +578,7 @@ static void *empty_lrc_data(struct xe_hw_engine *hwe)
 	void *data;
 	u32 *regs;
 
-	data = kzalloc(lrc_size(xe, hwe->class), GFP_KERNEL);
+	data = kzalloc(xe_lrc_size(xe, hwe->class), GFP_KERNEL);
 	if (!data)
 		return NULL;
 
@@ -591,16 +607,17 @@ static void xe_lrc_set_ppgtt(struct xe_lrc *lrc, struct xe_vm *vm)
 int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 		struct xe_engine *e, struct xe_vm *vm, u32 ring_size)
 {
-	struct xe_device *xe = gt_to_xe(hwe->gt);
+	struct xe_gt *gt = hwe->gt;
+	struct xe_device *xe = gt_to_xe(gt);
 	struct iosys_map map;
-	void *init_data;
+	void *init_data = NULL;
 	u32 arb_enable;
 	int err;
 
 	lrc->flags = 0;
 
 	lrc->bo = xe_bo_create_locked(xe, hwe->gt, vm,
-				      ring_size + lrc_size(xe, hwe->class),
+				      ring_size + xe_lrc_size(xe, hwe->class),
 				      ttm_bo_type_kernel,
 				      XE_BO_CREATE_VRAM_IF_DGFX(hwe->gt) |
 				      XE_BO_CREATE_GGTT_BIT);
@@ -633,16 +650,29 @@ int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 	xe_hw_fence_ctx_init(&lrc->fence_ctx, hwe->gt,
 			     hwe->fence_irq, hwe->name);
 
-	init_data = empty_lrc_data(hwe);
-	if (!init_data) {
-		xe_lrc_finish(lrc);
-		return -ENOMEM;
+	if (!gt->default_lrc[hwe->class]) {
+		init_data = empty_lrc_data(hwe);
+		if (!init_data) {
+			xe_lrc_finish(lrc);
+			return -ENOMEM;
+		}
 	}
 
-	/* Per-Process of HW status Page */
+	/*
+	 * Init Per-Process of HW status Page, LRC / context state to known
+	 * values
+	 */
 	map = __xe_lrc_pphwsp_map(lrc);
-	xe_map_memcpy_to(xe, &map, 0, init_data, lrc_size(xe, hwe->class));
-	kfree(init_data);
+	if (!init_data) {
+		xe_map_memset(xe, &map, 0, 0, LRC_PPHWSP_SIZE);	/* PPHWSP */
+		xe_map_memcpy_to(xe, &map, LRC_PPHWSP_SIZE,
+				 gt->default_lrc[hwe->class] + LRC_PPHWSP_SIZE,
+				 xe_lrc_size(xe, hwe->class) - LRC_PPHWSP_SIZE);
+	} else {
+		xe_map_memcpy_to(xe, &map, 0, init_data,
+				 xe_lrc_size(xe, hwe->class));
+		kfree(init_data);
+	}
 
 	if (vm)
 		xe_lrc_set_ppgtt(lrc, vm);

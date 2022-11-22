@@ -46,4 +46,7 @@ xe_sched_job_add_migrate_flush(struct xe_sched_job *job, u32 flags)
 {
 	job->migrate_flush_flags = flags;
 }
+
+bool xe_sched_job_is_migration(struct xe_engine *e);
+
 #endif

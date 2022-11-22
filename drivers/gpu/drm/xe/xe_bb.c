@@ -51,6 +51,16 @@ __xe_bb_create_job(struct xe_engine *kernel_eng, struct xe_bb *bb, u64 *addr)
 	return xe_sched_job_create(kernel_eng, addr);
 }
 
+struct xe_sched_job *xe_bb_create_wa_job(struct xe_engine *wa_eng,
+					 struct xe_bb *bb, u64 batch_base_ofs)
+{
+	u64 addr = batch_base_ofs + drm_suballoc_soffset(bb->bo);
+
+	XE_BUG_ON(!(wa_eng->vm->flags & XE_VM_FLAG_MIGRATION));
+
+	return __xe_bb_create_job(wa_eng, bb, &addr);
+}
+
 struct xe_sched_job *xe_bb_create_migration_job(struct xe_engine *kernel_eng,
 						struct xe_bb *bb,
 						u64 batch_base_ofs,

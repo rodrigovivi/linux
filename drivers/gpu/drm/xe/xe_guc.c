@@ -303,6 +303,8 @@ int xe_guc_post_load_init(struct xe_guc *guc)
 	if (ret)
 		goto out;
 
+	xe_guc_ads_populate_post_load(&guc->ads);
+
 	return 0;
 
 out:

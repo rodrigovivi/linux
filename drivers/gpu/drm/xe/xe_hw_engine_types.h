@@ -84,6 +84,10 @@ struct xe_hw_engine {
 	 * @reg_whitelist: table with registers to be whitelisted
 	 */
 	struct xe_reg_sr reg_whitelist;
+	/**
+	 * @reg_lrc: LRC workaround registers
+	 */
+	struct xe_reg_sr reg_lrc;
 	/** @domain: force wake domain of this hw engine */
 	enum xe_force_wake_domains domain;
 	/** @hwsp: hardware status page buffer object */

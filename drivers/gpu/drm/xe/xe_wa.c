@@ -28,7 +28,7 @@
  * platform. There are some basic categories of workarounds, depending on
  * how/when they are applied:
  *
- * - Context workarounds: workarounds that touch registers that are
+ * - LRC workarounds: workarounds that touch registers that are
  *   saved/restored to/from the HW context image. The list is emitted (via Load
  *   Register Immediate commands) once when initializing the device and saved in
  *   the default context. That default context is then used on every context
@@ -254,7 +254,7 @@ static const struct xe_rtp_entry engine_was[] = {
 	{}
 };
 
-static const struct xe_rtp_entry context_was[] = {
+static const struct xe_rtp_entry lrc_was[] = {
 	{ XE_RTP_NAME("1409342910, 14010698770, 14010443199, 1408979724, 1409178076, 1409207793, 1409217633, 1409252684, 1409347922, 1409142259"),
 	  XE_RTP_RULES(GRAPHICS_VERSION_RANGE(1200, 1210)),
 	  XE_RTP_SET(GEN11_COMMON_SLICE_CHICKEN3,
@@ -350,16 +350,16 @@ void xe_wa_process_engine(struct xe_hw_engine *hwe)
 }
 
 /**
- * xe_wa_process_ctx - process context workaround table
+ * xe_wa_process_lrc - process context workaround table
  * @hwe: engine instance to process workarounds for
  *
  * Process context workaround table for this platform, saving in @hwe all the
  * workarounds that need to be applied on context restore. These are workarounds
  * touching registers that are part of the HW context image.
  */
-void xe_wa_process_ctx(struct xe_hw_engine *hwe)
+void xe_wa_process_lrc(struct xe_hw_engine *hwe)
 {
-	//xe_rtp_process(context_was, &hwe->reg_sr, gt, hwe);
+	xe_rtp_process(lrc_was, &hwe->reg_lrc, hwe->gt, hwe);
 }
 
 /**

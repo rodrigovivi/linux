@@ -305,7 +305,7 @@ static void emit_job_gen12_copy(struct xe_sched_job *job)
 {
 	int i;
 
-	if (job->engine->vm && job->engine->vm->flags & XE_VM_FLAG_MIGRATION) {
+	if (xe_sched_job_is_migration(job->engine)) {
 		emit_migration_job_gen12(job, job->engine->lrc,
 					 xe_sched_job_seqno(job));
 		return;

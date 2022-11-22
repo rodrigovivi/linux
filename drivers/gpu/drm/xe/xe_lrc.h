@@ -7,7 +7,9 @@
 
 #include "xe_lrc_types.h"
 
+struct xe_device;
 struct xe_engine;
+enum xe_engine_class;
 struct xe_hw_engine;
 struct xe_vm;
 
@@ -16,6 +18,9 @@ struct xe_vm;
 int xe_lrc_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe,
 		struct xe_engine *e, struct xe_vm *vm, u32 ring_size);
 void xe_lrc_finish(struct xe_lrc *lrc);
+
+size_t xe_lrc_size(struct xe_device *xe, enum xe_engine_class class);
+u32 xe_lrc_pphwsp_offset(struct xe_lrc *lrc);
 
 void xe_lrc_set_ring_head(struct xe_lrc *lrc, u32 head);
 u32 xe_lrc_ring_head(struct xe_lrc *lrc);
@@ -39,5 +44,7 @@ s32 xe_lrc_start_seqno(struct xe_lrc *lrc);
 
 u32 xe_lrc_parallel_ggtt_addr(struct xe_lrc *lrc);
 struct iosys_map xe_lrc_parallel_map(struct xe_lrc *lrc);
+
+size_t xe_lrc_skip_size(struct xe_device *xe);
 
 #endif

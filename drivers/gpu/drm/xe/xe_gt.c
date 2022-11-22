@@ -7,9 +7,10 @@
 
 #include <drm/drm_managed.h>
 
+#include "xe_bb.h"
 #include "xe_bo.h"
 #include "xe_device.h"
-#include "xe_engine_types.h"
+#include "xe_engine.h"
 #include "xe_execlist.h"
 #include "xe_force_wake.h"
 #include "xe_ggtt.h"
@@ -20,16 +21,20 @@
 #include "xe_gt_sysfs.h"
 #include "xe_gt_topology.h"
 #include "xe_hw_fence.h"
+#include "xe_lrc.h"
+#include "xe_map.h"
 #include "xe_migrate.h"
 #include "xe_mmio.h"
 #include "xe_mocs.h"
 #include "xe_reg_sr.h"
 #include "xe_ring_ops.h"
 #include "xe_sa.h"
+#include "xe_sched_job.h"
 #include "xe_ttm_gtt_mgr.h"
 #include "xe_ttm_vram_mgr.h"
 #include "xe_tuning.h"
 #include "xe_uc.h"
+#include "xe_vm.h"
 #include "xe_wa.h"
 #include "xe_wopcm.h"
 
@@ -236,6 +241,167 @@ err_fw:
 	return err;
 }
 
+int emit_nop_job(struct xe_gt *gt, struct xe_engine *e)
+{
+	struct xe_sched_job *job;
+	struct xe_bb *bb;
+	struct dma_fence *fence;
+	u64 batch_ofs;
+	long timeout;
+
+	bb = xe_bb_new(gt, 4, false);
+	if (IS_ERR(bb))
+		return PTR_ERR(bb);
+
+	batch_ofs = xe_migrate_batch_base(gt->migrate, false);
+	job = xe_bb_create_wa_job(e, bb, batch_ofs);
+	if (IS_ERR(job)) {
+		xe_bb_free(bb, NULL);
+		return PTR_ERR(bb);
+	}
+
+	xe_sched_job_arm(job);
+	fence = dma_fence_get(&job->drm.s_fence->finished);
+	xe_sched_job_push(job);
+
+	timeout = dma_fence_wait_timeout(fence, false, HZ);
+	dma_fence_put(fence);
+	xe_bb_free(bb, NULL);
+	if (timeout < 0)
+		return timeout;
+	else if (!timeout)
+		return -ETIME;
+
+	return 0;
+}
+
+int emit_wa_job(struct xe_gt *gt, struct xe_engine *e)
+{
+	struct xe_reg_sr *sr = &e->hwe->reg_lrc;
+	struct xe_reg_sr_entry *entry;
+	unsigned long reg;
+	struct xe_sched_job *job;
+	struct xe_bb *bb;
+	struct dma_fence *fence;
+	u64 batch_ofs;
+	long timeout;
+	int count = 0;
+
+	bb = xe_bb_new(gt, SZ_4K, false);	/* Just pick a large BB size */
+	if (IS_ERR(bb))
+		return PTR_ERR(bb);
+
+	xa_for_each(&sr->xa, reg, entry)
+		++count;
+
+	/*
+	 * XXX: Are we allowed to do this from the BB. e.g. Do we need to set a
+	 * bit in the LRC to allow these commands or do we need to do this from
+	 * the ring? If it is the later xe_ring_ops will need to be updated.
+	 */
+	bb->cs[bb->len++] = MI_LOAD_REGISTER_IMM(count);
+	xa_for_each(&sr->xa, reg, entry) {
+		bb->cs[bb->len++] = reg;
+		bb->cs[bb->len++] = entry->set_bits;
+	}
+	bb->cs[bb->len++] = MI_NOOP;
+	bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
+
+	batch_ofs = xe_migrate_batch_base(gt->migrate, false);
+	job = xe_bb_create_wa_job(e, bb, batch_ofs);
+	if (IS_ERR(job)) {
+		xe_bb_free(bb, NULL);
+		return PTR_ERR(bb);
+	}
+
+	xe_sched_job_arm(job);
+	fence = dma_fence_get(&job->drm.s_fence->finished);
+	xe_sched_job_push(job);
+
+	timeout = dma_fence_wait_timeout(fence, false, HZ);
+	dma_fence_put(fence);
+	xe_bb_free(bb, NULL);
+	if (timeout < 0)
+		return timeout;
+	else if (!timeout)
+		return -ETIME;
+
+	return 0;
+}
+
+int xe_gt_record_default_lrcs(struct xe_gt *gt)
+{
+	struct xe_device *xe = gt_to_xe(gt);
+	struct xe_hw_engine *hwe;
+	enum xe_hw_engine_id id;
+
+	for_each_hw_engine(hwe, gt, id) {
+		struct xe_engine *e, *nop_e;
+		struct xe_vm *vm;
+		void *default_lrc;
+		int err = 0;
+
+		if (gt->default_lrc[hwe->class])
+			continue;
+
+		xe_reg_sr_init(&hwe->reg_lrc, "LRC", xe);
+		xe_wa_process_lrc(hwe);
+
+		default_lrc = drmm_kzalloc(&xe->drm,
+					   xe_lrc_size(xe, hwe->class),
+					   GFP_KERNEL);
+		if (!default_lrc)
+			return -ENOMEM;
+
+		vm = xe_migrate_get_vm(gt->migrate);
+		e = xe_engine_create(xe, vm, BIT(hwe->logical_instance), 1,
+				     hwe, ENGINE_FLAG_WA);
+		if (IS_ERR(e)) {
+			err = PTR_ERR(e);
+			goto put_vm;
+		}
+
+		/* Prime golden LRC with known good state */
+		err = emit_wa_job(gt, e);
+		if (err)
+			goto put_engine;
+
+		nop_e = xe_engine_create(xe, vm, BIT(hwe->logical_instance), 1,
+					 hwe, ENGINE_FLAG_WA);
+		if (IS_ERR(nop_e)) {
+			err = PTR_ERR(nop_e);
+			goto put_engine;
+		}
+
+		/* Switch to different LRC */
+		err = emit_nop_job(gt, nop_e);
+		if (err)
+			goto put_nop_e;
+
+		/* Reload golden LRC to record the effect of any indirect W/A */
+		err = emit_nop_job(gt, e);
+		if (err)
+			goto put_nop_e;
+
+		xe_map_memcpy_from(xe, default_lrc,
+				   &e->lrc[0].bo->vmap,
+				   xe_lrc_pphwsp_offset(&e->lrc[0]),
+				   xe_lrc_size(xe, hwe->class));
+
+		gt->default_lrc[hwe->class] = default_lrc;
+put_nop_e:
+		xe_engine_put(nop_e);
+put_engine:
+		xe_engine_put(e);
+put_vm:
+		xe_vm_put(vm);
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+
 int xe_gt_init(struct xe_gt *gt)
 {
 	int err;
@@ -312,10 +478,6 @@ int xe_gt_init(struct xe_gt *gt)
 		}
 	}
 
-	err = xe_uc_init_hw(&gt->uc);
-	if (err)
-		goto err_force_wake;
-
 	if (!xe_gt_is_media_type(gt)) {
 		gt->migrate = xe_migrate_init(gt);
 		if (IS_ERR(gt->migrate))
@@ -323,6 +485,10 @@ int xe_gt_init(struct xe_gt *gt)
 	} else {
 		gt->migrate = xe_find_full_gt(gt)->migrate;
 	}
+
+	err = xe_uc_init_hw(&gt->uc);
+	if (err)
+		goto err_force_wake;
 
 	xe_device_mem_access_wa_put(gt_to_xe(gt));
 	err = xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL);

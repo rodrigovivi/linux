@@ -58,6 +58,7 @@ struct xe_engine {
 #define ENGINE_FLAG_COMPUTE_MODE	BIT(3)
 #define ENGINE_FLAG_VM			BIT(4)
 #define ENGINE_FLAG_BIND_ENGINE_CHILD	BIT(5)
+#define ENGINE_FLAG_WA			BIT(6)
 
 	/**
 	 * @flags: flags for this engine, should statically setup aside from ban

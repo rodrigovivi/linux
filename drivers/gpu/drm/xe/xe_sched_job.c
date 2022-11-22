@@ -57,10 +57,16 @@ static struct xe_sched_job *job_alloc(bool parallel)
 				 xe_sched_job_slab, GFP_KERNEL);
 }
 
+bool xe_sched_job_is_migration(struct xe_engine *e)
+{
+	return e->vm && (e->vm->flags & XE_VM_FLAG_MIGRATION) &&
+		!(e->flags & ENGINE_FLAG_WA);
+}
+
 static void job_free(struct xe_sched_job *job)
 {
 	struct xe_engine *e = job->engine;
-	bool is_migration = e->vm && (e->vm->flags & XE_VM_FLAG_MIGRATION);
+	bool is_migration = xe_sched_job_is_migration(e);
 
 	kmem_cache_free(xe_engine_is_parallel(job->engine) || is_migration ?
 			xe_sched_job_parallel_slab : xe_sched_job_slab, job);
@@ -71,13 +77,14 @@ struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
 {
 	struct xe_sched_job *job;
 	struct dma_fence **fences;
-	bool is_migration = e->vm && (e->vm->flags & XE_VM_FLAG_MIGRATION);
+	bool is_migration = xe_sched_job_is_migration(e);
 	int err;
 	int i, j;
 	u32 width;
 
 	/* Migration and kernel engines have their own locking */
-	if (!(e->flags & (ENGINE_FLAG_KERNEL | ENGINE_FLAG_VM))) {
+	if (!(e->flags & (ENGINE_FLAG_KERNEL | ENGINE_FLAG_VM |
+			  ENGINE_FLAG_WA))) {
 		lockdep_assert_held(&e->vm->lock);
 		if (!xe_vm_no_dma_fences(e->vm))
 			xe_vm_assert_held(e->vm);

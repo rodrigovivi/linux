@@ -259,6 +259,9 @@ struct xe_gt {
 	/** @fence_irq: fence IRQs (1 per engine class) */
 	struct xe_hw_fence_irq fence_irq[XE_ENGINE_CLASS_MAX];
 
+	/** @default_lrc: default LRC state */
+	void *default_lrc[XE_ENGINE_CLASS_MAX];
+
 	/** @hw_engines: hardware engines on the GT */
 	struct xe_hw_engine hw_engines[XE_NUM_HW_ENGINES];
 
