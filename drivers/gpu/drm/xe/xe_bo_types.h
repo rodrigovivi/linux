@@ -41,6 +41,8 @@ struct xe_bo {
 	struct drm_mm_node ggtt_node;
 	/** @vmap: iosys map of this buffer */
 	struct iosys_map vmap;
+	/** @ttm_kmap: TTM bo kmap object for internal use only. Keep off. */
+	struct ttm_bo_kmap_obj kmap;
 	/** @extobj_tv: used during exec to lock all external BOs */
 	struct ttm_validate_buffer extobj_tv;
 	/** @pinned_link: link to present / evicted list of pinned BO */
