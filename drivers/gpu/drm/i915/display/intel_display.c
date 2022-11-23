@@ -9037,7 +9037,7 @@ void intel_display_resume(struct drm_device *dev)
 		drm_atomic_state_put(state);
 }
 
-static void intel_hpd_poll_fini(struct drm_i915_private *i915)
+void intel_hpd_poll_fini(struct drm_i915_private *i915)
 {
 	struct intel_connector *connector;
 	struct drm_connector_list_iter conn_iter;

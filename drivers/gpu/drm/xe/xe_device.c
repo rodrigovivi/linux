@@ -28,8 +28,11 @@
 #include "xe_wait_user_fence.h"
 
 #include "display/intel_acpi.h"
+#include "display/intel_audio.h"
 #include "display/intel_bw.h"
 #include "display/intel_display.h"
+#include "display/intel_fbdev.h"
+#include "display/intel_hdcp.h"
 #include "display/intel_opregion.h"
 #include "display/ext/i915_irq.h"
 #include "display/ext/intel_dram.h"
@@ -148,6 +151,7 @@ static const struct drm_driver driver = {
 
 	.dumb_create = xe_bo_dumb_create,
 	.dumb_map_offset = drm_gem_ttm_dumb_map_offset,
+	.lastclose = intel_fbdev_restore_mode,
 	.release = &xe_driver_release,
 
 	.ioctls = xe_ioctls,
@@ -305,7 +309,7 @@ static int xe_device_init_display_noirq(struct xe_device *xe)
 	if (err)
 		return err;
 
-	return drmm_add_action_or_reset(&xe->drm, xe_device_fini_display_noirq, xe);
+	return drmm_add_action_or_reset(&xe->drm, xe_device_fini_display_noirq, NULL);
 }
 
 static void xe_device_fini_display_early(struct drm_device *dev, void *dummy)
@@ -327,6 +331,16 @@ static int xe_device_init_display_early(struct xe_device *xe)
 static int xe_device_init_display_late(struct xe_device *xe)
 {
 	return intel_modeset_init(xe);
+}
+
+static void xe_device_unlink_display(struct xe_device *xe)
+{
+	/* poll work can call into fbdev, hence clean that up afterwards */
+	intel_hpd_poll_fini(xe);
+	intel_fbdev_fini(xe);
+
+	intel_hdcp_component_fini(xe);
+	intel_audio_deinit(xe);
 }
 
 int xe_device_probe(struct xe_device *xe)
@@ -362,7 +376,7 @@ int xe_device_probe(struct xe_device *xe)
 
 	err = xe_irq_install(xe);
 	if (err)
-		return err;
+		goto err;
 
 	err = xe_device_init_display_early(xe);
 	if (err)
@@ -404,6 +418,8 @@ err_fini_display:
 	intel_modeset_driver_remove(xe);
 err_irq_shutdown:
 	xe_irq_shutdown(xe);
+err:
+	xe_device_unlink_display(xe);
 	return err;
 }
 
@@ -423,6 +439,8 @@ void xe_device_remove(struct xe_device *xe)
 	xe_device_remove_display(xe);
 
 	xe_irq_shutdown(xe);
+
+	xe_device_unlink_display(xe);
 }
 
 void xe_device_shutdown(struct xe_device *xe)
