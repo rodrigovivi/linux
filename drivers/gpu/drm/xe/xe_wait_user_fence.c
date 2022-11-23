@@ -92,11 +92,11 @@ int xe_wait_user_fence_ioctl(struct drm_device *dev, void *data,
 	struct drm_xe_engine_class_instance __user *user_eci =
 		u64_to_user_ptr(args->instances);
 	struct xe_vm *vm = NULL;
-	unsigned long timeout;
 	u64 addr = args->addr;
 	int err;
 	bool no_engines = args->flags & DRM_XE_UFENCE_WAIT_SOFT_OP ||
 		args->flags & DRM_XE_UFENCE_WAIT_VM_ERROR;
+	unsigned long timeout = args->timeout;
 
 	if (XE_IOCTL_ERR(xe, args->extensions))
 		return -EINVAL;
@@ -146,13 +146,15 @@ int xe_wait_user_fence_ioctl(struct drm_device *dev, void *data,
 		addr = vm->async_ops.error_capture.addr;
 	}
 
+	if (XE_IOCTL_ERR(xe, timeout > MAX_SCHEDULE_TIMEOUT))
+		return -EINVAL;
+
 	/*
 	 * FIXME: Very simple implementation at the moment, single wait queue
 	 * for everything. Could be optimized to have a wait queue for every
 	 * hardware engine. Open coding as 'do_compare' can sleep which doesn't
 	 * work with the wait_event_* macros.
 	 */
-	timeout = args->timeout;
 	if (vm)
 		add_wait_queue(&vm->async_ops.error_capture.wq, &w_wait);
 	else
