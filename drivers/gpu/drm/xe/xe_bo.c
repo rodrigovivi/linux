@@ -410,9 +410,9 @@ static int xe_bo_move_dmabuf(struct ttm_buffer_object *ttm_bo,
 			     struct ttm_resource *new_res)
 {
 	struct dma_buf_attachment *attach = ttm_bo->base.import_attach;
+	struct xe_ttm_tt *xe_tt = container_of(ttm_bo->ttm, struct xe_ttm_tt,
+					       ttm);
 	struct sg_table *sg;
-	struct sg_dma_page_iter dma_iter;
-	u64 page;
 
 	XE_BUG_ON(!attach);
 	XE_BUG_ON(!ttm_bo->ttm);
@@ -430,11 +430,7 @@ static int xe_bo_move_dmabuf(struct ttm_buffer_object *ttm_bo,
 		return PTR_ERR(sg);
 
 	ttm_bo->sg = sg;
-	page = 0;
-	for_each_sgtable_dma_page(sg, &dma_iter, 0) {
-		ttm_bo->ttm->dma_address[page++] =
-			sg_page_iter_dma_address(&dma_iter);
-	}
+	xe_tt->sg = sg;
 
 out:
 	ttm_bo_move_null(ttm_bo, new_res);
@@ -653,9 +649,13 @@ static void xe_ttm_bo_delete_mem_notify(struct ttm_buffer_object *ttm_bo)
 	 * dma-buf attachment.
 	 */
 	if (ttm_bo->type == ttm_bo_type_sg && ttm_bo->sg) {
+		struct xe_ttm_tt *xe_tt = container_of(ttm_bo->ttm,
+						       struct xe_ttm_tt, ttm);
+
 		dma_buf_unmap_attachment(ttm_bo->base.import_attach, ttm_bo->sg,
 					 DMA_BIDIRECTIONAL);
 		ttm_bo->sg = NULL;
+		xe_tt->sg = NULL;
 	}
 }
 
