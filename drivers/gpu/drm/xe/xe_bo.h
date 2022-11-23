@@ -80,6 +80,8 @@
 
 #define XE_BO_PROPS_INVALID	(-1)
 
+struct sg_table;
+
 struct xe_bo *xe_bo_alloc(void);
 void xe_bo_free(struct xe_bo *bo);
 
@@ -276,6 +278,8 @@ xe_bo_put_deferred(struct xe_bo *bo, struct llist_head *deferred)
 }
 
 void xe_bo_put_commit(struct llist_head *deferred);
+
+struct sg_table *xe_bo_get_sg(struct xe_bo *bo);
 
 #if IS_ENABLED(CONFIG_DRM_XE_KUNIT_TEST)
 /**
