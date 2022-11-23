@@ -273,7 +273,7 @@ static void xe_migrate_sanity_test(struct xe_migrate *m, struct kunit *test)
 	if (m->eng->vm->flags & XE_VM_FLAGS_64K)
 		expected |= GEN12_PTE_PS64;
 	xe_res_first(pt->ttm.resource, 0, pt->size, &src_it);
-	emit_pte(m, bb, NUM_KERNEL_PDE - 1, pt->ttm.resource,
+	emit_pte(m, bb, NUM_KERNEL_PDE - 1, xe_bo_is_vram(pt),
 		 &src_it, GEN8_PAGE_SIZE, pt->ttm.ttm);
 	run_sanity_job(m, xe, bb, bb->len, "Writing PTE for our fake PT", test);
 
