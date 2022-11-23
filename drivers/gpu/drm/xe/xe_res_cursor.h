@@ -26,6 +26,8 @@
 #ifndef __XE_RES_CURSOR_H__
 #define __XE_RES_CURSOR_H__
 
+#include <linux/scatterlist.h>
+
 #include <drm/drm_mm.h>
 #include <drm/ttm/ttm_placement.h>
 #include <drm/ttm/ttm_range_manager.h>
@@ -41,6 +43,7 @@ struct xe_res_cursor {
 	u64		remaining;
 	struct drm_mm_node	*node;
 	const dma_addr_t *dma_address;
+	struct scatterlist *sgl;
 };
 
 /**
@@ -60,6 +63,7 @@ static inline void xe_res_first(struct ttm_resource *res,
 	struct drm_mm_node *node;
 
 	cur->dma_address = NULL;
+	cur->sgl = NULL;
 	if (!res || res->mem_type == TTM_PL_SYSTEM) {
 		cur->start = start;
 		cur->size = size;
@@ -93,6 +97,22 @@ static inline void __xe_res_dma_next(struct xe_res_cursor *cur)
 	cur->size = idx << PAGE_SHIFT;
 }
 
+static inline void __xe_res_sg_next(struct xe_res_cursor *cur)
+{
+	struct scatterlist *sgl = cur->sgl;
+	u64 start = cur->start;
+
+	while (start >= sg_dma_len(sgl)) {
+		start -= sg_dma_len(sgl);
+		sgl = sg_next(sgl);
+		XE_BUG_ON(!sgl);
+	}
+
+	cur->start = start;
+	cur->size = sg_dma_len(sgl) - start;
+	cur->sgl = sgl;
+}
+
 /**
  * xe_res_first_dma - initialize a xe_res_cursor with array of dma addresses
  *
@@ -114,7 +134,33 @@ static inline void xe_res_first_dma(const dma_addr_t *dma_address,
 	cur->remaining = size;
 	cur->size = 0;
 	cur->dma_address = dma_address;
+	cur->sgl = NULL;
 	__xe_res_dma_next(cur);
+}
+
+/**
+ * xe_res_first_sg - initialize a xe_res_cursor with a scatter gather table
+ *
+ * @sg: scatter gather table to walk
+ * @start: Start of the range
+ * @size: Size of the range
+ * @cur: cursor object to initialize
+ *
+ * Start walking over the range of allocations between @start and @size.
+ */
+static inline void xe_res_first_sg(const struct sg_table *sg,
+				   u64 start, u64 size,
+				   struct xe_res_cursor *cur)
+{
+	XE_BUG_ON(!IS_ALIGNED(start, PAGE_SIZE) ||
+		  !IS_ALIGNED(size, PAGE_SIZE));
+	cur->node = NULL;
+	cur->start = start;
+	cur->remaining = size;
+	cur->size = 0;
+	cur->sgl = sg->sgl;
+	cur->dma_address = NULL;
+	__xe_res_sg_next(cur);
 }
 
 /**
@@ -143,6 +189,10 @@ static inline void xe_res_next(struct xe_res_cursor *cur, u64 size)
 		cur->start += size;
 		__xe_res_dma_next(cur);
 		return;
+	} else if (cur->sgl) {
+		cur->start += size;
+		__xe_res_sg_next(cur);
+		return;
 	}
 
 	cur->node = ++node;
@@ -158,6 +208,6 @@ static inline void xe_res_next(struct xe_res_cursor *cur, u64 size)
 static inline u64 xe_res_dma(const struct xe_res_cursor *cur)
 {
 	return cur->dma_address ? cur->dma_address[cur->start >> PAGE_SHIFT] :
-		cur->start;
+		cur->sgl ? sg_dma_address(cur->sgl) + cur->start : cur->start;
 }
 #endif
