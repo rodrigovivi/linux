@@ -396,6 +396,10 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	u8 id;
 	int err;
 
+	/* Detect if we need to wait for other drivers early on */
+	if (intel_modeset_probe_defer(pdev))
+		return -EPROBE_DEFER;
+
 	xe = xe_device_create(pdev, ent);
 	if (IS_ERR(xe))
 		return PTR_ERR(xe);
@@ -529,7 +533,7 @@ static int xe_pci_resume(struct device *dev)
 
 static SIMPLE_DEV_PM_OPS(xe_pm_ops, xe_pci_suspend, xe_pci_resume);
 
-static struct pci_driver i915_pci_driver = {
+static struct pci_driver xe_pci_driver = {
 	.name = DRIVER_NAME,
 	.id_table = pciidlist,
 	.probe = xe_pci_probe,
@@ -540,12 +544,12 @@ static struct pci_driver i915_pci_driver = {
 
 int xe_register_pci_driver(void)
 {
-	return pci_register_driver(&i915_pci_driver);
+	return pci_register_driver(&xe_pci_driver);
 }
 
 void xe_unregister_pci_driver(void)
 {
-	pci_unregister_driver(&i915_pci_driver);
+	pci_unregister_driver(&xe_pci_driver);
 }
 
 #if IS_ENABLED(CONFIG_DRM_XE_KUNIT_TEST)
@@ -579,7 +583,7 @@ static int dev_to_xe_device_fn(struct device *dev, void *data)
  */
 int xe_call_for_each_device(xe_device_fn xe_fn)
 {
-	return driver_for_each_device(&i915_pci_driver.driver, NULL,
+	return driver_for_each_device(&xe_pci_driver.driver, NULL,
 				      xe_fn, dev_to_xe_device_fn);
 }
 #endif
