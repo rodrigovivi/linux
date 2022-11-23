@@ -1104,12 +1104,12 @@ static int xe_pt_userptr_pre_commit(struct xe_migrate_pt_update *pt_update)
 	 * we don't update the userptr pages.
 	 */
 	do {
-		read_lock(&vm->userptr.notifier_lock);
+		down_read(&vm->userptr.notifier_lock);
 		if (!mmu_interval_read_retry(&vma->userptr.notifier,
 					     notifier_seq))
 			break;
 
-		read_unlock(&vm->userptr.notifier_lock);
+		up_read(&vm->userptr.notifier_lock);
 
 		if (userptr_update->bind)
 			return -EAGAIN;
@@ -1119,7 +1119,7 @@ static int xe_pt_userptr_pre_commit(struct xe_migrate_pt_update *pt_update)
 
 	/* Inject errors to test_whether they are handled correctly */
 	if (userptr_update->bind && xe_pt_userptr_inject_eagain(vma)) {
-		read_unlock(&vm->userptr.notifier_lock);
+		up_read(&vm->userptr.notifier_lock);
 		return -EAGAIN;
 	}
 
@@ -1219,7 +1219,7 @@ __xe_pt_bind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 
 		if (bind_pt_update.locked) {
 			vma->userptr.initial_bind = true;
-			read_unlock(&vm->userptr.notifier_lock);
+			up_read(&vm->userptr.notifier_lock);
 			xe_bo_put_commit(&deferred);
 		}
 		if (!rebind && vma->last_munmap_rebind &&
@@ -1228,7 +1228,7 @@ __xe_pt_bind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 				   &vm->preempt.rebind_work);
 	} else {
 		if (bind_pt_update.locked)
-			read_unlock(&vm->userptr.notifier_lock);
+			up_read(&vm->userptr.notifier_lock);
 		xe_pt_abort_bind(vma, entries, num_entries);
 	}
 
@@ -1520,7 +1520,7 @@ __xe_pt_unbind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 	}
 
 	if (unbind_pt_update.locked) {
-		read_unlock(&vm->userptr.notifier_lock);
+		up_read(&vm->userptr.notifier_lock);
 		xe_bo_put_commit(&deferred);
 	}
 
