@@ -424,6 +424,7 @@ static int xe_bo_move_notify(struct xe_bo *bo)
 	if (xe_bo_is_pinned(bo))
 		return -EINVAL;
 
+	xe_bo_vunmap(bo);
 	ret = xe_bo_trigger_rebind(xe, bo);
 	if (ret)
 		return ret;
@@ -447,7 +448,6 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 	struct xe_gt *gt = NULL;
 	struct dma_fence *fence;
 	bool move_lacks_source;
-	bool nounmap = false;
 	bool needs_clear;
 	int ret = 0;
 
@@ -471,7 +471,7 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 		goto out;
 	}
 
-	if (!move_lacks_source) {
+	if (!move_lacks_source && !xe_bo_is_pinned(bo)) {
 		ret = xe_bo_move_notify(bo);
 		if (ret)
 			goto out;
@@ -539,7 +539,6 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 					  bo->placements->fpfn);
 
 				iosys_map_set_vaddr_iomem(&bo->vmap, new_addr);
-				nounmap = true;
 			}
 		}
 	} else {
@@ -561,8 +560,6 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 	trace_printk("new_mem->mem_type=%d\n", new_mem->mem_type);
 
 out:
-	if (!nounmap)
-		xe_bo_vunmap(bo);
 	return ret;
 
 }
@@ -605,8 +602,6 @@ static void xe_ttm_bo_delete_mem_notify(struct ttm_buffer_object *ttm_bo)
 					 DMA_BIDIRECTIONAL);
 		ttm_bo->sg = NULL;
 	}
-
-	__xe_bo_vunmap(ttm_to_xe_bo(ttm_bo));
 }
 
 struct ttm_device_funcs xe_ttm_funcs = {
@@ -657,6 +652,7 @@ static void xe_gem_object_free(struct drm_gem_object *obj)
 	 * driver ttm callbacks is allowed to use the ttm_buffer_object
 	 * refcount directly if needed.
 	 */
+	__xe_bo_vunmap(gem_to_xe_bo(obj));
 	ttm_bo_put(container_of(obj, struct ttm_buffer_object, base));
 }
 
@@ -1055,7 +1051,6 @@ void xe_bo_unpin_external(struct xe_bo *bo)
 		spin_unlock(&xe->pinned.lock);
 	}
 
-	__xe_bo_vunmap(bo);	/* FIXME: W/A for blow up in ttm_bo_vunmap */
 	ttm_bo_unpin(&bo->ttm);
 
 	/*
@@ -1081,7 +1076,6 @@ void xe_bo_unpin(struct xe_bo *bo)
 		spin_unlock(&xe->pinned.lock);
 	}
 
-	__xe_bo_vunmap(bo);	/* FIXME: W/A for blow up in ttm_bo_vunmap */
 	ttm_bo_unpin(&bo->ttm);
 }
 
@@ -1139,23 +1133,41 @@ dma_addr_t xe_bo_addr(struct xe_bo *bo, u64 offset,
 
 int xe_bo_vmap(struct xe_bo *bo)
 {
+	void *virtual;
+	bool is_iomem;
+	int ret;
+
 	xe_bo_assert_held(bo);
 
 	if (!iosys_map_is_null(&bo->vmap))
 		return 0;
 
-	return ttm_bo_vmap(&bo->ttm, &bo->vmap);
+	/*
+	 * We use this more or less deprecated interface for now since
+	 * ttm_bo_vmap() doesn't offer the optimization of kmapping
+	 * single page bos, which is done here.
+	 * TODO: Fix up ttm_bo_vmap to do that, or fix up ttm_bo_kmap
+	 * to use struct iosys_map.
+	 */
+	ret = ttm_bo_kmap(&bo->ttm, 0, bo->size >> PAGE_SHIFT, &bo->kmap);
+	if (ret)
+		return ret;
+
+	virtual = ttm_kmap_obj_virtual(&bo->kmap, &is_iomem);
+	if (is_iomem)
+		iosys_map_set_vaddr_iomem(&bo->vmap, (void __iomem *)virtual);
+	else
+		iosys_map_set_vaddr(&bo->vmap, virtual);
+
+	return 0;
 }
 
 static void __xe_bo_vunmap(struct xe_bo *bo)
 {
-	/* FIXME: W/A for blow up in ttm_bo_vunmap */
-	if (xe_bo_is_pinned(bo) && IS_DGFX(xe_bo_device(bo))) {
+	if (!iosys_map_is_null(&bo->vmap)) {
 		iosys_map_clear(&bo->vmap);
-		return;
+		ttm_bo_kunmap(&bo->kmap);
 	}
-
-	ttm_bo_vunmap(&bo->ttm, &bo->vmap);
 }
 
 void xe_bo_vunmap(struct xe_bo *bo)
