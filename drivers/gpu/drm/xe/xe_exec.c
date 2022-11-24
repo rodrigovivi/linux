@@ -323,6 +323,11 @@ retry:
 			goto err_put_job;
 	}
 
+	for (i = 0; i < num_syncs && !err; i++)
+		err = xe_sync_entry_add_deps(&syncs[i], job);
+	if (err)
+		goto err_put_job;
+
 	/*
 	 * Point of no return, if we error after this point just set an error on
 	 * the job and let the DRM scheduler / backend clean up the job.
@@ -345,9 +350,6 @@ retry:
 	}
 	if (!xe_vm_no_dma_fences(vm))
 		err = xe_vm_userptr_needs_repin(vm);
-
-	for (i = 0; i < num_syncs && !err; i++)
-		err = xe_sync_entry_add_deps(&syncs[i], job);
 
 	if (err)
 		xe_sched_job_set_error(job, -ECANCELED);
