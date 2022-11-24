@@ -84,7 +84,7 @@ int xe_vm_add_compute_engine(struct xe_vm *vm, struct xe_engine *e);
 
 int xe_vm_userptr_pin(struct xe_vm *vm);
 
-int xe_vm_userptr_needs_repin(struct xe_vm *vm);
+int __xe_vm_userptr_needs_repin(struct xe_vm *vm);
 
 int xe_vm_userptr_check_repin(struct xe_vm *vm);
 

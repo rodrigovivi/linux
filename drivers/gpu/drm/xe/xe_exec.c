@@ -154,7 +154,6 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	struct xe_vm *vm;
 	struct ww_acquire_ctx ww;
 	struct list_head objs;
-	bool armed = false;
 	bool write_locked;
 	int err = 0;
 
@@ -328,13 +327,21 @@ retry:
 	if (err)
 		goto err_put_job;
 
+	if (!xe_vm_no_dma_fences(vm)) {
+		err = down_read_interruptible(&vm->userptr.notifier_lock);
+		if (err)
+			goto err_put_job;
+
+		err = __xe_vm_userptr_needs_repin(vm);
+		if (err)
+			goto err_repin;
+	}
+
 	/*
 	 * Point of no return, if we error after this point just set an error on
 	 * the job and let the DRM scheduler / backend clean up the job.
 	 */
 	xe_sched_job_arm(job);
-	armed = true;
-
 	if (!xe_vm_no_dma_fences(vm)) {
 		/* Block userptr invalidations / BO eviction */
 		dma_resv_add_fence(&vm->resv,
@@ -348,20 +355,18 @@ retry:
 		xe_vm_fence_all_extobjs(vm, &job->drm.s_fence->finished,
 					DMA_RESV_USAGE_WRITE);
 	}
-	if (!xe_vm_no_dma_fences(vm))
-		err = xe_vm_userptr_needs_repin(vm);
 
-	if (err)
-		xe_sched_job_set_error(job, -ECANCELED);
-
-	for (i = 0; i < num_syncs && !err; i++)
+	for (i = 0; i < num_syncs; i++)
 		xe_sync_entry_signal(&syncs[i], job,
 				     &job->drm.s_fence->finished);
 
 	xe_sched_job_push(job);
 
+err_repin:
+	if (!xe_vm_no_dma_fences(vm))
+		up_read(&vm->userptr.notifier_lock);
 err_put_job:
-	if (err && !armed)
+	if (err)
 		xe_sched_job_put(job);
 err_engine_end:
 	xe_exec_end(engine, tv_onstack, tv, &ww, &objs);
@@ -370,10 +375,8 @@ err_unlock_list:
 		up_write(&vm->lock);
 	else
 		up_read(&vm->lock);
-	if (err == -EAGAIN) {
-		armed = false;
+	if (err == -EAGAIN)
 		goto retry;
-	}
 err_syncs:
 	for (i = 0; i < num_syncs; i++)
 		xe_sync_entry_cleanup(&syncs[i]);

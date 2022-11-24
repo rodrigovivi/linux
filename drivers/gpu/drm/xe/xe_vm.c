@@ -350,8 +350,21 @@ out_unlock_outer:
 	return err;
 }
 
-static int __xe_vm_userptr_needs_repin(struct xe_vm *vm)
+/**
+ * __xe_vm_userptr_needs_repin() - Check whether the VM does have userptrs
+ * that need repinning.
+ * @vm: The VM.
+ *
+ * This function checks for whether the VM has userptrs that need repinning,
+ * and provides a release-type barrier on the userptr.notifier_lock after
+ * checking.
+ *
+ * Return: 0 if there are no userptrs needing repinning, -EAGAIN if there are.
+ */
+int __xe_vm_userptr_needs_repin(struct xe_vm *vm)
 {
+	lockdep_assert_held_read(&vm->userptr.notifier_lock);
+
 	return (list_empty(&vm->userptr.repin_list) &&
 		list_empty(&vm->userptr.invalidated)) ? 0 : -EAGAIN;
 }
@@ -750,29 +763,6 @@ int xe_vm_userptr_check_repin(struct xe_vm *vm)
 {
 	return (list_empty_careful(&vm->userptr.repin_list) &&
 		list_empty_careful(&vm->userptr.invalidated)) ? 0 : -EAGAIN;
-}
-
-/**
- * xe_vm_userptr_needs_repin() - Check whether the VM does have userptrs
- * that need repinning.
- * @vm: The VM.
- *
- * This function checks for whether the VM has userptrs that need repinning,
- * and provides a release-type barrier on the userptr.notifier_lock after
- * checking.
- *
- * Return: 0 if there are no userptrs needing repinning, -EAGAIN if there are.
- */
-int xe_vm_userptr_needs_repin(struct xe_vm *vm)
-{
-	int err;
-
-	lockdep_assert_held(&vm->lock);
-	down_read(&vm->userptr.notifier_lock);
-	err = __xe_vm_userptr_needs_repin(vm);
-	up_read(&vm->userptr.notifier_lock);
-
-	return err;
 }
 
 static struct dma_fence *
