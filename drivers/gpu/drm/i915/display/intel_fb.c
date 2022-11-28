@@ -4,6 +4,7 @@
  */
 
 #include <drm/drm_blend.h>
+#include <drm/drm_damage_helper.h>
 #include <drm/drm_framebuffer.h>
 #include <drm/drm_modeset_helper.h>
 
@@ -1867,24 +1868,28 @@ static int intel_user_framebuffer_create_handle(struct drm_framebuffer *fb,
 	return drm_gem_handle_create(file, &obj->ttm.base, handle);
 }
 
+#ifdef I915
 static int intel_user_framebuffer_dirty(struct drm_framebuffer *fb,
 					struct drm_file *file,
 					unsigned int flags, unsigned int color,
 					struct drm_clip_rect *clips,
 					unsigned int num_clips)
 {
-#ifdef I915
 	i915_gem_object_flush_if_display(intel_fb_obj(fb));
-#endif
 	intel_frontbuffer_flush(to_intel_framebuffer(fb), ORIGIN_DIRTYFB);
 
 	return 0;
 }
+#endif
 
 static const struct drm_framebuffer_funcs intel_fb_funcs = {
 	.destroy = intel_user_framebuffer_destroy,
 	.create_handle = intel_user_framebuffer_create_handle,
+#ifdef I915
 	.dirty = intel_user_framebuffer_dirty,
+#else
+	.dirty = drm_atomic_helper_dirtyfb,
+#endif
 };
 
 int intel_framebuffer_init(struct intel_framebuffer *intel_fb,
