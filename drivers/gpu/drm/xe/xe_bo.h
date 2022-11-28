@@ -23,6 +23,7 @@
 #define XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT BIT(6)
 #define XE_BO_CREATE_PINNED_BIT		BIT(7)
 #define XE_BO_DEFER_BACKING		BIT(8)
+#define XE_BO_SCANOUT_BIT		BIT(9)
 /* this one is trigger internally only */
 #define XE_BO_INTERNAL_TEST		BIT(30)
 #define XE_BO_INTERNAL_64K		BIT(31)

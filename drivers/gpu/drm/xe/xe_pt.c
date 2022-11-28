@@ -737,7 +737,6 @@ xe_pt_stage_bind(struct xe_gt *gt, struct xe_vma *vma,
 		.gt = gt,
 		.curs = &curs,
 		.va_curs_start = vma->start,
-		.cache = XE_CACHE_WB,
 		.pte_flags = vma->pte_flags,
 		.wupd.entries = entries,
 		.needs_64K = (vma->vm->flags & XE_VM_FLAGS_64K) && is_vram,
@@ -751,6 +750,12 @@ xe_pt_stage_bind(struct xe_gt *gt, struct xe_vma *vma,
 			xe_walk.default_pte |= GEN12_USM_PPGTT_PTE_AE;
 		xe_walk.dma_offset = gt->mem.vram.io_start -
 			gt_to_xe(gt)->mem.vram.io_start;
+		xe_walk.cache = XE_CACHE_WB;
+	} else {
+		if (bo->flags & XE_BO_SCANOUT_BIT)
+			xe_walk.cache = XE_CACHE_WT;
+		else
+			xe_walk.cache = XE_CACHE_WB;
 	}
 
 	xe_bo_assert_held(bo);

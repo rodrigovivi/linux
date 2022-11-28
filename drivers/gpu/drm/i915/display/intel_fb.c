@@ -1929,6 +1929,9 @@ int intel_framebuffer_init(struct intel_framebuffer *intel_fb,
 			goto err;
 		}
 	}
+#else
+	if (XE_IOCTL_ERR(dev_priv, !(obj->flags & XE_BO_SCANOUT_BIT)))
+		goto err;
 #endif
 
 	atomic_set(&intel_fb->bits, 0);

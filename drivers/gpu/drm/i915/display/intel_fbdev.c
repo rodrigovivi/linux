@@ -190,7 +190,7 @@ static int intelfb_alloc(struct drm_fb_helper *helper,
 	obj = xe_bo_create_pin_map(dev_priv, to_gt(dev_priv), NULL, size,
 				   ttm_bo_type_kernel,
 				   XE_BO_CREATE_VRAM_IF_DGFX(to_gt(dev_priv)) |
-				   XE_BO_CREATE_PINNED_BIT);
+				   XE_BO_CREATE_PINNED_BIT | XE_BO_SCANOUT_BIT);
 #endif
 
 	if (IS_ERR(obj)) {
