@@ -977,8 +977,10 @@ static void xe_pt_commit_bind(struct xe_vma *vma,
 		if (!rebind)
 			pt->num_live += entries[i].qwords;
 
-		if (!pt->level)
+		if (!pt->level) {
+			kfree(entries[i].pt_entries);
 			continue;
+		}
 
 		pt_dir = as_xe_pt_dir(pt);
 		for (j = 0; j < entries[i].qwords; j++) {
