@@ -242,10 +242,10 @@ static void resume_and_reinstall_preempt_fences(struct xe_vm *vm)
 
 int xe_vm_add_compute_engine(struct xe_vm *vm, struct xe_engine *e)
 {
-	struct ttm_validate_buffer tv_vm;
-	struct ttm_validate_buffer *tv_bos = NULL;
+	struct ttm_validate_buffer tv_onstack[XE_ONSTACK_TV];
+	struct ttm_validate_buffer *tv;
 	struct ww_acquire_ctx ww;
-	struct list_head objs, dups;
+	struct list_head objs;
 	struct dma_fence *pfence;
 	int i;
 	int err;
@@ -255,29 +255,7 @@ int xe_vm_add_compute_engine(struct xe_vm *vm, struct xe_engine *e)
 
 	down_write(&vm->lock);
 
-	tv_bos = kmalloc(sizeof(*tv_bos) * vm->extobj.entries,
-			 GFP_KERNEL);
-	if (!tv_bos) {
-		err = -ENOMEM;
-		goto out_unlock;
-	}
-
-	INIT_LIST_HEAD(&objs);
-	INIT_LIST_HEAD(&dups);
-
-	for (i = 0; i < vm->extobj.entries; ++i) {
-		struct xe_bo *bo = vm->extobj.bos[i];
-
-		tv_bos[i].num_shared = 1;
-		tv_bos[i].bo = &bo->ttm;
-
-		list_add_tail(&tv_bos[i].head, &objs);
-	}
-	tv_vm.num_shared = 1;
-	tv_vm.bo = xe_vm_ttm_bo(vm);;
-	list_add_tail(&tv_vm.head, &objs);
-
-	err = ttm_eu_reserve_buffers(&ww, &objs, true, &dups);
+	err = xe_vm_lock_dma_resv(vm, &ww, tv_onstack, &tv, &objs, true, 1);
 	if (err)
 		goto out_unlock_outer;
 
@@ -311,10 +289,9 @@ int xe_vm_add_compute_engine(struct xe_vm *vm, struct xe_engine *e)
 		dma_fence_enable_sw_signaling(pfence);
 
 out_unlock:
-	ttm_eu_backoff_reservation(&ww, &objs);
+	xe_vm_unlock_dma_resv(vm, tv_onstack, tv, &ww, &objs);
 out_unlock_outer:
 	up_write(&vm->lock);
-	kfree(tv_bos);
 
 	return err;
 }
@@ -325,19 +302,120 @@ static int __xe_vm_userptr_needs_repin(struct xe_vm *vm)
 		list_empty(&vm->userptr.invalidated)) ? 0 : -EAGAIN;
 }
 
+/**
+ * xe_vm_lock_dma_resv() - Lock the vm dma_resv object and the dma_resv
+ * objects of the vm's external buffer objects.
+ * @vm: The vm.
+ * @ww: Pointer to a struct ww_acquire_ctx locking context.
+ * @tv_onstack: Array size XE_ONSTACK_TV of storage for the struct
+ * ttm_validate_buffers used for locking.
+ * @tv: Pointer to a pointer that on output contains the actual storage used.
+ * @objs: List head for the buffer objects locked.
+ * @intr: Whether to lock interruptible.
+ * @num_shared: Number of dma-fence slots to reserve in the locked objects.
+ *
+ * Locks the vm dma-resv objects and all the dma-resv objects of the
+ * buffer objects on the vm external object list. The TTM utilities require
+ * a list of struct ttm_validate_buffers pointing to the actual buffer
+ * objects to lock. Storage for those struct ttm_validate_buffers should
+ * be provided in @tv_onstack, and is typically reserved on the stack
+ * of the caller. If the size of @tv_onstack isn't sufficient, then
+ * storage will be allocated internally using kvmalloc().
+ *
+ * The function performs deadlock handling internally, and after a
+ * successful return the ww locking transaction should be considered
+ * sealed.
+ *
+ * Return: 0 on success, Negative error code on error. In particular if
+ * @intr is set to true, -EINTR or -ERESTARTSYS may be returned. In case
+ * of error, any locking performed has been reverted.
+ */
+int xe_vm_lock_dma_resv(struct xe_vm *vm, struct ww_acquire_ctx *ww,
+			struct ttm_validate_buffer *tv_onstack,
+			struct ttm_validate_buffer **tv,
+			struct list_head *objs,
+			bool intr,
+			unsigned int num_shared)
+{
+	struct ttm_validate_buffer *tv_vm, *tv_bo;
+	LIST_HEAD(dups);
+	int err;
+	int i;
+
+	lockdep_assert_held(&vm->lock);
+
+	if (vm->extobj.entries < XE_ONSTACK_TV) {
+		tv_vm = tv_onstack;
+	} else {
+		tv_vm = kvmalloc_array(vm->extobj.entries + 1, sizeof(*tv_vm),
+				       GFP_KERNEL);
+		if (!tv_vm)
+			return -ENOMEM;
+	}
+	tv_bo = tv_vm + 1;
+
+	INIT_LIST_HEAD(objs);
+	for (i = 0; i < vm->extobj.entries; ++i, ++tv_bo) {
+		struct xe_bo *bo = vm->extobj.bos[i];
+
+		tv_bo->num_shared = num_shared;
+		tv_bo->bo = &bo->ttm;
+
+		list_add_tail(&tv_bo->head, objs);
+	}
+	tv_vm->num_shared = num_shared;
+	tv_vm->bo = xe_vm_ttm_bo(vm);
+	list_add_tail(&tv_vm->head, objs);
+	err = ttm_eu_reserve_buffers(ww, objs, intr, &dups);
+	if (err)
+		goto out_err;
+
+	*tv = tv_vm;
+	return 0;
+
+out_err:
+	if (tv_vm != tv_onstack)
+		kvfree(tv_vm);
+
+	return err;
+}
+
+/**
+ * xe_vm_unlock_dma_resv() - Unlock reservation objects locked by
+ * xe_vm_lock_dma_resv()
+ * @vm: The vm.
+ * @tv_onstack: The @tv_onstack array given to xe_vm_lock_dma_resv().
+ * @tv: The value of *@tv given by xe_vm_lock_dma_resv().
+ * @ww: The ww_acquire_context used for locking.
+ * @objs: The list returned from xe_vm_lock_dma_resv().
+ *
+ * Unlocks the reservation objects and frees any memory allocated by
+ * xe_vm_lock_dma_resv().
+ */
+void xe_vm_unlock_dma_resv(struct xe_vm *vm,
+			   struct ttm_validate_buffer *tv_onstack,
+			   struct ttm_validate_buffer *tv,
+			   struct ww_acquire_ctx *ww,
+			   struct list_head *objs)
+{
+	ttm_eu_backoff_reservation(ww, objs);
+	if (tv && tv != tv_onstack)
+		kvfree(tv);
+}
+
 static void preempt_rebind_work_func(struct work_struct *w)
 {
 	struct xe_vm *vm = container_of(w, struct xe_vm, preempt.rebind_work);
 	struct xe_vma *vma;
-	struct ttm_validate_buffer tv_vm;
-	struct ttm_validate_buffer *tv_bos = NULL;
+	struct ttm_validate_buffer tv_onstack[XE_ONSTACK_TV];
+	struct ttm_validate_buffer *tv;
 	struct ww_acquire_ctx ww;
-	struct list_head objs, dups;
+	struct list_head objs;
 	struct dma_fence *rebind_fence;
 	unsigned int fence_count = 0;
 	LIST_HEAD(preempt_fences);
 	bool write_locked;
-	int i, err;
+	int err;
 	long wait;
 
 	XE_BUG_ON(!xe_vm_in_compute_mode(vm));
@@ -384,29 +462,8 @@ retry:
 			goto out_unlock_outer;
 	}
 
-	if (!tv_bos) {
-		tv_bos = kmalloc(sizeof(*tv_bos) * vm->extobj.entries,
-				 GFP_KERNEL);
-		if (!tv_bos)
-			goto out_unlock_outer;
-	}
-
-	INIT_LIST_HEAD(&objs);
-	INIT_LIST_HEAD(&dups);
-
-	for (i = 0; i < vm->extobj.entries; ++i) {
-		struct xe_bo *bo = vm->extobj.bos[i];
-
-		tv_bos[i].num_shared = vm->preempt.num_engines;
-		tv_bos[i].bo = &bo->ttm;
-
-		list_add_tail(&tv_bos[i].head, &objs);
-	}
-	tv_vm.num_shared = vm->preempt.num_engines;
-	tv_vm.bo = xe_vm_ttm_bo(vm);;
-	list_add_tail(&tv_vm.head, &objs);
-
-	err = ttm_eu_reserve_buffers(&ww, &objs, false, &dups);
+	err = xe_vm_lock_dma_resv(vm, &ww, tv_onstack, &tv, &objs,
+				  false, vm->preempt.num_engines);
 	if (err)
 		goto out_unlock_outer;
 
@@ -469,7 +526,7 @@ retry:
 	up_read(&vm->userptr.notifier_lock);
 
 out_unlock:
-	ttm_eu_backoff_reservation(&ww, &objs);
+	xe_vm_unlock_dma_resv(vm, tv_onstack, tv, &ww, &objs);
 out_unlock_outer:
 	if (write_locked)
 		up_write(&vm->lock);
@@ -482,7 +539,6 @@ out_unlock_outer:
 
 	free_preempt_fences(&preempt_fences);
 
-	kfree(tv_bos);
 	XE_WARN_ON(err < 0);	/* TODO: Kill VM or put in error state */
 	trace_xe_vm_rebind_worker_exit(vm);
 }

@@ -14,6 +14,7 @@ struct drm_device;
 struct drm_file;
 
 struct ttm_buffer_object;
+struct ttm_validate_buffer;
 
 struct xe_engine;
 struct xe_file;
@@ -104,6 +105,24 @@ static inline bool xe_vma_is_userptr(struct xe_vma *vma)
 int xe_vma_userptr_pin_pages(struct xe_vma *vma);
 
 int xe_vma_userptr_check_repin(struct xe_vma *vma);
+
+/*
+ * XE_ONSTACK_TV is used to size the tv_onstack array that is input
+ * to xe_vm_lock_dma_resv() and xe_vm_unlock_dma_resv().
+ */
+#define XE_ONSTACK_TV 20
+int xe_vm_lock_dma_resv(struct xe_vm *vm, struct ww_acquire_ctx *ww,
+			struct ttm_validate_buffer *tv_onstack,
+			struct ttm_validate_buffer **tv,
+			struct list_head *objs,
+			bool intr,
+			unsigned int num_shared);
+
+void xe_vm_unlock_dma_resv(struct xe_vm *vm,
+			   struct ttm_validate_buffer *tv_onstack,
+			   struct ttm_validate_buffer *tv,
+			   struct ww_acquire_ctx *ww,
+			   struct list_head *objs);
 
 #if IS_ENABLED(CONFIG_DRM_XE_DEBUG_VM)
 #define vm_dbg drm_dbg

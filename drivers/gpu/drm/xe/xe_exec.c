@@ -91,69 +91,52 @@
  */
 
 static int xe_exec_begin(struct xe_engine *e, struct ww_acquire_ctx *ww,
-			 struct ttm_validate_buffer *tv_vm,
+			 struct ttm_validate_buffer tv_onstack[],
+			 struct ttm_validate_buffer **tv,
 			 struct list_head *objs)
 {
 	struct xe_vm *vm = e->vm;
+	struct xe_vma *vma;
+	LIST_HEAD(dups);
 	int err;
-	int i;
 
-	lockdep_assert_held(&vm->lock);
+	*tv = NULL;
+	if (xe_vm_no_dma_fences(e->vm))
+		return 0;
 
-	if (!xe_vm_no_dma_fences(e->vm)) {
-		struct xe_vma *vma;
-		LIST_HEAD(dups);
+	err = xe_vm_lock_dma_resv(vm, ww, tv_onstack, tv, objs, true, 1);
+	if (err)
+		return err;
+	/*
+	 * Validate and BOs that have been evicted (i.e. make sure the
+	 * BOs have valid placements possibly moving an evicted BO back
+	 * to a location where the GPU can access it).
+	 *
+	 * This list can grow during the loop as xe_bo_validate can
+	 * trigger an eviction within this VM. This is safe as newly
+	 * evicted VMAs are added at the end of the list and the loop
+	 * checks for newly added entries each iteration.
+	 */
+	list_for_each_entry(vma, &vm->rebind_list, rebind_link) {
+		if (xe_vma_is_userptr(vma))
+			continue;
 
-		INIT_LIST_HEAD(objs);
-		for (i = 0; i < vm->extobj.entries; ++i) {
-			struct xe_bo *bo = vm->extobj.bos[i];
-
-			XE_BUG_ON(bo->extobj_tv.num_shared != 1);
-			XE_BUG_ON(&bo->ttm != bo->extobj_tv.bo);
-
-			list_add_tail(&bo->extobj_tv.head, objs);
-		}
-		tv_vm->num_shared = 1;
-		tv_vm->bo = xe_vm_ttm_bo(vm);;
-		list_add_tail(&tv_vm->head, objs);
-		err = ttm_eu_reserve_buffers(ww, objs, true, &dups);
+		err = xe_bo_validate(vma->bo, vm);
 		if (err)
 			return err;
-
-		/*
-		 * Validate and BOs that have been evicted (i.e. make sure the
-		 * BOs have valid placements possibly moving an evicted BO back
-		 * to a location where the GPU can access it).
-		 *
-		 * This list can grow during the loop as xe_bo_validate can
-		 * trigger an eviction within this VM. This is safe as newly
-		 * evicted VMAs are added at the end of the list and the loop
-		 * checks for newly added entries each iteration.
-		 */
-		list_for_each_entry(vma, &vm->rebind_list, rebind_link) {
-			if (xe_vma_is_userptr(vma))
-				continue;
-
-			err = xe_bo_validate(vma->bo, vm);
-			if (err) {
-				/*
-				 * XXX: Do we put the VM in an error state if
-				 * the VM is using async VM bind ops?
-				 */
-				ttm_eu_backoff_reservation(ww, objs);
-				return err;
-			}
-		}
 	}
 
 	return 0;
 }
 
-static void xe_exec_end(struct xe_engine *e, struct ww_acquire_ctx *ww,
+static void xe_exec_end(struct xe_engine *e,
+			struct ttm_validate_buffer *tv_onstack,
+			struct ttm_validate_buffer *tv,
+			struct ww_acquire_ctx *ww,
 			struct list_head *objs)
 {
 	if (!xe_vm_no_dma_fences(e->vm))
-		ttm_eu_backoff_reservation(ww, objs);
+		xe_vm_unlock_dma_resv(e->vm, tv_onstack, tv, ww, objs);
 }
 
 int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
@@ -166,13 +149,14 @@ int xe_exec_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 	struct xe_engine *engine;
 	struct xe_sync_entry *syncs = NULL;
 	u64 addresses[XE_HW_ENGINE_MAX_INSTANCE];
+	struct ttm_validate_buffer tv_onstack[XE_ONSTACK_TV];
+	struct ttm_validate_buffer *tv = NULL;
 	u32 i, num_syncs = 0;
 	struct xe_sched_job *job;
 	struct dma_fence *rebind_fence;
 	struct xe_vm *vm;
 	struct ww_acquire_ctx ww;
 	struct list_head objs;
-	struct ttm_validate_buffer tv_vm;
 	bool armed = false;
 	bool write_locked;
 	int err = 0;
@@ -284,9 +268,9 @@ retry:
 			goto err_unlock_list;
 	}
 
-	err = xe_exec_begin(engine, &ww, &tv_vm, &objs);
+	err = xe_exec_begin(engine, &ww, tv_onstack, &tv, &objs);
 	if (err)
-		goto err_unlock_list;
+		goto err_engine_end;
 
 	if (xe_vm_is_closed(engine->vm)) {
 		drm_warn(&xe->drm, "Trying to schedule after vm is closed\n");
@@ -386,7 +370,7 @@ err_put_job:
 	if (err && !armed)
 		xe_sched_job_free(job);
 err_engine_end:
-	xe_exec_end(engine, &ww, &objs);
+	xe_exec_end(engine, tv_onstack, tv, &ww, &objs);
 err_unlock_list:
 	if (write_locked)
 		up_write(&vm->lock);
