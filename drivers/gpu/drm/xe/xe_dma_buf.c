@@ -230,18 +230,22 @@ static const struct dma_buf_attach_ops xe_dma_buf_attach_ops = {
 #if IS_ENABLED(CONFIG_DRM_XE_KUNIT_TEST)
 
 struct dma_buf_test_params {
+	struct xe_test_priv base;
 	const struct dma_buf_attach_ops *attach_ops;
 	bool force_different_devices;
 	u32 mem_mask;
 };
 
+#define to_dma_buf_test_params(_priv) \
+	container_of(_priv, struct dma_buf_test_params, base)
 #endif
 
 struct drm_gem_object *xe_gem_prime_import(struct drm_device *dev,
 					   struct dma_buf *dma_buf)
 {
 	XE_TEST_DECLARE(struct dma_buf_test_params *test =
-			xe_cur_kunit_priv();)
+			to_dma_buf_test_params
+			(xe_cur_kunit_priv(XE_TEST_LIVE_DMA_BUF));)
 	const struct dma_buf_attach_ops *attach_ops;
 	struct dma_buf_attachment *attach;
 	struct drm_gem_object *obj;
