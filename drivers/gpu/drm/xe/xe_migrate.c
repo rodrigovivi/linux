@@ -339,7 +339,14 @@ static void emit_arb_clear(struct xe_bb *bb)
 
 static u64 xe_migrate_res_sizes(struct xe_res_cursor *cur)
 {
-	return min_t(u64, MAX_PREEMPTDISABLE_TRANSFER, cur->size);
+	/*
+	 * For VRAM we use identity mapped pages so we are limited to current
+	 * cursor size. For system we program the pages ourselves so we have no
+	 * such limitation.
+	 */
+	return min_t(u64, MAX_PREEMPTDISABLE_TRANSFER,
+		     mem_type_is_vram(cur->mem_type) ? cur->size :
+		     cur->remaining);
 }
 
 static u32 pte_update_size(struct xe_migrate *m,
@@ -380,7 +387,7 @@ static void emit_pte(struct xe_migrate *m,
 		     struct xe_bb *bb, u32 at_pt,
 		     bool is_vram,
 		     struct xe_res_cursor *cur,
-		     u32 size, struct ttm_tt *ttm)
+		     u32 size, struct xe_bo *bo)
 {
 	u32 ptes;
 	u64 ofs = at_pt * GEN8_PAGE_SIZE;
@@ -410,6 +417,8 @@ static void emit_pte(struct xe_migrate *m,
 		while (chunk--) {
 			u64 addr;
 
+			XE_BUG_ON(cur->start & (PAGE_SIZE - 1));
+
 			if (is_vram) {
 				addr = cur->start;
 
@@ -422,12 +431,7 @@ static void emit_pte(struct xe_migrate *m,
 
 				addr |= GEN12_PPGTT_PTE_LM;
 			} else {
-				unsigned long page = cur->start >> PAGE_SHIFT;
-				unsigned long offset = cur->start &
-					(PAGE_SIZE - 1);
-
-				XE_BUG_ON(page >= ttm->num_pages);
-				addr = ttm->dma_address[page] + offset;
+				addr = xe_res_dma(cur);
 			}
 			addr |= PPAT_CACHED | GEN8_PAGE_PRESENT | GEN8_PAGE_RW;
 			bb->cs[bb->len++] = lower_32_bits(addr);
@@ -546,7 +550,6 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 	struct dma_fence *fence = NULL;
 	u64 size = bo->size;
 	struct xe_res_cursor src_it, dst_it, ccs_it;
-	struct ttm_tt *ttm = bo->ttm.ttm;
 	u64 src_L0_ofs, dst_L0_ofs;
 	u32 src_L0_pt, dst_L0_pt;
 	u64 src_L0, dst_L0;
@@ -557,13 +560,19 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 	bool copy_ccs = xe_device_has_flat_ccs(xe) && xe_bo_needs_ccs_pages(bo);
 	bool copy_system_ccs = copy_ccs && (!src_is_vram || !dst_is_vram);
 
-	xe_res_first(src, 0, bo->size, &src_it);
-	xe_res_first(dst, 0, bo->size, &dst_it);
+	if (!src_is_vram)
+		xe_res_first_sg(xe_bo_get_sg(bo), 0, bo->size, &src_it);
+	else
+		xe_res_first(src, 0, bo->size, &src_it);
+	if (!dst_is_vram)
+		xe_res_first_sg(xe_bo_get_sg(bo), 0, bo->size, &dst_it);
+	else
+		xe_res_first(dst, 0, bo->size, &dst_it);
 
 	if (copy_system_ccs)
-		xe_res_first(NULL, xe_bo_ccs_pages_start(bo),
-			     PAGE_ALIGN(xe_device_ccs_bytes(xe, size)),
-			     &ccs_it);
+		xe_res_first_sg(xe_bo_get_sg(bo), xe_bo_ccs_pages_start(bo),
+				PAGE_ALIGN(xe_device_ccs_bytes(xe, size)),
+				&ccs_it);
 
 	while (size) {
 		u32 batch_size = 2; /* arb_clear() + MI_BATCH_BUFFER_END */
@@ -615,18 +624,18 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 
 		if (!src_is_vram)
 			emit_pte(m, bb, src_L0_pt, src_is_vram, &src_it, src_L0,
-				 ttm);
+				 bo);
 		else
 			xe_res_next(&src_it, src_L0);
 
 		if (!dst_is_vram)
 			emit_pte(m, bb, dst_L0_pt, dst_is_vram, &dst_it, src_L0,
-				 ttm);
+				 bo);
 		else
 			xe_res_next(&dst_it, src_L0);
 
 		if (copy_system_ccs)
-			emit_pte(m, bb, ccs_pt, false, &ccs_it, ccs_size, ttm);
+			emit_pte(m, bb, ccs_pt, false, &ccs_it, ccs_size, bo);
 
 		bb->cs[bb->len++] = MI_BATCH_BUFFER_END;
 		update_idx = bb->len;
@@ -739,7 +748,10 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 	int err;
 	int pass = 0;
 
-	xe_res_first(src, 0, bo->size, &src_it);
+	if (!clear_vram)
+		xe_res_first_sg(xe_bo_get_sg(bo), 0, bo->size, &src_it);
+	else
+		xe_res_first(src, 0, bo->size, &src_it);
 
 	while (size) {
 		u64 clear_L0_ofs;
@@ -781,7 +793,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		if (!clear_vram) {
 			emit_arb_clear(bb);
 			emit_pte(m, bb, clear_L0_pt, clear_vram, &src_it, clear_L0,
-				 bo->ttm.ttm);
+				 bo);
 		} else {
 			xe_res_next(&src_it, clear_L0);
 		}

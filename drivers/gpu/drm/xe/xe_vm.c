@@ -47,6 +47,7 @@ int xe_vma_userptr_pin_pages(struct xe_vma *vma)
 	bool read_only = vma->pte_flags & PTE_READ_ONLY;
 
 
+	lockdep_assert_held(&vm->lock);
 	XE_BUG_ON(!xe_vma_is_userptr(vma));
 retry:
 	if (vma->destroyed)
@@ -63,6 +64,15 @@ retry:
 	if (in_kthread)
 		kthread_use_mm(vma->userptr.notifier.mm);
 
+	if (vma->userptr.sg) {
+		dma_unmap_sgtable(xe->drm.dev,
+				  vma->userptr.sg,
+				  read_only ? DMA_TO_DEVICE :
+				  DMA_BIDIRECTIONAL, 0);
+		sg_free_table(vma->userptr.sg);
+		vma->userptr.sg = NULL;
+	}
+
 	pinned = ret = 0;
 	while (pinned < num_pages) {
 		ret = pin_user_pages_fast(vma->userptr.ptr + pinned * PAGE_SIZE,
@@ -75,16 +85,24 @@ retry:
 		pinned += ret;
 	}
 
-	for (i = 0; i < pinned; ++i) {
-		vma->userptr.dma_address[i] = dma_map_page(xe->drm.dev,
-							   pages[i], 0,
-							   PAGE_SIZE,
-							   DMA_BIDIRECTIONAL);
-		if (dma_mapping_error(xe->drm.dev,
-				      vma->userptr.dma_address[i])) {
-			ret = -EFAULT;
-			goto out;
-		}
+	ret = sg_alloc_table_from_pages(&vma->userptr.sgt, pages, pinned,
+					0, (u64)pinned << PAGE_SHIFT,
+					GFP_KERNEL);
+	if (ret) {
+		vma->userptr.sg = NULL;
+		goto out;
+	}
+	vma->userptr.sg = &vma->userptr.sgt;
+
+	ret = dma_map_sgtable(xe->drm.dev, vma->userptr.sg,
+			      read_only ? DMA_TO_DEVICE :
+			      DMA_BIDIRECTIONAL,
+			      DMA_ATTR_SKIP_CPU_SYNC |
+			      DMA_ATTR_NO_KERNEL_MAPPING);
+	if (ret) {
+		sg_free_table(vma->userptr.sg);
+		vma->userptr.sg = NULL;
+		goto out;
 	}
 
 	for (i = 0; i < pinned; ++i) {
@@ -548,18 +566,6 @@ static int __xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma,
 			struct xe_engine *e, struct xe_sync_entry *syncs,
 			u32 num_syncs, struct async_op_fence *afence);
 
-static void vma_destroy_work_func(struct work_struct *w)
-{
-	struct xe_vma *vma =
-		container_of(w, struct xe_vma, userptr.destroy_work);
-	struct xe_vm *vm = vma->vm;
-
-	XE_BUG_ON(!xe_vma_is_userptr(vma));
-
-	xe_vm_put(vm);
-	kfree(vma);
-}
-
 static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 				   const struct mmu_notifier_range *range,
 				   unsigned long cur_seq)
@@ -796,21 +802,12 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 		int err;
 
 		vma->userptr.ptr = bo_offset_or_userptr;
-		vma->userptr.dma_address =
-			kmalloc(sizeof(*vma->userptr.dma_address) *
-				(size >> PAGE_SHIFT), GFP_KERNEL);
-		if (!vma->userptr.dma_address) {
-			kfree(vma);
-			vma = ERR_PTR(-ENOMEM);
-			return vma;
-		}
 
 		err = mmu_interval_notifier_insert(&vma->userptr.notifier,
 						   current->mm,
 						   vma->userptr.ptr, size,
 						   &vma_userptr_notifier_ops);
 		if (err) {
-			kfree(vma->userptr.dma_address);
 			kfree(vma);
 			vma = ERR_PTR(err);
 			return vma;
@@ -823,9 +820,49 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 	return vma;
 }
 
-static void xe_vma_destroy(struct xe_vma *vma)
+static void xe_vma_destroy_late(struct xe_vma *vma)
 {
-	lockdep_assert_held_write(&vma->vm->lock);
+	struct xe_vm *vm = vma->vm;
+	struct xe_device *xe = vm->xe;
+	bool read_only = vma->pte_flags & PTE_READ_ONLY;
+
+	if (xe_vma_is_userptr(vma)) {
+		if (vma->userptr.sg) {
+			dma_unmap_sgtable(xe->drm.dev,
+					  vma->userptr.sg,
+					  read_only ? DMA_TO_DEVICE :
+					  DMA_BIDIRECTIONAL, 0);
+			sg_free_table(vma->userptr.sg);
+			vma->userptr.sg = NULL;
+		}
+		xe_vm_put(vm);
+	} else {
+		xe_bo_put(vma->bo);
+	}
+
+	kfree(vma);
+}
+
+static void vma_destroy_work_func(struct work_struct *w)
+{
+	struct xe_vma *vma =
+		container_of(w, struct xe_vma, destroy_work);
+
+	xe_vma_destroy_late(vma);
+}
+
+static void vma_destroy_cb(struct dma_fence *fence,
+			   struct dma_fence_cb *cb)
+{
+	struct xe_vma *vma = container_of(cb, struct xe_vma, destroy_cb);
+
+	INIT_WORK(&vma->destroy_work, vma_destroy_work_func);
+	queue_work(system_unbound_wq, &vma->destroy_work);
+}
+
+static void xe_vma_destroy(struct xe_vma *vma, struct dma_fence *fence)
+{
+	lockdep_assert_held(&vma->vm->lock);
 
 	XE_BUG_ON(!list_empty(&vma->unbind_link));
 
@@ -835,19 +872,40 @@ static void xe_vma_destroy(struct xe_vma *vma)
 		list_del_init(&vma->userptr.invalidate_link);
 		spin_unlock(&vma->vm->userptr.invalidated_lock);
 		list_del(&vma->userptr_link);
+	} else {
+		xe_bo_assert_held(vma->bo);
+		list_del(&vma->bo_link);
 	}
 
 	if (!list_empty(&vma->rebind_link))
 		list_del(&vma->rebind_link);
 
-	if (xe_vma_is_userptr(vma)) {
-		/* FIXME: Probably don't need a worker here anymore */
-		INIT_WORK(&vma->userptr.destroy_work, vma_destroy_work_func);
-		queue_work(system_unbound_wq, &vma->userptr.destroy_work);
+	if (fence) {
+		int ret = dma_fence_add_callback(fence, &vma->destroy_cb,
+						 vma_destroy_cb);
+
+		if (ret) {
+			XE_WARN_ON(ret != -ENOENT);
+			xe_vma_destroy_late(vma);
+		}
 	} else {
-		list_del(&vma->bo_link);
-		xe_bo_put(vma->bo);
-		kfree(vma);
+		xe_vma_destroy_late(vma);
+	}
+}
+
+static void xe_vma_destroy_unlocked(struct xe_vma *vma)
+{
+	struct ww_acquire_ctx ww;
+	struct xe_bo *bo = vma->bo;
+
+	if (bo) {
+		xe_bo_get(bo);
+		xe_bo_lock(bo, &ww, 0, false);
+	}
+	xe_vma_destroy(vma, NULL);
+	if (bo) {
+		xe_bo_unlock(bo, &ww);
+		xe_bo_put(bo);
 	}
 }
 
@@ -1147,7 +1205,7 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 
 		/* easy case, remove from VMA? */
 		if (xe_vma_is_userptr(vma) || vma->bo->vm) {
-			xe_vma_destroy(vma);
+			xe_vma_destroy(vma, NULL);
 			continue;
 		}
 
@@ -1185,7 +1243,7 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 			struct xe_vma *vma = to_xe_vma(contested.rb_node);
 
 			rb_erase(&vma->vm_node, &contested);
-			xe_vma_destroy(vma);
+			xe_vma_destroy_unlocked(vma);
 		}
 	}
 
@@ -1547,8 +1605,9 @@ static int xe_vm_unbind(struct xe_vm *vm, struct xe_vma *vma,
 	if (afence)
 		add_async_op_fence_cb(vm, fence, afence);
 
-	xe_vma_destroy(vma);
+	xe_vma_destroy(vma, fence);
 	dma_fence_put(fence);
+
 	return 0;
 }
 
@@ -2038,7 +2097,7 @@ again:
 
 			if (is_unmap_op(op->bind_op.op)) {
 				down_write(&vm->lock);
-				xe_vma_destroy(op->vma);
+				xe_vma_destroy_unlocked(op->vma);
 				up_write(&vm->lock);
 			}
 
@@ -2265,14 +2324,20 @@ out_error:
 static bool bo_has_vm_references(struct xe_bo *bo, struct xe_vm *vm,
 				 struct xe_vma *ignore)
 {
+	struct ww_acquire_ctx ww;
 	struct xe_vma *vma;
+	bool ret = false;
 
+	xe_bo_lock(bo, &ww, 0, false);
 	list_for_each_entry(vma, &bo->vmas, bo_link) {
-		if (vma != ignore && vma->vm == vm && !vma->destroyed)
-			return true;
+		if (vma != ignore && vma->vm == vm && !vma->destroyed) {
+			ret = true;
+			break;
+		}
 	}
+	xe_bo_unlock(bo, &ww);
 
-	return false;
+	return ret;
 }
 
 static int vm_insert_extobj(struct xe_vm *vm, struct xe_vma *vma)
@@ -2502,10 +2567,14 @@ static struct xe_vma *vm_unbind_lookup_vmas(struct xe_vm *vm,
 unwind:
 	list_for_each_entry_safe(__vma, next, &vma->unbind_link, unbind_link)
 		list_del_init(&__vma->unbind_link);
-	if (new_last)
-		xe_vma_destroy(new_last);
-	if (new_first)
-		xe_vma_destroy(new_first);
+	if (new_last) {
+		prep_vma_destroy(vm, new_last);
+		xe_vma_destroy_unlocked(new_last);
+	}
+	if (new_first) {
+		prep_vma_destroy(vm, new_first);
+		xe_vma_destroy_unlocked(new_first);
+	}
 
 	return ERR_PTR(err);
 }
@@ -2570,6 +2639,7 @@ static struct xe_vma *vm_unbind_all_lookup_vmas(struct xe_vm *vm,
 	struct xe_vma *first = NULL, *vma;
 
 	lockdep_assert_held(&vm->lock);
+	xe_bo_assert_held(bo);
 
 	list_for_each_entry(vma, &bo->vmas, bo_link) {
 		if (vma->vm != vm)
@@ -2620,7 +2690,9 @@ static struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm,
 			vm_insert_extobj(vm, vma);
 			err = add_preempt_fences(vm, bo);
 			if (err) {
-				xe_vma_destroy(vma);
+				prep_vma_destroy(vm, vma);
+				xe_vma_destroy_unlocked(vma);
+
 				return ERR_PTR(err);
 			}
 		}
@@ -2654,7 +2726,8 @@ static struct xe_vma *vm_bind_ioctl_lookup_vma(struct xe_vm *vm,
 
 		err = xe_vma_userptr_pin_pages(vma);
 		if (err) {
-			xe_vma_destroy(vma);
+			xe_vma_destroy(vma, NULL);
+
 			return ERR_PTR(err);
 		} else {
 			xe_vm_insert_vma(vm, vma);
@@ -3064,14 +3137,21 @@ destroy_vmas:
 		list_for_each_entry_safe(vma, next, &vma->unbind_link,
 					 unbind_link) {
 			list_del_init(&vma->unbind_link);
-			if (!vma->destroyed)
-				xe_vma_destroy(vma);
+			if (!vma->destroyed) {
+				prep_vma_destroy(vm, vma);
+				xe_vma_destroy_unlocked(vma);
+			}
 		}
 
 		switch (VM_BIND_OP(op)) {
 		case XE_VM_BIND_OP_MAP:
+			prep_vma_destroy(vm, vmas[i]);
+			xe_vma_destroy_unlocked(vmas[i]);
+			break;
 		case XE_VM_BIND_OP_MAP_USERPTR:
-			xe_vma_destroy(vmas[i]);
+			prep_vma_destroy(vm, vmas[i]);
+			xe_vma_destroy(vmas[i], NULL);
+			break;
 		}
 	}
 release_vm_lock:

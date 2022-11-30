@@ -26,21 +26,26 @@
 #ifndef __XE_RES_CURSOR_H__
 #define __XE_RES_CURSOR_H__
 
+#include <linux/scatterlist.h>
+
 #include <drm/drm_mm.h>
 #include <drm/ttm/ttm_placement.h>
 #include <drm/ttm/ttm_range_manager.h>
 #include <drm/ttm/ttm_resource.h>
 #include <drm/ttm/ttm_tt.h>
 
+#include "xe_bo.h"
 #include "xe_macros.h"
+#include "xe_ttm_vram_mgr.h"
 
 /* state back for walking over vram_mgr and gtt_mgr allocations */
 struct xe_res_cursor {
-	u64		start;
-	u64		size;
-	u64		remaining;
-	struct drm_mm_node	*node;
-	const dma_addr_t *dma_address;
+	u64 start;
+	u64 size;
+	u64 remaining;
+	void *node;
+	u32 mem_type;
+	struct scatterlist *sgl;
 };
 
 /**
@@ -57,64 +62,99 @@ static inline void xe_res_first(struct ttm_resource *res,
 				u64 start, u64 size,
 				struct xe_res_cursor *cur)
 {
-	struct drm_mm_node *node;
+	struct drm_buddy_block *block;
+	struct list_head *head, *next;
 
-	cur->dma_address = NULL;
-	if (!res || res->mem_type == TTM_PL_SYSTEM) {
-		cur->start = start;
-		cur->size = size;
-		cur->remaining = size;
-		cur->node = NULL;
-		XE_WARN_ON(res && start + size > res->num_pages << PAGE_SHIFT);
-		return;
-	}
+	cur->sgl = NULL;
+	if (!res)
+		goto fallback;
 
 	XE_BUG_ON(start + size > res->num_pages << PAGE_SHIFT);
 
-	node = to_ttm_range_mgr_node(res)->mm_nodes;
-	while (start >= node->size << PAGE_SHIFT)
-		start -= node++->size << PAGE_SHIFT;
+	cur->mem_type = res->mem_type;
 
-	cur->start = (node->start << PAGE_SHIFT) + start;
-	cur->size = min((node->size << PAGE_SHIFT) - start, size);
+	switch (cur->mem_type) {
+	case XE_PL_VRAM0:
+	case XE_PL_VRAM1:
+		head = &to_xe_ttm_vram_mgr_resource(res)->blocks;
+
+		block = list_first_entry_or_null(head,
+						 struct drm_buddy_block,
+						 link);
+		if (!block)
+			goto fallback;
+
+		while (start >= xe_ttm_vram_mgr_block_size(block)) {
+			start -= xe_ttm_vram_mgr_block_size(block);
+
+			next = block->link.next;
+			if (next != head)
+				block = list_entry(next, struct drm_buddy_block,
+						   link);
+		}
+
+		cur->start = xe_ttm_vram_mgr_block_start(block) + start;
+		cur->size = min(xe_ttm_vram_mgr_block_size(block) - start,
+				size);
+		cur->remaining = size;
+		cur->node = block;
+		break;
+	default:
+		goto fallback;
+	}
+
+	return;
+
+fallback:
+	cur->start = start;
+	cur->size = size;
 	cur->remaining = size;
-	cur->node = node;
+	cur->node = NULL;
+	cur->mem_type = XE_PL_TT;
+	XE_WARN_ON(res && start + size > res->num_pages << PAGE_SHIFT);
+	return;
 }
 
-static inline void __xe_res_dma_next(struct xe_res_cursor *cur)
+static inline void __xe_res_sg_next(struct xe_res_cursor *cur)
 {
-	const u64 *dma = cur->dma_address + (cur->start >> PAGE_SHIFT);
-	pgoff_t last_idx = cur->remaining >> PAGE_SHIFT;
-	pgoff_t idx = 0;
+	struct scatterlist *sgl = cur->sgl;
+	u64 start = cur->start;
 
-	while (idx < last_idx && dma[idx] == dma[0] + (idx << PAGE_SHIFT))
-		idx++;
+	while (start >= sg_dma_len(sgl)) {
+		start -= sg_dma_len(sgl);
+		sgl = sg_next(sgl);
+		XE_BUG_ON(!sgl);
+	}
 
-	cur->size = idx << PAGE_SHIFT;
+	cur->start = start;
+	cur->size = sg_dma_len(sgl) - start;
+	cur->sgl = sgl;
 }
 
 /**
- * xe_res_first_dma - initialize a xe_res_cursor with array of dma addresses
+ * xe_res_first_sg - initialize a xe_res_cursor with a scatter gather table
  *
- * @dma_address: array of dma addresses to walk
+ * @sg: scatter gather table to walk
  * @start: Start of the range
  * @size: Size of the range
  * @cur: cursor object to initialize
  *
  * Start walking over the range of allocations between @start and @size.
  */
-static inline void xe_res_first_dma(const dma_addr_t *dma_address,
-				    u64 start, u64 size,
-				    struct xe_res_cursor *cur)
+static inline void xe_res_first_sg(const struct sg_table *sg,
+				   u64 start, u64 size,
+				   struct xe_res_cursor *cur)
 {
+	XE_BUG_ON(!sg);
 	XE_BUG_ON(!IS_ALIGNED(start, PAGE_SIZE) ||
 		  !IS_ALIGNED(size, PAGE_SIZE));
 	cur->node = NULL;
 	cur->start = start;
 	cur->remaining = size;
 	cur->size = 0;
-	cur->dma_address = dma_address;
-	__xe_res_dma_next(cur);
+	cur->sgl = sg->sgl;
+	cur->mem_type = XE_PL_TT;
+	__xe_res_sg_next(cur);
 }
 
 /**
@@ -127,7 +167,9 @@ static inline void xe_res_first_dma(const dma_addr_t *dma_address,
  */
 static inline void xe_res_next(struct xe_res_cursor *cur, u64 size)
 {
-	struct drm_mm_node *node = cur->node;
+	struct drm_buddy_block *block;
+	struct list_head *next;
+	u64 start;
 
 	XE_BUG_ON(size > cur->remaining);
 
@@ -135,19 +177,43 @@ static inline void xe_res_next(struct xe_res_cursor *cur, u64 size)
 	if (!cur->remaining)
 		return;
 
-	cur->size -= size;
-	if (cur->size) {
+	if (cur->size > size) {
+		cur->size -= size;
 		cur->start += size;
-		return;
-	} else if (cur->dma_address) {
-		cur->start += size;
-		__xe_res_dma_next(cur);
 		return;
 	}
 
-	cur->node = ++node;
-	cur->start = node->start << PAGE_SHIFT;
-	cur->size = min(node->size << PAGE_SHIFT, cur->remaining);
+	if (cur->sgl) {
+		cur->start += size;
+		__xe_res_sg_next(cur);
+		return;
+	}
+
+	switch (cur->mem_type) {
+	case XE_PL_VRAM0:
+	case XE_PL_VRAM1:
+		start = size - cur->size;
+		block = cur->node;
+
+		next = block->link.next;
+		block = list_entry(next, struct drm_buddy_block, link);
+
+
+		while (start >= xe_ttm_vram_mgr_block_size(block)) {
+			start -= xe_ttm_vram_mgr_block_size(block);
+
+			next = block->link.next;
+			block = list_entry(next, struct drm_buddy_block, link);
+		}
+
+		cur->start = xe_ttm_vram_mgr_block_start(block) + start;
+		cur->size = min(xe_ttm_vram_mgr_block_size(block) - start,
+				cur->remaining);
+		cur->node = block;
+		break;
+	default:
+		return;
+	}
 }
 
 /**
@@ -157,7 +223,6 @@ static inline void xe_res_next(struct xe_res_cursor *cur, u64 size)
  */
 static inline u64 xe_res_dma(const struct xe_res_cursor *cur)
 {
-	return cur->dma_address ? cur->dma_address[cur->start >> PAGE_SHIFT] :
-		cur->start;
+	return cur->sgl ? sg_dma_address(cur->sgl) + cur->start : cur->start;
 }
 #endif

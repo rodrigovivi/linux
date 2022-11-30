@@ -9,6 +9,7 @@
 #include <linux/dma-resv.h>
 #include <linux/kref.h>
 #include <linux/mmu_notifier.h>
+#include <linux/scatterlist.h>
 
 #include "xe_device_types.h"
 #include "xe_pt_types.h"
@@ -84,6 +85,12 @@ struct xe_vma {
 	 */
 	struct list_head unbind_link;
 
+	/** @destroy_cb: callback to destroy VMA when unbind job is done */
+	struct dma_fence_cb destroy_cb;
+
+	/** @destroy_work: worker to destroy this BO */
+	struct work_struct destroy_work;
+
 	/** @userptr: user pointer state */
 	struct {
 		/** @ptr: user pointer */
@@ -94,12 +101,10 @@ struct xe_vma {
 		 * @notifier: MMU notifier for user pointer (invalidation call back)
 		 */
 		struct mmu_interval_notifier notifier;
-		/**
-		 * @dma_address: DMA address for each of page of this user pointer
-		 */
-		dma_addr_t *dma_address;
-		/** @destroy_work: worker to destroy this BO */
-		struct work_struct destroy_work;
+		/** @sgt: storage for a scatter gather table */
+		struct sg_table sgt;
+		/** @sg: allocated scatter gather table */
+		struct sg_table *sg;
 		/** @notifier_seq: notifier sequence number */
 		unsigned long notifier_seq;
 		/**

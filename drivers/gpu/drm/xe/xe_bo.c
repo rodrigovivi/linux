@@ -218,12 +218,53 @@ static void xe_evict_flags(struct ttm_buffer_object *tbo,
 
 struct xe_ttm_tt {
 	struct ttm_tt ttm;
+	struct device *dev;
+	struct sg_table sgt;
+	struct sg_table *sg;
 };
+
+static int xe_tt_map_sg(struct ttm_tt *tt)
+{
+	struct xe_ttm_tt *xe_tt = container_of(tt, struct xe_ttm_tt, ttm);
+	unsigned long num_pages = tt->num_pages;
+	int ret;
+
+	XE_BUG_ON(tt->page_flags & TTM_TT_FLAG_EXTERNAL);
+
+	if (xe_tt->sg)
+		return 0;
+
+	ret = sg_alloc_table_from_pages(&xe_tt->sgt, tt->pages, num_pages,
+					0, (u64)num_pages << PAGE_SHIFT,
+					GFP_KERNEL);
+	if (ret)
+		return ret;
+
+	xe_tt->sg = &xe_tt->sgt;
+	ret = dma_map_sgtable(xe_tt->dev, xe_tt->sg, DMA_BIDIRECTIONAL,
+			      DMA_ATTR_SKIP_CPU_SYNC);
+	if (ret) {
+		sg_free_table(xe_tt->sg);
+		xe_tt->sg = NULL;
+		return ret;
+	}
+
+	return 0;
+}
+
+struct sg_table *xe_bo_get_sg(struct xe_bo *bo)
+{
+	struct ttm_tt *tt = bo->ttm.ttm;
+	struct xe_ttm_tt *xe_tt = container_of(tt, struct xe_ttm_tt, ttm);
+
+	return xe_tt->sg;
+}
 
 static struct ttm_tt *xe_ttm_tt_create(struct ttm_buffer_object *ttm_bo,
 				       u32 page_flags)
 {
 	struct xe_bo *bo = ttm_to_xe_bo(ttm_bo);
+	struct xe_device *xe = xe_bo_device(bo);
 	struct xe_ttm_tt *tt;
 	int err;
 
@@ -231,14 +272,15 @@ static struct ttm_tt *xe_ttm_tt_create(struct ttm_buffer_object *ttm_bo,
 	if (!tt)
 		return NULL;
 
+	tt->dev = xe->drm.dev;
 	/* TODO: We only need to do this for user allocated BOs */
 	page_flags |= TTM_TT_FLAG_ZERO_ALLOC;
 
 	/* TODO: Select caching mode */
-	err = ttm_sg_tt_init(&tt->ttm, &bo->ttm, page_flags, ttm_cached,
-			     DIV_ROUND_UP(xe_device_ccs_bytes(xe_bo_device(bo),
-							      bo->ttm.base.size),
-					  PAGE_SIZE));
+	err = ttm_tt_init(&tt->ttm, &bo->ttm, page_flags, ttm_cached,
+			  DIV_ROUND_UP(xe_device_ccs_bytes(xe_bo_device(bo),
+							   bo->ttm.base.size),
+				       PAGE_SIZE));
 	if (err) {
 		kfree(tt);
 		return NULL;
@@ -250,6 +292,8 @@ static struct ttm_tt *xe_ttm_tt_create(struct ttm_buffer_object *ttm_bo,
 static int xe_ttm_tt_populate(struct ttm_device *ttm_dev, struct ttm_tt *tt,
 			      struct ttm_operation_ctx *ctx)
 {
+	int err;
+
 	/*
 	 * dma-bufs are not populated with pages, and the dma-
 	 * addresses are set up when moved to XE_PL_TT.
@@ -257,13 +301,31 @@ static int xe_ttm_tt_populate(struct ttm_device *ttm_dev, struct ttm_tt *tt,
 	if (tt->page_flags & TTM_TT_FLAG_EXTERNAL)
 		return 0;
 
-	return ttm_pool_alloc(&ttm_dev->pool, tt, ctx);
+	err = ttm_pool_alloc(&ttm_dev->pool, tt, ctx);
+	if (err)
+		return err;
+
+	/* A follow up may move this xe_bo_move when BO is moved to XE_PL_TT */
+	err = xe_tt_map_sg(tt);
+	if (err)
+		ttm_pool_free(&ttm_dev->pool, tt);
+
+	return err;
 }
 
 static void xe_ttm_tt_unpopulate(struct ttm_device *ttm_dev, struct ttm_tt *tt)
 {
+	struct xe_ttm_tt *xe_tt = container_of(tt, struct xe_ttm_tt, ttm);
+
 	if (tt->page_flags & TTM_TT_FLAG_EXTERNAL)
 		return;
+
+	if (xe_tt->sg) {
+		dma_unmap_sgtable(xe_tt->dev, xe_tt->sg,
+				  DMA_BIDIRECTIONAL, 0);
+		sg_free_table(xe_tt->sg);
+		xe_tt->sg = NULL;
+	}
 
 	return ttm_pool_free(&ttm_dev->pool, tt);
 }
@@ -358,9 +420,9 @@ static int xe_bo_move_dmabuf(struct ttm_buffer_object *ttm_bo,
 			     struct ttm_resource *new_res)
 {
 	struct dma_buf_attachment *attach = ttm_bo->base.import_attach;
+	struct xe_ttm_tt *xe_tt = container_of(ttm_bo->ttm, struct xe_ttm_tt,
+					       ttm);
 	struct sg_table *sg;
-	struct sg_dma_page_iter dma_iter;
-	u64 page;
 
 	XE_BUG_ON(!attach);
 	XE_BUG_ON(!ttm_bo->ttm);
@@ -378,11 +440,7 @@ static int xe_bo_move_dmabuf(struct ttm_buffer_object *ttm_bo,
 		return PTR_ERR(sg);
 
 	ttm_bo->sg = sg;
-	page = 0;
-	for_each_sgtable_dma_page(sg, &dma_iter, 0) {
-		ttm_bo->ttm->dma_address[page++] =
-			sg_page_iter_dma_address(&dma_iter);
-	}
+	xe_tt->sg = sg;
 
 out:
 	ttm_bo_move_null(ttm_bo, new_res);
@@ -595,9 +653,13 @@ static void xe_ttm_bo_delete_mem_notify(struct ttm_buffer_object *ttm_bo)
 	 * dma-buf attachment.
 	 */
 	if (ttm_bo->type == ttm_bo_type_sg && ttm_bo->sg) {
+		struct xe_ttm_tt *xe_tt = container_of(ttm_bo->ttm,
+						       struct xe_ttm_tt, ttm);
+
 		dma_buf_unmap_attachment(ttm_bo->base.import_attach, ttm_bo->sg,
 					 DMA_BIDIRECTIONAL);
 		ttm_bo->sg = NULL;
+		xe_tt->sg = NULL;
 	}
 }
 
@@ -1103,6 +1165,7 @@ bool xe_bo_is_xe_bo(struct ttm_buffer_object *bo)
 dma_addr_t xe_bo_addr(struct xe_bo *bo, u64 offset,
 		      size_t page_size, bool *is_lmem)
 {
+	struct xe_res_cursor cur;
 	u64 page;
 
 	if (!READ_ONCE(bo->ttm.pin_count))
@@ -1115,8 +1178,11 @@ dma_addr_t xe_bo_addr(struct xe_bo *bo, u64 offset,
 	*is_lmem = xe_bo_is_vram(bo);
 
 	if (!*is_lmem) {
-		XE_BUG_ON(!bo->ttm.ttm || !bo->ttm.ttm->dma_address);
-		return bo->ttm.ttm->dma_address[page] + offset;
+		XE_BUG_ON(!bo->ttm.ttm);
+
+		xe_res_first_sg(xe_bo_get_sg(bo), page << PAGE_SHIFT,
+				page_size, &cur);
+		return xe_res_dma(&cur) + offset;
 	} else {
 		struct xe_res_cursor cur;
 

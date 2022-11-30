@@ -145,7 +145,7 @@ static int query_memory_usage(struct xe_device *xe,
 			usage->regions[usage->num_regions].max_page_size =
 				SZ_1G;
 			usage->regions[usage->num_regions].total_size =
-				man->size << PAGE_SHIFT;
+				man->size;
 			usage->regions[usage->num_regions++].used =
 				ttm_resource_manager_usage(man);
 		}
