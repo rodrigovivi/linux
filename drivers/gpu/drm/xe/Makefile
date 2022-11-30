@@ -90,6 +90,7 @@ xe-y += xe_bb.o \
 	xe_sync.o \
 	xe_trace.o \
 	xe_ttm_gtt_mgr.o \
+	xe_ttm_stolen_mgr.o \
 	xe_ttm_vram_mgr.o \
 	xe_tuning.o \
 	xe_uc.o \
