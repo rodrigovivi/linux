@@ -862,21 +862,23 @@ static void vma_destroy_cb(struct dma_fence *fence,
 
 static void xe_vma_destroy(struct xe_vma *vma, struct dma_fence *fence)
 {
-	lockdep_assert_held(&vma->vm->lock);
+	struct xe_vm *vm = vma->vm;
 
+	lockdep_assert_held(&vm->lock);
 	XE_BUG_ON(!list_empty(&vma->unbind_link));
 
 	if (xe_vma_is_userptr(vma)) {
 		mmu_interval_notifier_remove(&vma->userptr.notifier);
-		spin_lock(&vma->vm->userptr.invalidated_lock);
+		spin_lock(&vm->userptr.invalidated_lock);
 		list_del_init(&vma->userptr.invalidate_link);
-		spin_unlock(&vma->vm->userptr.invalidated_lock);
+		spin_unlock(&vm->userptr.invalidated_lock);
 		list_del(&vma->userptr_link);
 	} else {
 		xe_bo_assert_held(vma->bo);
 		list_del(&vma->bo_link);
 	}
 
+	xe_vm_assert_held(vm);
 	if (!list_empty(&vma->rebind_link))
 		list_del(&vma->rebind_link);
 
@@ -895,18 +897,29 @@ static void xe_vma_destroy(struct xe_vma *vma, struct dma_fence *fence)
 
 static void xe_vma_destroy_unlocked(struct xe_vma *vma)
 {
+	struct ttm_validate_buffer tv[2];
 	struct ww_acquire_ctx ww;
 	struct xe_bo *bo = vma->bo;
+	LIST_HEAD(objs);
+	LIST_HEAD(dups);
+	int err;
+
+	memset(tv, 0, sizeof(tv));
+	tv[0].bo = xe_vm_ttm_bo(vma->vm);
+	list_add(&tv[0].head, &objs);
 
 	if (bo) {
-		xe_bo_get(bo);
-		xe_bo_lock(bo, &ww, 0, false);
+		tv[1].bo = &xe_bo_get(bo)->ttm;
+		list_add(&tv[1].head, &objs);
 	}
+	err = ttm_eu_reserve_buffers(&ww, &objs, false, &dups);
+	XE_WARN_ON(err);
+
 	xe_vma_destroy(vma, NULL);
-	if (bo) {
-		xe_bo_unlock(bo, &ww);
+
+	ttm_eu_backoff_reservation(&ww, &objs);
+	if (bo)
 		xe_bo_put(bo);
-	}
 }
 
 static struct xe_vma *to_xe_vma(const struct rb_node *node)
@@ -1207,8 +1220,15 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 		if (xe_vma_is_userptr(vma) || vma->bo->vm) {
 			xe_vma_destroy(vma, NULL);
 			continue;
-		}
+		} else if (dma_resv_trylock(vma->bo->ttm.base.resv)) {
+			struct xe_bo *bo = vma->bo;
 
+			xe_bo_get(bo);
+			xe_vma_destroy(vma, NULL);
+			dma_resv_unlock(bo->ttm.base.resv);
+			xe_bo_put(bo);
+			continue;
+		}
 		rb_add(&vma->vm_node, &contested, xe_vma_less_cb);
 	}
 
@@ -3150,7 +3170,7 @@ destroy_vmas:
 			break;
 		case XE_VM_BIND_OP_MAP_USERPTR:
 			prep_vma_destroy(vm, vmas[i]);
-			xe_vma_destroy(vmas[i], NULL);
+			xe_vma_destroy_unlocked(vmas[i]);
 			break;
 		}
 	}

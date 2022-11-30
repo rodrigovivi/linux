@@ -413,9 +413,19 @@ static int xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo,
 			}
 
 		} else {
+			bool vm_resv_locked = false;
+
+			if (dma_resv_trylock(&vm->resv))
+				vm_resv_locked = true;
+			else if (ctx->resv != &vm->resv)
+				return -EBUSY;
+
+			xe_vm_assert_held(vm);
 			if (list_empty(&vma->rebind_link))
-				list_add_tail(&vma->rebind_link,
-					      &vm->rebind_list);
+				list_add_tail(&vma->rebind_link, &vm->rebind_list);
+
+			if (vm_resv_locked)
+				dma_resv_unlock(&vm->resv);
 		}
 	}
 
