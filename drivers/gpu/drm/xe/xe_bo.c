@@ -389,13 +389,18 @@ static int xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo)
 
 		if (xe_device_in_fault_mode(xe)) {
 			/* Wait for pending binds / unbinds. */
-			ret = dma_resv_wait_timeout(bo->ttm.base.resv,
-						    DMA_RESV_USAGE_BOOKKEEP,
-						    true, MAX_SCHEDULE_TIMEOUT);
-			if (!ret) {
+			long timeout = dma_resv_wait_timeout(bo->ttm.base.resv,
+							     DMA_RESV_USAGE_BOOKKEEP,
+							     true, MAX_SCHEDULE_TIMEOUT);
+			if (timeout > 0) {
 				ret = xe_vm_invalidate_vma(vma);
 				XE_WARN_ON(ret);
+			} else if (!timeout) {
+				ret = -ETIME;
+			} else {
+				ret = timeout;
 			}
+
 		} else {
 			if (list_empty(&vma->rebind_link))
 				list_add_tail(&vma->rebind_link,
