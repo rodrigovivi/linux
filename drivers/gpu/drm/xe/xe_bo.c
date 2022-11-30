@@ -784,8 +784,6 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
 	bo->size = size;
 	bo->flags = flags;
 	bo->ttm.base.funcs = &xe_gem_object_funcs;
-	bo->extobj_tv.num_shared = 1;
-	bo->extobj_tv.bo = &bo->ttm;
 	bo->props.preferred_mem_class = XE_BO_PROPS_INVALID;
 	bo->props.preferred_gt = XE_BO_PROPS_INVALID;
 	bo->props.preferred_mem_type = XE_BO_PROPS_INVALID;

@@ -43,8 +43,6 @@ struct xe_bo {
 	struct iosys_map vmap;
 	/** @ttm_kmap: TTM bo kmap object for internal use only. Keep off. */
 	struct ttm_bo_kmap_obj kmap;
-	/** @extobj_tv: used during exec to lock all external BOs */
-	struct ttm_validate_buffer extobj_tv;
 	/** @pinned_link: link to present / evicted list of pinned BO */
 	struct list_head pinned_link;
 	/** @props: BO user controlled properties */
