@@ -107,21 +107,18 @@ static int xe_exec_begin(struct xe_engine *e, struct ww_acquire_ctx *ww,
 	err = xe_vm_lock_dma_resv(vm, ww, tv_onstack, tv, objs, true, 1);
 	if (err)
 		return err;
+
 	/*
-	 * Validate and BOs that have been evicted (i.e. make sure the
+	 * Validate BOs that have been evicted (i.e. make sure the
 	 * BOs have valid placements possibly moving an evicted BO back
 	 * to a location where the GPU can access it).
-	 *
-	 * This list can grow during the loop as xe_bo_validate can
-	 * trigger an eviction within this VM. This is safe as newly
-	 * evicted VMAs are added at the end of the list and the loop
-	 * checks for newly added entries each iteration.
 	 */
 	list_for_each_entry(vma, &vm->rebind_list, rebind_link) {
 		if (xe_vma_is_userptr(vma))
+
 			continue;
 
-		err = xe_bo_validate(vma->bo, vm);
+		err = xe_bo_validate(vma->bo, vm, false);
 		if (err)
 			return err;
 	}

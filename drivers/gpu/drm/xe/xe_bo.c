@@ -769,7 +769,7 @@ static vm_fault_t xe_gem_fault(struct vm_fault *vmf)
 		if (should_migrate_to_system(bo))
 			r = xe_bo_migrate(bo, XE_PL_TT);
 		else
-			r = xe_bo_validate(bo, NULL);
+			r = xe_bo_validate(bo, NULL, false);
 		if (r == -EBUSY || r == -ERESTARTSYS)
 			ret = VM_FAULT_NOPAGE;
 		else if (r)
@@ -1031,7 +1031,7 @@ int xe_bo_pin_external(struct xe_bo *bo)
 	XE_BUG_ON(!xe_bo_is_user(bo));
 
 	if (!xe_bo_is_pinned(bo)) {
-		err = xe_bo_validate(bo, NULL);
+		err = xe_bo_validate(bo, NULL, false);
 		if (err)
 			return err;
 
@@ -1075,7 +1075,7 @@ int xe_bo_pin(struct xe_bo *bo)
 	/* We only expect at most 1 pin */
 	XE_BUG_ON(xe_bo_is_pinned(bo));
 
-	err = xe_bo_validate(bo, NULL);
+	err = xe_bo_validate(bo, NULL, false);
 	if (err)
 		return err;
 
@@ -1164,7 +1164,23 @@ void xe_bo_unpin(struct xe_bo *bo)
 	ttm_bo_unpin(&bo->ttm);
 }
 
-int xe_bo_validate(struct xe_bo *bo, struct xe_vm *vm)
+/**
+ * xe_bo_validate() - Make sure the bo is in an allowed placement
+ * @bo: The bo,
+ * @vm: Pointer to a the vm the bo shares a locked dma_resv object with, or
+ *      NULL. Used together with @allow_res_evict.
+ * @allow_res_evict: Whether it's allowed to evict bos sharing @vm's
+ *                   reservation object.
+ *
+ * Make sure the bo is in allowed placement, migrating it if necessary. If
+ * needed, other bos will be evicted. If bos selected for eviction shares
+ * the @vm's reservation object, they can be evicted iff @allow_res_evict is
+ * set to true, otherwise they will be bypassed.
+ *
+ * Return: 0 on success, negative error code on failure. May return
+ * -EINTR or -ERESTARTSYS if internal waits are interrupted by a signal.
+ */
+int xe_bo_validate(struct xe_bo *bo, struct xe_vm *vm, bool allow_res_evict)
 {
 	struct ttm_operation_ctx ctx = {
 		.interruptible = true,
@@ -1175,7 +1191,7 @@ int xe_bo_validate(struct xe_bo *bo, struct xe_vm *vm)
 		lockdep_assert_held(&vm->lock);
 		xe_vm_assert_held(vm);
 
-		ctx.allow_res_evict = true;
+		ctx.allow_res_evict = allow_res_evict;
 		ctx.resv = &vm->resv;
 	}
 

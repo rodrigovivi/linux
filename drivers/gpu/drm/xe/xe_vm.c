@@ -505,7 +505,7 @@ retry:
 		if (xe_vma_is_userptr(vma))
 			continue;
 
-		err = xe_bo_validate(vma->bo, vm);
+		err = xe_bo_validate(vma->bo, vm, false);
 		if (err)
 			goto out_unlock;
 	}
@@ -1602,7 +1602,7 @@ static int xe_vm_bind(struct xe_vm *vm, struct xe_vma *vma, struct xe_engine *e,
 	xe_bo_assert_held(bo);
 
 	if (bo) {
-		err = xe_bo_validate(bo, vm);
+		err = xe_bo_validate(bo, vm, true);
 		if (err)
 			return err;
 	}

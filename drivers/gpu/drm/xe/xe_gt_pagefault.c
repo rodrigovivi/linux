@@ -231,7 +231,7 @@ retry_userptr:
 			goto unlock_dma_resv;
 	} else if (bo) {
 		/* Create backing store if needed */
-		ret = xe_bo_validate(bo, vm);
+		ret = xe_bo_validate(bo, vm, true);
 		if (ret)
 			goto unlock_dma_resv;
 	}

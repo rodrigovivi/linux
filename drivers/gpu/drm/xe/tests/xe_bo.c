@@ -22,7 +22,7 @@ static int ccs_test_migrate(struct xe_gt *gt, struct xe_bo *bo,
 	u32 offset;
 
 	/* Move bo to VRAM if not already there. */
-	ret = xe_bo_validate(bo, NULL);
+	ret = xe_bo_validate(bo, NULL, false);
 	if (ret) {
 		KUNIT_FAIL(test, "Failed to validate bo.\n");
 		return ret;

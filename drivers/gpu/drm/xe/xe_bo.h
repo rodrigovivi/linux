@@ -176,7 +176,7 @@ int xe_bo_pin_external(struct xe_bo *bo);
 int xe_bo_pin(struct xe_bo *bo);
 void xe_bo_unpin_external(struct xe_bo *bo);
 void xe_bo_unpin(struct xe_bo *bo);
-int xe_bo_validate(struct xe_bo *bo, struct xe_vm *vm);
+int xe_bo_validate(struct xe_bo *bo, struct xe_vm *vm, bool allow_res_evict);
 
 static inline bool xe_bo_is_pinned(struct xe_bo *bo)
 {
