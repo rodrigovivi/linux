@@ -16,7 +16,31 @@ void xe_sched_job_module_exit(void);
 
 struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
 					 u64 *batch_addr);
-void xe_sched_job_free(struct xe_sched_job *job);
+void xe_sched_job_destroy(struct kref *ref);
+
+/**
+ * xe_sched_job_get - get reference to XE schedule job
+ * @job: XE schedule job object
+ *
+ * Increment XE schedule job's reference count
+ */
+static inline struct xe_sched_job *xe_sched_job_get(struct xe_sched_job *job)
+{
+	kref_get(&job->refcount);
+	return job;
+}
+
+/**
+ * xe_sched_job_put - put reference to XE schedule job
+ * @job: XE schedule job object
+ *
+ * Decrement XE schedule job's reference count, call xe_sched_job_destroy when
+ * reference count == 0.
+ */
+static inline void xe_sched_job_put(struct xe_sched_job *job)
+{
+	kref_put(&job->refcount, xe_sched_job_destroy);
+}
 
 void xe_sched_job_set_error(struct xe_sched_job *job, int error);
 static inline bool xe_sched_job_is_error(struct xe_sched_job *job)

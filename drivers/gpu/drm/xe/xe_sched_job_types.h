@@ -6,6 +6,8 @@
 #ifndef _XE_SCHED_JOB_TYPES_H_
 #define _XE_SCHED_JOB_TYPES_H_
 
+#include <linux/kref.h>
+
 #include <drm/gpu_scheduler.h>
 
 struct xe_engine;
@@ -18,6 +20,8 @@ struct xe_sched_job {
 	struct drm_sched_job drm;
 	/** @engine: XE submission engine */
 	struct xe_engine *engine;
+	/** @refcount: ref count of this job */
+	struct kref refcount;
 	/**
 	 * @fence: dma fence to indicate completion. 1 way relationship - job
 	 * can safely reference fence, fence cannot safely reference job.
