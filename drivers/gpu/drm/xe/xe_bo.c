@@ -377,6 +377,8 @@ static int xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo,
 	struct xe_vma *vma;
 	int ret = 0;
 
+	dma_resv_assert_held(bo->ttm.base.resv);
+
 	if (!xe_device_in_fault_mode(xe) && !list_empty(&bo->vmas)) {
 		dma_resv_iter_begin(&cursor, bo->ttm.base.resv,
 				    DMA_RESV_USAGE_PREEMPT_FENCE);
@@ -414,11 +416,23 @@ static int xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo,
 
 		} else {
 			bool vm_resv_locked = false;
+			struct xe_vm *vm = vma->vm;
 
+			/*
+			 * We need to put the vma on the vm's rebind_list,
+			 * but need the vm resv to do so. If we can't verify
+			 * that we indeed have it locked, put the vma an the
+			 * vm's notifier.rebind_list instead and scoop later.
+			 */
 			if (dma_resv_trylock(&vm->resv))
 				vm_resv_locked = true;
-			else if (ctx->resv != &vm->resv)
-				return -EBUSY;
+			else if (ctx->resv != &vm->resv) {
+				spin_lock(&vm->notifier.list_lock);
+				list_move_tail(&vma->notifier.rebind_link,
+					       &vm->notifier.rebind_list);
+				spin_unlock(&vm->notifier.list_lock);
+				continue;
+			}
 
 			xe_vm_assert_held(vm);
 			if (list_empty(&vma->rebind_link))

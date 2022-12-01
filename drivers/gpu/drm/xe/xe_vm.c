@@ -356,6 +356,7 @@ int xe_vm_lock_dma_resv(struct xe_vm *vm, struct ww_acquire_ctx *ww,
 			unsigned int num_shared)
 {
 	struct ttm_validate_buffer *tv_vm, *tv_bo;
+	struct xe_vma *vma, *next;
 	LIST_HEAD(dups);
 	int err;
 	int i;
@@ -388,6 +389,15 @@ int xe_vm_lock_dma_resv(struct xe_vm *vm, struct ww_acquire_ctx *ww,
 	if (err)
 		goto out_err;
 
+	spin_lock(&vm->notifier.list_lock);
+	list_for_each_entry_safe(vma, next, &vm->notifier.rebind_list,
+				 notifier.rebind_link) {
+		xe_bo_assert_held(vma->bo);
+		list_del_init(&vma->notifier.rebind_link);
+		list_move_tail(&vma->rebind_link, &vm->rebind_list);
+	}
+	spin_unlock(&vm->notifier.list_lock);
+
 	*tv = tv_vm;
 	return 0;
 
@@ -416,6 +426,14 @@ void xe_vm_unlock_dma_resv(struct xe_vm *vm,
 			   struct ww_acquire_ctx *ww,
 			   struct list_head *objs)
 {
+	/*
+	 * Nothing should've been able to enter the list while we were locked,
+	 * since we've held the dma-resvs of all the vm's external objects,
+	 * and holding the dma_resv of an object is required for list
+	 * addition, and we shouldn't add ourselves.
+	 */
+	XE_WARN_ON(!list_empty(&vm->notifier.rebind_list));
+
 	ttm_eu_backoff_reservation(ww, objs);
 	if (tv && tv != tv_onstack)
 		kvfree(tv);
@@ -774,6 +792,7 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 	INIT_LIST_HEAD(&vma->unbind_link);
 	INIT_LIST_HEAD(&vma->userptr_link);
 	INIT_LIST_HEAD(&vma->userptr.invalidate_link);
+	INIT_LIST_HEAD(&vma->notifier.rebind_link);
 
 	vma->vm = vm;
 	vma->start = start;
@@ -1023,6 +1042,9 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 	INIT_LIST_HEAD(&vm->userptr.invalidated);
 	init_rwsem(&vm->userptr.notifier_lock);
 	spin_lock_init(&vm->userptr.invalidated_lock);
+
+	INIT_LIST_HEAD(&vm->notifier.rebind_list);
+	spin_lock_init(&vm->notifier.list_lock);
 
 	INIT_LIST_HEAD(&vm->async_ops.pending);
 	INIT_WORK(&vm->async_ops.work, async_op_work_func);
@@ -2364,7 +2386,7 @@ static int vm_insert_extobj(struct xe_vm *vm, struct xe_vma *vma)
 {
 	struct xe_bo **bos, *bo = vma->bo;
 
-	lockdep_assert_held(&vm->lock);
+	lockdep_assert_held_write(&vm->lock);
 
 	if (bo_has_vm_references(bo, vm, vma))
 		return 0;
