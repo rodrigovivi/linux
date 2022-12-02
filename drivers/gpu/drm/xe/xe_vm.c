@@ -330,18 +330,23 @@ int xe_vm_add_compute_engine(struct xe_vm *vm, struct xe_engine *e)
 	++vm->preempt.num_engines;
 	e->compute.pfence = pfence;
 
+	down_read(&vm->userptr.notifier_lock);
+
 	dma_resv_add_fence(&vm->resv, pfence,
 			   DMA_RESV_USAGE_PREEMPT_FENCE);
 
 	xe_vm_fence_all_extobjs(vm, pfence, DMA_RESV_USAGE_PREEMPT_FENCE);
 
 	/*
-	 * Check to see if a preemption on VM is in flight, if so trigger this
-	 * preempt fence to sync state with other preempt fences on the VM.
+	 * Check to see if a preemption on VM is in flight or userptr
+	 * invalidation, if so trigger this preempt fence to sync state with
+	 * other preempt fences on the VM.
 	 */
-	wait = preempt_fences_waiting(vm);
+	wait = __xe_vm_userptr_needs_repin(vm) || preempt_fences_waiting(vm);
 	if (wait)
 		dma_fence_enable_sw_signaling(pfence);
+
+	up_read(&vm->userptr.notifier_lock);
 
 out_unlock:
 	xe_vm_unlock_dma_resv(vm, tv_onstack, tv, &ww, &objs);
