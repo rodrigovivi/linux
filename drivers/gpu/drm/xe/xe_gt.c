@@ -449,6 +449,10 @@ int xe_gt_init(struct xe_gt *gt)
 	if (err)
 		goto err_force_wake;
 
+	err = xe_uc_init_hwconfig(&gt->uc);
+	if (err)
+		goto err_force_wake;
+
 	err = xe_hw_engines_init(gt);
 	if (err)
 		goto err_force_wake;

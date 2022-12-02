@@ -81,6 +81,27 @@ static int uc_sanitize(struct xe_uc *uc)
 	return uc_reset(uc);
 }
 
+/**
+ * xe_uc_init_hwconfig - minimally init Uc and read hwconfig
+ * @uc: The UC object
+ *
+ * Return: 0 on success, negative error code on error.
+ */
+int xe_uc_init_hwconfig(struct xe_uc *uc)
+{
+	int ret;
+
+	/* GuC submission not enabled, nothing to do */
+	if (!xe_device_guc_submission_enabled(uc_to_xe(uc)))
+		return 0;
+
+	ret = xe_guc_min_load_for_hwconfig(&uc->guc);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
 /*
  * Should be called during driver load, after every GT reset, and after every
  * suspend to reload / auth the firmwares.

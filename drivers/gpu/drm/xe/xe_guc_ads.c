@@ -333,12 +333,10 @@ static void guc_prep_golden_lrc_null(struct xe_guc_ads *ads)
 	}
 }
 
-static void guc_mapping_table_init(struct xe_gt *gt,
-				   struct iosys_map *info_map)
+static void guc_mapping_table_init_invalid(struct xe_gt *gt,
+					   struct iosys_map *info_map)
 {
 	struct xe_device *xe = gt_to_xe(gt);
-	struct xe_hw_engine *hwe;
-	enum xe_hw_engine_id id;
 	unsigned int i, j;
 
 	/* Table must be set to invalid values for entries not used */
@@ -346,6 +344,16 @@ static void guc_mapping_table_init(struct xe_gt *gt,
 		for (j = 0; j < GUC_MAX_INSTANCES_PER_CLASS; ++j)
 			info_map_write(xe, info_map, mapping_table[i][j],
 				       GUC_MAX_INSTANCES_PER_CLASS);
+}
+
+static void guc_mapping_table_init(struct xe_gt *gt,
+				   struct iosys_map *info_map)
+{
+	struct xe_device *xe = gt_to_xe(gt);
+	struct xe_hw_engine *hwe;
+	enum xe_hw_engine_id id;
+
+	guc_mapping_table_init_invalid(gt, info_map);
 
 	for_each_hw_engine(hwe, gt, id) {
 		u8 guc_class;
@@ -496,6 +504,52 @@ static void guc_um_init_params(struct xe_guc_ads *ads)
 		       GUC_PAGE_RES_TIMEOUT_US);
 }
 
+static void guc_doorbell_init(struct xe_guc_ads *ads)
+{
+	struct xe_device *xe = ads_to_xe(ads);
+	struct xe_gt *gt = ads_to_gt(ads);
+
+	if (GRAPHICS_VER(xe) >= 12 && !IS_DGFX(xe)) {
+		u32 distdbreg =
+			xe_mmio_read32(gt, GEN12_DIST_DBS_POPULATED.reg);
+
+		ads_blob_write(ads,
+			       system_info.generic_gt_sysinfo[GUC_GENERIC_GT_SYSINFO_DOORBELL_COUNT_PER_SQIDI],
+			       ((distdbreg >> GEN12_DOORBELLS_PER_SQIDI_SHIFT)
+				& GEN12_DOORBELLS_PER_SQIDI) + 1);
+	}
+}
+
+/**
+ * xe_guc_ads_populate_hwconfig - populate minimal ADS
+ * @ads: Additional data structures object
+ *
+ * This function populates a minimal ADS that does not support submissions but
+ * enough so the GuC can load and the hwconfig table can be read.
+ */
+void xe_guc_ads_populate_hwconfig(struct xe_guc_ads *ads)
+{
+	struct xe_gt *gt = ads_to_gt(ads);
+	struct iosys_map info_map = IOSYS_MAP_INIT_OFFSET(ads_to_map(ads),
+			offsetof(struct __guc_ads_blob, system_info));
+	u32 base = xe_bo_ggtt_addr(ads->bo);
+
+	XE_BUG_ON(!ads->bo);
+
+	xe_map_memset(ads_to_xe(ads), ads_to_map(ads), 0, 0, guc_ads_size(ads));
+	guc_policies_init(ads);
+	guc_prep_golden_lrc_null(ads);
+	guc_mapping_table_init_invalid(gt, &info_map);
+	guc_doorbell_init(ads);
+
+	ads_blob_write(ads, ads.scheduler_policies, base +
+		       offsetof(struct __guc_ads_blob, policies));
+	ads_blob_write(ads, ads.gt_system_info, base +
+		       offsetof(struct __guc_ads_blob, system_info));
+	ads_blob_write(ads, ads.private_data, base +
+		       guc_ads_private_data_offset(ads));
+}
+
 void xe_guc_ads_populate(struct xe_guc_ads *ads)
 {
 	struct xe_device *xe = ads_to_xe(ads);
@@ -513,16 +567,7 @@ void xe_guc_ads_populate(struct xe_guc_ads *ads)
 	guc_prep_golden_lrc_null(ads);
 	guc_mapping_table_init(gt, &info_map);
 	guc_capture_list_init(ads);
-
-	if (GRAPHICS_VER(xe) >= 12 && !IS_DGFX(xe)) {
-		u32 distdbreg =
-			xe_mmio_read32(gt, GEN12_DIST_DBS_POPULATED.reg);
-
-		ads_blob_write(ads,
-			       system_info.generic_gt_sysinfo[GUC_GENERIC_GT_SYSINFO_DOORBELL_COUNT_PER_SQIDI],
-			       ((distdbreg >> GEN12_DOORBELLS_PER_SQIDI_SHIFT)
-				& GEN12_DOORBELLS_PER_SQIDI) + 1);
-	}
+	guc_doorbell_init(ads);
 
 	if (xe->info.supports_usm) {
 		guc_um_init_params(ads);

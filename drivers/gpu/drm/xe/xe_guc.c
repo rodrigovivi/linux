@@ -296,20 +296,9 @@ out:
 
 int xe_guc_post_load_init(struct xe_guc *guc)
 {
-	struct xe_device *xe = guc_to_xe(guc);
-	int ret;
-
-	ret = xe_guc_hwconfig_init(guc);
-	if (ret)
-		goto out;
-
 	xe_guc_ads_populate_post_load(&guc->ads);
 
 	return 0;
-
-out:
-	drm_err(&xe->drm, "GuC post load init failed with %d", ret);
-	return ret;
 }
 
 int xe_guc_reset(struct xe_guc *guc)
@@ -472,11 +461,10 @@ static int guc_wait_ucode(struct xe_guc *guc)
 	return ret;
 }
 
-int xe_guc_upload(struct xe_guc *guc)
+static int __xe_guc_upload(struct xe_guc *guc)
 {
 	int ret;
 
-	xe_guc_ads_populate(&guc->ads);
 	guc_write_params(guc);
 	guc_prepare_xfer(guc);
 
@@ -510,6 +498,45 @@ int xe_guc_upload(struct xe_guc *guc)
 out:
 	xe_uc_fw_change_status(&guc->fw, XE_UC_FIRMWARE_LOAD_FAIL);
 	return 0	/* FIXME: ret, don't want to stop load currently */;
+}
+
+/**
+ * xe_guc_min_load_for_hwconfig - load minimal GuC and read hwconfig table
+ * @guc: The GuC object
+ *
+ * This function uploads a minimal GuC that does not support submissions but
+ * in a state where the hwconfig table can be read. Next, it reads and parses
+ * the hwconfig table so it can be used for subsequent steps in the driver load.
+ * Lastly, it enables CT communication (XXX: this is needed for PFs/VFs only).
+ *
+ * Return: 0 on success, negative error code on error.
+ */
+int xe_guc_min_load_for_hwconfig(struct xe_guc *guc)
+{
+	int ret;
+
+	xe_guc_ads_populate_hwconfig(&guc->ads);
+
+	ret = __xe_guc_upload(guc);
+	if (ret)
+		return ret;
+
+	ret = xe_guc_hwconfig_init(guc);
+	if (ret)
+		return ret;
+
+	ret = xe_guc_enable_communication(guc);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
+int xe_guc_upload(struct xe_guc *guc)
+{
+	xe_guc_ads_populate(&guc->ads);
+
+	return __xe_guc_upload(guc);
 }
 
 static void guc_handle_mmio_msg(struct xe_guc *guc)
@@ -615,7 +642,7 @@ int xe_guc_send_mmio(struct xe_guc *guc, const u32 *request, u32 len)
 	int ret;
 	int i;
 
-	//XE_BUG_ON(guc->ct.enabled);	/* FIXME - add this back once driver load order is fixed */
+	XE_BUG_ON(guc->ct.enabled);
 	XE_BUG_ON(!len);
 	XE_BUG_ON(len > GEN11_SOFT_SCRATCH_COUNT);
 	XE_BUG_ON(len > MEDIA_SOFT_SCRATCH_COUNT);
@@ -755,7 +782,7 @@ void xe_guc_irq_handler(struct xe_guc *guc, const u16 iir)
 void xe_guc_sanitize(struct xe_guc *guc)
 {
 	xe_uc_fw_change_status(&guc->fw, XE_UC_FIRMWARE_LOADABLE);
-	xa_destroy(&guc->ct.fence_lookup);
+	xe_guc_ct_disable(&guc->ct);
 }
 
 int xe_guc_reset_prepare(struct xe_guc *guc)
