@@ -59,6 +59,17 @@ err:
 	return ret;
 }
 
+/**
+ * xe_uc_init_post_hwconfig - init Uc post hwconfig load
+ * @uc: The UC object
+ *
+ * Return: 0 on success, negative error code on error.
+ */
+int xe_uc_init_post_hwconfig(struct xe_uc *uc)
+{
+	return xe_guc_init_post_hwconfig(&uc->guc);
+}
+
 static int uc_reset(struct xe_uc *uc)
 {
 	struct xe_device *xe = uc_to_xe(uc);
@@ -82,7 +93,7 @@ static int uc_sanitize(struct xe_uc *uc)
 }
 
 /**
- * xe_uc_init_hwconfig - minimally init Uc and read hwconfig
+ * xe_uc_init_hwconfig - minimally init Uc, read and parse hwconfig
  * @uc: The UC object
  *
  * Return: 0 on success, negative error code on error.

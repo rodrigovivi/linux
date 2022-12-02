@@ -294,6 +294,17 @@ out:
 	return ret;
 }
 
+/**
+ * xe_guc_init_post_hwconfig - initialize GuC post hwconfig load
+ * @guc: The GuC object
+ *
+ * Return: 0 on success, negative error code on error.
+ */
+int xe_guc_init_post_hwconfig(struct xe_guc *guc)
+{
+	return xe_guc_ads_init_post_hwconfig(&guc->ads);
+}
+
 int xe_guc_post_load_init(struct xe_guc *guc)
 {
 	xe_guc_ads_populate_post_load(&guc->ads);
@@ -515,7 +526,7 @@ int xe_guc_min_load_for_hwconfig(struct xe_guc *guc)
 {
 	int ret;
 
-	xe_guc_ads_populate_hwconfig(&guc->ads);
+	xe_guc_ads_populate_minimal(&guc->ads);
 
 	ret = __xe_guc_upload(guc);
 	if (ret)
@@ -573,7 +584,6 @@ void guc_enable_irq(struct xe_guc *guc)
 		xe_mmio_rmw32(gt, GEN11_GUC_SG_INTR_MASK.reg, events, 0);
 	else
 		xe_mmio_write32(gt, GEN11_GUC_SG_INTR_MASK.reg, ~events);
-
 }
 
 int xe_guc_enable_communication(struct xe_guc *guc)

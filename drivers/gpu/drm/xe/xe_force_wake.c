@@ -37,10 +37,9 @@ static void domain_init(struct xe_force_wake_domain *domain,
 
 #define FORCEWAKE_ACK_GT_MTL                 _MMIO(0xdfc)
 
-void xe_force_wake_init(struct xe_gt *gt, struct xe_force_wake *fw)
+void xe_force_wake_init_gt(struct xe_gt *gt, struct xe_force_wake *fw)
 {
 	struct xe_device *xe = gt_to_xe(gt);
-	int i, j;
 
 	fw->gt = gt;
 	mutex_init(&fw->lock);
@@ -61,6 +60,14 @@ void xe_force_wake_init(struct xe_gt *gt, struct xe_force_wake *fw)
 			    FORCEWAKE_ACK_GT_GEN9.reg,
 			    BIT(0), BIT(16));
 	}
+}
+
+void xe_force_wake_init_engines(struct xe_gt *gt, struct xe_force_wake *fw)
+{
+	int i, j;
+
+	/* Assuming gen11+ so assert this assumption is correct */
+	XE_BUG_ON(GRAPHICS_VER(gt_to_xe(gt)) < 11);
 
 	if (!xe_gt_is_media_type(gt))
 		domain_init(&fw->domains[XE_FW_DOMAIN_ID_RENDER],

@@ -207,40 +207,6 @@ static void gt_fini(struct drm_device *drm, void *arg)
 
 static void gt_reset_worker(struct work_struct *w);
 
-int xe_gt_init_early(struct xe_gt *gt)
-{
-	int err;
-
-	xe_force_wake_init(gt, gt_to_fw(gt));
-
-	err = xe_force_wake_get(gt_to_fw(gt), XE_FW_GT);
-	if (err)
-		return err;
-
-	xe_gt_topology_init(gt);
-
-	err = xe_hw_engines_init_early(gt);
-	if (err)
-		goto err_fw;
-
-	xe_gt_mcr_init(gt);
-
-	err = xe_force_wake_put(gt_to_fw(gt), XE_FW_GT);
-	if (err)
-		return err;
-
-	xe_reg_sr_init(&gt->reg_sr, "GT", gt_to_xe(gt));
-	xe_wa_process_gt(gt);
-	xe_tuning_process_gt(gt);
-
-	return 0;
-
-err_fw:
-	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FW_GT));
-
-	return err;
-}
-
 int emit_nop_job(struct xe_gt *gt, struct xe_engine *e)
 {
 	struct xe_sched_job *job;
@@ -399,36 +365,38 @@ put_vm:
 	return err;
 }
 
-int xe_gt_init(struct xe_gt *gt)
+int xe_gt_init_early(struct xe_gt *gt)
 {
 	int err;
-	int i;
 
-	INIT_WORK(&gt->reset.worker, gt_reset_worker);
+	xe_force_wake_init_gt(gt, gt_to_fw(gt));
 
-	for (i = 0; i < XE_ENGINE_CLASS_MAX; ++i) {
-		gt->ring_ops[i] = xe_ring_ops_get(gt, i);
-		xe_hw_fence_irq_init(&gt->fence_irq[i]);
-	}
-
-	xe_gt_sysfs_init(gt);
-
-	err = xe_gt_pagefault_init(gt);
+	err = xe_force_wake_get(gt_to_fw(gt), XE_FW_GT);
 	if (err)
 		return err;
 
+	xe_gt_topology_init(gt);
+	xe_gt_mcr_init(gt);
+
+	err = xe_force_wake_put(gt_to_fw(gt), XE_FW_GT);
+	if (err)
+		return err;
+
+	xe_reg_sr_init(&gt->reg_sr, "GT", gt_to_xe(gt));
+	xe_wa_process_gt(gt);
+	xe_tuning_process_gt(gt);
+
+	return 0;
+}
+
+static int gt_fw_domain_init(struct xe_gt *gt)
+{
+	int err, i;
+
 	xe_device_mem_access_wa_get(gt_to_xe(gt));
-	err = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
+	err = xe_force_wake_get(gt_to_fw(gt), XE_FW_GT);
 	if (err)
 		goto err_hw_fence_irq;
-
-	setup_private_ppat(gt);
-
-	xe_reg_sr_apply_mmio(&gt->reg_sr, gt);
-
-	err = xe_gt_clock_init(gt);
-	if (err)
-		goto err_force_wake;
 
 	if (!xe_gt_is_media_type(gt)) {
 		err = gt_ttm_mgr_init(gt);
@@ -444,16 +412,57 @@ int xe_gt_init(struct xe_gt *gt)
 	err = xe_uc_init(&gt->uc);
 	XE_WARN_ON(err);
 
+	err = xe_uc_init_hwconfig(&gt->uc);
+	if (err)
+		goto err_force_wake;
+
+	err = xe_hw_engines_init_early(gt);
+	if (err)
+		goto err_force_wake;
+
+	err = xe_force_wake_put(gt_to_fw(gt), XE_FW_GT);
+	XE_WARN_ON(err);
+	xe_device_mem_access_wa_put(gt_to_xe(gt));
+
+	return 0;
+
+err_force_wake:
+	xe_force_wake_put(gt_to_fw(gt), XE_FW_GT);
+err_hw_fence_irq:
+	for (i = 0; i < XE_ENGINE_CLASS_MAX; ++i)
+		xe_hw_fence_irq_finish(&gt->fence_irq[i]);
+	xe_device_mem_access_wa_put(gt_to_xe(gt));
+
+	return err;
+}
+
+static int all_fw_domain_init(struct xe_gt *gt)
+{
+	int err, i;
+
+	xe_device_mem_access_wa_get(gt_to_xe(gt));
+	err = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
+	if (err)
+		goto err_hw_fence_irq;
+
+	setup_private_ppat(gt);
+
+	xe_reg_sr_apply_mmio(&gt->reg_sr, gt);
+
+	err = xe_gt_clock_init(gt);
+	if (err)
+		goto err_force_wake;
+
 	xe_mocs_init(gt);
 	err = xe_execlist_init(gt);
 	if (err)
 		goto err_force_wake;
 
-	err = xe_uc_init_hwconfig(&gt->uc);
+	err = xe_hw_engines_init(gt);
 	if (err)
 		goto err_force_wake;
 
-	err = xe_hw_engines_init(gt);
+	err = xe_uc_init_post_hwconfig(&gt->uc);
 	if (err)
 		goto err_force_wake;
 
@@ -491,15 +500,9 @@ int xe_gt_init(struct xe_gt *gt)
 	if (err)
 		goto err_force_wake;
 
-	xe_device_mem_access_wa_put(gt_to_xe(gt));
 	err = xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 	XE_WARN_ON(err);
-
-	xe_force_wake_prune(gt, gt_to_fw(gt));
-
-	err = drmm_add_action_or_reset(&gt_to_xe(gt)->drm, gt_fini, gt);
-	if (err)
-		return err;
+	xe_device_mem_access_wa_put(gt_to_xe(gt));
 
 	return 0;
 
@@ -511,6 +514,43 @@ err_hw_fence_irq:
 	xe_device_mem_access_wa_put(gt_to_xe(gt));
 
 	return err;
+}
+
+int xe_gt_init(struct xe_gt *gt)
+{
+	int err;
+	int i;
+
+	INIT_WORK(&gt->reset.worker, gt_reset_worker);
+
+	for (i = 0; i < XE_ENGINE_CLASS_MAX; ++i) {
+		gt->ring_ops[i] = xe_ring_ops_get(gt, i);
+		xe_hw_fence_irq_init(&gt->fence_irq[i]);
+	}
+
+	err = xe_gt_pagefault_init(gt);
+	if (err)
+		return err;
+
+	xe_gt_sysfs_init(gt);
+
+	err = gt_fw_domain_init(gt);
+	if (err)
+		return err;
+
+	xe_force_wake_init_engines(gt, gt_to_fw(gt));
+
+	err = all_fw_domain_init(gt);
+	if (err)
+		return err;
+
+	xe_force_wake_prune(gt, gt_to_fw(gt));
+
+	err = drmm_add_action_or_reset(&gt_to_xe(gt)->drm, gt_fini, gt);
+	if (err)
+		return err;
+
+	return 0;
 }
 
 int do_gt_reset(struct xe_gt *gt)
@@ -658,7 +698,7 @@ int xe_gt_suspend(struct xe_gt *gt)
 
 	err = xe_uc_suspend(&gt->uc);
 	if (err)
-		goto err_fw;
+		goto err_force_wake;
 
 	xe_device_mem_access_wa_put(gt_to_xe(gt));
 	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
@@ -666,7 +706,7 @@ int xe_gt_suspend(struct xe_gt *gt)
 
 	return 0;
 
-err_fw:
+err_force_wake:
 	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
 err_msg:
 	xe_device_mem_access_wa_put(gt_to_xe(gt));
@@ -687,7 +727,7 @@ int xe_gt_resume(struct xe_gt *gt)
 
 	err = do_gt_restart(gt);
 	if (err)
-		goto err_fw;
+		goto err_force_wake;
 
 	xe_device_mem_access_wa_put(gt_to_xe(gt));
 	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
@@ -695,7 +735,7 @@ int xe_gt_resume(struct xe_gt *gt)
 
 	return 0;
 
-err_fw:
+err_force_wake:
 	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
 err_msg:
 	xe_device_mem_access_wa_put(gt_to_xe(gt));

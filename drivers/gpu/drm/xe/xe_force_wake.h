@@ -11,8 +11,10 @@
 
 struct xe_gt;
 
-void xe_force_wake_init(struct xe_gt *gt,
-			struct xe_force_wake *fw);
+void xe_force_wake_init_gt(struct xe_gt *gt,
+			   struct xe_force_wake *fw);
+void xe_force_wake_init_engines(struct xe_gt *gt,
+				struct xe_force_wake *fw);
 void xe_force_wake_prune(struct  xe_gt *gt,
 			 struct xe_force_wake *fw);
 int xe_force_wake_get(struct xe_force_wake *fw,
