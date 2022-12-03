@@ -369,7 +369,8 @@ static int xe_ttm_io_mem_reserve(struct ttm_device *bdev,
 	return 0;
 }
 
-static int xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo)
+static int xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo,
+				const struct ttm_operation_ctx *ctx)
 {
 	struct dma_resv_iter cursor;
 	struct dma_fence *fence;
@@ -385,13 +386,23 @@ static int xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo)
 	}
 
 	list_for_each_entry(vma, &bo->vmas, bo_link) {
+		struct xe_vm *vm = vma->vm;
+
 		trace_xe_vma_evict(vma);
 
-		if (xe_device_in_fault_mode(xe)) {
+		if (xe_vm_in_fault_mode(vm)) {
 			/* Wait for pending binds / unbinds. */
-			long timeout = dma_resv_wait_timeout(bo->ttm.base.resv,
-							     DMA_RESV_USAGE_BOOKKEEP,
-							     true, MAX_SCHEDULE_TIMEOUT);
+			long timeout;
+
+			if (ctx->no_wait_gpu &&
+			    !dma_resv_test_signaled(bo->ttm.base.resv,
+						    DMA_RESV_USAGE_BOOKKEEP))
+				return -EBUSY;
+
+			timeout = dma_resv_wait_timeout(bo->ttm.base.resv,
+							DMA_RESV_USAGE_BOOKKEEP,
+							ctx->interruptible,
+							MAX_SCHEDULE_TIMEOUT);
 			if (timeout > 0) {
 				ret = xe_vm_invalidate_vma(vma);
 				XE_WARN_ON(ret);
@@ -404,7 +415,7 @@ static int xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo)
 		} else {
 			if (list_empty(&vma->rebind_link))
 				list_add_tail(&vma->rebind_link,
-					      &vma->vm->rebind_list);
+					      &vm->rebind_list);
 		}
 	}
 
@@ -456,6 +467,7 @@ out:
 /**
  * xe_bo_move_notify - Notify subsystems of a pending move
  * @bo: The buffer object
+ * @ctx: The struct ttm_operation_ctx controlling locking and waits.
  *
  * This function notifies subsystems of an upcoming buffer move.
  * Upon receiving such a notification, subsystems should schedule
@@ -470,7 +482,8 @@ out:
  * Return: 0 on success, -EINTR or -ERESTARTSYS if interrupted in fault mode,
  * negative error code on error.
  */
-static int xe_bo_move_notify(struct xe_bo *bo)
+static int xe_bo_move_notify(struct xe_bo *bo,
+			     const struct ttm_operation_ctx *ctx)
 {
 	struct ttm_buffer_object *ttm_bo = &bo->ttm;
 	struct xe_device *xe = ttm_to_xe_device(ttm_bo->bdev);
@@ -485,7 +498,7 @@ static int xe_bo_move_notify(struct xe_bo *bo)
 		return -EINVAL;
 
 	xe_bo_vunmap(bo);
-	ret = xe_bo_trigger_rebind(xe, bo);
+	ret = xe_bo_trigger_rebind(xe, bo, ctx);
 	if (ret)
 		return ret;
 
@@ -512,7 +525,7 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 	int ret = 0;
 
 	if (ttm_bo->type == ttm_bo_type_sg) {
-		ret = xe_bo_move_notify(bo);
+		ret = xe_bo_move_notify(bo, ctx);
 		if (!ret)
 			ret = xe_bo_move_dmabuf(ttm_bo, old_mem, new_mem);
 		goto out;
@@ -532,7 +545,7 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 	}
 
 	if (!move_lacks_source && !xe_bo_is_pinned(bo)) {
-		ret = xe_bo_move_notify(bo);
+		ret = xe_bo_move_notify(bo, ctx);
 		if (ret)
 			goto out;
 	}
