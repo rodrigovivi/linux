@@ -61,9 +61,6 @@ retry:
 	if (!pages)
 		return -ENOMEM;
 
-	if (in_kthread)
-		kthread_use_mm(vma->userptr.notifier.mm);
-
 	if (vma->userptr.sg) {
 		dma_unmap_sgtable(xe->drm.dev,
 				  vma->userptr.sg,
@@ -74,16 +71,34 @@ retry:
 	}
 
 	pinned = ret = 0;
+	if (in_kthread) {
+		if (!mmget_not_zero(vma->userptr.notifier.mm)) {
+			ret = -EFAULT;
+			goto mm_closed;
+		}
+		kthread_use_mm(vma->userptr.notifier.mm);
+	}
+
 	while (pinned < num_pages) {
-		ret = pin_user_pages_fast(vma->userptr.ptr + pinned * PAGE_SIZE,
+		ret = pin_user_pages_fast(vma->userptr.ptr +
+					  pinned * PAGE_SIZE,
 					  num_pages - pinned,
 					  read_only ? 0 : FOLL_WRITE,
 					  &pages[pinned]);
 		if (ret < 0)
-			goto out;
+			break;
 
 		pinned += ret;
+		ret = 0;
 	}
+
+	if (in_kthread) {
+		kthread_unuse_mm(vma->userptr.notifier.mm);
+		mmput(vma->userptr.notifier.mm);
+	}
+mm_closed:
+	if (ret)
+		goto out;
 
 	ret = sg_alloc_table_from_pages(&vma->userptr.sgt, pages, pinned,
 					0, (u64)pinned << PAGE_SHIFT,
@@ -115,8 +130,6 @@ retry:
 	}
 
 out:
-	if (in_kthread)
-		kthread_unuse_mm(vma->userptr.notifier.mm);
 	unpin_user_pages(pages, pinned);
 	kfree(pages);
 
@@ -1195,15 +1208,21 @@ static void vm_error_capture(struct xe_vm *vm, int err,
 	capture.addr = addr;
 	capture.size = size;
 
-	if (in_kthread)
+	if (in_kthread) {
+		if (!mmget_not_zero(vm->async_ops.error_capture.mm))
+			goto mm_closed;
 		kthread_use_mm(vm->async_ops.error_capture.mm);
+	}
 
 	if (copy_to_user(address, &capture, sizeof(capture)))
 		XE_WARN_ON("Copy to user failed");
 
-	if (in_kthread)
+	if (in_kthread) {
 		kthread_unuse_mm(vm->async_ops.error_capture.mm);
+		mmput(vm->async_ops.error_capture.mm);
+	}
 
+mm_closed:
 	wake_up_all(&vm->async_ops.error_capture.wq);
 }
 

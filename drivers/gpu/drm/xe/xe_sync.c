@@ -66,10 +66,13 @@ static void user_fence_worker(struct work_struct *w)
 {
 	struct user_fence *ufence = container_of(w, struct user_fence, worker);
 
-	kthread_use_mm(ufence->mm);
-	if (copy_to_user(ufence->addr, &ufence->value, sizeof(ufence->value)))
-		XE_WARN_ON("Copy to user failed");
-	kthread_unuse_mm(ufence->mm);
+	if (mmget_not_zero(ufence->mm)) {
+		kthread_use_mm(ufence->mm);
+		if (copy_to_user(ufence->addr, &ufence->value, sizeof(ufence->value)))
+			XE_WARN_ON("Copy to user failed");
+		kthread_unuse_mm(ufence->mm);
+		mmput(ufence->mm);
+	}
 
 	wake_up_all(&ufence->xe->ufence_wq);
 	user_fence_put(ufence);
