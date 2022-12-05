@@ -85,7 +85,7 @@ static struct sg_table *xe_dma_buf_map(struct dma_buf_attachment *attach,
 			if (xe_bo_can_migrate(bo, XE_PL_TT))
 				r = xe_bo_migrate(bo, XE_PL_TT);
 			else
-				r = xe_bo_validate(bo, NULL);
+				r = xe_bo_validate(bo, NULL, false);
 		}
 		if (r)
 			return ERR_PTR(r);
@@ -215,7 +215,7 @@ error:
 
 static void xe_dma_buf_move_notify(struct dma_buf_attachment *attach)
 {
-	static struct ttm_operation_ctx ctx = {.interruptible = true};
+	static struct ttm_operation_ctx ctx = {.interruptible = false};
 	struct drm_gem_object *obj = attach->importer_priv;
 	struct xe_bo *bo = gem_to_xe_bo(obj);
 

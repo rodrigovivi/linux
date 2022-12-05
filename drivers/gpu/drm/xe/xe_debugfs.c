@@ -133,7 +133,7 @@ static int evict_selftest(struct seq_file *m, void *data)
 		if (i) {
 			down_read(&vm->lock);
 			xe_vm_lock(vm, &ww, 0, false);
-			err = xe_bo_validate(bo, bo->vm);
+			err = xe_bo_validate(bo, bo->vm, true);
 			xe_vm_unlock(vm, &ww);
 			up_read(&vm->lock);
 			if (err) {
@@ -141,7 +141,7 @@ static int evict_selftest(struct seq_file *m, void *data)
 				goto cleanup_all;
 			}
 			xe_bo_lock(external, &ww, 0, false);
-			err = xe_bo_validate(external, NULL);
+			err = xe_bo_validate(external, NULL, false);
 			xe_bo_unlock(external, &ww);
 			if (err) {
 				drm_printf(&p, "external bo valid err=%d\n",

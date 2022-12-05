@@ -123,6 +123,10 @@ struct xe_vma {
 		/** @gt_invalidated: VMA has been invalidated */
 		u64 gt_invalidated;
 	} usm;
+
+	struct {
+		struct list_head rebind_link;
+	} notifier;
 };
 
 struct xe_device;
@@ -294,6 +298,22 @@ struct xe_vm {
 		 */
 		struct xe_vma *last_fault_vma;
 	} usm;
+
+	/**
+	 * @notifier: Lists and locks for temporary usage within notifiers where
+	 * we either can't grab the vm lock or the vm resv.
+	 */
+	struct {
+		/** @notifier.list_lock: lock protecting @rebind_list */
+		spinlock_t list_lock;
+		/**
+		 * @notifier.rebind_list: list of vmas that we want to put on the
+		 * main @rebind_list. This list is protected for writing by both
+		 * notifier.list_lock, and the resv of the bo the vma points to,
+		 * and for reading by the notifier.list_lock only.
+		 */
+		struct list_head rebind_list;
+	} notifier;
 };
 
 #endif

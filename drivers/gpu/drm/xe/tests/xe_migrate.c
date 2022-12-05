@@ -100,7 +100,7 @@ static void test_copy(struct xe_migrate *m, struct xe_bo *bo,
 		return;
 	}
 
-	err = xe_bo_validate(sysmem, NULL);
+	err = xe_bo_validate(sysmem, NULL, false);
 	if (err) {
 		KUNIT_FAIL(test, "Failed to validate system bo for %s: %li\n",
 			   str, err);

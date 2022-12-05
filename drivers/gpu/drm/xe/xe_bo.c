@@ -369,12 +369,15 @@ static int xe_ttm_io_mem_reserve(struct ttm_device *bdev,
 	return 0;
 }
 
-static int xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo)
+static int xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo,
+				const struct ttm_operation_ctx *ctx)
 {
 	struct dma_resv_iter cursor;
 	struct dma_fence *fence;
 	struct xe_vma *vma;
 	int ret = 0;
+
+	dma_resv_assert_held(bo->ttm.base.resv);
 
 	if (!xe_device_in_fault_mode(xe) && !list_empty(&bo->vmas)) {
 		dma_resv_iter_begin(&cursor, bo->ttm.base.resv,
@@ -385,13 +388,23 @@ static int xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo)
 	}
 
 	list_for_each_entry(vma, &bo->vmas, bo_link) {
+		struct xe_vm *vm = vma->vm;
+
 		trace_xe_vma_evict(vma);
 
-		if (xe_device_in_fault_mode(xe)) {
+		if (xe_vm_in_fault_mode(vm)) {
 			/* Wait for pending binds / unbinds. */
-			long timeout = dma_resv_wait_timeout(bo->ttm.base.resv,
-							     DMA_RESV_USAGE_BOOKKEEP,
-							     true, MAX_SCHEDULE_TIMEOUT);
+			long timeout;
+
+			if (ctx->no_wait_gpu &&
+			    !dma_resv_test_signaled(bo->ttm.base.resv,
+						    DMA_RESV_USAGE_BOOKKEEP))
+				return -EBUSY;
+
+			timeout = dma_resv_wait_timeout(bo->ttm.base.resv,
+							DMA_RESV_USAGE_BOOKKEEP,
+							ctx->interruptible,
+							MAX_SCHEDULE_TIMEOUT);
 			if (timeout > 0) {
 				ret = xe_vm_invalidate_vma(vma);
 				XE_WARN_ON(ret);
@@ -402,9 +415,31 @@ static int xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo)
 			}
 
 		} else {
+			bool vm_resv_locked = false;
+			struct xe_vm *vm = vma->vm;
+
+			/*
+			 * We need to put the vma on the vm's rebind_list,
+			 * but need the vm resv to do so. If we can't verify
+			 * that we indeed have it locked, put the vma an the
+			 * vm's notifier.rebind_list instead and scoop later.
+			 */
+			if (dma_resv_trylock(&vm->resv))
+				vm_resv_locked = true;
+			else if (ctx->resv != &vm->resv) {
+				spin_lock(&vm->notifier.list_lock);
+				list_move_tail(&vma->notifier.rebind_link,
+					       &vm->notifier.rebind_list);
+				spin_unlock(&vm->notifier.list_lock);
+				continue;
+			}
+
+			xe_vm_assert_held(vm);
 			if (list_empty(&vma->rebind_link))
-				list_add_tail(&vma->rebind_link,
-					      &vma->vm->rebind_list);
+				list_add_tail(&vma->rebind_link, &vm->rebind_list);
+
+			if (vm_resv_locked)
+				dma_resv_unlock(&vm->resv);
 		}
 	}
 
@@ -456,6 +491,7 @@ out:
 /**
  * xe_bo_move_notify - Notify subsystems of a pending move
  * @bo: The buffer object
+ * @ctx: The struct ttm_operation_ctx controlling locking and waits.
  *
  * This function notifies subsystems of an upcoming buffer move.
  * Upon receiving such a notification, subsystems should schedule
@@ -470,7 +506,8 @@ out:
  * Return: 0 on success, -EINTR or -ERESTARTSYS if interrupted in fault mode,
  * negative error code on error.
  */
-static int xe_bo_move_notify(struct xe_bo *bo)
+static int xe_bo_move_notify(struct xe_bo *bo,
+			     const struct ttm_operation_ctx *ctx)
 {
 	struct ttm_buffer_object *ttm_bo = &bo->ttm;
 	struct xe_device *xe = ttm_to_xe_device(ttm_bo->bdev);
@@ -485,7 +522,7 @@ static int xe_bo_move_notify(struct xe_bo *bo)
 		return -EINVAL;
 
 	xe_bo_vunmap(bo);
-	ret = xe_bo_trigger_rebind(xe, bo);
+	ret = xe_bo_trigger_rebind(xe, bo, ctx);
 	if (ret)
 		return ret;
 
@@ -512,7 +549,7 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 	int ret = 0;
 
 	if (ttm_bo->type == ttm_bo_type_sg) {
-		ret = xe_bo_move_notify(bo);
+		ret = xe_bo_move_notify(bo, ctx);
 		if (!ret)
 			ret = xe_bo_move_dmabuf(ttm_bo, old_mem, new_mem);
 		goto out;
@@ -532,7 +569,7 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 	}
 
 	if (!move_lacks_source && !xe_bo_is_pinned(bo)) {
-		ret = xe_bo_move_notify(bo);
+		ret = xe_bo_move_notify(bo, ctx);
 		if (ret)
 			goto out;
 	}
@@ -746,7 +783,7 @@ static vm_fault_t xe_gem_fault(struct vm_fault *vmf)
 		if (should_migrate_to_system(bo))
 			r = xe_bo_migrate(bo, XE_PL_TT);
 		else
-			r = xe_bo_validate(bo, NULL);
+			r = xe_bo_validate(bo, NULL, false);
 		if (r == -EBUSY || r == -ERESTARTSYS)
 			ret = VM_FAULT_NOPAGE;
 		else if (r)
@@ -1008,7 +1045,7 @@ int xe_bo_pin_external(struct xe_bo *bo)
 	XE_BUG_ON(!xe_bo_is_user(bo));
 
 	if (!xe_bo_is_pinned(bo)) {
-		err = xe_bo_validate(bo, NULL);
+		err = xe_bo_validate(bo, NULL, false);
 		if (err)
 			return err;
 
@@ -1052,7 +1089,7 @@ int xe_bo_pin(struct xe_bo *bo)
 	/* We only expect at most 1 pin */
 	XE_BUG_ON(xe_bo_is_pinned(bo));
 
-	err = xe_bo_validate(bo, NULL);
+	err = xe_bo_validate(bo, NULL, false);
 	if (err)
 		return err;
 
@@ -1141,7 +1178,23 @@ void xe_bo_unpin(struct xe_bo *bo)
 	ttm_bo_unpin(&bo->ttm);
 }
 
-int xe_bo_validate(struct xe_bo *bo, struct xe_vm *vm)
+/**
+ * xe_bo_validate() - Make sure the bo is in an allowed placement
+ * @bo: The bo,
+ * @vm: Pointer to a the vm the bo shares a locked dma_resv object with, or
+ *      NULL. Used together with @allow_res_evict.
+ * @allow_res_evict: Whether it's allowed to evict bos sharing @vm's
+ *                   reservation object.
+ *
+ * Make sure the bo is in allowed placement, migrating it if necessary. If
+ * needed, other bos will be evicted. If bos selected for eviction shares
+ * the @vm's reservation object, they can be evicted iff @allow_res_evict is
+ * set to true, otherwise they will be bypassed.
+ *
+ * Return: 0 on success, negative error code on failure. May return
+ * -EINTR or -ERESTARTSYS if internal waits are interrupted by a signal.
+ */
+int xe_bo_validate(struct xe_bo *bo, struct xe_vm *vm, bool allow_res_evict)
 {
 	struct ttm_operation_ctx ctx = {
 		.interruptible = true,
@@ -1152,7 +1205,7 @@ int xe_bo_validate(struct xe_bo *bo, struct xe_vm *vm)
 		lockdep_assert_held(&vm->lock);
 		xe_vm_assert_held(vm);
 
-		ctx.allow_res_evict = true;
+		ctx.allow_res_evict = allow_res_evict;
 		ctx.resv = &vm->resv;
 	}
 
