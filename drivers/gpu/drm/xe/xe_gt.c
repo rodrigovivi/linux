@@ -416,6 +416,9 @@ static int gt_fw_domain_init(struct xe_gt *gt)
 	if (err)
 		goto err_force_wake;
 
+	/* XXX: Fake that we pull the engine mask from hwconfig blob */
+	gt->info.engine_mask = gt->info.__engine_mask;
+
 	err = xe_hw_engines_init_early(gt);
 	if (err)
 		goto err_force_wake;
