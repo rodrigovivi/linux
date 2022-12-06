@@ -27,24 +27,10 @@
 #define XE_BO_INTERNAL_TEST		BIT(30)
 #define XE_BO_INTERNAL_64K		BIT(31)
 
-#if  !defined(CONFIG_X86)
-	#define _PAGE_BIT_PRESENT       0       /* is present */
-	#define _PAGE_BIT_RW            1       /* writeable */
-	#define _PAGE_BIT_PWT           3       /* page write through */
-	#define _PAGE_BIT_PCD           4       /* page cache disabled */
-	#define _PAGE_BIT_PAT           7       /* on 4KB pages */
-
-	#define _PAGE_PRESENT   (_AT(pteval_t, 1) << _PAGE_BIT_PRESENT)
-	#define _PAGE_RW        (_AT(pteval_t, 1) << _PAGE_BIT_RW)
-	#define _PAGE_PWT       (_AT(pteval_t, 1) << _PAGE_BIT_PWT)
-	#define _PAGE_PCD       (_AT(pteval_t, 1) << _PAGE_BIT_PCD)
-	#define _PAGE_PAT       (_AT(pteval_t, 1) << _PAGE_BIT_PAT)
-#endif
-
-#define PPAT_UNCACHED                   (_PAGE_PWT | _PAGE_PCD)
-#define PPAT_CACHED_PDE                 0 /* WB LLC */
-#define PPAT_CACHED                     _PAGE_PAT /* WB LLCeLLC */
-#define PPAT_DISPLAY_ELLC               _PAGE_PCD /* WT eLLC */
+#define PPAT_UNCACHED                   GENMASK_ULL(4, 3)
+#define PPAT_CACHED_PDE                 0
+#define PPAT_CACHED                     BIT_ULL(7)
+#define PPAT_DISPLAY_ELLC               BIT_ULL(4)
 
 #define GEN8_PTE_SHIFT			12
 #define GEN8_PAGE_SIZE			(1 << GEN8_PTE_SHIFT)
