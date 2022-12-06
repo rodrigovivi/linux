@@ -43,7 +43,13 @@ struct xe_vma {
 	/** @gt_present: GT mask of binding are present for this VMA */
 	u64 gt_present;
 
-	/** @destroyed: VMA is destroyed */
+	/**
+	 * @destroyed: VMA is destroyed, in the sense that it shouldn't be
+	 * subject to rebind anymore. This field must be written under
+	 * the vm lock in write mode and the userptr.notifier_lock in
+	 * either mode. Read under the vm lock or the userptr.notifier_lock in
+	 * write mode.
+	 */
 	bool destroyed;
 
 	/**

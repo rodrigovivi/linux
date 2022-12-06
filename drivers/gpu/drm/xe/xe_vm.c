@@ -27,6 +27,8 @@
 
 #define TEST_VM_ASYNC_OPS_ERROR
 
+static void prep_vma_destroy(struct xe_vm *vm, struct xe_vma *vma);
+
 int xe_vma_userptr_check_repin(struct xe_vma *vma)
 {
 	return mmu_interval_read_retry(&vma->userptr.notifier,
@@ -46,7 +48,6 @@ int xe_vma_userptr_pin_pages(struct xe_vma *vma)
 	int pinned, ret, i;
 	bool read_only = vma->pte_flags & PTE_READ_ONLY;
 
-
 	lockdep_assert_held(&vm->lock);
 	XE_BUG_ON(!xe_vma_is_userptr(vma));
 retry:
@@ -61,9 +62,6 @@ retry:
 	if (!pages)
 		return -ENOMEM;
 
-	if (in_kthread)
-		kthread_use_mm(vma->userptr.notifier.mm);
-
 	if (vma->userptr.sg) {
 		dma_unmap_sgtable(xe->drm.dev,
 				  vma->userptr.sg,
@@ -74,16 +72,36 @@ retry:
 	}
 
 	pinned = ret = 0;
+	if (in_kthread) {
+		if (!mmget_not_zero(vma->userptr.notifier.mm)) {
+			ret = -EFAULT;
+			goto mm_closed;
+		}
+		kthread_use_mm(vma->userptr.notifier.mm);
+	}
+
 	while (pinned < num_pages) {
-		ret = pin_user_pages_fast(vma->userptr.ptr + pinned * PAGE_SIZE,
+		ret = get_user_pages_fast(vma->userptr.ptr + pinned * PAGE_SIZE,
 					  num_pages - pinned,
 					  read_only ? 0 : FOLL_WRITE,
 					  &pages[pinned]);
-		if (ret < 0)
-			goto out;
+		if (ret < 0) {
+			if (in_kthread)
+				ret = 0;
+			break;
+		}
 
 		pinned += ret;
+		ret = 0;
 	}
+
+	if (in_kthread) {
+		kthread_unuse_mm(vma->userptr.notifier.mm);
+		mmput(vma->userptr.notifier.mm);
+	}
+mm_closed:
+	if (ret)
+		goto out;
 
 	ret = sg_alloc_table_from_pages(&vma->userptr.sgt, pages, pinned,
 					0, (u64)pinned << PAGE_SHIFT,
@@ -106,7 +124,8 @@ retry:
 	}
 
 	for (i = 0; i < pinned; ++i) {
-		if (!read_only && trylock_page(pages[i])) {
+		if (!read_only) {
+			lock_page(pages[i]);
 			set_page_dirty(pages[i]);
 			unlock_page(pages[i]);
 		}
@@ -115,9 +134,7 @@ retry:
 	}
 
 out:
-	if (in_kthread)
-		kthread_unuse_mm(vma->userptr.notifier.mm);
-	unpin_user_pages(pages, pinned);
+	release_pages(pages, pinned);
 	kfree(pages);
 
 	if (!(ret < 0)) {
@@ -603,21 +620,21 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 	down_write(&vm->userptr.notifier_lock);
 	mmu_interval_set_seq(mni, cur_seq);
 
-	if (!xe_vm_in_fault_mode(vm)) {
+	/* No need to stop gpu access if the userptr is not yet bound. */
+	if (!vma->userptr.initial_bind) {
+		up_write(&vm->userptr.notifier_lock);
+		return true;
+	}
+
+	/*
+	 * Tell exec and rebind worker they need to repin and rebind this
+	 * userptr.
+	 */
+	if (!xe_vm_in_fault_mode(vm) && !vma->destroyed) {
 		spin_lock(&vm->userptr.invalidated_lock);
 		list_move_tail(&vma->userptr.invalidate_link,
 			       &vm->userptr.invalidated);
 		spin_unlock(&vm->userptr.invalidated_lock);
-	}
-
-	/*
-	 * Process exiting, userptr being destroyed, or VMA hasn't gone through
-	 * initial bind, regardless nothing to do. __xe_pt_bind_vma().
-	 */
-	if (current->flags & PF_EXITING || vma->destroyed ||
-	    !vma->userptr.initial_bind) {
-		up_write(&vm->userptr.notifier_lock);
-		return true;
 	}
 
 	up_write(&vm->userptr.notifier_lock);
@@ -854,6 +871,13 @@ static void xe_vma_destroy_late(struct xe_vma *vma)
 			sg_free_table(vma->userptr.sg);
 			vma->userptr.sg = NULL;
 		}
+
+		/*
+		 * Since userptr pages are not pinned, we can't remove
+		 * the notifer until we're sure the GPU is not accessing
+		 * them anymore
+		 */
+		mmu_interval_notifier_remove(&vma->userptr.notifier);
 		xe_vm_put(vm);
 	} else {
 		xe_bo_put(vma->bo);
@@ -887,7 +911,7 @@ static void xe_vma_destroy(struct xe_vma *vma, struct dma_fence *fence)
 	XE_BUG_ON(!list_empty(&vma->unbind_link));
 
 	if (xe_vma_is_userptr(vma)) {
-		mmu_interval_notifier_remove(&vma->userptr.notifier);
+		XE_WARN_ON(!vma->destroyed);
 		spin_lock(&vm->userptr.invalidated_lock);
 		list_del_init(&vma->userptr.invalidate_link);
 		spin_unlock(&vm->userptr.invalidated_lock);
@@ -1195,15 +1219,21 @@ static void vm_error_capture(struct xe_vm *vm, int err,
 	capture.addr = addr;
 	capture.size = size;
 
-	if (in_kthread)
+	if (in_kthread) {
+		if (!mmget_not_zero(vm->async_ops.error_capture.mm))
+			goto mm_closed;
 		kthread_use_mm(vm->async_ops.error_capture.mm);
+	}
 
 	if (copy_to_user(address, &capture, sizeof(capture)))
 		XE_WARN_ON("Copy to user failed");
 
-	if (in_kthread)
+	if (in_kthread) {
 		kthread_unuse_mm(vm->async_ops.error_capture.mm);
+		mmput(vm->async_ops.error_capture.mm);
+	}
 
+mm_closed:
 	wake_up_all(&vm->async_ops.error_capture.wq);
 }
 
@@ -1236,7 +1266,7 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 	while (vm->vmas.rb_node) {
 		struct xe_vma *vma = to_xe_vma(vm->vmas.rb_node);
 
-		rb_erase(&vma->vm_node, &vm->vmas);
+		prep_vma_destroy(vm, vma);
 
 		/* easy case, remove from VMA? */
 		if (xe_vma_is_userptr(vma) || vma->bo->vm) {
@@ -2460,7 +2490,9 @@ static int __vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
 
 static void prep_vma_destroy(struct xe_vm *vm, struct xe_vma *vma)
 {
+	down_read(&vm->userptr.notifier_lock);
 	vma->destroyed = true;
+	up_read(&vm->userptr.notifier_lock);
 	xe_vm_remove_vma(vm, vma);
 	if (vma->bo && !vma->bo->vm)
 		vm_remove_extobj(vm, vma);
