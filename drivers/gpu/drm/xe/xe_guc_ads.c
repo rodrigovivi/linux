@@ -258,6 +258,8 @@ static size_t calculate_golden_lrc_size(struct xe_guc_ads *ads)
 	return total_size;
 }
 
+#define MAX_GOLDEN_LRC_SIZE	(SZ_4K * 32)
+
 int xe_guc_ads_init(struct xe_guc_ads *ads)
 {
 	struct xe_device *xe = ads_to_xe(ads);
@@ -268,7 +270,8 @@ int xe_guc_ads_init(struct xe_guc_ads *ads)
 	ads->golden_lrc_size = calculate_golden_lrc_size(ads);
 	ads->regset_size = calculate_regset_size(gt);
 
-	bo = xe_bo_create_pin_map(xe, gt, NULL, guc_ads_size(ads),
+	bo = xe_bo_create_pin_map(xe, gt, NULL, guc_ads_size(ads) +
+				  MAX_GOLDEN_LRC_SIZE,
 				  ttm_bo_type_kernel,
 				  XE_BO_CREATE_VRAM_IF_DGFX(gt) |
 				  XE_BO_CREATE_GGTT_BIT);
@@ -280,6 +283,33 @@ int xe_guc_ads_init(struct xe_guc_ads *ads)
 	err = drmm_add_action_or_reset(&xe->drm, guc_ads_fini, ads);
 	if (err)
 		return err;
+
+	return 0;
+}
+
+/**
+ * xe_guc_ads_init_post_hwconfig - initialize ADS post hwconfig load
+ * @ads: Additional data structures object
+ *
+ * Recalcuate golden_lrc_size & regset_size as the number hardware engines may
+ * have changed after the hwconfig was loaded. Also verify the new sizes fit in
+ * the already allocated ADS buffer object.
+ *
+ * Return: 0 on success, negative error code on error.
+ */
+int xe_guc_ads_init_post_hwconfig(struct xe_guc_ads *ads)
+{
+	struct xe_gt *gt = ads_to_gt(ads);
+	u32 prev_regset_size = ads->regset_size;
+
+	XE_BUG_ON(!ads->bo);
+
+	ads->golden_lrc_size = calculate_golden_lrc_size(ads);
+	ads->regset_size = calculate_regset_size(gt);
+
+	XE_WARN_ON(ads->golden_lrc_size +
+		   (ads->regset_size - prev_regset_size) >
+		   MAX_GOLDEN_LRC_SIZE);
 
 	return 0;
 }
@@ -333,12 +363,10 @@ static void guc_prep_golden_lrc_null(struct xe_guc_ads *ads)
 	}
 }
 
-static void guc_mapping_table_init(struct xe_gt *gt,
-				   struct iosys_map *info_map)
+static void guc_mapping_table_init_invalid(struct xe_gt *gt,
+					   struct iosys_map *info_map)
 {
 	struct xe_device *xe = gt_to_xe(gt);
-	struct xe_hw_engine *hwe;
-	enum xe_hw_engine_id id;
 	unsigned int i, j;
 
 	/* Table must be set to invalid values for entries not used */
@@ -346,6 +374,16 @@ static void guc_mapping_table_init(struct xe_gt *gt,
 		for (j = 0; j < GUC_MAX_INSTANCES_PER_CLASS; ++j)
 			info_map_write(xe, info_map, mapping_table[i][j],
 				       GUC_MAX_INSTANCES_PER_CLASS);
+}
+
+static void guc_mapping_table_init(struct xe_gt *gt,
+				   struct iosys_map *info_map)
+{
+	struct xe_device *xe = gt_to_xe(gt);
+	struct xe_hw_engine *hwe;
+	enum xe_hw_engine_id id;
+
+	guc_mapping_table_init_invalid(gt, info_map);
 
 	for_each_hw_engine(hwe, gt, id) {
 		u8 guc_class;
@@ -496,23 +534,10 @@ static void guc_um_init_params(struct xe_guc_ads *ads)
 		       GUC_PAGE_RES_TIMEOUT_US);
 }
 
-void xe_guc_ads_populate(struct xe_guc_ads *ads)
+static void guc_doorbell_init(struct xe_guc_ads *ads)
 {
 	struct xe_device *xe = ads_to_xe(ads);
 	struct xe_gt *gt = ads_to_gt(ads);
-	struct iosys_map info_map = IOSYS_MAP_INIT_OFFSET(ads_to_map(ads),
-			offsetof(struct __guc_ads_blob, system_info));
-	u32 base = xe_bo_ggtt_addr(ads->bo);
-
-	XE_BUG_ON(!ads->bo);
-
-	xe_map_memset(ads_to_xe(ads), ads_to_map(ads), 0, 0, guc_ads_size(ads));
-	guc_policies_init(ads);
-	fill_engine_enable_masks(gt, &info_map);
-	guc_mmio_reg_state_init(ads);
-	guc_prep_golden_lrc_null(ads);
-	guc_mapping_table_init(gt, &info_map);
-	guc_capture_list_init(ads);
 
 	if (GRAPHICS_VER(xe) >= 12 && !IS_DGFX(xe)) {
 		u32 distdbreg =
@@ -523,6 +548,56 @@ void xe_guc_ads_populate(struct xe_guc_ads *ads)
 			       ((distdbreg >> GEN12_DOORBELLS_PER_SQIDI_SHIFT)
 				& GEN12_DOORBELLS_PER_SQIDI) + 1);
 	}
+}
+
+/**
+ * xe_guc_ads_populate_minimal - populate minimal ADS
+ * @ads: Additional data structures object
+ *
+ * This function populates a minimal ADS that does not support submissions but
+ * enough so the GuC can load and the hwconfig table can be read.
+ */
+void xe_guc_ads_populate_minimal(struct xe_guc_ads *ads)
+{
+	struct xe_gt *gt = ads_to_gt(ads);
+	struct iosys_map info_map = IOSYS_MAP_INIT_OFFSET(ads_to_map(ads),
+			offsetof(struct __guc_ads_blob, system_info));
+	u32 base = xe_bo_ggtt_addr(ads->bo);
+
+	XE_BUG_ON(!ads->bo);
+
+	xe_map_memset(ads_to_xe(ads), ads_to_map(ads), 0, 0, ads->bo->size);
+	guc_policies_init(ads);
+	guc_prep_golden_lrc_null(ads);
+	guc_mapping_table_init_invalid(gt, &info_map);
+	guc_doorbell_init(ads);
+
+	ads_blob_write(ads, ads.scheduler_policies, base +
+		       offsetof(struct __guc_ads_blob, policies));
+	ads_blob_write(ads, ads.gt_system_info, base +
+		       offsetof(struct __guc_ads_blob, system_info));
+	ads_blob_write(ads, ads.private_data, base +
+		       guc_ads_private_data_offset(ads));
+}
+
+void xe_guc_ads_populate(struct xe_guc_ads *ads)
+{
+	struct xe_device *xe = ads_to_xe(ads);
+	struct xe_gt *gt = ads_to_gt(ads);
+	struct iosys_map info_map = IOSYS_MAP_INIT_OFFSET(ads_to_map(ads),
+			offsetof(struct __guc_ads_blob, system_info));
+	u32 base = xe_bo_ggtt_addr(ads->bo);
+
+	XE_BUG_ON(!ads->bo);
+
+	xe_map_memset(ads_to_xe(ads), ads_to_map(ads), 0, 0, ads->bo->size);
+	guc_policies_init(ads);
+	fill_engine_enable_masks(gt, &info_map);
+	guc_mmio_reg_state_init(ads);
+	guc_prep_golden_lrc_null(ads);
+	guc_mapping_table_init(gt, &info_map);
+	guc_capture_list_init(ads);
+	guc_doorbell_init(ads);
 
 	if (xe->info.supports_usm) {
 		guc_um_init_params(ads);

@@ -59,6 +59,17 @@ err:
 	return ret;
 }
 
+/**
+ * xe_uc_init_post_hwconfig - init Uc post hwconfig load
+ * @uc: The UC object
+ *
+ * Return: 0 on success, negative error code on error.
+ */
+int xe_uc_init_post_hwconfig(struct xe_uc *uc)
+{
+	return xe_guc_init_post_hwconfig(&uc->guc);
+}
+
 static int uc_reset(struct xe_uc *uc)
 {
 	struct xe_device *xe = uc_to_xe(uc);
@@ -79,6 +90,27 @@ static int uc_sanitize(struct xe_uc *uc)
 	xe_guc_sanitize(&uc->guc);
 
 	return uc_reset(uc);
+}
+
+/**
+ * xe_uc_init_hwconfig - minimally init Uc, read and parse hwconfig
+ * @uc: The UC object
+ *
+ * Return: 0 on success, negative error code on error.
+ */
+int xe_uc_init_hwconfig(struct xe_uc *uc)
+{
+	int ret;
+
+	/* GuC submission not enabled, nothing to do */
+	if (!xe_device_guc_submission_enabled(uc_to_xe(uc)))
+		return 0;
+
+	ret = xe_guc_min_load_for_hwconfig(&uc->guc);
+	if (ret)
+		return ret;
+
+	return 0;
 }
 
 /*
