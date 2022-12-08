@@ -258,7 +258,7 @@ static size_t calculate_golden_lrc_size(struct xe_guc_ads *ads)
 	return total_size;
 }
 
-#define MAX_GOLDEN_LRC_SIZE	(SZ_4K * 32)
+#define MAX_GOLDEN_LRC_SIZE	(SZ_4K * 64)
 
 int xe_guc_ads_init(struct xe_guc_ads *ads)
 {

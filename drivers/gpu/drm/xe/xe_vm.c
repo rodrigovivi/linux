@@ -27,8 +27,6 @@
 
 #define TEST_VM_ASYNC_OPS_ERROR
 
-static void prep_vma_destroy(struct xe_vm *vm, struct xe_vma *vma);
-
 /**
  * xe_vma_userptr_check_repin() - Advisory check for repin needed
  * @vma: The userptr vma
@@ -1278,21 +1276,20 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 	while (vm->vmas.rb_node) {
 		struct xe_vma *vma = to_xe_vma(vm->vmas.rb_node);
 
-		prep_vma_destroy(vm, vma);
+		if (xe_vma_is_userptr(vma)) {
+			down_read(&vm->userptr.notifier_lock);
+			vma->destroyed = true;
+			up_read(&vm->userptr.notifier_lock);
+		}
+
+		rb_erase(&vma->vm_node, &vm->vmas);
 
 		/* easy case, remove from VMA? */
 		if (xe_vma_is_userptr(vma) || vma->bo->vm) {
 			xe_vma_destroy(vma, NULL);
 			continue;
-		} else if (dma_resv_trylock(vma->bo->ttm.base.resv)) {
-			struct xe_bo *bo = vma->bo;
-
-			xe_bo_get(bo);
-			xe_vma_destroy(vma, NULL);
-			dma_resv_unlock(bo->ttm.base.resv);
-			xe_bo_put(bo);
-			continue;
 		}
+
 		rb_add(&vma->vm_node, &contested, xe_vma_less_cb);
 	}
 
