@@ -1522,7 +1522,17 @@ __xe_pt_unbind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 		vma->gt_present &= ~BIT(gt->info.id);
 	}
 
+	if (!vma->gt_present)
+		list_del_init(&vma->rebind_link);
+
 	if (unbind_pt_update.locked) {
+		XE_WARN_ON(!xe_vma_is_userptr(vma));
+
+		if (!vma->gt_present) {
+			spin_lock(&vm->userptr.invalidated_lock);
+			list_del_init(&vma->userptr.invalidate_link);
+			spin_unlock(&vm->userptr.invalidated_lock);
+		}
 		up_read(&vm->userptr.notifier_lock);
 		xe_bo_put_commit(&deferred);
 	}

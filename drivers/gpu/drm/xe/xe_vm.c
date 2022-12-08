@@ -410,8 +410,10 @@ int xe_vm_lock_dma_resv(struct xe_vm *vm, struct ww_acquire_ctx *ww,
 	list_for_each_entry_safe(vma, next, &vm->notifier.rebind_list,
 				 notifier.rebind_link) {
 		xe_bo_assert_held(vma->bo);
+
 		list_del_init(&vma->notifier.rebind_link);
-		list_move_tail(&vma->rebind_link, &vm->rebind_list);
+		if (vma->gt_present && !vma->destroyed)
+			list_move_tail(&vma->rebind_link, &vm->rebind_list);
 	}
 	spin_unlock(&vm->notifier.list_lock);
 
@@ -537,7 +539,7 @@ retry:
 		goto out_unlock;
 
 	list_for_each_entry(vma, &vm->rebind_list, rebind_link) {
-		if (xe_vma_is_userptr(vma))
+		if (xe_vma_is_userptr(vma) || vma->destroyed)
 			continue;
 
 		err = xe_bo_validate(vma->bo, vm, false);
@@ -630,7 +632,7 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 	 * Tell exec and rebind worker they need to repin and rebind this
 	 * userptr.
 	 */
-	if (!xe_vm_in_fault_mode(vm) && !vma->destroyed) {
+	if (!xe_vm_in_fault_mode(vm) && !vma->destroyed && vma->gt_present) {
 		spin_lock(&vm->userptr.invalidated_lock);
 		list_move_tail(&vma->userptr.invalidate_link,
 			       &vm->userptr.invalidated);
@@ -771,6 +773,8 @@ struct dma_fence *xe_vm_rebind(struct xe_vm *vm, bool rebind_worker)
 
 	xe_vm_assert_held(vm);
 	list_for_each_entry_safe(vma, next, &vm->rebind_list, rebind_link) {
+		XE_WARN_ON(!vma->gt_present);
+
 		list_del_init(&vma->rebind_link);
 		dma_fence_put(fence);
 		if (rebind_worker)

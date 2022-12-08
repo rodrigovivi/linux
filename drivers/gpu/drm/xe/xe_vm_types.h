@@ -40,7 +40,13 @@ struct xe_vma {
 	/** @gt_mask: GT mask of where to create binding for this VMA */
 	u64 gt_mask;
 
-	/** @gt_present: GT mask of binding are present for this VMA */
+	/**
+	 * @gt_present: GT mask of binding are present for this VMA.
+	 * protected by vm->lock, vm->resv and for userptrs,
+	 * vm->userptr.notifier_lock for writing. Needs either for reading,
+	 * but if reading is done under the vm->lock only, it needs to be held
+	 * in write mode.
+	 */
 	u64 gt_present;
 
 	/**
