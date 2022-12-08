@@ -147,6 +147,7 @@ struct xe_vm {
 	/* engine used for (un)binding vma's */
 	struct xe_engine *eng[XE_MAX_GT];
 
+	/** Protects @rebind_list and the page-table structures */
 	struct dma_resv resv;
 
 	u64 size;
