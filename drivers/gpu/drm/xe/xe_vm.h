@@ -124,6 +124,9 @@ void xe_vm_unlock_dma_resv(struct xe_vm *vm,
 			   struct ww_acquire_ctx *ww,
 			   struct list_head *objs);
 
+void xe_vm_fence_all_extobjs(struct xe_vm *vm, struct dma_fence *fence,
+			     enum dma_resv_usage usage);
+
 #if IS_ENABLED(CONFIG_DRM_XE_DEBUG_VM)
 #define vm_dbg drm_dbg
 #else

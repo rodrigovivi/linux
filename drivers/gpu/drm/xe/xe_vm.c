@@ -263,10 +263,28 @@ static int add_preempt_fences(struct xe_vm *vm, struct xe_bo *bo)
 	return 0;
 }
 
+/**
+ * xe_vm_fence_all_extobjs() - Add a fence to vm's external objects' resv
+ * @vm: The vm.
+ * @fence: The fence to add.
+ * @usage: The resv usage for the fence.
+ *
+ * Loops over all of the vm's external object bindings and adds a @fence
+ * with the given @usage to all of the external object's reservation
+ * objects.
+ */
+void xe_vm_fence_all_extobjs(struct xe_vm *vm, struct dma_fence *fence,
+			     enum dma_resv_usage usage)
+{
+	struct xe_vma *vma;
+
+	list_for_each_entry(vma, &vm->extobj.list, extobj.link)
+		dma_resv_add_fence(vma->bo->ttm.base.resv, fence, usage);
+}
+
 static void resume_and_reinstall_preempt_fences(struct xe_vm *vm)
 {
 	struct xe_engine *e;
-	int i;
 
 	lockdep_assert_held(&vm->lock);
 	xe_vm_assert_held(vm);
@@ -276,13 +294,8 @@ static void resume_and_reinstall_preempt_fences(struct xe_vm *vm)
 
 		dma_resv_add_fence(&vm->resv, e->compute.pfence,
 				   DMA_RESV_USAGE_PREEMPT_FENCE);
-
-		for (i = 0; i < vm->extobj.entries; ++i) {
-			struct xe_bo *bo = vm->extobj.bos[i];
-
-			dma_resv_add_fence(bo->ttm.base.resv, e->compute.pfence,
-					   DMA_RESV_USAGE_PREEMPT_FENCE);
-		}
+		xe_vm_fence_all_extobjs(vm, e->compute.pfence,
+					DMA_RESV_USAGE_PREEMPT_FENCE);
 	}
 }
 
@@ -293,7 +306,6 @@ int xe_vm_add_compute_engine(struct xe_vm *vm, struct xe_engine *e)
 	struct ww_acquire_ctx ww;
 	struct list_head objs;
 	struct dma_fence *pfence;
-	int i;
 	int err;
 	bool wait;
 
@@ -319,12 +331,7 @@ int xe_vm_add_compute_engine(struct xe_vm *vm, struct xe_engine *e)
 	dma_resv_add_fence(&vm->resv, pfence,
 			   DMA_RESV_USAGE_PREEMPT_FENCE);
 
-	for (i = 0; i < vm->extobj.entries; ++i) {
-		struct xe_bo *bo = vm->extobj.bos[i];
-
-		dma_resv_add_fence(bo->ttm.base.resv, pfence,
-				   DMA_RESV_USAGE_PREEMPT_FENCE);
-	}
+	xe_vm_fence_all_extobjs(vm, pfence, DMA_RESV_USAGE_PREEMPT_FENCE);
 
 	/*
 	 * Check to see if a preemption on VM is in flight, if so trigger this
@@ -387,7 +394,6 @@ int xe_vm_lock_dma_resv(struct xe_vm *vm, struct ww_acquire_ctx *ww,
 	struct xe_vma *vma, *next;
 	LIST_HEAD(dups);
 	int err;
-	int i;
 
 	lockdep_assert_held(&vm->lock);
 
@@ -402,13 +408,12 @@ int xe_vm_lock_dma_resv(struct xe_vm *vm, struct ww_acquire_ctx *ww,
 	tv_bo = tv_vm + 1;
 
 	INIT_LIST_HEAD(objs);
-	for (i = 0; i < vm->extobj.entries; ++i, ++tv_bo) {
-		struct xe_bo *bo = vm->extobj.bos[i];
-
+	list_for_each_entry(vma, &vm->extobj.list, extobj.link) {
 		tv_bo->num_shared = num_shared;
-		tv_bo->bo = &bo->ttm;
+		tv_bo->bo = &vma->bo->ttm;
 
 		list_add_tail(&tv_bo->head, objs);
+		tv_bo++;
 	}
 	tv_vm->num_shared = num_shared;
 	tv_vm->bo = xe_vm_ttm_bo(vm);
@@ -825,6 +830,7 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 	INIT_LIST_HEAD(&vma->userptr_link);
 	INIT_LIST_HEAD(&vma->userptr.invalidate_link);
 	INIT_LIST_HEAD(&vma->notifier.rebind_link);
+	INIT_LIST_HEAD(&vma->extobj.link);
 
 	vma->vm = vm;
 	vma->start = start;
@@ -869,6 +875,14 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 	}
 
 	return vma;
+}
+
+static void vm_remove_extobj(struct xe_vma *vma)
+{
+	if (!list_empty(&vma->extobj.link)) {
+		vma->vm->extobj.entries--;
+		list_del_init(&vma->extobj.link);
+	}
 }
 
 static void xe_vma_destroy_late(struct xe_vma *vma)
@@ -922,7 +936,7 @@ static void xe_vma_destroy(struct xe_vma *vma, struct dma_fence *fence)
 {
 	struct xe_vm *vm = vma->vm;
 
-	lockdep_assert_held(&vm->lock);
+	lockdep_assert_held_write(&vm->lock);
 	XE_BUG_ON(!list_empty(&vma->unbind_link));
 
 	if (xe_vma_is_userptr(vma)) {
@@ -934,6 +948,8 @@ static void xe_vma_destroy(struct xe_vma *vma, struct dma_fence *fence)
 	} else {
 		xe_bo_assert_held(vma->bo);
 		list_del(&vma->bo_link);
+		if (!vma->bo->vm)
+			vm_remove_extobj(vma);
 	}
 
 	xe_vm_assert_held(vm);
@@ -1094,6 +1110,8 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 	INIT_LIST_HEAD(&vm->preempt.engines);
 	init_waitqueue_head(&vm->preempt.resume_wq);
 	vm->preempt.min_run_period_ms = 10;	/* FIXME: Wire up to uAPI */
+
+	INIT_LIST_HEAD(&vm->extobj.list);
 
 	if (!(flags & XE_VM_FLAG_MIGRATION))
 		xe_device_mem_access_wa_get(xe);
@@ -1336,8 +1354,7 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 	if (vm->async_ops.error_capture.addr)
 		wake_up_all(&vm->async_ops.error_capture.wq);
 
-	kfree(vm->extobj.bos);
-	vm->extobj.bos = NULL;
+	XE_WARN_ON(!list_empty(&vm->extobj.list));
 	up_write(&vm->lock);
 
 	xe_vm_put(vm);
@@ -2428,41 +2445,17 @@ static bool bo_has_vm_references(struct xe_bo *bo, struct xe_vm *vm,
 
 static int vm_insert_extobj(struct xe_vm *vm, struct xe_vma *vma)
 {
-	struct xe_bo **bos, *bo = vma->bo;
+	struct xe_bo *bo = vma->bo;
 
 	lockdep_assert_held_write(&vm->lock);
 
 	if (bo_has_vm_references(bo, vm, vma))
 		return 0;
 
-	bos = krealloc(vm->extobj.bos, (vm->extobj.entries + 1) * sizeof(*bos),
-		       GFP_KERNEL);
-	if (!bos)
-		return -ENOMEM;
+	list_add(&vma->extobj.link, &vm->extobj.list);
+	vm->extobj.entries++;
 
-	vm->extobj.bos = bos;
-	vm->extobj.bos[vm->extobj.entries++] = bo;
 	return 0;
-}
-
-static void vm_remove_extobj(struct xe_vm *vm, struct xe_vma *vma)
-{
-	struct xe_bo *bo = vma->bo;
-	int i;
-
-	lockdep_assert_held(&vm->lock);
-
-	if (bo_has_vm_references(bo, vm, vma))
-		return;
-
-	vm->extobj.entries--;
-	for (i = 0; i < vm->extobj.entries; i++) {
-		if (vm->extobj.bos[i] == bo) {
-			swap(vm->extobj.bos[vm->extobj.entries],
-			     vm->extobj.bos[i]);
-			break;
-		}
-	}
 }
 
 static int __vm_bind_ioctl_lookup_vma(struct xe_vm *vm, struct xe_bo *bo,
@@ -2508,8 +2501,6 @@ static void prep_vma_destroy(struct xe_vm *vm, struct xe_vma *vma)
 	vma->destroyed = true;
 	up_read(&vm->userptr.notifier_lock);
 	xe_vm_remove_vma(vm, vma);
-	if (vma->bo && !vma->bo->vm)
-		vm_remove_extobj(vm, vma);
 }
 
 static int prep_replacement_vma(struct xe_vm *vm, struct xe_vma *vma)
