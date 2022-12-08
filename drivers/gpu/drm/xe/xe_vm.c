@@ -27,10 +27,22 @@
 
 #define TEST_VM_ASYNC_OPS_ERROR
 
+/**
+ * xe_vma_userptr_check_repin() - Advisory check for repin needed
+ * @vma: The userptr vma
+ *
+ * Check if the userptr vma has been invalidated since last successful
+ * repin. The check is advisory only and can the function can be called
+ * without the vm->userptr.notifier_lock held. There is no guarantee that the
+ * vma userptr will remain valid after a lockless check, so typically
+ * the call needs to be followed by a proper check under the notifier_lock.
+ *
+ * Return: 0 if userptr vma is valid, -EAGAIN otherwise; repin recommended.
+ */
 int xe_vma_userptr_check_repin(struct xe_vma *vma)
 {
-	return mmu_interval_read_retry(&vma->userptr.notifier,
-				       vma->userptr.notifier_seq) ?
+	return mmu_interval_check_retry(&vma->userptr.notifier,
+					vma->userptr.notifier_seq) ?
 		-EAGAIN : 0;
 }
 
