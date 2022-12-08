@@ -314,10 +314,8 @@ execlist_run_job(struct drm_sched_job *drm_job)
 static void execlist_job_free(struct drm_sched_job *drm_job)
 {
 	struct xe_sched_job *job = to_xe_sched_job(drm_job);
-	struct xe_engine *e = job->engine;
 
-	xe_sched_job_free(job);
-	xe_engine_put(e);
+	xe_sched_job_put(job);
 }
 
 static const struct drm_sched_backend_ops drm_sched_ops = {

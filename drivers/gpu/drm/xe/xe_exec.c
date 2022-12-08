@@ -365,7 +365,7 @@ retry:
 
 err_put_job:
 	if (err && !armed)
-		xe_sched_job_free(job);
+		xe_sched_job_put(job);
 err_engine_end:
 	xe_exec_end(engine, tv_onstack, tv, &ww, &objs);
 err_unlock_list:

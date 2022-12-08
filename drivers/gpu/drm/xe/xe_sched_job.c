@@ -95,6 +95,8 @@ struct xe_sched_job *xe_sched_job_create(struct xe_engine *e,
 		return ERR_PTR(-ENOMEM);
 
 	job->engine = e;
+	kref_init(&job->refcount);
+	xe_engine_get(job->engine);
 
 	err = drm_sched_job_init(&job->drm, e->entity, NULL);
 	if (err)
@@ -159,12 +161,24 @@ err_fences:
 err_sched_job:
 	drm_sched_job_cleanup(&job->drm);
 err_free:
+	xe_engine_put(e);
 	job_free(job);
 	return ERR_PTR(err);
 }
 
-void xe_sched_job_free(struct xe_sched_job *job)
+/**
+ * xe_sched_job_destroy - Destroy XE schedule job
+ * @ref: reference to XE schedule job
+ *
+ * Called when ref == 0, drop a reference to job's xe_engine + fence, cleanup
+ * base DRM schedule job, and free memory for XE schedule job.
+ */
+void xe_sched_job_destroy(struct kref *ref)
 {
+	struct xe_sched_job *job =
+		container_of(ref, struct xe_sched_job, refcount);
+
+	xe_engine_put(job->engine);
 	dma_fence_put(job->fence);
 	drm_sched_job_cleanup(&job->drm);
 	job_free(job);
@@ -225,7 +239,8 @@ void xe_sched_job_arm(struct xe_sched_job *job)
 
 void xe_sched_job_push(struct xe_sched_job *job)
 {
-	xe_engine_get(job->engine);
+	xe_sched_job_get(job);
 	trace_xe_sched_job_exec(job);
 	drm_sched_entity_push_job(&job->drm);
+	xe_sched_job_put(job);
 }

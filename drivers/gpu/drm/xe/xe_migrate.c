@@ -677,7 +677,7 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 		continue;
 
 err_job:
-		xe_sched_job_free(job);
+		xe_sched_job_put(job);
 err:
 		mutex_unlock(&m->job_mutex);
 		xe_bb_free(bb, NULL);
@@ -1147,7 +1147,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	return fence;
 
 err_job:
-	xe_sched_job_free(job);
+	xe_sched_job_put(job);
 err_bb:
 	if (!eng)
 		mutex_unlock(&m->job_mutex);

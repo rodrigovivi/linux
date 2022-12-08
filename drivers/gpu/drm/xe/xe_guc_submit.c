@@ -684,12 +684,9 @@ guc_engine_run_job(struct drm_sched_job *drm_job)
 static void guc_engine_free_job(struct drm_sched_job *drm_job)
 {
 	struct xe_sched_job *job = to_xe_sched_job(drm_job);
-	struct xe_engine *e = job->engine;
 
 	trace_xe_sched_job_free(job);
-
-	xe_sched_job_free(job);
-	xe_engine_put(e);
+	xe_sched_job_put(job);
 }
 
 static int guc_read_stopped(struct xe_guc *guc)
