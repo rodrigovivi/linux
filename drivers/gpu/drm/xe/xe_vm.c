@@ -179,7 +179,7 @@ static void free_preempt_fences(struct list_head *list)
 	struct list_head *link, *next;
 
 	list_for_each_safe(link, next, list)
-		xe_preempt_fence_free(link);
+		xe_preempt_fence_free(to_preempt_fence_from_link(link));
 }
 
 static int alloc_preempt_fences(struct xe_vm *vm, struct list_head *list,
@@ -192,12 +192,12 @@ static int alloc_preempt_fences(struct xe_vm *vm, struct list_head *list,
 		return 0;
 
 	for (; *count < vm->preempt.num_engines; ++(*count)) {
-		struct list_head *link = xe_preempt_fence_alloc();
+		struct xe_preempt_fence *pfence = xe_preempt_fence_alloc();
 
-		if (IS_ERR(link))
-			return PTR_ERR(link);
+		if (IS_ERR(pfence))
+			return PTR_ERR(pfence);
 
-		list_move_tail(link, list);
+		list_move_tail(xe_preempt_fence_link(pfence), list);
 	}
 
 	return 0;
@@ -229,15 +229,16 @@ static void arm_preempt_fences(struct xe_vm *vm, struct list_head *list)
 	struct xe_engine *e;
 
 	list_for_each_entry(e, &vm->preempt.engines, compute.link) {
-		struct dma_fence *pfence;
+		struct dma_fence *fence;
 
 		link = list->next;
 		XE_BUG_ON(link == list);
 
-		pfence = xe_preempt_fence_arm(link, e, e->compute.context,
-					      ++e->compute.seqno);
+		fence = xe_preempt_fence_arm(to_preempt_fence_from_link(link),
+					     e, e->compute.context,
+					     ++e->compute.seqno);
 		dma_fence_put(e->compute.pfence);
-		e->compute.pfence = pfence;
+		e->compute.pfence = fence;
 	}
 }
 
