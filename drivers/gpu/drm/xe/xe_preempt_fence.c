@@ -62,18 +62,16 @@ static const struct dma_fence_ops preempt_fence_ops = {
  * xe_preempt_fence_alloc() - Allocate a preempt fence with minimal
  * initialization
  *
- * Allocate a preempt fence, and initialize its list head. The preserve the
- * possibility to keep struct xe_preempt_fence opaque, the function returns a
- * struct list_head that can be used for subsequent calls into the
- * xe_preempt_fence api. If the preempt_fence allocated has been armed with
+ * Allocate a preempt fence, and initialize its list head.
+ * If the preempt_fence allocated has been armed with
  * xe_preempt_fence_arm(), it must be freed using dma_fence_put(). If not,
  * it must be freed using xe_preempt_fence_free().
  *
- * Return: A struct list_head pointer used for calling into
+ * Return: A struct xe_preempt_fence pointer used for calling into
  * xe_preempt_fence_arm() or xe_preempt_fence_free().
- * The list head pointed to has been initialized. An error pointer on error.
+ * An error pointer on error.
  */
-struct list_head *xe_preempt_fence_alloc(void)
+struct xe_preempt_fence *xe_preempt_fence_alloc(void)
 {
 	struct xe_preempt_fence *pfence;
 
@@ -84,26 +82,27 @@ struct list_head *xe_preempt_fence_alloc(void)
 	INIT_LIST_HEAD(&pfence->link);
 	INIT_WORK(&pfence->preempt_work, preempt_fence_work_func);
 
-	return &pfence->link;
+	return pfence;
 }
 
 /**
  * xe_preempt_fence_free() - Free a preempt fence allocated using
  * xe_preempt_fence_alloc().
- * @link: struct list_head pointer obtained from xe_preempt_fence_alloc();
+ * @pfence: pointer obtained from xe_preempt_fence_alloc();
  *
  * Free a preempt fence that has not yet been armed.
  */
-void xe_preempt_fence_free(struct list_head *link)
+void xe_preempt_fence_free(struct xe_preempt_fence *pfence)
 {
-	list_del(link);
-	kfree(container_of(link, struct xe_preempt_fence, link));
+	list_del(&pfence->link);
+	kfree(pfence);
 }
 
 /**
  * xe_preempt_fence_arm() - Arm a preempt fence allocated using
  * xe_preempt_fence_alloc().
- * @link: The struct list_head pointer returned from xe_preempt_fence_alloc().
+ * @pfence: The struct xe_preempt_fence pointer returned from
+ *          xe_preempt_fence_alloc().
  * @e: The struct xe_engine used for arming.
  * @context: The dma-fence context used for arming.
  * @seqno: The dma-fence seqno used for arming.
@@ -115,13 +114,10 @@ void xe_preempt_fence_free(struct list_head *link)
  * This function doesn't error.
  */
 struct dma_fence *
-xe_preempt_fence_arm(struct list_head *link, struct xe_engine *e,
+xe_preempt_fence_arm(struct xe_preempt_fence *pfence, struct xe_engine *e,
 		     u64 context, u32 seqno)
 {
-	struct xe_preempt_fence *pfence =
-		container_of(link, typeof(*pfence), link);
-
-	list_del_init(link);
+	list_del_init(&pfence->link);
 	pfence->engine = xe_engine_get(e);
 	dma_fence_init(&pfence->base, &preempt_fence_ops,
 		      &e->compute.lock, context, seqno);
@@ -146,11 +142,11 @@ struct dma_fence *
 xe_preempt_fence_create(struct xe_engine *e,
 			u64 context, u32 seqno)
 {
-	struct list_head *link;
+	struct xe_preempt_fence *pfence;
 
-	link = xe_preempt_fence_alloc();
-	if (IS_ERR(link))
-		return ERR_CAST(link);
+	pfence = xe_preempt_fence_alloc();
+	if (IS_ERR(pfence))
+		return ERR_CAST(pfence);
 
-	return xe_preempt_fence_arm(link, e, context, seqno);
+	return xe_preempt_fence_arm(pfence, e, context, seqno);
 }
