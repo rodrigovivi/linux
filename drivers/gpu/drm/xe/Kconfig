@@ -29,6 +29,7 @@ config DRM_XE
 	select DRM_TTM
 	select DRM_TTM_HELPER
 	select DRM_SCHED
+	select MMU_NOTIFIER
 	help
 	  Experimental driver for Intel Xe series GPUs
 
