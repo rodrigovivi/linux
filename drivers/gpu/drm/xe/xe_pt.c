@@ -948,14 +948,11 @@ static void xe_pt_abort_bind(struct xe_vma *vma,
 	}
 }
 
-static void xe_pt_commit_locks_assert(struct xe_vma *vma, bool rebind)
+static void xe_pt_commit_locks_assert(struct xe_vma *vma)
 {
 	struct xe_vm *vm = vma->vm;
 
-	if (rebind)
-		lockdep_assert_held_read(&vm->lock);
-	else
-		lockdep_assert_held_write(&vm->lock);
+	lockdep_assert_held(&vm->lock);
 
 	if (xe_vma_is_userptr(vma))
 		lockdep_assert_held_read(&vm->userptr.notifier_lock);
@@ -972,7 +969,7 @@ static void xe_pt_commit_bind(struct xe_vma *vma,
 {
 	u32 i, j;
 
-	xe_pt_commit_locks_assert(vma, rebind);
+	xe_pt_commit_locks_assert(vma);
 
 	for (i = 0; i < num_entries; i++) {
 		struct xe_pt *pt = entries[i].pt;
@@ -1418,7 +1415,7 @@ xe_pt_commit_unbind(struct xe_vma *vma,
 {
 	u32 j;
 
-	xe_pt_commit_locks_assert(vma, false);
+	xe_pt_commit_locks_assert(vma);
 
 	for (j = 0; j < num_entries; ++j) {
 		struct xe_vm_pgtable_update *entry = &entries[j];
@@ -1525,7 +1522,17 @@ __xe_pt_unbind_vma(struct xe_gt *gt, struct xe_vma *vma, struct xe_engine *e,
 		vma->gt_present &= ~BIT(gt->info.id);
 	}
 
+	if (!vma->gt_present)
+		list_del_init(&vma->rebind_link);
+
 	if (unbind_pt_update.locked) {
+		XE_WARN_ON(!xe_vma_is_userptr(vma));
+
+		if (!vma->gt_present) {
+			spin_lock(&vm->userptr.invalidated_lock);
+			list_del_init(&vma->userptr.invalidate_link);
+			spin_unlock(&vm->userptr.invalidated_lock);
+		}
 		up_read(&vm->userptr.notifier_lock);
 		xe_bo_put_commit(&deferred);
 	}
