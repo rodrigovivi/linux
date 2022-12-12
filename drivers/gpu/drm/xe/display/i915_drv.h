@@ -1,8 +1,6 @@
 #ifndef fake_display_h
 #define fake_display_h
 
-#define drm_i915_private xe_device
-
 /* Exists of anger.. */
 
 #include "xe_device.h"
@@ -233,5 +231,16 @@ static inline void intel_runtime_pm_put(struct xe_runtime_pm *pm, int wakeref)
 
 #define FORCEWAKE_ALL XE_FORCEWAKE_ALL
 #define HPD_STORM_DEFAULT_THRESHOLD 50
+
+#ifdef CONFIG_ARM64
+/*
+ * arm64 indirectly includes linux/rtc.h,
+ * which defines a irq_lock, so include it
+ * here before #define-ing it
+ */
+#include <linux/rtc.h>
+#endif
+
+#define irq_lock irq.lock
 
 #endif

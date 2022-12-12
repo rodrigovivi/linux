@@ -104,8 +104,7 @@ xe-y += xe_bb.o \
 # i915 compat #defines and #includes
 subdir-ccflags-y += -I$(srctree)/$(src)/display/ext \
 	-Ddrm_i915_gem_object=xe_bo \
-	-Ddrm_i915_private=xe_device \
-	-Dirq_lock=irq.lock
+	-Ddrm_i915_private=xe_device
 
 CFLAGS_display/intel_fbdev.o = $(call cc-disable-warning, override-init)
 
