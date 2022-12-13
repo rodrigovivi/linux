@@ -22,6 +22,7 @@
 #include "xe_migrate.h"
 #include "xe_preempt_fence.h"
 #include "xe_pt.h"
+#include "xe_res_cursor.h"
 #include "xe_trace.h"
 #include "xe_sync.h"
 
@@ -3348,3 +3349,46 @@ int xe_vm_invalidate_vma(struct xe_vma *vma)
 
 	return 0;
 }
+
+#if IS_ENABLED(CONFIG_DRM_XE_SIMPLE_ERROR_CAPTURE)
+int xe_analyze_vm(struct drm_printer *p, struct xe_vm *vm, int gt_id)
+{
+	struct rb_node *node;
+	bool is_lmem;
+	uint64_t addr;
+
+	if (!down_read_trylock(&vm->lock)) {
+		drm_printf(p, " Failed to acquire VM lock to dump capture");
+		return 0;
+	}
+	if (vm->pt_root[gt_id]) {
+		addr = xe_bo_addr(vm->pt_root[gt_id]->bo, 0, GEN8_PAGE_SIZE, &is_lmem);
+		drm_printf(p, " VM root: A:0x%llx %s\n", addr, is_lmem ? "LMEM" : "SYS");
+	}
+
+	for (node = rb_first(&vm->vmas); node; node = rb_next(node)) {
+		struct xe_vma *vma = to_xe_vma(node);
+		bool is_userptr = xe_vma_is_userptr(vma);
+
+		if (is_userptr) {
+			struct xe_res_cursor cur;
+
+			xe_res_first_sg(vma->userptr.sg, 0, GEN8_PAGE_SIZE, &cur);
+			addr = xe_res_dma(&cur);
+		} else {
+			addr = xe_bo_addr(vma->bo, 0, GEN8_PAGE_SIZE, &is_lmem);
+		}
+		drm_printf(p, " [%016llx-%016llx] S:0x%016llx A:%016llx %s\n",
+			   vma->start, vma->end, vma->end - vma->start + 1ull,
+			   addr, is_userptr ? "USR" : is_lmem ? "VRAM" : "SYS");
+	}
+	up_read(&vm->lock);
+
+	return 0;
+}
+#else
+int xe_analyze_vm(struct drm_printer *p, struct xe_vm *vm, int gt_id)
+{
+	return 0;
+}
+#endif
