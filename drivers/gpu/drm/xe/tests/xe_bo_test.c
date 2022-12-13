@@ -6,9 +6,11 @@
 #include <kunit/test.h>
 
 void xe_ccs_migrate_kunit(struct kunit *test);
+void xe_bo_evict_kunit(struct kunit *test);
 
 static struct kunit_case xe_bo_tests[] = {
 	KUNIT_CASE(xe_ccs_migrate_kunit),
+	KUNIT_CASE(xe_bo_evict_kunit),
 	{}
 };
 

@@ -5,6 +5,7 @@
 
 #include <kunit/test.h>
 
+#include "xe_bo_evict.h"
 #include "xe_pci.h"
 
 static int ccs_test_migrate(struct xe_gt *gt, struct xe_bo *bo,
@@ -163,3 +164,141 @@ void xe_ccs_migrate_kunit(struct kunit *test)
 	xe_call_for_each_device(ccs_test_run_device);
 }
 EXPORT_SYMBOL(xe_ccs_migrate_kunit);
+
+static int evict_test_run_gt(struct xe_device *xe, struct xe_gt *gt, struct kunit *test)
+{
+	struct xe_bo *bo, *external;
+	unsigned int bo_flags = XE_BO_CREATE_USER_BIT |
+		XE_BO_CREATE_VRAM_IF_DGFX(gt);
+	struct xe_vm *vm = xe_migrate_get_vm(xe->gt[0].migrate);
+	struct ww_acquire_ctx ww;
+	int err, i;
+
+	kunit_info(test, "Testing device %s gt id %u vram id %u\n",
+		   dev_name(xe->drm.dev), gt->info.id, gt->info.vram_id);
+
+	for (i = 0; i < 2; ++i) {
+		xe_vm_lock(vm, &ww, 0, false);
+		bo = xe_bo_create(xe, NULL, vm, 0x10000, ttm_bo_type_device,
+				  bo_flags);
+		xe_vm_unlock(vm, &ww);
+		if (IS_ERR(bo)) {
+			KUNIT_FAIL(test, "bo create err=%pe\n", bo);
+			break;
+		}
+
+		external = xe_bo_create(xe, NULL, NULL, 0x10000,
+					ttm_bo_type_device, bo_flags);
+		if (IS_ERR(external)) {
+			KUNIT_FAIL(test, "external bo create err=%pe\n", external);
+			goto cleanup_bo;
+		}
+
+		xe_bo_lock(external, &ww, 0, false);
+		err = xe_bo_pin_external(external);
+		xe_bo_unlock(external, &ww);
+		if (err) {
+			KUNIT_FAIL(test, "external bo pin err=%pe\n",
+				   ERR_PTR(err));
+			goto cleanup_external;
+		}
+
+		err = xe_bo_evict_all(xe);
+		if (err) {
+			KUNIT_FAIL(test, "evict err=%pe\n", ERR_PTR(err));
+			goto cleanup_all;
+		}
+
+		err = xe_bo_restore_kernel(xe);
+		if (err) {
+			KUNIT_FAIL(test, "restore kernel err=%pe\n",
+				   ERR_PTR(err));
+			goto cleanup_all;
+		}
+
+		err = xe_bo_restore_user(xe);
+		if (err) {
+			KUNIT_FAIL(test, "restore user err=%pe\n", ERR_PTR(err));
+			goto cleanup_all;
+		}
+
+		if (!xe_bo_is_vram(external)) {
+			KUNIT_FAIL(test, "external bo is not vram\n");
+			err = -EPROTO;
+			goto cleanup_all;
+		}
+
+		if (xe_bo_is_vram(bo)) {
+			KUNIT_FAIL(test, "bo is vram\n");
+			err = -EPROTO;
+			goto cleanup_all;
+		}
+
+		if (i) {
+			down_read(&vm->lock);
+			xe_vm_lock(vm, &ww, 0, false);
+			err = xe_bo_validate(bo, bo->vm, false);
+			xe_vm_unlock(vm, &ww);
+			up_read(&vm->lock);
+			if (err) {
+				KUNIT_FAIL(test, "bo valid err=%pe\n",
+					   ERR_PTR(err));
+				goto cleanup_all;
+			}
+			xe_bo_lock(external, &ww, 0, false);
+			err = xe_bo_validate(external, NULL, false);
+			xe_bo_unlock(external, &ww);
+			if (err) {
+				KUNIT_FAIL(test, "external bo valid err=%pe\n",
+					   ERR_PTR(err));
+				goto cleanup_all;
+			}
+		}
+
+		xe_bo_lock(external, &ww, 0, false);
+		xe_bo_unpin_external(external);
+		xe_bo_unlock(external, &ww);
+
+		xe_bo_put(external);
+		xe_bo_put(bo);
+		continue;
+
+cleanup_all:
+		xe_bo_lock(external, &ww, 0, false);
+		xe_bo_unpin_external(external);
+		xe_bo_unlock(external, &ww);
+cleanup_external:
+		xe_bo_put(external);
+cleanup_bo:
+		xe_bo_put(bo);
+		break;
+	}
+
+	xe_vm_put(vm);
+
+	return 0;
+}
+
+static int evict_test_run_device(struct xe_device *xe)
+{
+	struct kunit *test = xe_cur_kunit();
+	struct xe_gt *gt;
+	int id;
+
+	if (!IS_DGFX(xe)) {
+		kunit_info(test, "Skipping non-discrete device %s.\n",
+			   dev_name(xe->drm.dev));
+		return 0;
+	}
+
+	for_each_gt(gt, xe, id)
+		evict_test_run_gt(xe, gt, test);
+
+	return 0;
+}
+
+void xe_bo_evict_kunit(struct kunit *test)
+{
+	xe_call_for_each_device(evict_test_run_device);
+}
+EXPORT_SYMBOL(xe_bo_evict_kunit);
