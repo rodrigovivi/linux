@@ -21,6 +21,8 @@
  * xe uses obj->ttm.base
  */
 #define ttm __do_not_access
+#else
+#include <drm/ttm/ttm_bo_driver.h>
 #endif
 
 #define check_array_bounds(i915, a, i) drm_WARN_ON(&(i915)->drm, (i) >= ARRAY_SIZE(a))
@@ -1930,8 +1932,25 @@ int intel_framebuffer_init(struct intel_framebuffer *intel_fb,
 		}
 	}
 #else
-	if (XE_IOCTL_ERR(dev_priv, !(obj->flags & XE_BO_SCANOUT_BIT)))
+	ret = ttm_bo_reserve(&obj->ttm, true, false, NULL);
+	if (ret)
 		goto err;
+	ret = -EINVAL;
+
+	if (!(obj->flags & XE_BO_SCANOUT_BIT)) {
+		/*
+		 * XE_BO_SCANOUT_BIT should ideally be set at creation, or is
+		 * automatically set when creating FB. We cannot change caching
+		 * mode when the object is VM_BINDed, so we can only set
+		 * coherency with display when unbound.
+		 */
+		if (XE_IOCTL_ERR(dev_priv, !list_empty(&obj->vmas))) {
+			ttm_bo_unreserve(&obj->ttm);
+			goto err;
+		}
+		obj->flags |= XE_BO_SCANOUT_BIT;
+	}
+	ttm_bo_unreserve(&obj->ttm);
 #endif
 
 	atomic_set(&intel_fb->bits, 0);
@@ -2082,8 +2101,9 @@ intel_user_framebuffer_create(struct drm_device *dev,
 		return ERR_PTR(-ENOENT);
 
 	obj = gem_to_xe_bo(gem);
-	/* Require vram exclusive objects */
-	if (IS_DGFX(i915) && obj->flags & XE_BO_CREATE_SYSTEM_BIT) {
+	/* Require vram exclusive objects, but allow dma-buf imports */
+	if (IS_DGFX(i915) && obj->flags & XE_BO_CREATE_SYSTEM_BIT &&
+	    obj->ttm.type != ttm_bo_type_sg) {
 		drm_gem_object_put(gem);
 		return ERR_PTR(-EREMOTE);
 	}
