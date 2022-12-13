@@ -327,6 +327,12 @@ struct xe_vm {
 		 */
 		struct list_head rebind_list;
 	} notifier;
+
+	/** @error_capture: allow to track errors */
+	struct {
+		/** @capture_once: capture only one error per VM */
+		bool capture_once;
+	} error_capture;
 };
 
 #endif
