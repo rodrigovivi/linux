@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Copyright © 2021 Intel Corporation
+ */
+
 #include "xe_sync.h"
 
 #include <linux/kthread.h>
