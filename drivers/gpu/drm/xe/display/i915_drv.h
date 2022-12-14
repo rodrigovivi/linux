@@ -169,8 +169,6 @@ static inline struct drm_i915_private *kdev_to_i915(struct device *kdev)
 #define intel_overlay_cleanup(a) do { (void)a; } while (0)
 #define intel_overlay_setup(a) do { (void)a; } while (0)
 
-#define i915_gem_object_read_from_page(a...) WARN_ON(-ENODEV)
-
 typedef int intel_wakeref_t;
 
 #ifndef CONFIG_PM
