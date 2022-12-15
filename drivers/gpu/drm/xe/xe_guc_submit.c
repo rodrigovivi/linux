@@ -748,26 +748,33 @@ static void simple_error_capture(struct xe_engine *e)
 	u32 adj_logical_mask = e->logical_mask;
 	u32 width_mask = (0x1 << e->width) - 1;
 	int i;
+	bool cookie;
 
-	for (i = 0; e->width > 1 && i < XE_HW_ENGINE_MAX_INSTANCE;) {
-		if (adj_logical_mask & BIT(i)) {
-			adj_logical_mask |= width_mask << i;
-			i += e->width;
-		} else {
-			++i;
+	if (e->vm && !e->vm->error_capture.capture_once) {
+		e->vm->error_capture.capture_once = true;
+		cookie = dma_fence_begin_signalling();
+		for (i = 0; e->width > 1 && i < XE_HW_ENGINE_MAX_INSTANCE;) {
+			if (adj_logical_mask & BIT(i)) {
+				adj_logical_mask |= width_mask << i;
+				i += e->width;
+			} else {
+				++i;
+			}
 		}
-	}
 
-	xe_force_wake_get(gt_to_fw(guc_to_gt(guc)), XE_FORCEWAKE_ALL);
-	xe_guc_ct_print(&guc->ct, &p);
-	guc_engine_print(e, &p);
-	for_each_hw_engine(hwe, guc_to_gt(guc), id) {
-		if (hwe->class != e->hwe->class ||
-		    !(BIT(hwe->logical_instance) & adj_logical_mask))
-			continue;
-		xe_hw_engine_print_state(hwe, &p);
+		xe_force_wake_get(gt_to_fw(guc_to_gt(guc)), XE_FORCEWAKE_ALL);
+		xe_guc_ct_print(&guc->ct, &p);
+		guc_engine_print(e, &p);
+		for_each_hw_engine(hwe, guc_to_gt(guc), id) {
+			if (hwe->class != e->hwe->class ||
+			    !(BIT(hwe->logical_instance) & adj_logical_mask))
+				continue;
+			xe_hw_engine_print_state(hwe, &p);
+		}
+		xe_analyze_vm(&p, e->vm, e->gt->info.id);
+		xe_force_wake_put(gt_to_fw(guc_to_gt(guc)), XE_FORCEWAKE_ALL);
+		dma_fence_end_signalling(cookie);
 	}
-	xe_force_wake_put(gt_to_fw(guc_to_gt(guc)), XE_FORCEWAKE_ALL);
 }
 #else
 static void simple_error_capture(struct xe_engine *e)
