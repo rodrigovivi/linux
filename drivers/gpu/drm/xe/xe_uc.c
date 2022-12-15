@@ -67,6 +67,10 @@ err:
  */
 int xe_uc_init_post_hwconfig(struct xe_uc *uc)
 {
+	/* GuC submission not enabled, nothing to do */
+	if (!xe_device_guc_submission_enabled(uc_to_xe(uc)))
+		return 0;
+
 	return xe_guc_init_post_hwconfig(&uc->guc);
 }
 
