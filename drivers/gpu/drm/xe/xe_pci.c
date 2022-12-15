@@ -8,7 +8,6 @@
 #include <linux/device/driver.h>
 #include <linux/module.h>
 #include <linux/pci.h>
-#include <linux/vga_switcheroo.h>
 
 #include <drm/drm_drv.h>
 #include <drm/drm_color_mgmt.h>
@@ -26,7 +25,6 @@
 	func(require_force_probe); \
 	func(is_dgfx); \
 	/* Keep has_* in alphabetical order */ \
-
 
 struct xe_subplatform_desc {
 	enum xe_subplatform subplatform;
@@ -63,12 +61,15 @@ struct xe_device_desc {
 	DEV_INFO_FOR_EACH_FLAG(DEFINE_FLAG);
 #undef DEFINE_FLAG
 
+	struct xe_device_display_info display;
+
 	u8 vram_flags;
 	u8 max_tiles;
 	u8 vm_max_level;
 
 	bool supports_usm;
 	bool has_flat_ccs;
+	bool has_4tile;
 };
 
 #define PLATFORM(x)		\
@@ -77,8 +78,74 @@ struct xe_device_desc {
 
 #define NOP(x)	x
 
-/* Keep in gen based order, and chronological order within a gen */
+#define __DISPLAY_DEFAULTS \
+		.pipe_mask = BIT(PIPE_A) | BIT(PIPE_B) | BIT(PIPE_C) | BIT(PIPE_D), \
+		.cpu_transcoder_mask = \
+			BIT(TRANSCODER_A) | BIT(TRANSCODER_B) | \
+			BIT(TRANSCODER_C) | BIT(TRANSCODER_D) | \
+			BIT(TRANSCODER_DSI_0) | BIT(TRANSCODER_DSI_1), \
+		.pipe_offsets = { \
+			[TRANSCODER_A] = PIPE_A_OFFSET, \
+			[TRANSCODER_B] = PIPE_B_OFFSET, \
+			[TRANSCODER_C] = PIPE_C_OFFSET, \
+			[TRANSCODER_D] = PIPE_D_OFFSET, \
+			[TRANSCODER_DSI_0] = PIPE_DSI0_OFFSET, \
+			[TRANSCODER_DSI_1] = PIPE_DSI1_OFFSET, \
+		}, \
+		.trans_offsets = { \
+			[TRANSCODER_A] = TRANSCODER_A_OFFSET, \
+			[TRANSCODER_B] = TRANSCODER_B_OFFSET, \
+			[TRANSCODER_C] = TRANSCODER_C_OFFSET, \
+			[TRANSCODER_D] = TRANSCODER_D_OFFSET, \
+			[TRANSCODER_DSI_0] = TRANSCODER_DSI0_OFFSET, \
+			[TRANSCODER_DSI_1] = TRANSCODER_DSI1_OFFSET, \
+		}, \
 
+#define GEN12_DISPLAY \
+	.display = (struct xe_device_display_info){ \
+		__DISPLAY_DEFAULTS \
+		.ver = 12, \
+		.abox_mask = GENMASK(2, 1), \
+		.has_dmc = 1, \
+		.has_dp_mst = 1, \
+		.has_dsb = 0, /* FIXME: LUT load is broken with huge DSB */ \
+		.dbuf.size = 2048, \
+		.dbuf.slice_mask = BIT(DBUF_S1) | BIT(DBUF_S2), \
+		.has_dsc = 1, \
+		.fbc_mask = BIT(INTEL_FBC_A), \
+		.has_fpga_dbg = 1, \
+		.has_hdcp = 1, \
+		.has_ipc = 1, \
+		.has_psr = 1, \
+		.has_psr_hw_tracking = 1, \
+		.color = { .degamma_lut_size = 33, .gamma_lut_size = 262145 }, \
+	}
+
+#define GEN13_DISPLAY \
+	.display = (struct xe_device_display_info){ \
+		__DISPLAY_DEFAULTS \
+		.ver = 13,							\
+		.abox_mask = GENMASK(1, 0),					\
+		.color = {							\
+			.degamma_lut_size = 128, .gamma_lut_size = 1024,	\
+			.degamma_lut_tests = DRM_COLOR_LUT_NON_DECREASING |	\
+				     DRM_COLOR_LUT_EQUAL_CHANNELS,		\
+		},								\
+		.dbuf.size = 4096,						\
+		.dbuf.slice_mask = BIT(DBUF_S1) | BIT(DBUF_S2) | BIT(DBUF_S3) |	\
+				   BIT(DBUF_S4),				\
+		.has_dmc = 1,							\
+		.has_dp_mst = 1,						\
+		.has_dsb = 1,							\
+		.has_dsc = 1,							\
+		.fbc_mask = BIT(INTEL_FBC_A),					\
+		.has_fpga_dbg = 1,						\
+		.has_hdcp = 1,							\
+		.has_ipc = 1,							\
+		.has_psr = 1,							\
+	}
+
+/* Keep in gen based order, and chronological order within a gen */
 #define GEN12_FEATURES \
 	.graphics_ver = 12, \
 	.media_ver = 12, \
@@ -89,15 +156,20 @@ struct xe_device_desc {
 
 static const struct xe_device_desc tgl_desc = {
 	GEN12_FEATURES,
+	GEN12_DISPLAY,
 	PLATFORM(XE_TIGERLAKE),
 	.platform_engine_mask =
 		BIT(XE_HW_ENGINE_RCS0) | BIT(XE_HW_ENGINE_BCS0) |
 		BIT(XE_HW_ENGINE_VECS0) | BIT(XE_HW_ENGINE_VCS0) |
 		BIT(XE_HW_ENGINE_VCS2),
+	GEN12_DISPLAY,
 };
 
 static const struct xe_device_desc adl_s_desc = {
 	GEN12_FEATURES,
+	GEN12_DISPLAY,
+	.display.has_hti = 1,
+	.display.has_psr_hw_tracking = 0,
 	PLATFORM(XE_ALDERLAKE_S),
 	.platform_engine_mask =
 		BIT(XE_HW_ENGINE_RCS0) | BIT(XE_HW_ENGINE_BCS0) |
@@ -119,6 +191,7 @@ static const struct xe_device_desc adl_p_desc = {
 
 static const struct xe_device_desc dg1_desc = {
 	GEN12_FEATURES,
+	GEN12_DISPLAY,
 	DGFX_FEATURES,
 	.graphics_rel = 10,
 	PLATFORM(XE_DG1),
@@ -145,27 +218,42 @@ static const u16 dg2_g10_ids[] = { XE_DG2_G10_IDS(NOP), XE_ATS_M150_IDS(NOP), 0 
 static const u16 dg2_g11_ids[] = { XE_DG2_G11_IDS(NOP), XE_ATS_M75_IDS(NOP), 0 };
 static const u16 dg2_g12_ids[] = { XE_DG2_G12_IDS(NOP), 0 };
 
+#define DG2_FEATURES \
+	DGFX_FEATURES, \
+	.graphics_rel = 55, \
+	.media_rel = 55, \
+	PLATFORM(XE_DG2), \
+	.subplatforms = (const struct xe_subplatform_desc[]) { \
+		{ XE_SUBPLATFORM_DG2_G10, "G10", dg2_g10_ids }, \
+		{ XE_SUBPLATFORM_DG2_G11, "G11", dg2_g11_ids }, \
+		{ XE_SUBPLATFORM_DG2_G12, "G12", dg2_g12_ids }, \
+		{ } \
+	}, \
+	.platform_engine_mask = \
+		BIT(XE_HW_ENGINE_RCS0) | BIT(XE_HW_ENGINE_BCS0) | \
+		BIT(XE_HW_ENGINE_VECS0) | BIT(XE_HW_ENGINE_VECS1) | \
+		BIT(XE_HW_ENGINE_VCS0) | BIT(XE_HW_ENGINE_VCS2) | \
+		BIT(XE_HW_ENGINE_CCS0) | BIT(XE_HW_ENGINE_CCS1) | \
+		BIT(XE_HW_ENGINE_CCS2) | BIT(XE_HW_ENGINE_CCS3), \
+	.require_force_probe = true, \
+	.vram_flags = XE_VRAM_FLAGS_NEED64K, \
+	.has_4tile = 1
+
 static const struct xe_device_desc ats_m_desc = {
 	XE_HP_FEATURES,
 	XE_HPM_FEATURES,
-	DGFX_FEATURES,
-	.graphics_rel = 55,
-	.media_rel = 55,
-	PLATFORM(XE_DG2),
-	.subplatforms = (const struct xe_subplatform_desc[]) {
-		{ XE_SUBPLATFORM_DG2_G10, "G10", dg2_g10_ids },
-		{ XE_SUBPLATFORM_DG2_G11, "G11", dg2_g11_ids },
-		{ XE_SUBPLATFORM_DG2_G12, "G12", dg2_g12_ids },
-		{ }
-	},
-	.platform_engine_mask =
-		BIT(XE_HW_ENGINE_RCS0) | BIT(XE_HW_ENGINE_BCS0) |
-		BIT(XE_HW_ENGINE_VECS0) | BIT(XE_HW_ENGINE_VECS1) |
-		BIT(XE_HW_ENGINE_VCS0) | BIT(XE_HW_ENGINE_VCS2) |
-		BIT(XE_HW_ENGINE_CCS0) | BIT(XE_HW_ENGINE_CCS1) |
-		BIT(XE_HW_ENGINE_CCS2) | BIT(XE_HW_ENGINE_CCS3),
-	.require_force_probe = true,
-	.vram_flags = XE_VRAM_FLAGS_NEED64K,
+
+	DG2_FEATURES,
+};
+
+static const struct xe_device_desc dg2_desc = {
+	XE_HP_FEATURES,
+	XE_HPM_FEATURES,
+
+	DG2_FEATURES,
+	GEN13_DISPLAY,
+	.display.cpu_transcoder_mask = BIT(TRANSCODER_A) | BIT(TRANSCODER_B) |
+				       BIT(TRANSCODER_C) | BIT(TRANSCODER_D),
 };
 
 #define PVC_ENGINES \
@@ -240,6 +328,9 @@ static const struct xe_device_desc mtl_desc = {
 	.extra_gts = xelpmp_gts,
 	.platform_engine_mask = MTL_MAIN_ENGINES,
 	.require_force_probe = 1,
+	GEN13_DISPLAY,
+	.display.ver = 14,
+	.display.has_cdclk_crawl = 1,
 };
 
 #undef PLATFORM
@@ -259,7 +350,7 @@ static const struct pci_device_id pciidlist[] = {
 	XE_TGL_GT2_IDS(INTEL_VGA_DEVICE, &tgl_desc),
 	XE_DG1_IDS(INTEL_VGA_DEVICE, &dg1_desc),
 	XE_ATS_M_IDS(INTEL_VGA_DEVICE, &ats_m_desc),
-	XE_DG2_IDS(INTEL_VGA_DEVICE, &ats_m_desc), /* TODO: switch to proper dg2_desc */
+	XE_DG2_IDS(INTEL_VGA_DEVICE, &dg2_desc),
 	XE_ADLS_IDS(INTEL_VGA_DEVICE, &adl_s_desc),
 	XE_ADLP_IDS(INTEL_VGA_DEVICE, &adl_p_desc),
 	XE_PVC_IDS(INTEL_VGA_DEVICE, &pvc_desc),
@@ -305,20 +396,11 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	u8 id;
 	int err;
 
-	/* Only bind to function 0 of the device. Early generations
-	 * used function 1 as a placeholder for multi-head. This causes
-	 * us confusion instead, especially on the systems where both
-	 * functions have the same PCI-ID!
-	 */
-	if (PCI_FUNC(pdev->devfn))
-		return -ENODEV;
-
-	/*
-	 * apple-gmux is needed on dual GPU MacBook Pro
-	 * to probe the panel if we're the inactive GPU.
-	 */
-	if (vga_switcheroo_client_probe_defer(pdev))
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+	/* Detect if we need to wait for other drivers early on */
+	if (intel_modeset_probe_defer(pdev))
 		return -EPROBE_DEFER;
+#endif
 
 	xe = xe_device_create(pdev, ent);
 	if (IS_ERR(xe))
@@ -337,6 +419,8 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	xe->info.media_ver = desc->media_ver;
 	xe->info.supports_usm = desc->supports_usm;
 	xe->info.has_flat_ccs = desc->has_flat_ccs;
+	xe->info.has_4tile = desc->has_4tile;
+	xe->info.display = desc->display;
 
 	spd = subplatform_get(xe, desc);
 	xe->info.subplatform = spd ? spd->subplatform : XE_SUBPLATFORM_NONE;
@@ -451,7 +535,7 @@ static int xe_pci_resume(struct device *dev)
 
 static SIMPLE_DEV_PM_OPS(xe_pm_ops, xe_pci_suspend, xe_pci_resume);
 
-static struct pci_driver i915_pci_driver = {
+static struct pci_driver xe_pci_driver = {
 	.name = DRIVER_NAME,
 	.id_table = pciidlist,
 	.probe = xe_pci_probe,
@@ -462,12 +546,12 @@ static struct pci_driver i915_pci_driver = {
 
 int xe_register_pci_driver(void)
 {
-	return pci_register_driver(&i915_pci_driver);
+	return pci_register_driver(&xe_pci_driver);
 }
 
 void xe_unregister_pci_driver(void)
 {
-	pci_unregister_driver(&i915_pci_driver);
+	pci_unregister_driver(&xe_pci_driver);
 }
 
 #if IS_ENABLED(CONFIG_DRM_XE_KUNIT_TEST)
@@ -501,7 +585,7 @@ static int dev_to_xe_device_fn(struct device *dev, void *data)
  */
 int xe_call_for_each_device(xe_device_fn xe_fn)
 {
-	return driver_for_each_device(&i915_pci_driver.driver, NULL,
+	return driver_for_each_device(&xe_pci_driver.driver, NULL,
 				      xe_fn, dev_to_xe_device_fn);
 }
 #endif

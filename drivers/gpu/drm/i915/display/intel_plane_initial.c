@@ -9,6 +9,7 @@
 #include "intel_display.h"
 #include "intel_display_types.h"
 #include "intel_fb.h"
+#include "intel_frontbuffer.h"
 #include "intel_plane_initial.h"
 
 static bool
@@ -280,7 +281,7 @@ valid_fb:
 	plane_state->uapi.crtc = &crtc->base;
 	intel_plane_copy_uapi_to_hw_state(plane_state, plane_state, crtc);
 
-	atomic_or(plane->frontbuffer_bit, &to_intel_frontbuffer(fb)->bits);
+	atomic_or(plane->frontbuffer_bit, &to_intel_framebuffer(fb)->bits);
 }
 
 static void plane_config_fini(struct intel_initial_plane_config *plane_config)

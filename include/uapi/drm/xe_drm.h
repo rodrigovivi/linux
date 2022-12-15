@@ -267,6 +267,7 @@ struct drm_xe_gem_create {
 	 * be placed
 	 */
 #define XE_GEM_CREATE_FLAG_DEFER_BACKING	(0x1 << 24)
+#define XE_GEM_CREATE_FLAG_SCANOUT		(0x1 << 25)
 	__u32 flags;
 
 	/**

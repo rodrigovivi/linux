@@ -277,7 +277,8 @@ static struct ttm_tt *xe_ttm_tt_create(struct ttm_buffer_object *ttm_bo,
 	page_flags |= TTM_TT_FLAG_ZERO_ALLOC;
 
 	/* TODO: Select caching mode */
-	err = ttm_tt_init(&tt->ttm, &bo->ttm, page_flags, ttm_cached,
+	err = ttm_tt_init(&tt->ttm, &bo->ttm, page_flags,
+			  bo->flags & XE_BO_SCANOUT_BIT ? ttm_write_combined : ttm_cached,
 			  DIV_ROUND_UP(xe_device_ccs_bytes(xe_bo_device(bo),
 							   bo->ttm.base.size),
 				       PAGE_SIZE));
@@ -1313,6 +1314,7 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 
 	if (XE_IOCTL_ERR(xe, args->flags &
 			 ~(XE_GEM_CREATE_FLAG_DEFER_BACKING |
+			   XE_GEM_CREATE_FLAG_SCANOUT |
 			   xe->info.mem_region_mask)))
 		return -EINVAL;
 
@@ -1342,6 +1344,9 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 
 	if (args->flags & XE_GEM_CREATE_FLAG_DEFER_BACKING)
 		bo_flags |= XE_BO_DEFER_BACKING;
+
+	if (args->flags & XE_GEM_CREATE_FLAG_SCANOUT)
+		bo_flags |= XE_BO_SCANOUT_BIT;
 
 	bo_flags |= args->flags << (ffs(XE_BO_CREATE_SYSTEM_BIT) - 1);
 	bo = xe_bo_create(xe, NULL, vm, args->size, ttm_bo_type_device,
@@ -1546,6 +1551,37 @@ void xe_bo_put_commit(struct llist_head *deferred)
 
 	llist_for_each_entry_safe(bo, next, freed, freed)
 		drm_gem_object_free(&bo->ttm.base.refcount);
+}
+
+/**
+ * xe_bo_dumb_create - Create a dumb bo as backing for a fb
+ */
+int xe_bo_dumb_create(struct drm_file *file_priv,
+		      struct drm_device *dev,
+		      struct drm_mode_create_dumb *args)
+{
+	struct xe_device *xe = to_xe_device(dev);
+	struct xe_bo *bo;
+	uint32_t handle;
+	int cpp = DIV_ROUND_UP(args->bpp, 8);
+	int err;
+
+	/* Align to ggtt page size, which we start requiring for xe display */
+	args->pitch = ALIGN(args->width * cpp, GEN8_PAGE_SIZE);
+	args->size = mul_u32_u32(args->pitch, args->height);
+
+	bo = xe_bo_create(xe, NULL, NULL, args->size, ttm_bo_type_device,
+			  XE_BO_CREATE_VRAM_IF_DGFX(to_gt(xe)) |
+			  XE_BO_CREATE_USER_BIT | XE_BO_SCANOUT_BIT);
+	if (IS_ERR(bo))
+		return PTR_ERR(bo);
+
+	err = drm_gem_handle_create(file_priv, &bo->ttm.base, &handle);
+	/* drop reference from allocate - handle holds it now */
+	drm_gem_object_put(&bo->ttm.base);
+	if (!err)
+		args->handle = handle;
+	return err;
 }
 
 #if IS_ENABLED(CONFIG_DRM_XE_KUNIT_TEST)

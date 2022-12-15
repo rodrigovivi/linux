@@ -15,7 +15,10 @@
 #include "intel_panel.h"
 #include "intel_pps.h"
 #include "intel_snps_phy.h"
+
+#ifdef I915
 #include "vlv_sideband.h"
+#endif
 
 struct intel_dpll_funcs {
 	int (*crtc_compute_clock)(struct intel_atomic_state *state,
@@ -1592,6 +1595,7 @@ void i9xx_enable_pll(const struct intel_crtc_state *crtc_state)
 	}
 }
 
+#ifdef I915
 static void vlv_pllb_recal_opamp(struct drm_i915_private *dev_priv,
 				 enum pipe pipe)
 {
@@ -2003,6 +2007,7 @@ void chv_disable_pll(struct drm_i915_private *dev_priv, enum pipe pipe)
 
 	vlv_dpio_put(dev_priv);
 }
+#endif
 
 void i9xx_disable_pll(const struct intel_crtc_state *crtc_state)
 {
@@ -2021,7 +2026,7 @@ void i9xx_disable_pll(const struct intel_crtc_state *crtc_state)
 	intel_de_posting_read(dev_priv, DPLL(pipe));
 }
 
-
+#ifdef I915
 /**
  * vlv_force_pll_off - forcibly disable just the PLL
  * @dev_priv: i915 private structure
@@ -2037,6 +2042,7 @@ void vlv_force_pll_off(struct drm_i915_private *dev_priv, enum pipe pipe)
 	else
 		vlv_disable_pll(dev_priv, pipe);
 }
+#endif
 
 /* Only for pre-ILK configs */
 static void assert_pll(struct drm_i915_private *dev_priv,

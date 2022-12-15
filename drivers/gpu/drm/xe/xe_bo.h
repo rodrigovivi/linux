@@ -23,6 +23,7 @@
 #define XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT BIT(6)
 #define XE_BO_CREATE_PINNED_BIT		BIT(7)
 #define XE_BO_DEFER_BACKING		BIT(8)
+#define XE_BO_SCANOUT_BIT		BIT(9)
 /* this one is trigger internally only */
 #define XE_BO_INTERNAL_TEST		BIT(30)
 #define XE_BO_INTERNAL_64K		BIT(31)
@@ -195,7 +196,7 @@ xe_bo_main_addr(struct xe_bo *bo, size_t page_size)
 static inline u32
 xe_bo_ggtt_addr(struct xe_bo *bo)
 {
-	XE_BUG_ON(bo->ggtt_node.size != bo->size);
+	XE_BUG_ON(bo->ggtt_node.size > bo->size);
 	XE_BUG_ON(bo->ggtt_node.start + bo->ggtt_node.size > (1ull << 32));
 	return bo->ggtt_node.start;
 }
@@ -216,6 +217,9 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 			struct drm_file *file);
 int xe_gem_mmap_offset_ioctl(struct drm_device *dev, void *data,
 			     struct drm_file *file);
+int xe_bo_dumb_create(struct drm_file *file_priv,
+		      struct drm_device *dev,
+		      struct drm_mode_create_dumb *args);
 
 bool xe_bo_needs_ccs_pages(struct xe_bo *bo);
 

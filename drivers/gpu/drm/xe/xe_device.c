@@ -9,6 +9,8 @@
 #include <drm/drm_aperture.h>
 #include <drm/drm_ioctl.h>
 #include <drm/xe_drm.h>
+#include <drm/drm_managed.h>
+#include <drm/drm_atomic_helper.h>
 
 #include "xe_bo.h"
 #include "xe_debugfs.h"
@@ -24,6 +26,19 @@
 #include "xe_vm.h"
 #include "xe_vm_madvise.h"
 #include "xe_wait_user_fence.h"
+
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+#include "display/intel_acpi.h"
+#include "display/intel_audio.h"
+#include "display/intel_bw.h"
+#include "display/intel_display.h"
+#include "display/intel_fbdev.h"
+#include "display/intel_hdcp.h"
+#include "display/intel_opregion.h"
+#include "display/ext/i915_irq.h"
+#include "display/ext/intel_dram.h"
+#include "display/ext/intel_pm.h"
+#endif
 
 /* FIXME: Move to common param infrastructure */
 static bool enable_guc = true;
@@ -125,6 +140,9 @@ static const struct drm_driver driver = {
 	 */
 	.driver_features =
 	    DRIVER_GEM |
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+	    DRIVER_MODESET | DRIVER_ATOMIC |
+#endif
 	    DRIVER_RENDER | DRIVER_SYNCOBJ |
 	    DRIVER_SYNCOBJ_TIMELINE,
 	.open = xe_file_open,
@@ -134,9 +152,12 @@ static const struct drm_driver driver = {
 	.prime_fd_to_handle = drm_gem_prime_fd_to_handle,
 	.gem_prime_import = xe_gem_prime_import,
 	.gem_prime_mmap = drm_gem_prime_mmap,
-//
-//	.dumb_create = i915_gem_dumb_create,
+
+	.dumb_create = xe_bo_dumb_create,
 	.dumb_map_offset = drm_gem_ttm_dumb_map_offset,
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+	.lastclose = intel_fbdev_restore_mode,
+#endif
 	.release = &xe_driver_release,
 
 	.ioctls = xe_ioctls,
@@ -149,6 +170,16 @@ static const struct drm_driver driver = {
 	.minor = DRIVER_MINOR,
 	.patchlevel = DRIVER_PATCHLEVEL,
 };
+
+static void xe_device_destroy(struct drm_device *dev, void *dummy)
+{
+	struct xe_device *xe = to_xe_device(dev);
+
+	destroy_workqueue(xe->display.hotplug.dp_wq);
+	destroy_workqueue(xe->ordered_wq);
+	mutex_destroy(&xe->persitent_engines.lock);
+	ttm_device_fini(&xe->ttm);
+}
 
 struct xe_device *xe_device_create(struct pci_dev *pdev,
 				   const struct pci_device_id *ent)
@@ -190,12 +221,158 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 	INIT_LIST_HEAD(&xe->pinned.evicted);
 
 	xe->ordered_wq = alloc_ordered_workqueue("xe-ordered-wq", 0);
+	xe->display.hotplug.dp_wq = alloc_ordered_workqueue("xe-dp", 0);
+
+	/* Initialize display parts here.. */
+	spin_lock_init(&xe->display.fb_tracking.lock);
+
+	mutex_init(&xe->sb_lock);
+	mutex_init(&xe->display.backlight.lock);
+	mutex_init(&xe->display.audio.mutex);
+	mutex_init(&xe->display.wm.wm_mutex);
+	mutex_init(&xe->display.pps.mutex);
+	mutex_init(&xe->display.hdcp.comp_mutex);
+	xe->enabled_irq_mask = ~0;
+
+	xe->params.invert_brightness = -1;
+	xe->params.vbt_sdvo_panel_type = -1;
+	xe->params.disable_power_well = -1;
+	xe->params.enable_dc = -1;
+	xe->params.enable_dpcd_backlight = -1;
+	xe->params.enable_dp_mst = -1;
+	xe->params.enable_fbc = -1;
+	xe->params.enable_psr = -1;
+	xe->params.enable_psr2_sel_fetch = -1;
+	xe->params.panel_use_ssc = -1;
+
+	err = drmm_add_action_or_reset(&xe->drm, xe_device_destroy, NULL);
+	if (err)
+		goto err;
 
 	return xe;
 
 err_put:
 	drm_dev_put(&xe->drm);
+err:
 	return ERR_PTR(err);
+}
+
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+static void xe_device_fini_display_nommio(struct drm_device *dev, void *dummy)
+{
+	struct xe_device *xe = to_xe_device(dev);
+
+	intel_power_domains_cleanup(xe);
+}
+#endif
+
+static int xe_device_init_display_nommio(struct xe_device *xe)
+{
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+	int err;
+
+	/* This must be called before any calls to HAS_PCH_* */
+	intel_detect_pch(xe);
+	intel_display_irq_init(xe);
+
+	err = intel_power_domains_init(xe);
+	if (err)
+		return err;
+
+	intel_init_display_hooks(xe);
+
+	return drmm_add_action_or_reset(&xe->drm, xe_device_fini_display_nommio, xe);
+#else
+	return 0;
+#endif
+}
+
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+static void xe_device_fini_display_noirq(struct drm_device *dev, void *dummy)
+{
+	struct xe_device *xe = to_xe_device(dev);
+
+	intel_modeset_driver_remove_noirq(xe);
+	intel_power_domains_driver_remove(xe);
+}
+#endif
+
+static int xe_device_init_display_noirq(struct xe_device *xe)
+{
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+	int err;
+
+	/* Early display init.. */
+	intel_opregion_setup(xe);
+
+	/*
+	 * Fill the dram structure to get the system dram info. This will be
+	 * used for memory latency calculation.
+	 */
+	intel_dram_detect(xe);
+
+	intel_bw_init_hw(xe);
+
+	intel_device_info_runtime_init(xe);
+
+	err = drm_aperture_remove_conflicting_pci_framebuffers(to_pci_dev(xe->drm.dev),
+							       xe->drm.driver);
+	if (err)
+		return err;
+
+	err = intel_modeset_init_noirq(xe);
+	if (err)
+		return err;
+
+	return drmm_add_action_or_reset(&xe->drm, xe_device_fini_display_noirq, NULL);
+#else
+	if (HAS_DISPLAY(xe))
+		drm_warn(&xe->drm, "CONFIG_DRM_XE_DISPLAY is unset, but device is display capable\n");
+	return 0;
+#endif
+}
+
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+static inline void xe_device_fini_display_early(struct drm_device *dev, void *dummy)
+{
+	struct xe_device *xe = to_xe_device(dev);
+
+	intel_modeset_driver_remove_nogem(xe);
+}
+#endif
+
+static int xe_device_init_display_early(struct xe_device *xe)
+{
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+	int err = intel_modeset_init_nogem(xe);
+	if (err)
+		return err;
+
+	return drmm_add_action_or_reset(&xe->drm, xe_device_fini_display_early, NULL);
+#else
+	return 0;
+#endif
+}
+
+static int xe_device_init_display_late(struct xe_device *xe)
+{
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+	return intel_modeset_init(xe);
+#else
+	return 0;
+#endif
+}
+
+static void xe_device_unlink_display(struct xe_device *xe)
+{
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+	/* poll work can call into fbdev, hence clean that up afterwards */
+	intel_hpd_poll_fini(xe);
+	intel_fbdev_fini(xe);
+
+	intel_hdcp_component_fini(xe);
+	intel_audio_deinit(xe);
+#endif
 }
 
 int xe_device_probe(struct xe_device *xe)
@@ -205,6 +382,9 @@ int xe_device_probe(struct xe_device *xe)
 	u8 id;
 
 	xe->info.mem_region_mask = 1;
+	err = xe_device_init_display_nommio(xe);
+	if (err)
+		return err;
 
 	for_each_gt(gt, xe, id) {
 		err = xe_gt_alloc(xe, gt);
@@ -222,9 +402,17 @@ int xe_device_probe(struct xe_device *xe)
 			return err;
 	}
 
-	err = xe_irq_install(xe);
+	err = xe_device_init_display_noirq(xe);
 	if (err)
 		return err;
+
+	err = xe_irq_install(xe);
+	if (err)
+		goto err;
+
+	err = xe_device_init_display_early(xe);
+	if (err)
+		goto err_irq_shutdown;
 
 	for_each_gt(gt, xe, id) {
 		err = xe_gt_init_early(gt);
@@ -242,26 +430,56 @@ int xe_device_probe(struct xe_device *xe)
 			goto err_irq_shutdown;
 	}
 
+	err = xe_device_init_display_late(xe);
+	if (err)
+		goto err_fini_display;
+
 	err = drm_dev_register(&xe->drm, 0);
 	if (err)
 		goto err_irq_shutdown;
+
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+	intel_display_driver_register(xe);
+	intel_register_dsm_handler();
+	intel_power_domains_enable(xe);
+#endif
 
 	xe_debugfs_register(xe);
 
 	return 0;
 
+err_fini_display:
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+	intel_modeset_driver_remove(xe);
+#endif
 err_irq_shutdown:
 	xe_irq_shutdown(xe);
+err:
+	xe_device_unlink_display(xe);
 	return err;
+}
+
+static void xe_device_remove_display(struct xe_device *xe)
+{
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+	intel_unregister_dsm_handler();
+	intel_power_domains_disable(xe);
+	intel_display_driver_unregister(xe);
+#endif
+
+	drm_dev_unplug(&xe->drm);
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+	intel_modeset_driver_remove(xe);
+#endif
 }
 
 void xe_device_remove(struct xe_device *xe)
 {
-	destroy_workqueue(xe->ordered_wq);
-	mutex_destroy(&xe->persitent_engines.lock);
+	xe_device_remove_display(xe);
+
 	xe_irq_shutdown(xe);
-	drm_dev_unregister(&xe->drm);
-	ttm_device_fini(&xe->ttm);
+
+	xe_device_unlink_display(xe);
 }
 
 void xe_device_shutdown(struct xe_device *xe)
