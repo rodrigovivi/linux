@@ -1,6 +1,6 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
+// SPDX-License-Identifier: MIT
 /*
- * A layer of IOSYS map to access memory on XE
+ * Copyright © 2022 Intel Corporation
  */
 
 #ifndef __XE_MAP_H__
