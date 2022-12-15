@@ -139,6 +139,14 @@ struct xe_vma {
 	struct {
 		struct list_head rebind_link;
 	} notifier;
+
+	struct {
+		/**
+		 * @extobj.link: Link into vm's external object list.
+		 * protected by the vm lock.
+		 */
+		struct list_head link;
+	} extobj;
 };
 
 struct xe_device;
@@ -202,12 +210,12 @@ struct xe_vm {
 	 */
 	struct work_struct destroy_work;
 
-	/** @extobj: bookkeeping for external objects */
+	/** @extobj: bookkeeping for external objects. Protected by the vm lock */
 	struct {
 		/** @enties: number of external BOs attached this VM */
 		u32 entries;
-		/** @bos: external BOs attached to this VM */
-		struct xe_bo **bos;
+		/** @list: list of vmas with external bos attached */
+		struct list_head list;
 	} extobj;
 
 	/** @async_ops: async VM operations (bind / unbinds) */

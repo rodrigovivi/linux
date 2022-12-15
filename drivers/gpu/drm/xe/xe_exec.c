@@ -340,13 +340,8 @@ retry:
 		 * Make implicit sync work across drivers, assuming all external
 		 * BOs are written as we don't pass in a read / write list.
 		 */
-		for (i = 0; i < vm->extobj.entries; ++i) {
-			struct xe_bo *bo = vm->extobj.bos[i];
-
-			dma_resv_add_fence(bo->ttm.base.resv,
-					   &job->drm.s_fence->finished,
-					   DMA_RESV_USAGE_WRITE);
-		}
+		xe_vm_fence_all_extobjs(vm, &job->drm.s_fence->finished,
+					DMA_RESV_USAGE_WRITE);
 	}
 	if (!xe_vm_no_dma_fences(vm))
 		err = xe_vm_userptr_needs_repin(vm);
