@@ -326,6 +326,8 @@ static int xe_device_init_display_noirq(struct xe_device *xe)
 
 	return drmm_add_action_or_reset(&xe->drm, xe_device_fini_display_noirq, NULL);
 #else
+	if (HAS_DISPLAY(xe))
+		drm_warn(&xe->drm, "CONFIG_DRM_XE_DISPLAY is unset, but device is display capable\n");
 	return 0;
 #endif
 }
