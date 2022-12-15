@@ -396,9 +396,11 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	u8 id;
 	int err;
 
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 	/* Detect if we need to wait for other drivers early on */
 	if (intel_modeset_probe_defer(pdev))
 		return -EPROBE_DEFER;
+#endif
 
 	xe = xe_device_create(pdev, ent);
 	if (IS_ERR(xe))

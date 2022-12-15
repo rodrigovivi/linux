@@ -14,8 +14,10 @@
 #include "xe_hw_engine.h"
 #include "xe_mmio.h"
 
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 #include "display/intel_opregion.h"
 #include "display/ext/i915_irq.h"
+#endif
 
 #include "../i915/i915_reg.h"
 #include "../i915/gt/intel_gt_regs.h"
@@ -296,15 +298,19 @@ static irqreturn_t gen11_irq_handler(int irq, void *arg)
 
 	gen11_gt_irq_handler(xe, gt, master_ctl, intr_dw, identity);
 
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 	if (master_ctl & GEN11_DISPLAY_IRQ)
 		gen11_display_irq_handler(xe);
+#endif
 
 	gu_misc_iir = gen11_gu_misc_irq_ack(gt, master_ctl);
 
 	gen11_intr_enable(gt, false);
 
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 	if (gu_misc_iir & GEN11_GU_MISC_GSE)
 		intel_opregion_asle_intr(xe);
+#endif
 
 	return IRQ_HANDLED;
 }
@@ -387,15 +393,19 @@ static irqreturn_t dg1_irq_handler(int irq, void *arg)
 		gen11_gt_irq_handler(xe, gt, master_ctl, intr_dw, identity);
 	}
 
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 	if (master_ctl & GEN11_DISPLAY_IRQ)
 		gen11_display_irq_handler(xe);
+#endif
 
 	gu_misc_iir = gen11_gu_misc_irq_ack(gt, master_ctl);
 
 	dg1_intr_enable(xe, false);
 
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 	if (gu_misc_iir & GEN11_GU_MISC_GSE)
 		intel_opregion_asle_intr(xe);
+#endif
 
 	return IRQ_HANDLED;
 }
@@ -477,7 +487,9 @@ void xe_irq_reset(struct xe_device *xe)
 			drm_err(&xe->drm, "No interrupt reset hook");
 		}
 	}
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 	gen11_display_irq_reset(xe);
+#endif
 }
 
 void xe_irq_postinstall(struct xe_device *xe)
@@ -495,7 +507,9 @@ void xe_irq_postinstall(struct xe_device *xe)
 		}
 	}
 
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 	gen11_display_irq_postinstall(xe);
+#endif
 }
 
 static irq_handler_t xe_irq_handler(struct xe_device *xe)

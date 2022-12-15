@@ -102,14 +102,14 @@ xe-y += xe_bb.o \
 	xe_wopcm.o
 
 # i915 compat #defines and #includes
-subdir-ccflags-y += -I$(srctree)/$(src)/display/ext \
+subdir-ccflags-$(CONFIG_DRM_XE_DISPLAY) += -I$(srctree)/$(src)/display/ext \
 	-Ddrm_i915_gem_object=xe_bo \
 	-Ddrm_i915_private=xe_device
 
 CFLAGS_display/intel_fbdev.o = $(call cc-disable-warning, override-init)
 
 # Display..
-xe-y += \
+xe-$(CONFIG_DRM_XE_DISPLAY) += \
 	display/icl_dsi.o \
 	display/intel_acpi.o \
 	display/intel_atomic.o \
