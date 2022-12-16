@@ -1500,6 +1500,37 @@ int xe_bo_migrate(struct xe_bo *bo, u32 mem_type)
 }
 
 /**
+ * xe_bo_evict - Evict an object to evict placement
+ * @bo: The buffer object to migrate.
+ * @force_alloc: Set force_alloc in ttm_operation_ctx
+ *
+ * On successful completion, the object memory will be moved to evict
+ * placement. Ths function blocks until the object has been fully moved.
+ *
+ * Return: 0 on success. Negative error code on failure.
+ */
+int xe_bo_evict(struct xe_bo *bo, bool force_alloc)
+{
+	struct ttm_operation_ctx ctx = {
+		.interruptible = false,
+		.no_wait_gpu = false,
+		.force_alloc = force_alloc,
+	};
+	struct ttm_placement placement;
+	int ret;
+
+	xe_evict_flags(&bo->ttm, &placement);
+	ret = ttm_bo_validate(&bo->ttm, &placement, &ctx);
+	if (ret)
+		return ret;
+
+	dma_resv_wait_timeout(bo->ttm.base.resv, DMA_RESV_USAGE_KERNEL,
+			      false, MAX_SCHEDULE_TIMEOUT);
+
+	return 0;
+}
+
+/**
  * xe_bo_needs_ccs_pages - Whether a bo needs to back up CCS pages when
  * placed in system memory.
  * @bo: The xe_bo

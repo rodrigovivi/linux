@@ -25,11 +25,6 @@
  */
 int xe_bo_evict_all(struct xe_device *xe)
 {
-	struct ttm_operation_ctx ctx = {
-		.interruptible = false,
-		.no_wait_gpu = false,
-		.force_alloc = true
-	};
 	struct ttm_device *bdev = &xe->ttm;
 	struct ww_acquire_ctx ww;
 	struct xe_bo *bo;
@@ -67,7 +62,7 @@ int xe_bo_evict_all(struct xe_device *xe)
 		spin_unlock(&xe->pinned.lock);
 
 		xe_bo_lock(bo, &ww, 0, false);
-		ret = ttm_bo_evict(&bo->ttm, &ctx);
+		ret = xe_bo_evict(bo, true);
 		xe_bo_unlock(bo, &ww);
 		xe_bo_put(bo);
 		if (ret) {
@@ -101,7 +96,7 @@ int xe_bo_evict_all(struct xe_device *xe)
 		spin_unlock(&xe->pinned.lock);
 
 		xe_bo_lock(bo, &ww, 0, false);
-		ret = ttm_bo_evict(&bo->ttm, &ctx);
+		ret = xe_bo_evict(bo, true);
 		xe_bo_unlock(bo, &ww);
 		xe_bo_put(bo);
 		if (ret)
