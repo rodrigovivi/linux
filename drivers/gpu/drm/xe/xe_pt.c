@@ -752,7 +752,7 @@ xe_pt_stage_bind(struct xe_gt *gt, struct xe_vma *vma,
 			gt_to_xe(gt)->mem.vram.io_start;
 		xe_walk.cache = XE_CACHE_WB;
 	} else {
-		if (bo->flags & XE_BO_SCANOUT_BIT)
+		if (!xe_vma_is_userptr(vma) && bo->flags & XE_BO_SCANOUT_BIT)
 			xe_walk.cache = XE_CACHE_WT;
 		else
 			xe_walk.cache = XE_CACHE_WB;
