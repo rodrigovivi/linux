@@ -133,7 +133,7 @@
  *
  * A simple TTM call (ttm_resource_manager_evict_all) can move all non-pinned
  * (user) BOs to sysmem. External BOs that are pinned need to be manually
- * evicted with a simple loop + ttm_bo_evict call. It gets a little trickier
+ * evicted with a simple loop + xe_bo_evict call. It gets a little trickier
  * with kernel BOs.
  *
  * Some kernel BOs are used by the GT migration engine to do moves, thus we

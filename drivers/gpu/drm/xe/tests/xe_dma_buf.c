@@ -22,7 +22,6 @@ static bool is_dynamic(struct dma_buf_test_params *params)
 static void check_residency(struct kunit *test, struct xe_bo *exported,
 			    struct xe_bo *imported, struct dma_buf *dmabuf)
 {
-	static struct ttm_operation_ctx ctx = {.interruptible = true};
 	struct dma_buf_test_params *params = to_dma_buf_test_params(test->priv);
 	u32 mem_type;
 	int ret;
@@ -59,7 +58,7 @@ static void check_residency(struct kunit *test, struct xe_bo *exported,
 	 * the exporter and the importer should be the same bo.
 	 */
 	swap(exported->ttm.base.dma_buf, dmabuf);
-	ret = ttm_bo_evict(&exported->ttm, &ctx);
+	ret = xe_bo_evict(exported, true);
 	swap(exported->ttm.base.dma_buf, dmabuf);
 	if (ret) {
 		if (ret != -EINTR && ret != -ERESTARTSYS)

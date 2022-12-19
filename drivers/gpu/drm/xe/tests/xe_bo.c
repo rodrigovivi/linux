@@ -12,7 +12,6 @@ static int ccs_test_migrate(struct xe_gt *gt, struct xe_bo *bo,
 			    bool clear, u64 get_val, u64 assign_val,
 			    struct kunit *test)
 {
-	static struct ttm_operation_ctx ctx = {.interruptible = true};
 	struct dma_fence *fence;
 	struct ttm_tt *ttm;
 	struct page *page;
@@ -40,7 +39,7 @@ static int ccs_test_migrate(struct xe_gt *gt, struct xe_bo *bo,
 	}
 
 	/* Evict to system. CCS data should be copied. */
-	ret = ttm_bo_evict(&bo->ttm, &ctx);
+	ret = xe_bo_evict(bo, true);
 	if (ret) {
 		KUNIT_FAIL(test, "Failed to evict bo.\n");
 		return ret;
