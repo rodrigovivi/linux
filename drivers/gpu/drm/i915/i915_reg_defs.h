@@ -104,7 +104,7 @@ typedef struct {
 
 #define _MMIO(r) ((const i915_reg_t){ .reg = (r) })
 
-#if 0
+#ifdef I915
 typedef struct {
 	u32 reg;
 } i915_mcr_reg_t;
@@ -119,7 +119,12 @@ typedef struct {
  * simply operations on the register's offset and don't care about the MCR vs
  * non-MCR nature of the register.
  */
+#ifdef I915
+#define i915_mmio_reg_offset(r) \
+	_Generic((r), i915_reg_t: (r).reg, i915_mcr_reg_t: (r).reg)
+#else
 #define i915_mmio_reg_offset(r) ((r).reg)
+#endif
 #define i915_mmio_reg_equal(a, b) (i915_mmio_reg_offset(a) == i915_mmio_reg_offset(b))
 #define i915_mmio_reg_valid(r) (!i915_mmio_reg_equal(r, INVALID_MMIO_REG))
 
