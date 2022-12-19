@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config DRM_XE
+	tristate "Intel Xe Graphics"
+	depends on DRM && PCI && MMU
+	select INTERVAL_TREE
+	# we need shmfs for the swappable backing store, and in particular
+	# the shmem_readpage() which depends upon tmpfs
+	select SHMEM
+	select TMPFS
+	select DRM_BUDDY
+	select DRM_KMS_HELPER
+	select DRM_PANEL
+	select DRM_SUBALLOC_HELPER
+	select DRM_DISPLAY_DP_HELPER
+	select DRM_DISPLAY_HDCP_HELPER
+	select DRM_DISPLAY_HDMI_HELPER
+	select DRM_DISPLAY_HELPER
+	select DRM_MIPI_DSI
+	select RELAY
+	select IRQ_WORK
+	# i915 depends on ACPI_VIDEO when ACPI is enabled
+	# but for select to work, need to select ACPI_VIDEO's dependencies, ick
+	select BACKLIGHT_CLASS_DEVICE if ACPI
+	select INPUT if ACPI
+	select ACPI_VIDEO if X86 && ACPI
+	select ACPI_BUTTON if ACPI
+	select SYNC_FILE
+	select IOSF_MBI
+	select CRC32
+	select SND_HDA_I915 if SND_HDA_CORE
+	select CEC_CORE if CEC_NOTIFIER
+	select VMAP_PFN
+	select DRM_TTM
+	select DRM_TTM_HELPER
+	select DRM_SCHED
+	select MMU_NOTIFIER
+	help
+	  Experimental driver for Intel Xe series GPUs
+
+	  If "M" is selected, the module will be called xe.
+
+menu "drm/Xe Debugging"
+depends on DRM_XE
+depends on EXPERT
+source "drivers/gpu/drm/xe/Kconfig.debug"
+endmenu
