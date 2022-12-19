@@ -215,11 +215,10 @@ error:
 
 static void xe_dma_buf_move_notify(struct dma_buf_attachment *attach)
 {
-	static struct ttm_operation_ctx ctx = {.interruptible = false};
 	struct drm_gem_object *obj = attach->importer_priv;
 	struct xe_bo *bo = gem_to_xe_bo(obj);
 
-	XE_WARN_ON(ttm_bo_evict(&bo->ttm, &ctx));
+	XE_WARN_ON(xe_bo_evict(bo, false));
 }
 
 static const struct dma_buf_attach_ops xe_dma_buf_attach_ops = {
