@@ -651,10 +651,6 @@ TRACE_EVENT(intel_frontbuffer_flush,
 /* This part must be outside protection */
 #undef TRACE_INCLUDE_PATH
 #undef TRACE_INCLUDE_FILE
-#ifdef I915
 #define TRACE_INCLUDE_PATH ../../drivers/gpu/drm/i915/display
-#else
-#define TRACE_INCLUDE_PATH ../../drivers/gpu/drm/xe/display
-#endif
 #define TRACE_INCLUDE_FILE intel_display_trace
 #include <trace/define_trace.h>
