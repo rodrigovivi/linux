@@ -115,12 +115,14 @@ static int xe_exec_begin(struct xe_engine *e, struct ww_acquire_ctx *ww,
 	 */
 	list_for_each_entry(vma, &vm->rebind_list, rebind_link) {
 		if (xe_vma_is_userptr(vma))
-
 			continue;
 
 		err = xe_bo_validate(vma->bo, vm, false);
-		if (err)
+		if (err) {
+			xe_vm_unlock_dma_resv(vm, tv_onstack, *tv, ww, objs);
+			*tv = NULL;
 			return err;
+		}
 	}
 
 	return 0;
@@ -266,7 +268,7 @@ retry:
 
 	err = xe_exec_begin(engine, &ww, tv_onstack, &tv, &objs);
 	if (err)
-		goto err_engine_end;
+		goto err_unlock_list;
 
 	if (xe_vm_is_closed(engine->vm)) {
 		drm_warn(&xe->drm, "Trying to schedule after vm is closed\n");
