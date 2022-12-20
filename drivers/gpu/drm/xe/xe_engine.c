@@ -630,8 +630,11 @@ static void engine_kill_compute(struct xe_engine *e)
 	down_write(&e->vm->lock);
 	list_del(&e->compute.link);
 	--e->vm->preempt.num_engines;
-	if (e->compute.pfence)
+	if (e->compute.pfence) {
 		dma_fence_enable_sw_signaling(e->compute.pfence);
+		dma_fence_put(e->compute.pfence);
+		e->compute.pfence = NULL;
+	}
 	up_write(&e->vm->lock);
 }
 
