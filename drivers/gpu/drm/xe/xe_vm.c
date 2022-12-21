@@ -507,6 +507,7 @@ static void preempt_rebind_work_func(struct work_struct *w)
 	LIST_HEAD(preempt_fences);
 	int err;
 	long wait;
+	int __maybe_unused tries = 0;
 
 	XE_BUG_ON(!xe_vm_in_compute_mode(vm));
 	trace_xe_vm_rebind_worker_enter(vm);
@@ -591,12 +592,19 @@ retry:
 		goto out_unlock;
 	}
 
+#define retry_required(__tries, __vm) \
+	(IS_ENABLED(CONFIG_DRM_XE_USERPTR_INVAL_INJECT) ? \
+	(!(__tries)++ || __xe_vm_userptr_needs_repin(__vm)) : \
+	__xe_vm_userptr_needs_repin(__vm))
+
 	down_read(&vm->userptr.notifier_lock);
-	if (__xe_vm_userptr_needs_repin(vm)) {
+	if (retry_required(tries, vm)) {
 		up_read(&vm->userptr.notifier_lock);
 		err = -EAGAIN;
 		goto out_unlock;
 	}
+
+#undef retry_required
 
 	/* Point of no return. */
 	arm_preempt_fences(vm, &preempt_fences);
