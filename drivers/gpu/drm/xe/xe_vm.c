@@ -500,27 +500,20 @@ static void preempt_rebind_work_func(struct work_struct *w)
 	struct dma_fence *rebind_fence;
 	unsigned int fence_count = 0;
 	LIST_HEAD(preempt_fences);
-	bool write_locked;
 	int err;
 	long wait;
 
 	XE_BUG_ON(!xe_vm_in_compute_mode(vm));
 	trace_xe_vm_rebind_worker_enter(vm);
 
-retry:
 	if (xe_vm_is_closed(vm)) {
 		trace_xe_vm_rebind_worker_exit(vm);
 		return;
 	}
 
-	if (xe_vm_userptr_check_repin(vm)) {
-		down_write(&vm->lock);
-		write_locked = true;
-	} else {
-		down_read(&vm->lock);
-		write_locked = false;
-	}
+	down_write(&vm->lock);
 
+retry:
 	if (vm->async_ops.error)
 		goto out_unlock_outer;
 
@@ -532,18 +525,13 @@ retry:
 	 * and trying this again.
 	 */
 	if (vm->async_ops.munmap_rebind_inflight) {
-		if (write_locked)
-			up_read(&vm->lock);
-		else
-			up_write(&vm->lock);
+		up_write(&vm->lock);
 		flush_work(&vm->async_ops.work);
 		goto retry;
 	}
 
-	if (write_locked) {
+	if (xe_vm_userptr_check_repin(vm)) {
 		err = xe_vm_userptr_pin(vm);
-		downgrade_write(&vm->lock);
-		write_locked = false;
 		if (err)
 			goto out_unlock_outer;
 	}
@@ -613,14 +601,11 @@ retry:
 out_unlock:
 	xe_vm_unlock_dma_resv(vm, tv_onstack, tv, &ww, &objs);
 out_unlock_outer:
-	if (write_locked)
-		up_write(&vm->lock);
-	else
-		up_read(&vm->lock);
 	if (err == -EAGAIN) {
 		trace_xe_vm_rebind_worker_retry(vm);
 		goto retry;
 	}
+	up_write(&vm->lock);
 
 	free_preempt_fences(&preempt_fences);
 
