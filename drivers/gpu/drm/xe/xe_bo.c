@@ -912,7 +912,6 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
 		     bo->flags & XE_BO_DEFER_BACKING) ? &sys_placement :
 		&bo->placement;
 	err = ttm_bo_init_reserved(&xe->ttm, &bo->ttm, type,
-				   DMA_RESV_USAGE_BOOKKEEP,
 				   placement, alignment,
 				   &ctx, NULL, resv, xe_ttm_bo_destroy);
 	if (err)
