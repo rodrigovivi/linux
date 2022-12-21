@@ -1,0 +1,28 @@
+drm drm-fixes c4252650a8c4770b669398fe7270ed8c94fc0eba
+	Merge tag 'drm-misc-fixes-2022-12-08' of git://anongit.freedesktop.org/drm/drm-misc into drm-fixes
+drm-misc drm-misc-fixes 4217c6ac817451d5116687f3cc6286220dc43d49
+	drm/panfrost: Fix GEM handle creation ref-counting
+drm-intel drm-intel-fixes 830b3c68c1fb1e9176028d02ef86f3cf76aa2476
+	Linux 6.1
+drm drm-next 38624d2c972e7692ca59d0d3b97741a3313addb3
+	Merge tag 'drm-intel-next-fixes-2022-12-15' of git://anongit.freedesktop.org/drm/drm-intel into drm-next
+drm-misc drm-misc-next-fixes b02897e56b4e1fa6445be695ce5d605bb098435c
+	Revert "drm/fb-helper: Perform damage handling in deferred-I/O helper"
+drm-intel drm-intel-next-fixes e22ff1af30f25f0e834191e5311f8e70c36b90c8
+	drm/i915: improve the catch-all evict to handle lock contention
+drm-misc drm-misc-next b1def7fadfa544bd2467581ce40b659583eb7e79
+	drm/ast: Init iosys_map pointer as I/O memory for damage handling
+drm-intel drm-intel-next 65e75eda82d8857ab8732b98ead6997a8afeab4a
+	drm/i915/ddi: Add missing wait-for-active for HDMI aligning with bspec updates
+drm-intel drm-intel-gt-next 7ccf9a5386a48b86c1abc0e7cb42f4b8f961af38
+	drm/i915: Use helper func to find out map type
+sound-upstream for-linus 7cf3dead1ad70c72edb03e2d98e1f3dcd332cdb2
+	Linux 5.13
+sound-upstream for-next 7cf3dead1ad70c72edb03e2d98e1f3dcd332cdb2
+	Linux 5.13
+drm-intel topic/core-for-CI 3e150fbfaf0111fb4ef069dcc77ff558fb02bc3f
+	mei: bus-fixup: change pxp mode only if message was sent
+drm-misc topic/i915-ttm 1e3944578b749449bd7fa6bf0bae4c3d3f5f1733
+	Merge tag 'amd-drm-next-5.16-2021-09-27' of https://gitlab.freedesktop.org/agd5f/linux into drm-next
+drm topic/nouveau-misc dfc4005f8c172eea359f9db08c3b2b0ff0153699
+	drm/nouveau/disp: move DAC load detection method
