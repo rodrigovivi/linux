@@ -1011,16 +1011,8 @@ static void __guc_engine_process_msg_resume(struct drm_sched_msg *msg)
 {
 	struct xe_engine *e = msg->private_data;
 	struct xe_guc *guc = engine_to_guc(e);
-	struct xe_vm *vm = e->vm;
 
-	wait_event(vm->preempt.resume_wq, vm->preempt.resume_go ||
-		   guc_read_stopped(guc));
-
-	if (vm->preempt.resume_go < 0)
-		trace_xe_engine_supress_resume(e);
-
-	if (vm->preempt.resume_go > 0 &&
-	    guc_engine_allowed_to_change_state(e)) {
+	if (guc_engine_allowed_to_change_state(e)) {
 		MAKE_SCHED_CONTEXT_ACTION(e, ENABLE);
 
 		e->guc->resume_time = RESUME_PENDING;
@@ -1031,7 +1023,7 @@ static void __guc_engine_process_msg_resume(struct drm_sched_msg *msg)
 
 		xe_guc_ct_send(&guc->ct, action, ARRAY_SIZE(action),
 			       G2H_LEN_DW_SCHED_CONTEXT_MODE_SET, 1);
-	} else if (vm->preempt.resume_go > 0) {
+	} else {
 		clear_engine_suspended(e);
 	}
 }
@@ -1316,8 +1308,6 @@ static void guc_engine_stop(struct xe_guc *guc, struct xe_engine *e)
 		set_engine_suspended(e);
 		suspend_fence_signal(e);
 	}
-	if (e->vm)
-		wake_up_all(&e->vm->preempt.resume_wq);
 	atomic_and(ENGINE_STATE_DESTROYED | ENGINE_STATE_SUSPENDED,
 		   &e->guc->state);
 	e->guc->resume_time = 0;

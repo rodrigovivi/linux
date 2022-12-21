@@ -607,7 +607,6 @@ retry:
 
 	/* Point of no return. */
 	arm_preempt_fences(vm, &preempt_fences);
-	vm->preempt.resume_go = 1;
 	resume_and_reinstall_preempt_fences(vm);
 	up_read(&vm->userptr.notifier_lock);
 
@@ -1100,7 +1099,6 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 	INIT_WORK(&vm->destroy_work, vm_destroy_work_func);
 
 	INIT_LIST_HEAD(&vm->preempt.engines);
-	init_waitqueue_head(&vm->preempt.resume_wq);
 	vm->preempt.min_run_period_ms = 10;	/* FIXME: Wire up to uAPI */
 
 	INIT_LIST_HEAD(&vm->extobj.list);

@@ -298,15 +298,6 @@ struct xe_vm {
 		 * BOs
 		 */
 		struct work_struct rebind_work;
-		/**
-		 * @resume_wq: resume wait queue which delays the resume until
-		 * new preempt fences are installed
-		 */
-		wait_queue_head_t resume_wq;
-		/**
-		 * @resume_go: tells resume waiter if they are safe to resume
-		 */
-		int resume_go;
 	} preempt;
 
 	/** @um: unified memory state */
