@@ -15,15 +15,19 @@
 static void xe_sa_bo_manager_fini(struct drm_device *drm, void *arg)
 {
 	struct xe_sa_manager *sa_manager = arg;
+	struct xe_bo *bo = sa_manager->bo;
 
-	if (sa_manager->bo == NULL) {
+	if (!bo) {
 		drm_err(drm, "no bo for sa manager\n");
 		return;
 	}
 
 	drm_suballoc_manager_fini(&sa_manager->base);
 
-	xe_bo_unpin_map_no_vm(sa_manager->bo);
+	if (bo->vmap.is_iomem)
+		kvfree(sa_manager->cpu_ptr);
+
+	xe_bo_unpin_map_no_vm(bo);
 	sa_manager->bo = NULL;
 }
 
@@ -51,7 +55,7 @@ int xe_sa_bo_manager_init(struct xe_gt *gt,
 	sa_manager->gpu_addr = xe_bo_ggtt_addr(bo);
 
 	if (bo->vmap.is_iomem) {
-		sa_manager->cpu_ptr = kzalloc(managed_size, GFP_KERNEL);
+		sa_manager->cpu_ptr = kvzalloc(managed_size, GFP_KERNEL);
 		if (!sa_manager->cpu_ptr) {
 			xe_bo_unpin_map_no_vm(sa_manager->bo);
 			sa_manager->bo = NULL;
