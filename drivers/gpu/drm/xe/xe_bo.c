@@ -382,7 +382,7 @@ static int xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo,
 
 	if (!xe_device_in_fault_mode(xe) && !list_empty(&bo->vmas)) {
 		dma_resv_iter_begin(&cursor, bo->ttm.base.resv,
-				    DMA_RESV_USAGE_PREEMPT_FENCE);
+				    DMA_RESV_USAGE_BOOKKEEP);
 		dma_resv_for_each_fence_unlocked(&cursor, fence)
 			dma_fence_enable_sw_signaling(fence);
 		dma_resv_iter_end(&cursor);
@@ -578,7 +578,7 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 	if (old_mem->mem_type == XE_PL_TT &&
 	    new_mem->mem_type == XE_PL_SYSTEM) {
 		long timeout = dma_resv_wait_timeout(ttm_bo->base.resv,
-						     DMA_RESV_USAGE_PREEMPT_FENCE,
+						     DMA_RESV_USAGE_BOOKKEEP,
 						     true,
 						     MAX_SCHEDULE_TIMEOUT);
 		if (timeout <= 0) {

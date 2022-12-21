@@ -657,7 +657,7 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 		xe_sched_job_add_migrate_flush(job, flush_flags);
 		if (!fence) {
 			err = job_add_deps(job, bo->ttm.base.resv,
-					   DMA_RESV_USAGE_PREEMPT_FENCE);
+					   DMA_RESV_USAGE_BOOKKEEP);
 			if (err)
 				goto err_job;
 		}
@@ -927,7 +927,7 @@ xe_migrate_update_pgtables_cpu(struct xe_migrate *m,
 		long wait;
 
 		wait = dma_resv_wait_timeout(&vm->resv,
-					     DMA_RESV_USAGE_PREEMPT_FENCE,
+					     DMA_RESV_USAGE_BOOKKEEP,
 					     true, HZ / 100);
 		if (wait <= 0)
 			return ERR_PTR(-ETIME);
@@ -1118,7 +1118,7 @@ xe_migrate_update_pgtables(struct xe_migrate *m,
 	 */
 	if (first_munmap_rebind) {
 		err = job_add_deps(job, &vm->resv,
-				   DMA_RESV_USAGE_PREEMPT_FENCE);
+				   DMA_RESV_USAGE_BOOKKEEP);
 		if (err)
 			goto err_job;
 	}

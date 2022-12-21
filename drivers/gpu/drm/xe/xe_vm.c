@@ -258,7 +258,7 @@ static int add_preempt_fences(struct xe_vm *vm, struct xe_bo *bo)
 		if (e->compute.pfence) {
 			dma_resv_add_fence(bo->ttm.base.resv,
 					   e->compute.pfence,
-					   DMA_RESV_USAGE_PREEMPT_FENCE);
+					   DMA_RESV_USAGE_BOOKKEEP);
 		}
 
 	xe_bo_unlock(bo, &ww);
@@ -295,9 +295,9 @@ static void resume_and_reinstall_preempt_fences(struct xe_vm *vm)
 		e->ops->resume(e);
 
 		dma_resv_add_fence(&vm->resv, e->compute.pfence,
-				   DMA_RESV_USAGE_PREEMPT_FENCE);
+				   DMA_RESV_USAGE_BOOKKEEP);
 		xe_vm_fence_all_extobjs(vm, e->compute.pfence,
-					DMA_RESV_USAGE_PREEMPT_FENCE);
+					DMA_RESV_USAGE_BOOKKEEP);
 	}
 }
 
@@ -331,9 +331,9 @@ int xe_vm_add_compute_engine(struct xe_vm *vm, struct xe_engine *e)
 	e->compute.pfence = pfence;
 
 	dma_resv_add_fence(&vm->resv, pfence,
-			   DMA_RESV_USAGE_PREEMPT_FENCE);
+			   DMA_RESV_USAGE_BOOKKEEP);
 
-	xe_vm_fence_all_extobjs(vm, pfence, DMA_RESV_USAGE_PREEMPT_FENCE);
+	xe_vm_fence_all_extobjs(vm, pfence, DMA_RESV_USAGE_BOOKKEEP);
 
 	/*
 	 * Check to see if a preemption on VM is in flight, if so trigger this
@@ -679,13 +679,13 @@ static bool vma_userptr_invalidate(struct mmu_interval_notifier *mni,
 	 * to the vm.
 	 */
 	dma_resv_iter_begin(&cursor, &vm->resv,
-			    DMA_RESV_USAGE_PREEMPT_FENCE);
+			    DMA_RESV_USAGE_BOOKKEEP);
 	dma_resv_for_each_fence_unlocked(&cursor, fence)
 		dma_fence_enable_sw_signaling(fence);
 	dma_resv_iter_end(&cursor);
 
 	err = dma_resv_wait_timeout(&vm->resv,
-				    DMA_RESV_USAGE_PREEMPT_FENCE,
+				    DMA_RESV_USAGE_BOOKKEEP,
 				    false, MAX_SCHEDULE_TIMEOUT);
 	XE_WARN_ON(err <= 0);
 
@@ -3313,7 +3313,7 @@ int xe_vm_invalidate_vma(struct xe_vma *vma)
 				     (&vma->userptr.notifier,
 				      vma->userptr.notifier_seq));
 			WARN_ON_ONCE(!dma_resv_test_signaled(&vma->vm->resv,
-							     DMA_RESV_USAGE_PREEMPT_FENCE));
+							     DMA_RESV_USAGE_BOOKKEEP));
 
 		} else {
 			xe_bo_assert_held(vma->bo);
