@@ -55,10 +55,9 @@ struct dma_resv_list;
  * This enum describes the different use cases for a dma_resv object and
  * controls which fences are returned when queried.
  *
- * An important fact is that there is the order
- * KERNEL<WRITE<READ<BOOKKEEP<PREEMPT_FENCE and when the dma_resv object is
- * asked for fences for one use case the fences for the lower use case are
- * returned as well.
+ * An important fact is that there is the order KERNEL<WRITE<READ<BOOKKEEP and
+ * when the dma_resv object is asked for fences for one use case the fences
+ * for the lower use case are returned as well.
  *
  * For example when asking for WRITE fences then the KERNEL fences are returned
  * as well. Similar when asked for READ fences then both WRITE and KERNEL
@@ -101,10 +100,10 @@ enum dma_resv_usage {
 	DMA_RESV_USAGE_READ,
 
 	/**
-	 * @DMA_RESV_USAGE_BOOKKEEP: No implicit sync or preemption fences
+	 * @DMA_RESV_USAGE_BOOKKEEP: No implicit sync.
 	 *
 	 * This should be used by submissions which don't want to participate in
-	 * any implicit synchronization and not trigger preempt fences.
+	 * any implicit synchronization.
 	 *
 	 * The most common case are page table updates, TLB flushes
 	 * as well as explicit synced user submissions.
@@ -114,15 +113,7 @@ enum dma_resv_usage {
 	 * dma_buf_import_sync_file() when implicit synchronization should
 	 * become necessary after initial adding of the fence.
 	 */
-	DMA_RESV_USAGE_BOOKKEEP,
-
-	/**
-	 * @DMA_RESV_USAGE_PREEMPT_FENCE: Preemption fences
-	 *
-	 * This should be used by submissions which don't want to participate in
-	 * implicit synchronization and want to trigger preempt fences.
-	 */
-	DMA_RESV_USAGE_PREEMPT_FENCE,
+	DMA_RESV_USAGE_BOOKKEEP
 };
 
 /**
