@@ -220,7 +220,10 @@ struct xe_device {
 	/** @gt: graphics tile */
 	struct xe_gt gt[XE_MAX_GT];
 
-	/** @mem_access */
+	/**
+	 * @mem_access: keep track of memory access in the device, possibly
+	 * triggering additional actions when they occur.
+	 */
 	struct {
 		/** @lock: protect the ref count */
 		struct mutex lock;
