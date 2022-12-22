@@ -387,11 +387,11 @@ static void pipedmc_clock_gating_wa(struct drm_i915_private *i915, bool enable)
 {
 	enum pipe pipe;
 
-	if (DISPLAY_VER(i915) != 13)
+	if (DISPLAY_VER(i915) < 13)
 		return;
 
 	/*
-	 * Wa_16015201720:adl-p,dg2
+	 * Wa_16015201720:adl-p,dg2, mtl
 	 * The WA requires clock gating to be disabled all the time
 	 * for pipe A and B.
 	 * For pipe C and D clock gating needs to be disabled only
@@ -433,9 +433,9 @@ void intel_dmc_load_program(struct drm_i915_private *dev_priv)
 
 	for (id = 0; id < DMC_FW_MAX; id++) {
 		for (i = 0; i < dmc->dmc_info[id].dmc_fw_size; i++) {
-			intel_uncore_write_fw(&dev_priv->uncore,
-					      DMC_PROGRAM(dmc->dmc_info[id].start_mmioaddr, i),
-					      dmc->dmc_info[id].payload[i]);
+			intel_de_write_fw(dev_priv,
+					  DMC_PROGRAM(dmc->dmc_info[id].start_mmioaddr, i),
+					  dmc->dmc_info[id].payload[i]);
 		}
 	}
 
