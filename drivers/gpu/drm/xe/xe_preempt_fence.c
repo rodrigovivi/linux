@@ -150,3 +150,8 @@ xe_preempt_fence_create(struct xe_engine *e,
 
 	return xe_preempt_fence_arm(pfence, e, context, seqno);
 }
+
+bool xe_fence_is_xe_preempt(const struct dma_fence *fence)
+{
+	return fence->ops == &preempt_fence_ops;
+}

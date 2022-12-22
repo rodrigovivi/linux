@@ -57,6 +57,9 @@
 DEFINE_WD_CLASS(reservation_ww_class);
 EXPORT_SYMBOL(reservation_ww_class);
 
+/* Mask for the lower fence pointer bits */
+#define DMA_RESV_LIST_MASK	0x3
+
 struct dma_resv_list {
 	struct rcu_head rcu;
 	u32 num_fences, max_fences;
@@ -68,12 +71,13 @@ static void dma_resv_list_entry(struct dma_resv_list *list, unsigned int index,
 				struct dma_resv *resv, struct dma_fence **fence,
 				enum dma_resv_usage *usage)
 {
-	*fence = (struct dma_fence *)rcu_dereference_check(list->table[index],
-							   resv ?
-							   dma_resv_held(resv) :
-							   true);
+	long tmp;
+
+	tmp = (long)rcu_dereference_check(list->table[index],
+					  resv ? dma_resv_held(resv) : true);
+	*fence = (struct dma_fence *)(tmp & ~DMA_RESV_LIST_MASK);
 	if (usage)
-		*usage = (*fence)->usage;
+		*usage = tmp & DMA_RESV_LIST_MASK;
 }
 
 /* Set the fence and usage flags at the specific index in the list. */
@@ -82,8 +86,9 @@ static void dma_resv_list_set(struct dma_resv_list *list,
 			      struct dma_fence *fence,
 			      enum dma_resv_usage usage)
 {
-	fence->usage = usage;
-	RCU_INIT_POINTER(list->table[index], (struct dma_fence *)fence);
+	long tmp = ((long)fence) | usage;
+
+	RCU_INIT_POINTER(list->table[index], (struct dma_fence *)tmp);
 }
 
 /*
@@ -510,7 +515,7 @@ int dma_resv_copy_fences(struct dma_resv *dst, struct dma_resv *src)
 
 	list = NULL;
 
-	dma_resv_iter_begin(&cursor, src, DMA_RESV_USAGE_PREEMPT_FENCE);
+	dma_resv_iter_begin(&cursor, src, DMA_RESV_USAGE_BOOKKEEP);
 	dma_resv_for_each_fence_unlocked(&cursor, f) {
 
 		if (dma_resv_iter_is_restarted(&cursor)) {
@@ -713,8 +718,7 @@ EXPORT_SYMBOL_GPL(dma_resv_test_signaled);
  */
 void dma_resv_describe(struct dma_resv *obj, struct seq_file *seq)
 {
-	static const char *usage[] = { "kernel", "write", "read", "bookkeep",
-		"preempt_fence" };
+	static const char *usage[] = { "kernel", "write", "read", "bookkeep" };
 	struct dma_resv_iter cursor;
 	struct dma_fence *fence;
 

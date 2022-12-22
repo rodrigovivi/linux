@@ -56,4 +56,6 @@ to_preempt_fence_from_link(struct list_head *link)
 {
 	return container_of(link, struct xe_preempt_fence, link);
 }
+
+bool xe_fence_is_xe_preempt(const struct dma_fence *fence);
 #endif

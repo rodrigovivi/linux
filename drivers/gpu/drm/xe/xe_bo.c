@@ -21,6 +21,7 @@
 #include "xe_gt.h"
 #include "xe_map.h"
 #include "xe_migrate.h"
+#include "xe_preempt_fence.h"
 #include "xe_res_cursor.h"
 #include "xe_trace.h"
 #include "xe_vm.h"
@@ -382,7 +383,7 @@ static int xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo,
 
 	if (!xe_device_in_fault_mode(xe) && !list_empty(&bo->vmas)) {
 		dma_resv_iter_begin(&cursor, bo->ttm.base.resv,
-				    DMA_RESV_USAGE_PREEMPT_FENCE);
+				    DMA_RESV_USAGE_BOOKKEEP);
 		dma_resv_for_each_fence_unlocked(&cursor, fence)
 			dma_fence_enable_sw_signaling(fence);
 		dma_resv_iter_end(&cursor);
@@ -578,7 +579,7 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 	if (old_mem->mem_type == XE_PL_TT &&
 	    new_mem->mem_type == XE_PL_SYSTEM) {
 		long timeout = dma_resv_wait_timeout(ttm_bo->base.resv,
-						     DMA_RESV_USAGE_PREEMPT_FENCE,
+						     DMA_RESV_USAGE_BOOKKEEP,
 						     true,
 						     MAX_SCHEDULE_TIMEOUT);
 		if (timeout <= 0) {
@@ -675,8 +676,35 @@ static unsigned long xe_ttm_io_mem_pfn(struct ttm_buffer_object *bo,
 
 static void __xe_bo_vunmap(struct xe_bo *bo);
 
+/*
+ * TODO: Move this function to TTM so we don't rely on how TTM does its
+ * locking, thereby abusing TTM internals.
+ */
+static bool xe_ttm_bo_lock_in_destructor(struct ttm_buffer_object *ttm_bo)
+{
+	bool locked;
+
+	XE_WARN_ON(kref_read(&ttm_bo->kref));
+
+	/*
+	 * We can typically only race with TTM trylocking under the
+	 * lru_lock, which will immediately be unlocked again since
+	 * the ttm_bo refcount is zero at this point. So trylocking *should*
+	 * always succeed here, as long as we hold the lru lock.
+	 */
+	spin_lock(&ttm_bo->bdev->lru_lock);
+	locked = dma_resv_trylock(ttm_bo->base.resv);
+	spin_unlock(&ttm_bo->bdev->lru_lock);
+	XE_WARN_ON(!locked);
+
+	return locked;
+}
+
 static void xe_ttm_bo_release_notify(struct ttm_buffer_object *ttm_bo)
 {
+	struct dma_resv_iter cursor;
+	struct dma_fence *fence;
+	struct dma_fence *replacement = NULL;
 	struct xe_bo *bo;
 
 	if (!xe_bo_is_xe_bo(ttm_bo))
@@ -684,6 +712,39 @@ static void xe_ttm_bo_release_notify(struct ttm_buffer_object *ttm_bo)
 
 	bo = ttm_to_xe_bo(ttm_bo);
 	XE_WARN_ON(bo->created && kref_read(&ttm_bo->base.refcount));
+
+	/*
+	 * Corner case where TTM fails to allocate memory and this BOs resv
+	 * still points the VMs resv
+	 */
+	if (ttm_bo->base.resv != &ttm_bo->base._resv)
+		return;
+
+	if (!xe_ttm_bo_lock_in_destructor(ttm_bo))
+		return;
+
+	/*
+	 * Scrub the preempt fences if any. The unbind fence is already
+	 * attached to the resv.
+	 * TODO: Don't do this for external bos once we scrub them after
+	 * unbind.
+	 */
+	dma_resv_for_each_fence(&cursor, ttm_bo->base.resv,
+				DMA_RESV_USAGE_BOOKKEEP, fence) {
+		if (xe_fence_is_xe_preempt(fence) &&
+		    !dma_fence_is_signaled(fence)) {
+			if (!replacement)
+				replacement = dma_fence_get_stub();
+
+			dma_resv_replace_fences(ttm_bo->base.resv,
+						fence->context,
+						replacement,
+						DMA_RESV_USAGE_BOOKKEEP);
+		}
+	}
+	dma_fence_put(replacement);
+
+	dma_resv_unlock(ttm_bo->base.resv);
 }
 
 static void xe_ttm_bo_delete_mem_notify(struct ttm_buffer_object *ttm_bo)
@@ -912,7 +973,6 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
 		     bo->flags & XE_BO_DEFER_BACKING) ? &sys_placement :
 		&bo->placement;
 	err = ttm_bo_init_reserved(&xe->ttm, &bo->ttm, type,
-				   DMA_RESV_USAGE_BOOKKEEP,
 				   placement, alignment,
 				   &ctx, NULL, resv, xe_ttm_bo_destroy);
 	if (err)
