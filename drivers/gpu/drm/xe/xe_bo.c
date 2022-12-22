@@ -1586,6 +1586,13 @@ void xe_bo_put_commit(struct llist_head *deferred)
 
 /**
  * xe_bo_dumb_create - Create a dumb bo as backing for a fb
+ * @file_priv: ...
+ * @dev: ...
+ * @args: ...
+ *
+ * See dumb_create() hook in include/drm/drm_drv.h
+ *
+ * Return: ...
  */
 int xe_bo_dumb_create(struct drm_file *file_priv,
 		      struct drm_device *dev,

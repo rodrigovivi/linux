@@ -46,12 +46,6 @@
  * and no wait boost. Frequency optimizations should come on a next stage.
  */
 
-/**
- * xe_pm_suspend - Helper for System suspend, i.e. S0->S3 / S0->S2idle
- * @xe: xe device instance
- *
- * Return: 0 on success
- */
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 static void intel_suspend_encoders(struct xe_device *xe)
 {
@@ -140,6 +134,12 @@ static void xe_pm_display_resume(struct xe_device *xe)
 #endif
 }
 
+/**
+ * xe_pm_suspend - Helper for System suspend, i.e. S0->S3 / S0->S2idle
+ * @xe: xe device instance
+ *
+ * Return: 0 on success
+ */
 int xe_pm_suspend(struct xe_device *xe)
 {
 	struct xe_gt *gt;
