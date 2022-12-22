@@ -384,7 +384,7 @@ struct intel_dsb *intel_dsb_prepare(struct intel_crtc *crtc)
 				   XE_BO_CREATE_GGTT_BIT);
 	if (IS_ERR(obj)) {
 		kfree(dsb);
-		goto out;
+		goto out_put_rpm;
 	}
 	dsb->obj = obj;
 #endif
@@ -416,7 +416,7 @@ void intel_dsb_cleanup(struct intel_dsb *dsb)
 #ifdef I915
 	i915_vma_unpin_and_release(&dsb->vma, I915_VMA_RELEASE_MAP);
 #else
-	xe_bo_unpin_map_no_vm(crtc_state->dsb->obj);
+	xe_bo_unpin_map_no_vm(dsb->obj);
 #endif
 	kfree(dsb);
 }
