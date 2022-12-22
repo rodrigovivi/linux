@@ -54,15 +54,20 @@ static struct xe_device *uc_fw_to_xe(struct xe_uc_fw *uc_fw)
 	fw_def(DG1,          0, huc_def(dg1,  7, 9, 3)) \
 	fw_def(TIGERLAKE,    0, huc_def(tgl,  7, 9, 3))
 
-#define __MAKE_UC_FW_PATH(prefix_, name_, major_, minor_, patch_) \
+#define __MAKE_UC_FW_PATH_MAJOR(prefix_, name_, major_) \
 	"xe/" \
-	__stringify(prefix_) name_ \
-	__stringify(major_) "." \
-	__stringify(minor_) "." \
-	__stringify(patch_) ".bin"
+	__stringify(prefix_) "_" name_ "_" \
+	__stringify(major_) ".bin"
+
+#define __MAKE_UC_FW_PATH(prefix_, name_, major_, minor_, patch_) \
+        "xe/" \
+       __stringify(prefix_) name_ \
+       __stringify(major_) "." \
+       __stringify(minor_) "." \
+       __stringify(patch_) ".bin"
 
 #define MAKE_GUC_FW_PATH(prefix_, major_, minor_, patch_) \
-	__MAKE_UC_FW_PATH(prefix_, "_guc_", major_, minor_, patch_)
+	__MAKE_UC_FW_PATH_MAJOR(prefix_, "guc", major_)
 
 #define MAKE_HUC_FW_PATH(prefix_, major_, minor_, bld_num_) \
 	__MAKE_UC_FW_PATH(prefix_, "_huc_", major_, minor_, bld_num_)
