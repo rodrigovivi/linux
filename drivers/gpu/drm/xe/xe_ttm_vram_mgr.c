@@ -251,7 +251,9 @@ static void xe_ttm_vram_mgr_debug(struct ttm_resource_manager *man,
 	struct xe_ttm_vram_mgr *mgr = to_vram_mgr(man);
 	struct drm_buddy *mm = &mgr->mm;
 
+	mutex_lock(&mgr->lock);
 	drm_buddy_print(mm, printer);
+	mutex_unlock(&mgr->lock);
 	drm_printf(printer, "man size:%llu\n", man->size);
 }
 
