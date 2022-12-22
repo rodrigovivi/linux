@@ -587,8 +587,13 @@ static int xe_pci_runtime_idle(struct device *dev)
 	struct pci_dev *pdev = to_pci_dev(dev);
 	struct xe_device *xe = pdev_to_xe_device(pdev);
 
-	if (IS_DGFX(xe) && !xe_device_mem_access_ongoing(xe))
-		xe->d3cold_allowed = true;
+	/*
+	 * FIXME: d3cold should be allowed (true) if
+	 * (IS_DGFX(xe) && !xe_device_mem_access_ongoing(xe))
+	 * however the change to the buddy allocator broke the
+	 * xe_bo_restore_kernel when the pci device is disabled
+	 */
+	 xe->d3cold_allowed = false;
 
 	return 0;
 }
