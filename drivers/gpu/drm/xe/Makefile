@@ -133,6 +133,7 @@ xe-$(CONFIG_DRM_XE_DISPLAY) += \
 	display/intel_display_power_map.o \
 	display/intel_display_power_well.o \
 	display/intel_display_trace.o \
+	display/intel_dkl_phy.o \
 	display/intel_dmc.o \
 	display/intel_dp_aux_backlight.o \
 	display/intel_dp_aux.o \
@@ -158,6 +159,7 @@ xe-$(CONFIG_DRM_XE_DISPLAY) += \
 	display/intel_hdcp.o \
 	display/intel_hdmi.o \
 	display/intel_hotplug.o \
+	display/intel_hti.o \
 	display/intel_lspcon.o \
 	display/intel_lvds.o \
 	display/intel_modeset_setup.o \

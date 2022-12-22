@@ -494,7 +494,7 @@ static void emit_copy(struct xe_gt *gt, struct xe_bb *bb,
 static int job_add_deps(struct xe_sched_job *job, struct dma_resv *resv,
 			enum dma_resv_usage usage)
 {
-	return drm_sched_job_add_dependencies_resv(&job->drm, resv, usage);
+	return drm_sched_job_add_resv_dependencies(&job->drm, resv, usage);
 }
 
 static u64 xe_migrate_batch_base(struct xe_migrate *m, bool usm)

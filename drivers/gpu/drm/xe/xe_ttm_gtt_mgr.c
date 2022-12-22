@@ -8,7 +8,7 @@
 
 #include <drm/ttm/ttm_range_manager.h>
 #include <drm/ttm/ttm_placement.h>
-#include <drm/ttm/ttm_bo_driver.h>
+#include <drm/ttm/ttm_tt.h>
 
 #include "xe_bo.h"
 #include "xe_gt.h"
@@ -53,7 +53,7 @@ static int xe_ttm_gtt_mgr_new(struct ttm_resource_manager *man,
 	}
 
 	node->base.mm_nodes[0].start = 0;
-	node->base.mm_nodes[0].size = node->base.base.num_pages;
+	node->base.mm_nodes[0].size = PFN_UP(node->base.base.size);
 	node->base.base.start = XE_BO_INVALID_OFFSET;
 
 	*res = &node->base.base;

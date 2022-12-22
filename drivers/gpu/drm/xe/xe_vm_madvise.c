@@ -4,7 +4,7 @@
  */
 
 #include <drm/xe_drm.h>
-#include <drm/ttm/ttm_bo_driver.h>
+#include <drm/ttm/ttm_tt.h>
 #include <linux/nospec.h>
 
 #include "xe_bo.h"

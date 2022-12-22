@@ -332,6 +332,7 @@ static const struct xe_device_desc mtl_desc = {
 	GEN13_DISPLAY,
 	.display.ver = 14,
 	.display.has_cdclk_crawl = 1,
+	.display.has_cdclk_squash = 1,
 };
 
 #undef PLATFORM

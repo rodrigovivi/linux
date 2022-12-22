@@ -67,7 +67,7 @@ static inline void xe_res_first(struct ttm_resource *res,
 	if (!res)
 		goto fallback;
 
-	XE_BUG_ON(start + size > res->num_pages << PAGE_SHIFT);
+	XE_BUG_ON(start + size > res->size);
 
 	cur->mem_type = res->mem_type;
 
@@ -109,7 +109,7 @@ fallback:
 	cur->remaining = size;
 	cur->node = NULL;
 	cur->mem_type = XE_PL_TT;
-	XE_WARN_ON(res && start + size > res->num_pages << PAGE_SHIFT);
+	XE_WARN_ON(res && start + size > res->size);
 	return;
 }
 

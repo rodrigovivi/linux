@@ -169,6 +169,7 @@ struct xe_device {
 #define DEV_INFO_DISPLAY_FOR_EACH_FLAG(func) \
 			/* Keep in alphabetical order */ \
 			func(has_cdclk_crawl); \
+			func(has_cdclk_squash); \
 			func(has_dmc); \
 			func(has_dp_mst); \
 			func(has_dsb); \

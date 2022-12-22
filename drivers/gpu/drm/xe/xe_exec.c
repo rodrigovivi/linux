@@ -317,7 +317,7 @@ retry:
 
 	/* Wait behind munmap style rebinds */
 	if (!xe_vm_no_dma_fences(vm)) {
-		err = drm_sched_job_add_dependencies_resv(&job->drm,
+		err = drm_sched_job_add_resv_dependencies(&job->drm,
 							  &vm->resv,
 							  DMA_RESV_USAGE_KERNEL);
 		if (err)

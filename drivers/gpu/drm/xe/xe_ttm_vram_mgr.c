@@ -95,7 +95,7 @@ static int xe_ttm_vram_mgr_new(struct ttm_resource_manager *man,
 		return -ENOMEM;
 
 	ttm_resource_init(tbo, place, &vres->base);
-	remaining_size = vres->base.num_pages << PAGE_SHIFT;
+	remaining_size = vres->base.size;
 
 	/* bail out quickly if there's likely not enough VRAM for this BO */
 	if (ttm_resource_manager_usage(man) > max_bytes) {
@@ -169,7 +169,7 @@ static int xe_ttm_vram_mgr_new(struct ttm_resource_manager *man,
 		LIST_HEAD(temp);
 
 		trim_list = &vres->blocks;
-		original_size = vres->base.num_pages << PAGE_SHIFT;
+		original_size = vres->base.size;
 
 		/*
 		 * If size value is rounded up to min_block_size, trim the last
@@ -205,8 +205,8 @@ static int xe_ttm_vram_mgr_new(struct ttm_resource_manager *man,
 			xe_ttm_vram_mgr_block_size(block);
 		start >>= PAGE_SHIFT;
 
-		if (start > vres->base.num_pages)
-			start -= vres->base.num_pages;
+		if (start > PFN_UP(vres->base.size))
+			start -= PFN_UP(vres->base.size);
 		else
 			start = 0;
 		vres->base.start = max(vres->base.start, start);
