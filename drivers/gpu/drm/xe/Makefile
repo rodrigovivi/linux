@@ -165,7 +165,7 @@ xe-$(CONFIG_DRM_XE_DISPLAY) += \
 	display/intel_opregion.o \
 	display/intel_panel.o \
 	display/intel_pipe_crc.o \
-	display/intel_pps_stub.o \
+	display/intel_pps.o \
 	display/intel_psr.o \
 	display/intel_qp_tables.o \
 	display/intel_quirks.o \
