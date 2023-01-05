@@ -645,8 +645,14 @@ struct xe_device {
 #if IS_ENABLED(CONFIG_DRM_XE_EUDEBUG)
 	/** @eudebug: eudebug globals for the device */
 	struct {
+		/** @eudebug.session_count: session counter to track connections */
+		u64 session_count;
+
 		/** @eudebug.cap_state: eudebug capability state */
 		enum xe_eudebug_cap_state cap_state;
+
+		/** @eudebug.attached: number of debuggers currently attached */
+		unsigned int attached;
 
 		/** @eudebug.lock: protects the eudebug state of this device */
 		struct mutex lock;
@@ -740,6 +746,14 @@ struct xe_file {
 		/** @mmio_gem.pci_barrier: MMIO GEM object for PCI barrier mmap. */
 		struct xe_mmio_gem *pci_barrier;
 	} mmio_gem;
+
+#if IS_ENABLED(CONFIG_DRM_XE_EUDEBUG)
+	/** @eudebug: struct to hold eudebug connection specifics */
+	struct {
+		/** @eudebug.debugger: the debugger connection into this xe_file */
+		struct xe_eudebug *debugger;
+	} eudebug;
+#endif
 };
 
 #endif
