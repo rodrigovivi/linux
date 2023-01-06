@@ -376,7 +376,8 @@ static void mcr_lock(struct xe_gt *gt)
 	 * shares the same steering control register.
 	 */
 	if (GRAPHICS_VERx100(xe) >= 1270)
-		ret = wait_for_us(xe_mmio_read32(gt, STEER_SEMAPHORE) == 0x1, 10);
+		ret = xe_mmio_wait32(gt, STEER_SEMAPHORE, 0, 0x1, 10, NULL,
+				     false);
 
 	drm_WARN_ON_ONCE(&xe->drm, ret == -ETIMEDOUT);
 }

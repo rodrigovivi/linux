@@ -48,7 +48,8 @@ static u32 guc_bo_ggtt_addr(struct xe_guc *guc,
 	u32 addr = xe_bo_ggtt_addr(bo);
 
 	XE_BUG_ON(addr < xe_wopcm_size(guc_to_xe(guc)));
-	XE_BUG_ON(range_overflows_t(u32, addr, bo->size, GUC_GGTT_TOP));
+	XE_BUG_ON(addr >= GUC_GGTT_TOP);
+	XE_BUG_ON(bo->size > GUC_GGTT_TOP - addr);
 
 	return addr;
 }
@@ -316,17 +317,18 @@ int xe_guc_reset(struct xe_guc *guc)
 {
 	struct xe_device *xe = guc_to_xe(guc);
 	struct xe_gt *gt = guc_to_gt(guc);
-	u32 guc_status;
+	u32 guc_status, gdrst;
 	int ret;
 
 	xe_force_wake_assert_held(gt_to_fw(gt), XE_FW_GT);
 
 	xe_mmio_write32(gt, GEN6_GDRST.reg, GEN11_GRDOM_GUC);
 
-	ret = xe_mmio_wait32(gt, GEN6_GDRST.reg, 0, GEN11_GRDOM_GUC, 5);
+	ret = xe_mmio_wait32(gt, GEN6_GDRST.reg, 0, GEN11_GRDOM_GUC, 5000,
+			     &gdrst, false);
 	if (ret) {
 		drm_err(&xe->drm, "GuC reset timed out, GEN6_GDRST=0x%8x\n",
-			xe_mmio_read32(gt, GEN6_GDRST.reg));
+			gdrst);
 		goto err_out;
 	}
 
@@ -395,24 +397,6 @@ static int guc_xfer_rsa(struct xe_guc *guc)
 	return 0;
 }
 
-/*
- * Read the GuC status register (GUC_STATUS) and store it in the
- * specified location; then return a boolean indicating whether
- * the value matches either of two values representing completion
- * of the GuC boot process.
- *
- * This is used for polling the GuC status in a wait_for()
- * loop below.
- */
-static bool guc_ready(struct xe_guc *guc, u32 *status)
-{
-	u32 val = xe_mmio_read32(guc_to_gt(guc), GUC_STATUS.reg);
-	u32 uk_val = REG_FIELD_GET(GS_UKERNEL_MASK, val);
-
-	*status = val;
-	return uk_val == XE_GUC_LOAD_STATUS_READY;
-}
-
 static int guc_wait_ucode(struct xe_guc *guc)
 {
 	struct xe_device *xe = guc_to_xe(guc);
@@ -436,7 +420,11 @@ static int guc_wait_ucode(struct xe_guc *guc)
 	 * 200ms. Even at slowest clock, this should be sufficient. And
 	 * in the working case, a larger timeout makes no difference.
 	 */
-	ret = wait_for(guc_ready(guc, &status), 200);
+	ret = xe_mmio_wait32(guc_to_gt(guc), GUC_STATUS.reg,
+			     FIELD_PREP(GS_UKERNEL_MASK,
+					XE_GUC_LOAD_STATUS_READY),
+			     GS_UKERNEL_MASK, 200000, &status, false);
+
 	if (ret) {
 		struct drm_device *drm = &xe->drm;
 		struct drm_printer p = drm_info_printer(drm->dev);
@@ -646,7 +634,7 @@ int xe_guc_send_mmio(struct xe_guc *guc, const u32 *request, u32 len)
 {
 	struct xe_device *xe = guc_to_xe(guc);
 	struct xe_gt *gt = guc_to_gt(guc);
-	u32 header;
+	u32 header, reply;
 	u32 reply_reg = xe_gt_is_media_type(gt) ?
 		MEDIA_SOFT_SCRATCH(0).reg : GEN11_SOFT_SCRATCH(0).reg;
 	int ret;
@@ -683,31 +671,29 @@ retry:
 	ret = xe_mmio_wait32(gt, reply_reg,
 			     FIELD_PREP(GUC_HXG_MSG_0_ORIGIN,
 					GUC_HXG_ORIGIN_GUC),
-			     GUC_HXG_MSG_0_ORIGIN,
-			     50);
+			     GUC_HXG_MSG_0_ORIGIN, 50000, &reply, false);
 	if (ret) {
 timeout:
 		drm_err(&xe->drm, "mmio request 0x%08x: no reply 0x%08x\n",
-			request[0], xe_mmio_read32(gt, reply_reg));
+			request[0], reply);
 		return ret;
 	}
 
 	header = xe_mmio_read32(gt, reply_reg);
 	if (FIELD_GET(GUC_HXG_MSG_0_TYPE, header) ==
 	    GUC_HXG_TYPE_NO_RESPONSE_BUSY) {
-#define done ({ header = xe_mmio_read32(gt, reply_reg); \
-		FIELD_GET(GUC_HXG_MSG_0_ORIGIN, header) != \
-		GUC_HXG_ORIGIN_GUC || \
-		FIELD_GET(GUC_HXG_MSG_0_TYPE, header) != \
-		GUC_HXG_TYPE_NO_RESPONSE_BUSY; })
 
-		ret = wait_for(done, 1000);
+		ret = xe_mmio_wait32(gt, reply_reg,
+				     FIELD_PREP(GUC_HXG_MSG_0_TYPE,
+						GUC_HXG_TYPE_RESPONSE_SUCCESS),
+				     GUC_HXG_MSG_0_TYPE, 1000000, &header,
+				     false);
+
+		if (unlikely(FIELD_GET(GUC_HXG_MSG_0_ORIGIN, header) !=
+			     GUC_HXG_ORIGIN_GUC))
+			goto proto;
 		if (unlikely(ret))
 			goto timeout;
-		if (unlikely(FIELD_GET(GUC_HXG_MSG_0_ORIGIN, header) !=
-				       GUC_HXG_ORIGIN_GUC))
-			goto proto;
-#undef done
 	}
 
 	if (FIELD_GET(GUC_HXG_MSG_0_TYPE, header) ==

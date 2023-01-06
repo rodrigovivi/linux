@@ -10,6 +10,7 @@
 #include "xe_mmio.h"
 #include "../i915/gt/intel_gt_regs.h"
 
+
 #define XE_FORCE_WAKE_ACK_TIMEOUT_MS	50
 
 static struct xe_gt *
@@ -123,7 +124,8 @@ static int domain_wake_wait(struct xe_gt *gt,
 			    struct xe_force_wake_domain *domain)
 {
 	return xe_mmio_wait32(gt, domain->reg_ack, domain->val, domain->val,
-			      XE_FORCE_WAKE_ACK_TIMEOUT_MS);
+			      XE_FORCE_WAKE_ACK_TIMEOUT_MS * USEC_PER_MSEC,
+			      NULL, false);
 }
 
 static void domain_sleep(struct xe_gt *gt, struct xe_force_wake_domain *domain)
@@ -135,13 +137,14 @@ static int domain_sleep_wait(struct xe_gt *gt,
 			     struct xe_force_wake_domain *domain)
 {
 	return xe_mmio_wait32(gt, domain->reg_ack, 0, domain->val,
-			      XE_FORCE_WAKE_ACK_TIMEOUT_MS);
+			      XE_FORCE_WAKE_ACK_TIMEOUT_MS * USEC_PER_MSEC,
+			      NULL, false);
 }
 
 #define for_each_fw_domain_masked(domain__, mask__, fw__, tmp__) \
-	for (tmp__ = (mask__); tmp__ ;) \
+	for (tmp__ = (mask__); tmp__; tmp__ &= ~BIT(ffs(tmp__) - 1)) \
 		for_each_if((domain__ = ((fw__)->domains + \
-					 __mask_next_bit(tmp__))) && \
+					 (ffs(tmp__) - 1))) && \
 					 domain__->reg_ctl)
 
 int xe_force_wake_get(struct xe_force_wake *fw,
