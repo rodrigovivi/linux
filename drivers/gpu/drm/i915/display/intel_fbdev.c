@@ -413,17 +413,8 @@ static void intel_fbdev_destroy(struct intel_fbdev *ifbdev)
 	if (ifbdev->vma)
 		intel_unpin_fb_vma(ifbdev->vma, ifbdev->vma_flags);
 
-	if (ifbdev->fb) {
-#ifndef I915
-		struct xe_bo *bo = intel_fb_obj(&ifbdev->fb->base);
-
-		/* Unpin our kernel fb first */
-		xe_bo_lock_no_vm(bo, NULL);
-		xe_bo_unpin(bo);
-		xe_bo_unlock_no_vm(bo);
-#endif
+	if (ifbdev->fb)
 		drm_framebuffer_remove(&ifbdev->fb->base);
-	}
 
 	kfree(ifbdev);
 }

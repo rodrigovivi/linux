@@ -1847,6 +1847,15 @@ static void intel_user_framebuffer_destroy(struct drm_framebuffer *fb)
 #ifdef I915
 	if (intel_fb_uses_dpt(fb))
 		intel_dpt_destroy(intel_fb->dpt_vm);
+#else
+	if (intel_fb_obj(fb)->flags & XE_BO_CREATE_PINNED_BIT) {
+		struct xe_bo *bo = intel_fb_obj(fb);
+
+		/* Unpin our kernel fb first */
+		xe_bo_lock_no_vm(bo, NULL);
+		xe_bo_unpin(bo);
+		xe_bo_unlock_no_vm(bo);
+	}
 #endif
 
 	drm_gem_object_put(fb->obj[0]);
