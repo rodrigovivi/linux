@@ -1784,10 +1784,12 @@ int xe_bo_dumb_create(struct drm_file *file_priv,
 	uint32_t handle;
 	int cpp = DIV_ROUND_UP(args->bpp, 8);
 	int err;
+	u32 page_size = max_t(u32, PAGE_SIZE,
+		xe->info.vram_flags & XE_VRAM_FLAGS_NEED64K ? SZ_64K : SZ_4K);
 
-	/* Align to ggtt page size, which we start requiring for xe display */
-	args->pitch = ALIGN(args->width * cpp, GEN8_PAGE_SIZE);
-	args->size = mul_u32_u32(args->pitch, args->height);
+	args->pitch = ALIGN(args->width * cpp, 64);
+	args->size = ALIGN(mul_u32_u32(args->pitch, args->height),
+			   page_size);
 
 	bo = xe_bo_create(xe, NULL, NULL, args->size, ttm_bo_type_device,
 			  XE_BO_CREATE_VRAM_IF_DGFX(to_gt(xe)) |
