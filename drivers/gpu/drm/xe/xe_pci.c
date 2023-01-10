@@ -22,6 +22,12 @@
 
 #include "../i915/i915_reg.h"
 
+static char *xe_param_force_probe = CONFIG_DRM_XE_FORCE_PROBE;
+module_param_named_unsafe(force_probe, xe_param_force_probe, charp, 0400);
+MODULE_PARM_DESC(force_probe,
+		 "Force probe options for specified devices. "
+		 "See CONFIG_DRM_XE_FORCE_PROBE for details.");
+
 #define DEV_INFO_FOR_EACH_FLAG(func) \
 	func(require_force_probe); \
 	func(is_dgfx); \
@@ -148,6 +154,7 @@ struct xe_device_desc {
 
 /* Keep in gen based order, and chronological order within a gen */
 #define GEN12_FEATURES \
+	.require_force_probe = true, \
 	.graphics_ver = 12, \
 	.media_ver = 12, \
 	.dma_mask_size = 39, \
@@ -196,7 +203,6 @@ static const struct xe_device_desc dg1_desc = {
 	DGFX_FEATURES,
 	.graphics_rel = 10,
 	PLATFORM(XE_DG1),
-	.require_force_probe = true,
 	.platform_engine_mask =
 		BIT(XE_HW_ENGINE_RCS0) | BIT(XE_HW_ENGINE_BCS0) |
 		BIT(XE_HW_ENGINE_VECS0) | BIT(XE_HW_ENGINE_VCS0) |
@@ -204,6 +210,7 @@ static const struct xe_device_desc dg1_desc = {
 };
 
 #define XE_HP_FEATURES \
+	.require_force_probe = true, \
 	.graphics_ver = 12, \
 	.graphics_rel = 50, \
 	.has_flat_ccs = true, \
@@ -288,7 +295,6 @@ static const struct xe_device_desc pvc_desc = {
 	.has_flat_ccs = 0,
 	.media_rel = 60,
 	.platform_engine_mask = PVC_ENGINES,
-	.require_force_probe = true,
 	.vram_flags = XE_VRAM_FLAGS_NEED64K,
 	.dma_mask_size = 52,
 	.max_tiles = 2,
@@ -319,6 +325,7 @@ static const struct xe_device_desc mtl_desc = {
 	 * Real graphics IP version will be obtained from hardware GMD_ID
 	 * register.  Value provided here is just for sanity checking.
 	 */
+	.require_force_probe = true,
 	.graphics_ver = 12,
 	.graphics_rel = 70,
 	.dma_mask_size = 46,
@@ -328,7 +335,6 @@ static const struct xe_device_desc mtl_desc = {
 	PLATFORM(XE_METEORLAKE),
 	.extra_gts = xelpmp_gts,
 	.platform_engine_mask = MTL_MAIN_ENGINES,
-	.require_force_probe = 1,
 	GEN13_DISPLAY,
 	.display.ver = 14,
 	.display.has_cdclk_crawl = 1,
@@ -361,6 +367,55 @@ static const struct pci_device_id pciidlist[] = {
 MODULE_DEVICE_TABLE(pci, pciidlist);
 
 #undef INTEL_VGA_DEVICE
+
+/* is device_id present in comma separated list of ids */
+static bool device_id_in_list(u16 device_id, const char *devices, bool negative)
+{
+	char *s, *p, *tok;
+	bool ret;
+
+	if (!devices || !*devices)
+		return false;
+
+	/* match everything */
+	if (negative && strcmp(devices, "!*") == 0)
+		return true;
+	if (!negative && strcmp(devices, "*") == 0)
+		return true;
+
+	s = kstrdup(devices, GFP_KERNEL);
+	if (!s)
+		return false;
+
+	for (p = s, ret = false; (tok = strsep(&p, ",")) != NULL; ) {
+		u16 val;
+
+		if (negative && tok[0] == '!')
+			tok++;
+		else if ((negative && tok[0] != '!') ||
+			 (!negative && tok[0] == '!'))
+			continue;
+
+		if (kstrtou16(tok, 16, &val) == 0 && val == device_id) {
+			ret = true;
+			break;
+		}
+	}
+
+	kfree(s);
+
+	return ret;
+}
+
+static bool id_forced(u16 device_id)
+{
+	return device_id_in_list(device_id, xe_param_force_probe, false);
+}
+
+static bool id_blocked(u16 device_id)
+{
+	return device_id_in_list(device_id, xe_param_force_probe, true);
+}
 
 static const struct xe_subplatform_desc *
 subplatform_get(const struct xe_device *xe, const struct xe_device_desc *desc)
@@ -396,6 +451,24 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	struct xe_gt *gt;
 	u8 id;
 	int err;
+
+	if (desc->require_force_probe && !id_forced(pdev->device)) {
+		dev_info(&pdev->dev,
+			 "Your graphics device %04x is not officially supported\n"
+			 "by xe driver in this kernel version. To force Xe probe,\n"
+			 "use xe.force_probe='%04x' and i915.force_probe='!%04x'\n"
+			 "module parameters or CONFIG_DRM_XE_FORCE_PROBE='%04x' and\n"
+			 "CONFIG_DRM_I915_FORCE_PROBE='!%04x' configuration options.\n",
+			 pdev->device, pdev->device, pdev->device,
+			 pdev->device, pdev->device);
+		return -ENODEV;
+	}
+
+	if (id_blocked(pdev->device)) {
+		dev_info(&pdev->dev, "Probe blocked for device [%04x:%04x].\n",
+			 pdev->vendor, pdev->device);
+		return -ENODEV;
+	}
 
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 	/* Detect if we need to wait for other drivers early on */
