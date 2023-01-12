@@ -480,7 +480,7 @@ static void intel_pps_get_registers(struct intel_dp *intel_dp,
 				    struct pps_registers *regs)
 {
 	struct drm_i915_private *dev_priv = dp_to_i915(intel_dp);
-	int pps_idx;
+	int pps_idx = 0;
 
 	memset(regs, 0, sizeof(*regs));
 
