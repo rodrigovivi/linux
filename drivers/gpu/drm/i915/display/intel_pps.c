@@ -3,7 +3,6 @@
  * Copyright © 2020 Intel Corporation
  */
 
-#include "g4x_dp.h"
 #include "i915_drv.h"
 #include "i915_reg.h"
 #include "intel_de.h"
@@ -16,6 +15,11 @@
 #include "intel_lvds_regs.h"
 #include "intel_pps.h"
 #include "intel_quirks.h"
+
+#ifdef I915
+#include "g4x_dp.h"
+#include "intel_dpio_phy.h"
+#endif
 
 static void vlv_steal_power_sequencer(struct drm_i915_private *dev_priv,
 				      enum pipe pipe);
@@ -82,6 +86,7 @@ intel_wakeref_t intel_pps_unlock(struct intel_dp *intel_dp,
 	return 0;
 }
 
+#ifdef I915
 static void
 vlv_power_sequencer_kick(struct intel_dp *intel_dp)
 {
@@ -266,6 +271,7 @@ bxt_power_sequencer_idx(struct intel_dp *intel_dp)
 
 	return pps_idx;
 }
+#endif
 
 typedef bool (*pps_check)(struct drm_i915_private *dev_priv, int pps_idx);
 
@@ -479,16 +485,18 @@ static void intel_pps_get_registers(struct intel_dp *intel_dp,
 				    struct pps_registers *regs)
 {
 	struct drm_i915_private *dev_priv = dp_to_i915(intel_dp);
-	int pps_idx;
+	int pps_idx = 0;
 
 	memset(regs, 0, sizeof(*regs));
 
+#ifdef I915
 	if (IS_VALLEYVIEW(dev_priv) || IS_CHERRYVIEW(dev_priv))
 		pps_idx = vlv_power_sequencer_pipe(intel_dp);
 	else if (IS_GEMINILAKE(dev_priv) || IS_BROXTON(dev_priv))
 		pps_idx = bxt_power_sequencer_idx(intel_dp);
 	else
 		pps_idx = intel_dp->pps.pps_idx;
+#endif
 
 	regs->pp_ctrl = PP_CONTROL(pps_idx);
 	regs->pp_stat = PP_STATUS(pps_idx);
@@ -1681,6 +1689,7 @@ void assert_pps_unlocked(struct drm_i915_private *dev_priv, enum pipe pipe)
 		return;
 
 	if (HAS_PCH_SPLIT(dev_priv)) {
+#ifdef I915
 		u32 port_sel;
 
 		pp_reg = PP_CONTROL(0);
@@ -1707,6 +1716,7 @@ void assert_pps_unlocked(struct drm_i915_private *dev_priv, enum pipe pipe)
 		/* presumably write lock depends on pipe, not port select */
 		pp_reg = PP_CONTROL(pipe);
 		panel_pipe = pipe;
+#endif
 	} else {
 		u32 port_sel;
 
