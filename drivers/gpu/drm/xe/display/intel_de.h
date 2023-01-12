@@ -52,14 +52,16 @@ static inline int
 intel_de_wait_for_register(struct drm_i915_private *i915, i915_reg_t reg,
 			   u32 mask, u32 value, unsigned int timeout)
 {
-	return xe_mmio_wait32(to_gt(i915), reg.reg, value, mask, timeout, NULL);
+	return xe_mmio_wait32(to_gt(i915), reg.reg, value, mask, timeout, NULL,
+			      false);
 }
 
 static inline int
 intel_de_wait_for_register_fw(struct drm_i915_private *i915, i915_reg_t reg,
 			      u32 mask, u32 value, unsigned int timeout)
 {
-	return xe_mmio_wait32(to_gt(i915), reg.reg, value, mask, timeout, NULL);
+	return xe_mmio_wait32(to_gt(i915), reg.reg, value, mask, timeout, NULL,
+			      false);
 }
 
 static inline int
