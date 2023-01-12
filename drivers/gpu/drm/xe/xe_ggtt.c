@@ -68,7 +68,10 @@ static void xe_ggtt_clear(struct xe_ggtt *ggtt, u64 start, u64 size)
 
 	XE_BUG_ON(start >= end);
 
-	scratch_pte = xe_ggtt_pte_encode(ggtt->scratch, 0);
+	if (ggtt->scratch)
+		scratch_pte = xe_ggtt_pte_encode(ggtt->scratch, 0);
+	else
+		scratch_pte = 0;
 
 	while (start < end) {
 		xe_ggtt_set_pte(ggtt, start, scratch_pte);
@@ -76,7 +79,7 @@ static void xe_ggtt_clear(struct xe_ggtt *ggtt, u64 start, u64 size)
 	}
 }
 
-static void ggtt_fini(struct drm_device *drm, void *arg)
+static void ggtt_fini_noalloc(struct drm_device *drm, void *arg)
 {
 	struct xe_ggtt *ggtt = arg;
 
@@ -86,12 +89,11 @@ static void ggtt_fini(struct drm_device *drm, void *arg)
 	xe_bo_unpin_map_no_vm(ggtt->scratch);
 }
 
-int xe_ggtt_init(struct xe_gt *gt, struct xe_ggtt *ggtt)
+int xe_ggtt_init_noalloc(struct xe_gt *gt, struct xe_ggtt *ggtt)
 {
 	struct xe_device *xe = gt_to_xe(gt);
 	struct pci_dev *pdev = to_pci_dev(xe->drm.dev);
 	unsigned int gsm_size;
-	int err;
 
 	XE_BUG_ON(xe_gt_is_media_type(gt));
 
@@ -104,22 +106,7 @@ int xe_ggtt_init(struct xe_gt *gt, struct xe_ggtt *ggtt)
 	}
 
 	ggtt->gsm = gt->mmio.regs + SZ_8M;
-	ggtt->scratch = xe_bo_create_locked(xe, gt, NULL, GEN8_PAGE_SIZE,
-					    ttm_bo_type_kernel,
-					    XE_BO_CREATE_VRAM_IF_DGFX(gt) |
-					    XE_BO_CREATE_PINNED_BIT);
-	if (IS_ERR(ggtt->scratch)) {
-		err = PTR_ERR(ggtt->scratch);
-		goto err_iomap;
-	}
-
-	err = xe_bo_pin(ggtt->scratch);
-	xe_bo_unlock_no_vm(ggtt->scratch);
-	if (err)
-		goto err_scratch;
-
 	ggtt->size = (gsm_size / 8) * (u64)GEN8_PAGE_SIZE;
-	xe_ggtt_clear(ggtt, 0, ggtt->size - 1);
 
 	/*
 	 * 8B per entry, each points to a 4KB page.
@@ -142,15 +129,48 @@ int xe_ggtt_init(struct xe_gt *gt, struct xe_ggtt *ggtt)
 		    ggtt->size - xe_wopcm_size(xe));
 	mutex_init(&ggtt->lock);
 
-	err = drmm_add_action_or_reset(&xe->drm, ggtt_fini, ggtt);
-	if (err)
-		return err;
+	return drmm_add_action_or_reset(&xe->drm, ggtt_fini_noalloc, ggtt);
+}
 
+static void xe_ggtt_initial_clear(struct xe_ggtt *ggtt)
+{
+	struct drm_mm_node *hole;
+	u64 start, end;
+
+	/* Display may have allocated inside ggtt, so be careful with clearing here */
+	mutex_lock(&ggtt->lock);
+	drm_mm_for_each_hole(hole, &ggtt->mm, start, end)
+		xe_ggtt_clear(ggtt, start, end - start);
+
+	xe_ggtt_invalidate(ggtt->gt);
+	mutex_unlock(&ggtt->lock);
+}
+
+int xe_ggtt_init(struct xe_gt *gt, struct xe_ggtt *ggtt)
+{
+	struct xe_device *xe = gt_to_xe(gt);
+	int err;
+
+	ggtt->scratch = xe_bo_create_locked(xe, gt, NULL, GEN8_PAGE_SIZE,
+					    ttm_bo_type_kernel,
+					    XE_BO_CREATE_VRAM_IF_DGFX(gt) |
+					    XE_BO_CREATE_PINNED_BIT);
+	if (IS_ERR(ggtt->scratch)) {
+		err = PTR_ERR(ggtt->scratch);
+		goto err;
+	}
+
+	err = xe_bo_pin(ggtt->scratch);
+	xe_bo_unlock_no_vm(ggtt->scratch);
+	if (err) {
+		xe_bo_put(ggtt->scratch);
+		goto err;
+	}
+
+	xe_ggtt_initial_clear(ggtt);
 	return 0;
-
-err_scratch:
-	xe_bo_put(ggtt->scratch);
-err_iomap:
+err:
+	ggtt->scratch = NULL;
 	return err;
 }
 

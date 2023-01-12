@@ -335,7 +335,7 @@ static int xe_device_init_display_noirq(struct xe_device *xe)
 }
 
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
-static inline void xe_device_fini_display_early(struct drm_device *dev, void *dummy)
+static void xe_device_fini_display_noaccel(struct drm_device *dev, void *dummy)
 {
 	struct xe_device *xe = to_xe_device(dev);
 
@@ -343,20 +343,20 @@ static inline void xe_device_fini_display_early(struct drm_device *dev, void *du
 }
 #endif
 
-static int xe_device_init_display_early(struct xe_device *xe)
+static int xe_device_init_display_noaccel(struct xe_device *xe)
 {
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 	int err = intel_modeset_init_nogem(xe);
 	if (err)
 		return err;
 
-	return drmm_add_action_or_reset(&xe->drm, xe_device_fini_display_early, NULL);
+	return drmm_add_action_or_reset(&xe->drm, xe_device_fini_display_noaccel, NULL);
 #else
 	return 0;
 #endif
 }
 
-static int xe_device_init_display_late(struct xe_device *xe)
+static int xe_device_init_display(struct xe_device *xe)
 {
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 	return intel_modeset_init(xe);
@@ -412,10 +412,6 @@ int xe_device_probe(struct xe_device *xe)
 	if (err)
 		goto err;
 
-	err = xe_device_init_display_early(xe);
-	if (err)
-		goto err_irq_shutdown;
-
 	for_each_gt(gt, xe, id) {
 		err = xe_gt_init_early(gt);
 		if (err)
@@ -427,12 +423,28 @@ int xe_device_probe(struct xe_device *xe)
 		goto err_irq_shutdown;
 
 	for_each_gt(gt, xe, id) {
+		err = xe_gt_init_noalloc(gt);
+		if (err)
+			goto err_irq_shutdown;
+	}
+
+	/*
+	 * Now that GT is initialized (TTM in particular),
+	 * we can try to init display, and inherit the initial fb.
+	 * This is the reason the first allocation needs to be done
+	 * inside display.
+	 */
+	err = xe_device_init_display_noaccel(xe);
+	if (err)
+		goto err_irq_shutdown;
+
+	for_each_gt(gt, xe, id) {
 		err = xe_gt_init(gt);
 		if (err)
 			goto err_irq_shutdown;
 	}
 
-	err = xe_device_init_display_late(xe);
+	err = xe_device_init_display(xe);
 	if (err)
 		goto err_fini_display;
 
