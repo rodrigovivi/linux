@@ -24,6 +24,7 @@
 #include "xe_pcode.h"
 #include "xe_pm.h"
 #include "xe_query.h"
+#include "xe_ttm_stolen_mgr.h"
 #include "xe_vm.h"
 #include "xe_vm_madvise.h"
 #include "xe_wait_user_fence.h"
@@ -427,6 +428,9 @@ int xe_device_probe(struct xe_device *xe)
 		if (err)
 			goto err_irq_shutdown;
 	}
+
+	/* Harmless if stolen initialization fails */
+	xe_ttm_stolen_mgr_init(xe);
 
 	/*
 	 * Now that GT is initialized (TTM in particular),
