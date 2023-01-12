@@ -405,6 +405,9 @@ int xe_device_probe(struct xe_device *xe)
 			return err;
 	}
 
+	/* Harmless if stolen initialization fails */
+	xe_ttm_stolen_mgr_init(xe);
+
 	err = xe_device_init_display_noirq(xe);
 	if (err)
 		return err;
@@ -428,9 +431,6 @@ int xe_device_probe(struct xe_device *xe)
 		if (err)
 			goto err_irq_shutdown;
 	}
-
-	/* Harmless if stolen initialization fails */
-	xe_ttm_stolen_mgr_init(xe);
 
 	/*
 	 * Now that GT is initialized (TTM in particular),
