@@ -389,6 +389,43 @@ int xe_gt_init_early(struct xe_gt *gt)
 	return 0;
 }
 
+/**
+ * xe_gt_init_noalloc - Init GT up to the point where allocations can happen.
+ * @gt: The GT to initialize.
+ *
+ * This function prepares the GT to allow memory allocations to VRAM, but is not
+ * allowed to allocate memory itself. This state is useful for display readout,
+ * because the inherited display framebuffer will otherwise be overwritten as it
+ * is usually put at the start of VRAM.
+ *
+ * Returns: 0 on success, negative error code on error.
+ */
+int xe_gt_init_noalloc(struct xe_gt *gt)
+{
+	int err, err2;
+
+	if (xe_gt_is_media_type(gt))
+		return 0;
+
+	xe_device_mem_access_get(gt_to_xe(gt));
+	err = xe_force_wake_get(gt_to_fw(gt), XE_FW_GT);
+	if (err)
+		goto err;
+
+	err = gt_ttm_mgr_init(gt);
+	if (err)
+		goto err_force_wake;
+
+	err = xe_ggtt_init_noalloc(gt, gt->mem.ggtt);
+
+err_force_wake:
+	err2 = xe_force_wake_put(gt_to_fw(gt), XE_FW_GT);
+	XE_WARN_ON(err2);
+	xe_device_mem_access_put(gt_to_xe(gt));
+err:
+	return err;
+}
+
 static int gt_fw_domain_init(struct xe_gt *gt)
 {
 	int err, i;
@@ -399,10 +436,6 @@ static int gt_fw_domain_init(struct xe_gt *gt)
 		goto err_hw_fence_irq;
 
 	if (!xe_gt_is_media_type(gt)) {
-		err = gt_ttm_mgr_init(gt);
-		if (err)
-			goto err_force_wake;
-
 		err = xe_ggtt_init(gt, gt->mem.ggtt);
 		if (err)
 			goto err_force_wake;
