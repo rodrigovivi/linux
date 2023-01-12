@@ -21,6 +21,7 @@
 #include "xe_gt_sysfs.h"
 #include "xe_gt_topology.h"
 #include "xe_hw_fence.h"
+#include "xe_irq.h"
 #include "xe_lrc.h"
 #include "xe_map.h"
 #include "xe_migrate.h"
@@ -448,6 +449,12 @@ static int gt_fw_domain_init(struct xe_gt *gt)
 	err = xe_uc_init_hwconfig(&gt->uc);
 	if (err)
 		goto err_force_wake;
+
+	/* Enables per hw engine IRQs */
+	xe_gt_irq_postinstall(gt);
+
+	/* Rerun MCR init as we now have hw engine list */
+	xe_gt_mcr_init(gt);
 
 	err = xe_hw_engines_init_early(gt);
 	if (err)
