@@ -59,27 +59,64 @@
 #ifdef I915
 
 #define i915_gem_stolen_initialized(i915) (drm_mm_initialized(&(i915)->mm.stolen))
+#define i915_gem_stolen_allocated(node) drm_mm_node_allocated(&(node))
+#define i915_gem_stolen_compressed_offset(node) ((node).start)
+#define i915_gem_stolen_compressed_size(node) ((node).size)
 
 #else
 
-/* No stolen memory support in xe yet */
-static int i915_gem_stolen_insert_node_in_range(struct xe_device *xe, void *ptr, u32 size, u32 align, u32 start, u32 end)
+#include "xe_ttm_stolen_mgr.h"
+#include "xe_res_cursor.h"
+
+static int i915_gem_stolen_insert_node_in_range(struct xe_device *xe, struct xe_bo **bo, u32 size, u32 align, u32 start, u32 end)
 {
+	int err;
+	u32 flags = XE_BO_CREATE_PINNED_BIT | XE_BO_CREATE_STOLEN_BIT;
+
+	*bo = xe_bo_create_locked_range(xe, xe_device_get_root_tile(xe),
+					NULL, size, start, end,
+					ttm_bo_type_kernel, flags);
+	if (IS_ERR(*bo)) {
+		err = PTR_ERR(*bo);
+		*bo = NULL;
+		return err;
+	}
+	err = xe_bo_pin(*bo);
+	xe_bo_unlock_vm_held(*bo);
+
+	if (err) {
+		xe_bo_put(*bo);
+		*bo = NULL;
+	}
+
+	return err;
+}
+
+static int i915_gem_stolen_insert_node(struct xe_device *xe, struct xe_bo **bo, u32 size, u32 align)
+{
+	/* Not used on xe */
+	BUG_ON(1);
 	return -ENODEV;
 }
 
-static int i915_gem_stolen_insert_node(struct xe_device *xe, void *ptr, u32 size, u32 align)
+static void i915_gem_stolen_remove_node(struct xe_device *xe, struct xe_bo **bo)
 {
-	XE_WARN_ON(1);
-	return -ENODEV;
+	xe_bo_unpin_map_no_vm(*bo);
+	*bo = NULL;
 }
 
-static void i915_gem_stolen_remove_node(struct xe_device *xe, void *ptr)
+#define i915_gem_stolen_initialized(xe) (!!ttm_manager_type(&(xe)->ttm, XE_PL_STOLEN))
+#define i915_gem_stolen_allocated(bo) (!!(bo))
+
+static u32 i915_gem_stolen_compressed_offset(struct xe_bo *bo)
 {
+	struct xe_res_cursor res;
+
+	xe_res_first(bo->ttm.resource, 0, 4096, &res);
+	return res.start;
 }
 
-#define i915_gem_stolen_initialized(xe) ((xe) && 0)
-
+#define i915_gem_stolen_compressed_size(fb) ((u64)((fb)->ttm.base.size))
 #endif
 
 #define for_each_fbc_id(__dev_priv, __fbc_id) \
@@ -122,7 +159,11 @@ struct intel_fbc {
 	struct mutex lock;
 	unsigned int busy_bits;
 
+#ifdef I915
 	struct i915_stolen_fb compressed_fb, compressed_llb;
+#else
+	struct xe_bo *compressed_fb, *compressed_llb;
+#endif
 
 	enum intel_fbc_id id;
 
@@ -750,8 +791,6 @@ static u64 intel_fbc_stolen_end(struct drm_i915_private *i915)
 	    (DISPLAY_VER(i915) == 9 && !IS_BROXTON(i915)))
 		end = i915_gem_stolen_area_size(i915) - 8 * 1024 * 1024;
 	else
-#else
-	/* TODO */
 #endif
 		end = U64_MAX;
 
