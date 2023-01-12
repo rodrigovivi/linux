@@ -79,6 +79,11 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
 				    struct xe_gt *gt, struct dma_resv *resv,
 				    size_t size, enum ttm_bo_type type,
 				    u32 flags);
+struct xe_bo *
+xe_bo_create_locked_range(struct xe_device *xe,
+			  struct xe_gt *gt, struct xe_vm *vm,
+			  size_t size, u64 start, u64 end,
+			  enum ttm_bo_type type, u32 flags);
 struct xe_bo *xe_bo_create_locked(struct xe_device *xe, struct xe_gt *gt,
 				  struct xe_vm *vm, size_t size,
 				  enum ttm_bo_type type, u32 flags);

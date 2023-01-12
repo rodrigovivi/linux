@@ -1032,7 +1032,7 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
 static int __xe_bo_fixed_placement(struct xe_device *xe,
 				   struct xe_bo *bo,
 				   u32 flags,
-				   u64 offset, u64 size)
+				   u64 start, u64 end, u64 size)
 {
 	struct ttm_place *place = bo->placements;
 
@@ -1040,8 +1040,8 @@ static int __xe_bo_fixed_placement(struct xe_device *xe,
 		return -EINVAL;
 
 	place->flags = TTM_PL_FLAG_CONTIGUOUS;
-	place->fpfn = offset >> PAGE_SHIFT;
-	place->lpfn = (offset + size) >> PAGE_SHIFT;
+	place->fpfn = start >> PAGE_SHIFT;
+	place->lpfn = end >> PAGE_SHIFT;
 
 	switch (flags & (XE_BO_CREATE_STOLEN_BIT |
 		XE_BO_CREATE_VRAM0_BIT |XE_BO_CREATE_VRAM1_BIT)) {
@@ -1070,11 +1070,11 @@ static int __xe_bo_fixed_placement(struct xe_device *xe,
 	return 0;
 }
 
-static struct xe_bo *
-xe_bo_create_locked_at(struct xe_device *xe,
-		       struct xe_gt *gt, struct xe_vm *vm,
-		       size_t size, u64 offset,
-		       enum ttm_bo_type type, u32 flags)
+struct xe_bo *
+xe_bo_create_locked_range(struct xe_device *xe,
+			  struct xe_gt *gt, struct xe_vm *vm,
+			  size_t size, u64 start, u64 end,
+			  enum ttm_bo_type type, u32 flags)
 {
 	struct xe_bo *bo = NULL;
 	int err;
@@ -1082,13 +1082,13 @@ xe_bo_create_locked_at(struct xe_device *xe,
 	if (vm)
 		xe_vm_assert_held(vm);
 
-	if (offset != ~0ULL) {
+	if (start || end != ~0ULL) {
 		bo = xe_bo_alloc();
 		if (IS_ERR(bo))
 			return bo;
 
 		flags |= XE_BO_FIXED_PLACEMENT_BIT;
-		err = __xe_bo_fixed_placement(xe, bo, flags, offset, size);
+		err = __xe_bo_fixed_placement(xe, bo, flags, start, end, size);
 		if (err) {
 			xe_bo_free(bo);
 			return ERR_PTR(err);
@@ -1105,7 +1105,6 @@ xe_bo_create_locked_at(struct xe_device *xe,
 	bo->vm = vm;
 
 	if (bo->flags & XE_BO_CREATE_GGTT_BIT) {
-
 		if (!gt && flags & XE_BO_CREATE_STOLEN_BIT)
 			gt = xe_device_get_gt(xe, 0);
 
@@ -1128,7 +1127,7 @@ struct xe_bo *xe_bo_create_locked(struct xe_device *xe, struct xe_gt *gt,
 				  struct xe_vm *vm, size_t size,
 				  enum ttm_bo_type type, u32 flags)
 {
-	return xe_bo_create_locked_at(xe, gt, vm, size, ~0ULL, type, flags);
+	return xe_bo_create_locked_range(xe, gt, vm, size, 0, ~0ULL, type, flags);
 }
 
 struct xe_bo *xe_bo_create(struct xe_device *xe, struct xe_gt *gt,
@@ -1150,12 +1149,14 @@ struct xe_bo *xe_bo_create_pin_map_at(struct xe_device *xe, struct xe_gt *gt,
 {
 	struct xe_bo *bo;
 	int err;
+	u64 start = offset == ~0ull ? 0 : offset;
+	u64 end = offset == ~0ull ? offset : start + size;
 
 	if (flags & XE_BO_CREATE_STOLEN_BIT &&
 	    xe_ttm_stolen_inaccessible(xe))
 		flags |= XE_BO_CREATE_GGTT_BIT;
 
-	bo = xe_bo_create_locked_at(xe, gt, vm, size, offset, type, flags);
+	bo = xe_bo_create_locked_range(xe, gt, vm, size, start, end, type, flags);
 	if (IS_ERR(bo))
 		return bo;
 
@@ -1183,7 +1184,7 @@ struct xe_bo *xe_bo_create_pin_map(struct xe_device *xe, struct xe_gt *gt,
 				   struct xe_vm *vm, size_t size,
 				   enum ttm_bo_type type, u32 flags)
 {
-	return xe_bo_create_pin_map_at(xe, gt, vm, size, ~0ULL, type, flags);
+	return xe_bo_create_pin_map_at(xe, gt, vm, size, ~0ull, type, flags);
 }
 
 struct xe_bo *xe_bo_create_from_data(struct xe_device *xe, struct xe_gt *gt,
