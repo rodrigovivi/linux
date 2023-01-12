@@ -492,24 +492,30 @@ void xe_irq_reset(struct xe_device *xe)
 #endif
 }
 
-void xe_irq_postinstall(struct xe_device *xe)
+void xe_gt_irq_postinstall(struct xe_gt *gt)
+{
+	struct xe_device *xe = gt_to_xe(gt);
+
+	if (GRAPHICS_VERx100(xe) >= 1210)
+		dg1_irq_postinstall(xe, gt);
+	else if (GRAPHICS_VER(xe) >= 11)
+		gen11_irq_postinstall(xe, gt);
+	else
+		drm_err(&xe->drm, "No interrupt postinstall hook");
+
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+	if (gt->info.id == XE_GT0)
+		gen11_display_irq_postinstall(gt_to_xe(gt));
+#endif
+}
+
+static void xe_irq_postinstall(struct xe_device *xe)
 {
 	struct xe_gt *gt;
 	u8 id;
 
-	for_each_gt(gt, xe, id) {
-		if (GRAPHICS_VERx100(xe) >= 1210) {
-			dg1_irq_postinstall(xe, gt);
-		} else if (GRAPHICS_VER(xe) >= 11) {
-			gen11_irq_postinstall(xe, gt);
-		} else {
-			drm_err(&xe->drm, "No interrupt postinstall hook");
-		}
-	}
-
-#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
-	gen11_display_irq_postinstall(xe);
-#endif
+	for_each_gt(gt, xe, id)
+		xe_gt_irq_postinstall(gt);
 }
 
 static irq_handler_t xe_irq_handler(struct xe_device *xe)
@@ -565,8 +571,6 @@ int xe_irq_install(struct xe_device *xe)
 	err = drmm_add_action_or_reset(&xe->drm, irq_uninstall, xe);
 	if (err)
 		return err;
-
-	xe_irq_postinstall(xe);
 
 	return err;
 }
