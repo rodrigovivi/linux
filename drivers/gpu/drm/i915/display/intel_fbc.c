@@ -75,7 +75,7 @@ static int i915_gem_stolen_insert_node_in_range(struct xe_device *xe, struct xe_
 					ttm_bo_type_kernel, flags);
 	if (IS_ERR(*bo)) {
 		err = PTR_ERR(*bo);
-		bo = NULL;
+		*bo = NULL;
 		return err;
 	}
 	err = xe_bo_pin(*bo);
