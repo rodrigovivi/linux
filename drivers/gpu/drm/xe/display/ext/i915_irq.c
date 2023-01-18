@@ -1407,34 +1407,20 @@ void gen11_display_irq_reset(struct drm_i915_private *dev_priv)
 	enum pipe pipe;
 	u32 trans_mask = BIT(TRANSCODER_A) | BIT(TRANSCODER_B) |
 		BIT(TRANSCODER_C) | BIT(TRANSCODER_D);
+	enum transcoder trans;
 
 	if (!HAS_DISPLAY(dev_priv))
 		return;
 
 	intel_uncore_write(dev_priv, GEN11_DISPLAY_INT_CTL, 0);
 
-	if (DISPLAY_VER(dev_priv) >= 12) {
-		enum transcoder trans;
-
-		for_each_cpu_transcoder_masked(dev_priv, trans, trans_mask) {
-			enum intel_display_power_domain domain;
-
-			domain = POWER_DOMAIN_TRANSCODER(trans);
-			if (!intel_display_power_is_enabled(dev_priv, domain))
-				continue;
-
-			intel_uncore_write(dev_priv, TRANS_PSR_IMR(trans), 0xffffffff);
-			intel_uncore_write(dev_priv, TRANS_PSR_IIR(trans), 0xffffffff);
-		}
-	} else {
-		intel_uncore_write(dev_priv, EDP_PSR_IMR, 0xffffffff);
-		intel_uncore_write(dev_priv, EDP_PSR_IIR, 0xffffffff);
+	for_each_cpu_transcoder_masked(dev_priv, trans, trans_mask) {
+		intel_uncore_write(dev_priv, TRANS_PSR_IMR(trans), 0xffffffff);
+		intel_uncore_write(dev_priv, TRANS_PSR_IIR(trans), 0xffffffff);
 	}
 
 	for_each_pipe(dev_priv, pipe)
-		if (intel_display_power_is_enabled(dev_priv,
-						   POWER_DOMAIN_PIPE(pipe)))
-			GEN8_IRQ_RESET_NDX(dev_priv, DE_PIPE, pipe);
+		GEN8_IRQ_RESET_NDX(dev_priv, DE_PIPE, pipe);
 
 	GEN3_IRQ_RESET(dev_priv, GEN8_DE_PORT_);
 	GEN3_IRQ_RESET(dev_priv, GEN8_DE_MISC_);
@@ -1653,6 +1639,7 @@ static void gen8_de_irq_postinstall(struct drm_i915_private *dev_priv)
 	u32 de_misc_masked = GEN8_DE_EDP_PSR;
 	u32 trans_mask = BIT(TRANSCODER_A) | BIT(TRANSCODER_B) |
 		BIT(TRANSCODER_C) | BIT(TRANSCODER_D);
+	enum transcoder trans;
 	enum pipe pipe;
 
 	if (!HAS_DISPLAY(dev_priv))
@@ -1682,30 +1669,15 @@ static void gen8_de_irq_postinstall(struct drm_i915_private *dev_priv)
 	else if (IS_BROADWELL(dev_priv))
 		de_port_enables |= BDW_DE_PORT_HOTPLUG_MASK;
 
-	if (DISPLAY_VER(dev_priv) >= 12) {
-		enum transcoder trans;
-
-		for_each_cpu_transcoder_masked(dev_priv, trans, trans_mask) {
-			enum intel_display_power_domain domain;
-
-			domain = POWER_DOMAIN_TRANSCODER(trans);
-			if (!intel_display_power_is_enabled(dev_priv, domain))
-				continue;
-
-			gen3_assert_iir_is_zero(dev_priv, TRANS_PSR_IIR(trans));
-		}
-	} else {
-		gen3_assert_iir_is_zero(dev_priv, EDP_PSR_IIR);
-	}
+	for_each_cpu_transcoder_masked(dev_priv, trans, trans_mask)
+		gen3_assert_iir_is_zero(dev_priv, TRANS_PSR_IIR(trans));
 
 	for_each_pipe(dev_priv, pipe) {
 		dev_priv->de_irq_mask[pipe] = ~de_pipe_masked;
 
-		if (intel_display_power_is_enabled(dev_priv,
-				POWER_DOMAIN_PIPE(pipe)))
-			GEN8_IRQ_INIT_NDX(dev_priv, DE_PIPE, pipe,
-					  dev_priv->de_irq_mask[pipe],
-					  de_pipe_enables);
+		GEN8_IRQ_INIT_NDX(dev_priv, DE_PIPE, pipe,
+				  dev_priv->de_irq_mask[pipe],
+				  de_pipe_enables);
 	}
 
 	GEN3_IRQ_INIT(dev_priv, GEN8_DE_PORT_, ~de_port_masked, de_port_enables);
