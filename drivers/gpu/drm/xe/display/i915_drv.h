@@ -5,6 +5,7 @@
 
 #include "xe_device.h"
 #include "xe_bo.h"
+#include "xe_pm.h"
 #include "xe_step.h"
 #include "i915_reg_defs.h"
 #include "intel_pch.h"
@@ -169,47 +170,39 @@ static inline struct drm_i915_private *kdev_to_i915(struct device *kdev)
 #define intel_overlay_cleanup(a) do { (void)a; } while (0)
 #define intel_overlay_setup(a) do { (void)a; } while (0)
 
-typedef int intel_wakeref_t;
+#include "display/intel_wakeref.h"
 
-#ifndef CONFIG_PM
-#define intel_runtime_pm_get(x) (1)
-#define intel_runtime_pm_get_raw(x) (1)
-#define intel_runtime_pm_get_if_in_use(x) (1)
-#define intel_runtime_pm_put(x, y) do { } while (0)
-#define intel_runtime_pm_put_raw(x, y) do { } while (0)
-#define intel_runtime_pm_put_unchecked(x) do { } while (0)
-#else
-static inline int intel_runtime_pm_get(struct xe_runtime_pm *pm)
+static inline bool intel_runtime_pm_get(struct xe_runtime_pm *pm)
 {
 	struct xe_device *xe = container_of(pm, struct xe_device, runtime_pm);
-	int ret = pm_runtime_resume_and_get(xe->drm.dev);
-	if (WARN_ON(ret))
-		return false;
 
+	if (xe_pm_runtime_get(xe) < 0) {
+		xe_pm_runtime_put(xe);
+		return false;
+	}
 	return true;
 }
 
-static inline int intel_runtime_pm_get_if_in_use(struct xe_runtime_pm *pm)
+static inline bool intel_runtime_pm_get_if_in_use(struct xe_runtime_pm *pm)
 {
 	struct xe_device *xe = container_of(pm, struct xe_device, runtime_pm);
 
-	return pm_runtime_get_if_active(xe->drm.dev, false) == 1;
+	return xe_pm_runtime_get_if_active(xe);
 }
 
 static inline void intel_runtime_pm_put_unchecked(struct xe_runtime_pm *pm)
 {
 	struct xe_device *xe = container_of(pm, struct xe_device, runtime_pm);
 
-	pm_runtime_put(xe->drm.dev);
+	xe_pm_runtime_put(xe);
 }
 
-static inline void intel_runtime_pm_put(struct xe_runtime_pm *pm, int wakeref)
+static inline void intel_runtime_pm_put(struct xe_runtime_pm *pm, bool wakeref)
 {
 	if (wakeref)
 		intel_runtime_pm_put_unchecked(pm);
 }
 
-#endif
 #define intel_runtime_pm_get_raw intel_runtime_pm_get
 #define intel_runtime_pm_put_raw intel_runtime_pm_put
 #define assert_rpm_wakelock_held(x) do { } while (0)
@@ -221,7 +214,9 @@ static inline void intel_runtime_pm_put(struct xe_runtime_pm *pm, int wakeref)
 #define intel_uncore_arm_unclaimed_mmio_detection(x) do { } while (0)
 #define i915_sw_fence_commit(x) do { } while (0)
 
-#define with_intel_runtime_pm(a, b) if (0) { memset(&b, 0, sizeof(b)); } else
+#define with_intel_runtime_pm(rpm, wf) \
+	for ((wf) = intel_runtime_pm_get(rpm); (wf); \
+	     intel_runtime_pm_put((rpm), (wf)), (wf) = 0)
 
 #define intel_step_name xe_step_name
 #define pdev_to_i915 pdev_to_xe_device
