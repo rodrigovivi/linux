@@ -149,7 +149,6 @@ xe-$(CONFIG_DRM_XE_DISPLAY) += \
 	display/intel_dsi_vbt.o \
 	display/intel_fb.o \
 	display/intel_fbc.o \
-	display/intel_fbdev.o \
 	display/intel_fdi.o \
 	display/intel_fifo_underrun.o \
 	display/intel_frontbuffer.o \
@@ -189,6 +188,10 @@ ifeq ($(CONFIG_ACPI),y)
 	xe-$(CONFIG_DRM_XE_DISPLAY) += \
 		display/intel_acpi.o \
 		display/intel_opregion.o
+endif
+
+ifeq ($(CONFIG_DRM_FBDEV_EMULATION),y)
+	xe-$(CONFIG_DRM_XE_DISPLAY) += display/intel_fbdev.o
 endif
 
 obj-$(CONFIG_DRM_XE) += xe.o
