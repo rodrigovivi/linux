@@ -1,1 +1,3 @@
-typedef int intel_wakeref_t;
+#include <linux/types.h>
+
+typedef bool intel_wakeref_t;
