@@ -112,7 +112,6 @@ CFLAGS_display/intel_fbdev.o = $(call cc-disable-warning, override-init)
 # Display..
 xe-$(CONFIG_DRM_XE_DISPLAY) += \
 	display/icl_dsi.o \
-	display/intel_acpi.o \
 	display/intel_atomic.o \
 	display/intel_atomic_plane.o \
 	display/intel_audio.o \
@@ -150,7 +149,6 @@ xe-$(CONFIG_DRM_XE_DISPLAY) += \
 	display/intel_dsi_vbt.o \
 	display/intel_fb.o \
 	display/intel_fbc.o \
-	display/intel_fbdev.o \
 	display/intel_fdi.o \
 	display/intel_fifo_underrun.o \
 	display/intel_frontbuffer.o \
@@ -163,7 +161,6 @@ xe-$(CONFIG_DRM_XE_DISPLAY) += \
 	display/intel_lvds.o \
 	display/intel_modeset_setup.o \
 	display/intel_modeset_verify.o \
-	display/intel_opregion.o \
 	display/intel_panel.o \
 	display/intel_pipe_crc.o \
 	display/intel_pps.o \
@@ -186,6 +183,16 @@ xe-$(CONFIG_DRM_XE_DISPLAY) += \
 	display/ext/intel_dram.o \
 	display/ext/intel_pch.o \
 	display/ext/intel_pm.o
+
+ifeq ($(CONFIG_ACPI),y)
+	xe-$(CONFIG_DRM_XE_DISPLAY) += \
+		display/intel_acpi.o \
+		display/intel_opregion.o
+endif
+
+ifeq ($(CONFIG_DRM_FBDEV_EMULATION),y)
+	xe-$(CONFIG_DRM_XE_DISPLAY) += display/intel_fbdev.o
+endif
 
 obj-$(CONFIG_DRM_XE) += xe.o
 obj-$(CONFIG_DRM_XE_KUNIT_TEST) += tests/
