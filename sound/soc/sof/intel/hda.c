@@ -1089,14 +1089,6 @@ int hda_dsp_probe(struct snd_sof_dev *sdev)
 	sdev->pdata->hw_pdata = hdev;
 	hdev->desc = chip;
 
-	hdev->dmic_dev = platform_device_register_data(sdev->dev, "dmic-codec",
-						       PLATFORM_DEVID_NONE,
-						       NULL, 0);
-	if (IS_ERR(hdev->dmic_dev)) {
-		dev_err(sdev->dev, "error: failed to create DMIC device\n");
-		return PTR_ERR(hdev->dmic_dev);
-	}
-
 	/*
 	 * use position update IPC if either it is forced
 	 * or we don't have other choice
@@ -1113,12 +1105,21 @@ int hda_dsp_probe(struct snd_sof_dev *sdev)
 	if (ret < 0)
 		goto hdac_bus_unmap;
 
+	hdev->dmic_dev = platform_device_register_data(sdev->dev, "dmic-codec",
+						       PLATFORM_DEVID_NONE,
+						       NULL, 0);
+	if (IS_ERR(hdev->dmic_dev)) {
+		dev_err(sdev->dev, "error: failed to create DMIC device\n");
+		ret = PTR_ERR(hdev->dmic_dev);
+		goto hdac_exit;
+	}
+
 	/* DSP base */
 	sdev->bar[HDA_DSP_BAR] = pci_ioremap_bar(pci, HDA_DSP_BAR);
 	if (!sdev->bar[HDA_DSP_BAR]) {
 		dev_err(sdev->dev, "error: ioremap error\n");
 		ret = -ENXIO;
-		goto hdac_bus_unmap;
+		goto platform_unreg;
 	}
 
 	sdev->mmio_bar = HDA_DSP_BAR;
@@ -1212,10 +1213,12 @@ free_streams:
 	hda_dsp_stream_free(sdev);
 /* dsp_unmap: not currently used */
 	iounmap(sdev->bar[HDA_DSP_BAR]);
-hdac_bus_unmap:
+platform_unreg:
 	platform_device_unregister(hdev->dmic_dev);
-	iounmap(bus->remap_addr);
+hdac_exit:
 	hda_codec_i915_exit(sdev);
+hdac_bus_unmap:
+	iounmap(bus->remap_addr);
 err:
 	return ret;
 }
