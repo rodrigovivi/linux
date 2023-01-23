@@ -160,6 +160,31 @@ struct xe_gt {
 		struct work_struct worker;
 	} reset;
 
+	/** @tlb_invalidation: TLB invalidation state */
+	struct {
+		/** @seqno: TLB invalidation seqno, protected by CT lock */
+#define TLB_INVALIDATION_SEQNO_MAX	0x100000
+		int seqno;
+		/**
+		 * @seqno_recv: last received TLB invalidation seqno, protected by CT lock
+		 */
+		int seqno_recv;
+		/**
+		 * @pending_fences: list of pending fences waiting TLB
+		 * invaliations, protected by CT lock
+		 */
+		struct list_head pending_fences;
+		/** @fence_context: context for TLB invalidation fences */
+		u64 fence_context;
+		/**
+		 * @fence_seqno: seqno to TLB invalidation fences, protected by
+		 * tlb_invalidation.lock
+		 */
+		u32 fence_seqno;
+		/** @lock: protects TLB invalidation fences */
+		spinlock_t lock;
+	} tlb_invalidation;
+
 	/** @usm: unified shared memory state */
 	struct {
 		/**
@@ -175,17 +200,6 @@ struct xe_gt {
 		 * operations (e.g. mmigrations, fixing page tables)
 		 */
 		u16 reserved_bcs_instance;
-		/**
-		 * @tlb_invalidation_seqno: TLB invalidation seqno, protected by
-		 * CT lock
-		 */
-#define TLB_INVALIDATION_SEQNO_MAX	0x100000
-		int tlb_invalidation_seqno;
-		/**
-		 * @tlb_invalidation_seqno_recv: last received TLB invalidation
-		 * seqno, protected by CT lock
-		 */
-		int tlb_invalidation_seqno_recv;
 		/** @pf_wq: page fault work queue, unbound, high priority */
 		struct workqueue_struct *pf_wq;
 		/** @acc_wq: access counter work queue, unbound, high priority */
