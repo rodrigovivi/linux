@@ -161,7 +161,7 @@ int snd_hdac_i915_init(struct hdac_bus *bus)
 		return err;
 	acomp = bus->audio_component;
 	if (!acomp || !acomp->ops) {
-		dev_info(bus->dev, "couldn't bind with audio component\n");
+		dev_dbg(bus->dev, "couldn't bind with audio component\n");
 		snd_hdac_acomp_exit(bus);
 		return -EPROBE_DEFER;
 	}
