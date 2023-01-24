@@ -314,15 +314,15 @@ typedef int (*xe_engine_set_property_fn)(struct xe_device *xe,
 					 u64 value, bool create);
 
 static const xe_engine_set_property_fn engine_set_property_funcs[] = {
-	[XE_ENGINE_PROPERTY_PRIORITY] = engine_set_priority,
-	[XE_ENGINE_PROPERTY_TIMESLICE] = engine_set_timeslice,
-	[XE_ENGINE_PROPERTY_PREEMPTION_TIMEOUT] = engine_set_preemption_timeout,
-	[XE_ENGINE_PROPERTY_COMPUTE_MODE] = engine_set_compute_mode,
-	[XE_ENGINE_PROPERTY_PERSISTENCE] = engine_set_persistence,
-	[XE_ENGINE_PROPERTY_JOB_TIMEOUT] = engine_set_job_timeout,
-	[XE_ENGINE_PROPERTY_ACC_TRIGGER] = engine_set_acc_trigger,
-	[XE_ENGINE_PROPERTY_ACC_NOTIFY] = engine_set_acc_notify,
-	[XE_ENGINE_PROPERTY_ACC_GRANULARITY] = engine_set_acc_granularity,
+	[XE_ENGINE_SET_PROPERTY_PRIORITY] = engine_set_priority,
+	[XE_ENGINE_SET_PROPERTY_TIMESLICE] = engine_set_timeslice,
+	[XE_ENGINE_SET_PROPERTY_PREEMPTION_TIMEOUT] = engine_set_preemption_timeout,
+	[XE_ENGINE_SET_PROPERTY_COMPUTE_MODE] = engine_set_compute_mode,
+	[XE_ENGINE_SET_PROPERTY_PERSISTENCE] = engine_set_persistence,
+	[XE_ENGINE_SET_PROPERTY_JOB_TIMEOUT] = engine_set_job_timeout,
+	[XE_ENGINE_SET_PROPERTY_ACC_TRIGGER] = engine_set_acc_trigger,
+	[XE_ENGINE_SET_PROPERTY_ACC_NOTIFY] = engine_set_acc_notify,
+	[XE_ENGINE_SET_PROPERTY_ACC_GRANULARITY] = engine_set_acc_granularity,
 };
 
 static int engine_user_ext_set_property(struct xe_device *xe,
@@ -637,6 +637,32 @@ put_engine:
 put_rpm:
 	xe_pm_runtime_put(xe);
 	return err;
+}
+
+int xe_engine_get_property_ioctl(struct drm_device *dev, void *data,
+				 struct drm_file *file)
+{
+	struct xe_device *xe = to_xe_device(dev);
+	struct xe_file *xef = to_xe_file(file);
+	struct drm_xe_engine_get_property *args = data;
+	struct xe_engine *e;
+
+	mutex_lock(&xef->engine.lock);
+	e = xa_load(&xef->engine.xa, args->engine_id);
+	mutex_unlock(&xef->engine.lock);
+
+	if (XE_IOCTL_ERR(xe, !e))
+		return -ENOENT;
+
+	switch (args->property) {
+	case XE_ENGINE_GET_PROPERTY_BAN:
+		args->value = !!(e->flags & ENGINE_FLAG_BANNED);
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 static void engine_kill_compute(struct xe_engine *e)
