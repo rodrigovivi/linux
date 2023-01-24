@@ -100,6 +100,9 @@ static bool compatible_entries(const struct xe_reg_sr_entry *e1,
 	if (e1->masked_reg != e2->masked_reg)
 		return false;
 
+	if (e1->reg_type != e2->reg_type)
+		return false;
+
 	return true;
 }
 
