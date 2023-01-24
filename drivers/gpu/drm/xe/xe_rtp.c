@@ -91,7 +91,7 @@ static void rtp_add_sr_entry(const struct xe_rtp_entry *entry,
 			     u32 mmio_base,
 			     struct xe_reg_sr *sr)
 {
-	i915_reg_t reg = _MMIO(entry->regval.reg.reg + mmio_base);
+	u32 reg = entry->regval.reg.reg + mmio_base;
 	struct xe_reg_sr_entry sr_entry = {
 		.clr_bits = entry->regval.clr_bits,
 		.set_bits = entry->regval.set_bits,
