@@ -1,1 +1,1 @@
-typedef int intel_wakeref_t;
+typedef bool intel_wakeref_t;
