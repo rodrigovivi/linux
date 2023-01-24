@@ -59,7 +59,7 @@ int xe_reg_sr_dump_kv(struct xe_reg_sr *sr,
 
 	iter = *dst;
 	xa_for_each(&sr->xa, idx, entry) {
-		iter->k = _MMIO(idx);
+		iter->k = idx;
 		iter->v = *entry;
 		iter++;
 	}
@@ -103,10 +103,10 @@ static bool compatible_entries(const struct xe_reg_sr_entry *e1,
 	return true;
 }
 
-int xe_reg_sr_add(struct xe_reg_sr *sr, i915_reg_t reg,
+int xe_reg_sr_add(struct xe_reg_sr *sr, u32 reg,
 		  const struct xe_reg_sr_entry *e)
 {
-	unsigned long idx = i915_mmio_reg_offset(reg);
+	unsigned long idx = reg;
 	struct xe_reg_sr_entry *pentry = xa_load(&sr->xa, idx);
 	int ret;
 
