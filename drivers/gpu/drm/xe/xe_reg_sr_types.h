@@ -21,11 +21,12 @@ struct xe_reg_sr_entry {
 	 * bits as a mask for the bits that is being updated on the lower 16
 	 * bits when writing to it.
 	 */
-	bool		masked_reg;
+	u8		masked_reg;
+	u8		reg_type;
 };
 
 struct xe_reg_sr_kv {
-	i915_reg_t		k;
+	u32			k;
 	struct xe_reg_sr_entry	v;
 };
 
