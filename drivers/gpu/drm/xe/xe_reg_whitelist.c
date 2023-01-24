@@ -12,6 +12,11 @@
 #include "../i915/gt/intel_engine_regs.h"
 #include "../i915/gt/intel_gt_regs.h"
 
+#undef _MMIO
+#undef MCR_REG
+#define _MMIO(x)	_XE_RTP_REG(x)
+#define MCR_REG(x)	_XE_RTP_MCR_REG(x)
+
 static bool match_not_render(const struct xe_gt *gt,
 			     const struct xe_hw_engine *hwe)
 {

@@ -13,12 +13,17 @@
 struct xe_hw_engine;
 struct xe_gt;
 
+enum {
+	XE_RTP_REG_REGULAR,
+	XE_RTP_REG_MCR,
+};
+
 /**
  * struct xe_rtp_regval - register and value for rtp table
  */
 struct xe_rtp_regval {
 	/** @reg: Register */
-	i915_reg_t	reg;
+	u32		reg;
 	/** @clr_bits: bits to clear when updating register */
 	u32		clr_bits;
 	/** @set_bits: bits to set when updating register */
@@ -31,6 +36,8 @@ struct xe_rtp_regval {
 #define XE_RTP_FLAG_ENGINE_BASE		BIT(2)
 	/** @flags: flags to apply on rule evaluation or action */
 	u8		flags;
+	/** @reg_type: register type, see ``XE_RTP_REG_*`` */
+	u8		reg_type;
 };
 
 enum {

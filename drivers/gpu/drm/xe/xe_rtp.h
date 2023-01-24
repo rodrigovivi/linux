@@ -44,6 +44,11 @@ struct xe_reg_sr;
 #define CALL_FOR_EACH(MACRO_, x, ...)						\
 	_CALL_FOR_EACH(COUNT_ARGS(x, ##__VA_ARGS__), MACRO_, x, ##__VA_ARGS__)
 
+#define _XE_RTP_REG(x_)	(x_),						\
+			.reg_type = XE_RTP_REG_REGULAR
+#define _XE_RTP_MCR_REG(x_) (x_),					\
+			    .reg_type = XE_RTP_REG_MCR
+
 /*
  * Helper macros for concatenating prefix - do not use them directly outside
  * this header
@@ -201,7 +206,7 @@ struct xe_reg_sr;
  *	REGNAME = VALUE
  */
 #define XE_RTP_WR(reg_, val_, ...)						\
-	.regval = { .reg = (reg_), .clr_bits = ~0u, .set_bits = (val_),		\
+	.regval = { .reg = reg_, .clr_bits = ~0u, .set_bits = (val_),		\
 		    .read_mask = (~0u), ##__VA_ARGS__ }
 
 /**
@@ -218,7 +223,7 @@ struct xe_reg_sr;
  *	REGNAME[5] = 1
  */
 #define XE_RTP_SET(reg_, val_, ...)						\
-	.regval = { .reg = (reg_), .clr_bits = (val_), .set_bits = (val_),	\
+	.regval = { .reg = reg_, .clr_bits = (val_), .set_bits = (val_),	\
 		    .read_mask = (val_), ##__VA_ARGS__ }
 
 /**
@@ -235,7 +240,7 @@ struct xe_reg_sr;
  *	REGNAME[5] = 0
  */
 #define XE_RTP_CLR(reg_, val_, ...)						\
-	.regval = { .reg = (reg_), .clr_bits = (val_), .set_bits = 0,		\
+	.regval = { .reg = reg_, .clr_bits = (val_), .set_bits = 0,		\
 		    .read_mask = (val_), ##__VA_ARGS__ }
 
 /**
@@ -251,11 +256,11 @@ struct xe_reg_sr;
  *	REGNAME[<end>:<start>] = VALUE
  */
 #define XE_RTP_FIELD_SET(reg_, mask_bits_, val_, ...)				\
-	.regval = { .reg = (reg_), .clr_bits = (mask_bits_), .set_bits = (val_),\
+	.regval = { .reg = reg_, .clr_bits = (mask_bits_), .set_bits = (val_),\
 		    .read_mask = (mask_bits_), ##__VA_ARGS__ }
 
 #define XE_RTP_FIELD_SET_NO_READ_MASK(reg_, mask_bits_, val_, ...)		\
-	.regval = { .reg = (reg_), .clr_bits = (mask_bits_), .set_bits = (val_),\
+	.regval = { .reg = reg_, .clr_bits = (mask_bits_), .set_bits = (val_),\
 		    .read_mask = 0, ##__VA_ARGS__ }
 
 /**
@@ -269,7 +274,7 @@ struct xe_reg_sr;
  */
 #define XE_WHITELIST_REGISTER(reg_, flags_, ...)				\
 	/* TODO fail build if ((flags) & ~(RING_FORCE_TO_NONPRIV_MASK_VALID)) */\
-	.regval = { .reg = (reg_), .set_bits = (flags_),			\
+	.regval = { .reg = reg_, .set_bits = (flags_),			\
 		    .clr_bits = RING_FORCE_TO_NONPRIV_MASK_VALID,		\
 		    ##__VA_ARGS__ }
 

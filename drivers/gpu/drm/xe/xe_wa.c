@@ -87,6 +87,11 @@
  *    a more declarative approach rather than procedural.
  */
 
+#undef _MMIO
+#undef MCR_REG
+#define _MMIO(x)	_XE_RTP_REG(x)
+#define MCR_REG(x)	_XE_RTP_MCR_REG(x)
+
 static bool match_14011060649(const struct xe_gt *gt,
 			      const struct xe_hw_engine *hwe)
 {

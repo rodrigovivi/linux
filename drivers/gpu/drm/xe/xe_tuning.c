@@ -11,6 +11,11 @@
 
 #include "gt/intel_gt_regs.h"
 
+#undef _MMIO
+#undef MCR_REG
+#define _MMIO(x)	_XE_RTP_REG(x)
+#define MCR_REG(x)	_XE_RTP_MCR_REG(x)
+
 static const struct xe_rtp_entry gt_tunings[] = {
 	{ XE_RTP_NAME("Tuning: 32B Access Enable"),
 	  XE_RTP_RULES(PLATFORM(DG2)),

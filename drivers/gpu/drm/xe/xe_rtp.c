@@ -91,12 +91,13 @@ static void rtp_add_sr_entry(const struct xe_rtp_entry *entry,
 			     u32 mmio_base,
 			     struct xe_reg_sr *sr)
 {
-	u32 reg = entry->regval.reg.reg + mmio_base;
+	u32 reg = entry->regval.reg + mmio_base;
 	struct xe_reg_sr_entry sr_entry = {
 		.clr_bits = entry->regval.clr_bits,
 		.set_bits = entry->regval.set_bits,
 		.read_mask = entry->regval.read_mask,
 		.masked_reg = entry->regval.flags & XE_RTP_FLAG_MASKED_REG,
+		.reg_type = entry->regval.reg_type,
 	};
 
 	xe_reg_sr_add(sr, reg, &sr_entry);
