@@ -178,8 +178,6 @@ static u64 __xe_pt_empty_pte(struct xe_gt *gt, struct xe_vm *vm,
 	if (level == 0) {
 		u64 empty = gen8_pte_encode(NULL, vm->scratch_bo[id], 0,
 					    XE_CACHE_WB, 0, 0);
-		if (vm->flags & XE_VM_FLAGS_64K)
-			empty |= GEN12_PTE_PS64;
 
 		return empty;
 	} else {
@@ -334,16 +332,28 @@ int xe_pt_create_scratch(struct xe_device *xe, struct xe_gt *gt,
 			 struct xe_vm *vm)
 {
 	u8 id = gt->info.id;
+	unsigned int flags;
 	int i;
 
-	vm->scratch_bo[id] = xe_bo_create(xe, gt, vm, SZ_4K,
-					  ttm_bo_type_kernel,
-					  XE_BO_CREATE_VRAM_IF_DGFX(gt) |
-					  XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT |
-					  XE_BO_CREATE_PINNED_BIT);
+	/*
+	 * So we don't need to worry about 64K TLB hints when dealing with
+	 * scratch entires, rather keep the scratch page in system memory on
+	 * platforms where 64K pages are needed for VRAM.
+	 */
+	flags = XE_BO_CREATE_PINNED_BIT;
+	if (vm->flags & XE_VM_FLAGS_64K)
+		flags |= XE_BO_CREATE_SYSTEM_BIT;
+	else
+		flags |= XE_BO_CREATE_VRAM_IF_DGFX(gt);
+
+	vm->scratch_bo[id] = xe_bo_create_pin_map(xe, gt, vm, SZ_4K,
+						  ttm_bo_type_kernel,
+						  flags);
 	if (IS_ERR(vm->scratch_bo[id]))
 		return PTR_ERR(vm->scratch_bo[id]);
-	xe_bo_pin(vm->scratch_bo[id]);
+
+	xe_map_memset(vm->xe, &vm->scratch_bo[id]->vmap, 0, 0,
+		      vm->scratch_bo[id]->size);
 
 	for (i = 0; i < vm->pt_root[id]->level; i++) {
 		vm->scratch_pt[id][i] = xe_pt_create(vm, gt, i);
