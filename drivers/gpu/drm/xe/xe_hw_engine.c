@@ -385,7 +385,7 @@ static int hw_engine_init(struct xe_gt *gt, struct xe_hw_engine *hwe,
 	XE_BUG_ON(!(gt->info.engine_mask & BIT(id)));
 
 	xe_reg_sr_apply_mmio(&hwe->reg_sr, gt);
-	xe_reg_whitelist_apply(hwe);
+	xe_reg_sr_apply_whitelist(&hwe->reg_whitelist, hwe->mmio_base, gt);
 
 	hwe->hwsp = xe_bo_create_locked(xe, gt, NULL, SZ_4K, ttm_bo_type_kernel,
 					XE_BO_CREATE_VRAM_IF_DGFX(gt) |
