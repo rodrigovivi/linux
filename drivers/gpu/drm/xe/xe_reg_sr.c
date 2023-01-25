@@ -200,3 +200,38 @@ void xe_reg_sr_apply_mmio(struct xe_reg_sr *sr, struct xe_gt *gt)
 err_force_wake:
 	drm_err(&xe->drm, "Failed to apply, err=%d\n", err);
 }
+
+void xe_reg_sr_apply_whitelist(struct xe_reg_sr *sr, u32 mmio_base,
+			       struct xe_gt *gt)
+{
+	struct xe_device *xe = gt_to_xe(gt);
+	struct xe_reg_sr_entry *entry;
+	unsigned long reg;
+	unsigned int slot = 0;
+	int err;
+
+	drm_dbg(&xe->drm, "Whitelisting %s registers\n", sr->name);
+
+	err = xe_force_wake_get(&gt->mmio.fw, XE_FORCEWAKE_ALL);
+	if (err)
+		goto err_force_wake;
+
+	xa_for_each(&sr->xa, reg, entry) {
+		xe_mmio_write32(gt, RING_FORCE_TO_NONPRIV(mmio_base, slot).reg,
+				reg | entry->set_bits);
+		slot++;
+	}
+
+	/* And clear the rest just in case of garbage */
+	for (; slot < RING_MAX_NONPRIV_SLOTS; slot++)
+		xe_mmio_write32(gt, RING_FORCE_TO_NONPRIV(mmio_base, slot).reg,
+				RING_NOPID(mmio_base).reg);
+
+	err = xe_force_wake_put(&gt->mmio.fw, XE_FORCEWAKE_ALL);
+	XE_WARN_ON(err);
+
+	return;
+
+err_force_wake:
+	drm_err(&xe->drm, "Failed to apply, err=%d\n", err);
+}
