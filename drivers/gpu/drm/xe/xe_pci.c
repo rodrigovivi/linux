@@ -72,6 +72,7 @@ struct xe_device_desc {
 	bool supports_usm;
 	bool has_flat_ccs;
 	bool has_4tile;
+	bool has_range_tlb_invalidation;
 };
 
 #define PLATFORM(x)		\
@@ -214,6 +215,7 @@ static const struct xe_device_desc dg1_desc = {
 	.require_force_probe = true, \
 	.graphics_ver = 12, \
 	.graphics_rel = 50, \
+	.has_range_tlb_invalidation = true, \
 	.has_flat_ccs = true, \
 	.dma_mask_size = 46, \
 	.max_tiles = 1, \
@@ -333,6 +335,7 @@ static const struct xe_device_desc mtl_desc = {
 	.max_tiles = 2,
 	.vm_max_level = 3,
 	.media_ver = 13,
+	.has_range_tlb_invalidation = true,
 	PLATFORM(XE_METEORLAKE),
 	.extra_gts = xelpmp_gts,
 	.platform_engine_mask = MTL_MAIN_ENGINES,
@@ -491,6 +494,7 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	xe->info.has_flat_ccs = desc->has_flat_ccs;
 	xe->info.has_4tile = desc->has_4tile;
 	xe->info.display = desc->display;
+	xe->info.has_range_tlb_invalidation = desc->has_range_tlb_invalidation;
 
 	spd = subplatform_get(xe, desc);
 	xe->info.subplatform = spd ? spd->subplatform : XE_SUBPLATFORM_NONE;
