@@ -92,6 +92,8 @@ struct xe_device {
 		bool has_flat_ccs;
 		/** @has_4tile: Whether tile-4 tiling is supported */
 		bool has_4tile;
+		/** @has_range_tlb_invalidation: Has range based TLB invalidations */
+		bool has_range_tlb_invalidation;
 
 		struct xe_device_display_info {
 			u8 ver;
