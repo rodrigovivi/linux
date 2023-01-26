@@ -123,6 +123,7 @@ static int __xe_pin_fb_vma_ggtt(struct intel_framebuffer *fb,
 	struct xe_bo *bo = intel_fb_obj(&fb->base);
 	struct xe_device *xe = to_xe_device(fb->base.dev);
 	struct xe_ggtt *ggtt = to_gt(xe)->mem.ggtt;
+	u32 align;
 	int ret;
 
 	/* TODO: Consider sharing framebuffer mapping?
@@ -132,11 +133,15 @@ static int __xe_pin_fb_vma_ggtt(struct intel_framebuffer *fb,
 	if (ret)
 		return ret;
 
+	align = GEN8_PAGE_SIZE;
+	if (xe_bo_is_vram(bo) && ggtt->flags & XE_GGTT_FLAGS_64K)
+		align = max_t(u32, align, SZ_64K);
+
 	if (view->type == I915_GTT_VIEW_NORMAL) {
 		u32 x, size = bo->ttm.base.size;
 
 		ret = xe_ggtt_insert_special_node_locked(ggtt, &vma->node, size,
-							GEN8_PAGE_SIZE, 0);
+							 align, 0);
 		if (ret)
 			goto out;
 
@@ -150,7 +155,7 @@ static int __xe_pin_fb_vma_ggtt(struct intel_framebuffer *fb,
 		u32 size = intel_rotation_info_size(rot_info) * GEN8_PAGE_SIZE;
 
 		ret = xe_ggtt_insert_special_node_locked(ggtt, &vma->node, size,
-							GEN8_PAGE_SIZE, 0);
+							 align, 0);
 		if (ret)
 			goto out;
 
