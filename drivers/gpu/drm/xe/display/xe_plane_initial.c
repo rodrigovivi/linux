@@ -124,6 +124,16 @@ initial_plane_bo(struct xe_device *xe,
 		return NULL;
 	}
 
+	if (!bo->ggtt_node.size) {
+		int err;
+
+		err = xe_ggtt_insert_bo_at(gt0->mem.ggtt, bo, base);
+		if (err) {
+			xe_bo_unpin_map_no_vm(bo);
+			return NULL;
+		}
+	}
+
 	return bo;
 }
 
