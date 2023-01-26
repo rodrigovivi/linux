@@ -1495,10 +1495,14 @@ int xe_exec_queue_create_ioctl(struct drm_device *dev, void *data,
 	if (eci[0].engine_class != DRM_XE_ENGINE_CLASS_VM_BIND)
 		xe_vm_add_exec_queue(vm, q);
 
+	xe_eudebug_exec_queue_create(xef, q);
+
 	/* user id alloc must always be last in ioctl to prevent UAF */
 	err = xa_alloc(&xef->exec_queue.xa, &id, q, xa_limit_32b, GFP_KERNEL);
-	if (err)
+	if (err) {
+		xe_eudebug_exec_queue_destroy(xef, q);
 		goto del_hw_engine_group;
+	}
 
 	args->exec_queue_id = id;
 
@@ -1682,6 +1686,8 @@ int xe_exec_queue_destroy_ioctl(struct drm_device *dev, void *data,
 
 	if (q->vm && q->hwe->hw_engine_group)
 		xe_hw_engine_group_del_exec_queue(q->hwe->hw_engine_group, q);
+
+	xe_eudebug_exec_queue_destroy(xef, q);
 
 	xe_exec_queue_kill(q);
 

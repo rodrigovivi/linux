@@ -152,7 +152,7 @@ struct drm_xe_eudebug_event_exec_queue {
 	/** @exec_queue_handle: unique handle for this exec queue */
 	__u64 exec_queue_handle;
 
-	/** @engine_class: engine class for the exec queue */
+	/** @engine_class: engine class, a %DRM_XE_ENGINE_CLASS_* value */
 	__u32 engine_class;
 
 	/** @width: width of exec queue, how many lrcs (handles) it has */
