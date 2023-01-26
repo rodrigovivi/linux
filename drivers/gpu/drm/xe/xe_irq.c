@@ -299,7 +299,7 @@ static irqreturn_t gen11_irq_handler(int irq, void *arg)
 	gen11_gt_irq_handler(xe, gt, master_ctl, intr_dw, identity);
 
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
-	if (master_ctl & GEN11_DISPLAY_IRQ)
+	if (xe->info.enable_display && (master_ctl & GEN11_DISPLAY_IRQ))
 		gen11_display_irq_handler(xe);
 #endif
 
@@ -308,7 +308,7 @@ static irqreturn_t gen11_irq_handler(int irq, void *arg)
 	gen11_intr_enable(gt, false);
 
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
-	if (gu_misc_iir & GEN11_GU_MISC_GSE)
+	if (xe->info.enable_display && (gu_misc_iir & GEN11_GU_MISC_GSE))
 		intel_opregion_asle_intr(xe);
 #endif
 
@@ -403,7 +403,7 @@ static irqreturn_t dg1_irq_handler(int irq, void *arg)
 	dg1_intr_enable(xe, false);
 
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
-	if (gu_misc_iir & GEN11_GU_MISC_GSE)
+	if (xe->info.enable_display && (gu_misc_iir & GEN11_GU_MISC_GSE))
 		intel_opregion_asle_intr(xe);
 #endif
 
@@ -488,7 +488,8 @@ void xe_irq_reset(struct xe_device *xe)
 		}
 	}
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
-	gen11_display_irq_reset(xe);
+	if (xe->info.enable_display)
+		gen11_display_irq_reset(xe);
 #endif
 }
 
@@ -504,7 +505,7 @@ void xe_gt_irq_postinstall(struct xe_gt *gt)
 		drm_err(&xe->drm, "No interrupt postinstall hook");
 
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
-	if (gt->info.id == XE_GT0)
+	if (xe->info.enable_display && (gt->info.id == XE_GT0))
 		gen11_display_irq_postinstall(gt_to_xe(gt));
 #endif
 }

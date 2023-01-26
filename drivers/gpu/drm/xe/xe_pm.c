@@ -52,7 +52,7 @@ static void intel_suspend_encoders(struct xe_device *xe)
 	struct drm_device *dev = &xe->drm;
 	struct intel_encoder *encoder;
 
-	if (!xe->info.display.pipe_mask)
+	if (!xe->info.enable_display || !xe->info.display.pipe_mask)
 		return;
 
 	drm_modeset_lock_all(dev);
@@ -66,6 +66,9 @@ static void intel_suspend_encoders(struct xe_device *xe)
 static void xe_pm_display_suspend(struct xe_device *xe)
 {
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+	if (!xe->info.enable_display)
+		return;
+
 	/* We do a lot of poking in a lot of registers, make sure they work
 	 * properly. */
 	intel_power_domains_disable(xe);
@@ -91,6 +94,9 @@ static void xe_pm_display_suspend(struct xe_device *xe)
 static void xe_pm_display_suspend_late(struct xe_device *xe)
 {
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+	if (!xe->info.enable_display)
+		return;
+
 	intel_power_domains_suspend(xe, I915_DRM_SUSPEND_MEM);
 
 	intel_display_power_suspend_late(xe);
@@ -100,6 +106,9 @@ static void xe_pm_display_suspend_late(struct xe_device *xe)
 static void xe_pm_display_resume_early(struct xe_device *xe)
 {
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+	if (!xe->info.enable_display)
+		return;
+
 	intel_display_power_resume_early(xe);
 
 	intel_power_domains_resume(xe);
@@ -109,6 +118,9 @@ static void xe_pm_display_resume_early(struct xe_device *xe)
 static void xe_pm_display_resume(struct xe_device *xe)
 {
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+	if (!xe->info.enable_display)
+		return;
+
 	intel_dmc_resume(xe);
 
 	if (xe->info.display.pipe_mask)
