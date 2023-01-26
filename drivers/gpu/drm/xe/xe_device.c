@@ -47,6 +47,10 @@ static bool enable_guc = true;
 module_param_named_unsafe(enable_guc, enable_guc, bool, 0444);
 MODULE_PARM_DESC(enable_guc, "Enable GuC submission");
 
+static bool enable_display = true;
+module_param_named(enable_display, enable_display, bool, 0444);
+MODULE_PARM_DESC(enable_display, "Enable display");
+
 static int xe_file_open(struct drm_device *dev, struct drm_file *file)
 {
 	struct xe_file *xef;
@@ -145,15 +149,12 @@ static void xe_display_last_close(struct drm_device *dev)
 #endif
 }
 
-static const struct drm_driver driver = {
+static struct drm_driver driver = {
 	/* Don't use MTRRs here; the Xserver or userspace app should
 	 * deal with them for Intel hardware.
 	 */
 	.driver_features =
 	    DRIVER_GEM |
-#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
-	    DRIVER_MODESET | DRIVER_ATOMIC |
-#endif
 	    DRIVER_RENDER | DRIVER_SYNCOBJ |
 	    DRIVER_SYNCOBJ_TIMELINE,
 	.open = xe_file_open,
@@ -166,7 +167,6 @@ static const struct drm_driver driver = {
 
 	.dumb_create = xe_bo_dumb_create,
 	.dumb_map_offset = drm_gem_ttm_dumb_map_offset,
-	.lastclose = xe_display_last_close,
 	.release = &xe_driver_release,
 
 	.ioctls = xe_ioctls,
@@ -196,6 +196,16 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 	struct xe_device *xe;
 	int err;
 
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+	if (enable_display) {
+		/* Detect if we need to wait for other drivers early on */
+		if (intel_modeset_probe_defer(pdev))
+			return ERR_PTR(EPROBE_DEFER);
+
+		driver.driver_features |= DRIVER_MODESET | DRIVER_ATOMIC;
+		driver.lastclose = xe_display_last_close;
+	}
+#endif
 	err = drm_aperture_remove_conflicting_pci_framebuffers(pdev, &driver);
 	if (err)
 		return ERR_PTR(err);
@@ -213,6 +223,7 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 	xe->info.devid = pdev->device;
 	xe->info.revid = pdev->revision;
 	xe->info.enable_guc = enable_guc;
+	xe->info.enable_display = enable_display;
 
 	spin_lock_init(&xe->irq.lock);
 
@@ -272,6 +283,9 @@ static void xe_device_fini_display_nommio(struct drm_device *dev, void *dummy)
 {
 	struct xe_device *xe = to_xe_device(dev);
 
+	if (!xe->info.enable_display)
+		return;
+
 	intel_power_domains_cleanup(xe);
 }
 #endif
@@ -280,6 +294,9 @@ static int xe_device_init_display_nommio(struct xe_device *xe)
 {
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 	int err;
+
+	if (!xe->info.enable_display)
+		return 0;
 
 	/* This must be called before any calls to HAS_PCH_* */
 	intel_detect_pch(xe);
@@ -302,6 +319,9 @@ static void xe_device_fini_display_noirq(struct drm_device *dev, void *dummy)
 {
 	struct xe_device *xe = to_xe_device(dev);
 
+	if (!xe->info.enable_display)
+		return;
+
 	intel_modeset_driver_remove_noirq(xe);
 	intel_power_domains_driver_remove(xe);
 }
@@ -311,6 +331,9 @@ static int xe_device_init_display_noirq(struct xe_device *xe)
 {
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 	int err;
+
+	if (!xe->info.enable_display)
+		return 0;
 
 	/* Early display init.. */
 	intel_opregion_setup(xe);
@@ -347,6 +370,9 @@ static void xe_device_fini_display_noaccel(struct drm_device *dev, void *dummy)
 {
 	struct xe_device *xe = to_xe_device(dev);
 
+	if (!xe->info.enable_display)
+		return;
+
 	intel_modeset_driver_remove_nogem(xe);
 }
 #endif
@@ -354,7 +380,12 @@ static void xe_device_fini_display_noaccel(struct drm_device *dev, void *dummy)
 static int xe_device_init_display_noaccel(struct xe_device *xe)
 {
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
-	int err = intel_modeset_init_nogem(xe);
+	int err;
+
+	if (!xe->info.enable_display)
+		return 0;
+
+	err = intel_modeset_init_nogem(xe);
 	if (err)
 		return err;
 
@@ -367,6 +398,9 @@ static int xe_device_init_display_noaccel(struct xe_device *xe)
 static int xe_device_init_display(struct xe_device *xe)
 {
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+	if (!xe->info.enable_display)
+		return 0;
+
 	return intel_modeset_init(xe);
 #else
 	return 0;
@@ -376,6 +410,9 @@ static int xe_device_init_display(struct xe_device *xe)
 static void xe_device_unlink_display(struct xe_device *xe)
 {
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+	if (!xe->info.enable_display)
+		return;
+
 	/* poll work can call into fbdev, hence clean that up afterwards */
 	intel_hpd_poll_fini(xe);
 	intel_fbdev_fini(xe);
@@ -474,9 +511,11 @@ int xe_device_probe(struct xe_device *xe)
 		goto err_irq_shutdown;
 
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
-	intel_display_driver_register(xe);
-	intel_register_dsm_handler();
-	intel_power_domains_enable(xe);
+	if (xe->info.enable_display) {
+		intel_display_driver_register(xe);
+		intel_register_dsm_handler();
+		intel_power_domains_enable(xe);
+	}
 #endif
 
 	xe_debugfs_register(xe);
@@ -489,7 +528,8 @@ int xe_device_probe(struct xe_device *xe)
 
 err_fini_display:
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
-	intel_modeset_driver_remove(xe);
+	if (xe->info.enable_display)
+		intel_modeset_driver_remove(xe);
 #endif
 err_irq_shutdown:
 	xe_irq_shutdown(xe);
@@ -501,14 +541,17 @@ err:
 static void xe_device_remove_display(struct xe_device *xe)
 {
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
-	intel_unregister_dsm_handler();
-	intel_power_domains_disable(xe);
-	intel_display_driver_unregister(xe);
+	if (xe->info.enable_display) {
+		intel_unregister_dsm_handler();
+		intel_power_domains_disable(xe);
+		intel_display_driver_unregister(xe);
+	}
 #endif
 
 	drm_dev_unplug(&xe->drm);
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
-	intel_modeset_driver_remove(xe);
+	if (xe->info.enable_display)
+		intel_modeset_driver_remove(xe);
 #endif
 }
 

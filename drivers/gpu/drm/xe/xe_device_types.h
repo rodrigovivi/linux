@@ -96,6 +96,8 @@ struct xe_device {
 		bool has_4tile;
 		/** @has_range_tlb_invalidation: Has range based TLB invalidations */
 		bool has_range_tlb_invalidation;
+		/** @enable_display: display enabled */
+		bool enable_display;
 
 		struct xe_device_display_info {
 			u8 ver;
