@@ -12,6 +12,7 @@
 #include "xe_gt.h"
 #include "xe_gt_mcr.h"
 #include "xe_macros.h"
+#include "xe_module.h"
 
 #include "i915_reg.h"
 #include "gt/intel_engine_regs.h"
@@ -20,10 +21,6 @@
 #define XEHP_MTCFG_ADDR		_MMIO(0x101800)
 #define TILE_COUNT		REG_GENMASK(15, 8)
 #define GEN12_LMEM_BAR		2
-
-static u32 xe_force_lmem_bar_size;
-module_param_named(lmem_bar_size, xe_force_lmem_bar_size, uint, 0600);
-MODULE_PARM_DESC(lmem_bar_size, "Set the lmem bar size(in MiB)");
 
 static int xe_set_dma_info(struct xe_device *xe)
 {
