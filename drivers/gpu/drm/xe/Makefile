@@ -135,6 +135,7 @@ $(obj)/display/intel_%.o: $(srctree)/drivers/gpu/drm/i915/display/intel_%.c FORC
 
 # Display..
 xe-$(CONFIG_DRM_XE_DISPLAY) += \
+	xe_display.o \
 	display/icl_dsi.o \
 	display/intel_atomic.o \
 	display/intel_atomic_plane.o \
