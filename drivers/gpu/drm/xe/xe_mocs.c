@@ -12,7 +12,7 @@
 #include "xe_mocs.h"
 #include "xe_step_types.h"
 
-#include "../i915/gt/intel_gt_regs.h"
+#include "gt/intel_gt_regs.h"
 
 #if IS_ENABLED(CONFIG_DRM_XE_DEBUG)
 #define mocs_dbg drm_dbg

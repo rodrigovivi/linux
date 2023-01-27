@@ -14,11 +14,11 @@
 #include "xe_mmio.h"
 #include "xe_pcode.h"
 #include "i915_reg_defs.h"
-#include "../i915/i915_reg.h"
+#include "i915_reg.h"
 
 #include <linux/delay.h>
 
-#include "../i915/intel_mchbar_regs.h"
+#include "intel_mchbar_regs.h"
 /* For GEN6_RP_STATE_CAP.reg to be merged when the definition moves to Xe */
 #define   RP0_MASK	REG_GENMASK(7, 0)
 #define   RP1_MASK	REG_GENMASK(15, 8)
@@ -27,7 +27,7 @@
 #define GEN10_FREQ_INFO_REC	_MMIO(MCHBAR_MIRROR_BASE_SNB + 0x5ef0)
 #define   RPE_MASK		REG_GENMASK(15, 8)
 
-#include "../i915/gt/intel_gt_regs.h"
+#include "gt/intel_gt_regs.h"
 /* For GEN6_RPNSWREQ.reg to be merged when the definition moves to Xe */
 #define   REQ_RATIO_MASK	REG_GENMASK(31, 23)
 

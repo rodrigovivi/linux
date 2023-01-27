@@ -15,7 +15,7 @@ struct xe_file;
 #include "xe_macros.h"
 #include "xe_force_wake.h"
 
-#include "../i915/gt/intel_gpu_commands.h"
+#include "gt/intel_gpu_commands.h"
 
 static inline struct xe_device *to_xe_device(const struct drm_device *dev)
 {

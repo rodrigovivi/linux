@@ -40,7 +40,7 @@
 #include "xe_wa.h"
 #include "xe_wopcm.h"
 
-#include "../i915/gt/intel_gt_regs.h"
+#include "gt/intel_gt_regs.h"
 
 struct xe_gt *xe_find_full_gt(struct xe_gt *gt)
 {

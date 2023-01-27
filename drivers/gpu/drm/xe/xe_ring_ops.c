@@ -11,10 +11,10 @@
 #include "xe_sched_job.h"
 #include "xe_vm_types.h"
 
-#include "../i915/i915_reg.h"
-#include "../i915/gt/intel_gpu_commands.h"
-#include "../i915/gt/intel_gt_regs.h"
-#include "../i915/gt/intel_lrc_reg.h"
+#include "i915_reg.h"
+#include "gt/intel_gpu_commands.h"
+#include "gt/intel_gt_regs.h"
+#include "gt/intel_lrc_reg.h"
 
 static u32 preparser_disable(bool state)
 {

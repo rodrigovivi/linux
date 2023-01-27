@@ -30,7 +30,7 @@
 #include "xe_trace.h"
 #include "xe_vm.h"
 
-#include "../i915/gt/intel_lrc_reg.h"
+#include "gt/intel_lrc_reg.h"
 
 static struct xe_gt *
 guc_to_gt(struct xe_guc *guc)

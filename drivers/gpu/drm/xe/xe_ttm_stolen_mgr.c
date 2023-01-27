@@ -11,7 +11,7 @@
 #include <drm/ttm/ttm_range_manager.h>
 #include <drm/ttm/ttm_placement.h>
 
-#include "../i915/i915_reg.h"
+#include "i915_reg.h"
 
 #include "xe_bo.h"
 #include "xe_device.h"
