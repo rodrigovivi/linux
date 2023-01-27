@@ -623,7 +623,7 @@ static int do_gt_restart(struct xe_gt *gt)
 	int err;
 
 	setup_private_ppat(gt);
-
+	xe_tuning_process_gt(gt);
 	xe_reg_sr_apply_mmio(&gt->reg_sr, gt);
 
 	err = xe_wopcm_init(&gt->uc.wopcm);
