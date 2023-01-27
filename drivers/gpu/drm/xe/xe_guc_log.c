@@ -9,10 +9,7 @@
 #include "xe_gt.h"
 #include "xe_guc_log.h"
 #include "xe_map.h"
-
-static int xe_guc_log_level = 5;
-module_param_named(guc_log_level, xe_guc_log_level, int, 0600);
-MODULE_PARM_DESC(guc_log_level, "GuC firmware logging level (0=disable, 1..5=enable with verbosity min..max)");
+#include "xe_module.h"
 
 static struct xe_gt *
 log_to_gt(struct xe_guc_log *log)
