@@ -73,6 +73,7 @@ struct xe_device_desc {
 	bool has_flat_ccs;
 	bool has_4tile;
 	bool has_range_tlb_invalidation;
+	bool has_asid;
 };
 
 #define PLATFORM(x)		\
@@ -303,6 +304,7 @@ static const struct xe_device_desc pvc_desc = {
 	.max_tiles = 2,
 	.vm_max_level = 4,
 	.supports_usm = true,
+	.has_asid = true,
 };
 
 #define MTL_MEDIA_ENGINES \
@@ -491,6 +493,7 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	xe->info.vm_max_level = desc->vm_max_level;
 	xe->info.media_ver = desc->media_ver;
 	xe->info.supports_usm = desc->supports_usm;
+	xe->info.has_asid = desc->has_asid;
 	xe->info.has_flat_ccs = desc->has_flat_ccs;
 	xe->info.has_4tile = desc->has_4tile;
 	xe->info.display = desc->display;
