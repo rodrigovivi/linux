@@ -23,10 +23,6 @@
 
 #include "i915_reg.h"
 
-#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
-#include "display/intel_display.h"
-#endif
-
 #define DEV_INFO_FOR_EACH_FLAG(func) \
 	func(require_force_probe); \
 	func(is_dgfx); \
