@@ -9,6 +9,9 @@
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 #include <drm/drm_drv.h>
 
+#include "display/intel_opregion.h"
+#include "display/ext/i915_irq.h"
+
 int xe_display_enable(struct pci_dev *pdev, struct drm_driver *driver);
 
 int xe_display_init_nommio(struct xe_device *xe);
@@ -26,6 +29,12 @@ void xe_display_unlink(struct xe_device *xe);
 void xe_display_register(struct xe_device *xe);
 void xe_display_unregister(struct xe_device *xe);
 void xe_display_modset_driver_remove(struct xe_device *xe);
+
+void xe_display_irq_handler(struct xe_device *xe, u32 master_ctl);
+void xe_display_irq_enable(struct xe_device *xe, u32 gu_misc_iir);
+
+void xe_display_irq_reset(struct xe_device *xe);
+void xe_display_irq_postinstall(struct xe_device *xe, struct xe_gt *gt);
 
 #else
 static inline int
@@ -54,6 +63,11 @@ static inline void xe_display_unlink(struct xe_device *xe) {};
 static inline void xe_display_register(struct xe_device *xe) {};
 static inline void xe_display_unregister(struct xe_device *xe) {};
 static inline void xe_display_modset_driver_remove(struct xe_device *xe) {};
+
+static inline void xe_display_irq_handler(struct xe_device *xe, u32 master_ctl) {};
+static inline void xe_display_irq_enable(struct xe_device *xe, u32 gu_misc_iir) {};
+static inline void xe_display_irq_reset(struct xe_device *xe) {};
+static inline void xe_display_irq_postinstall(struct xe_device *xe, struct xe_gt *gt) {};
 
 #endif /* CONFIG_DRM_XE_DISPLAY */
 #endif /* _XE_DISPLAY_H_ */
