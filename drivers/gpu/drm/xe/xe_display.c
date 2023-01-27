@@ -192,4 +192,41 @@ void xe_display_modset_driver_remove(struct xe_device *xe)
 	intel_modeset_driver_remove(xe);
 }
 
+/* IRQ-related functions */
+
+void xe_display_irq_handler(struct xe_device *xe, u32 master_ctl)
+{
+	if (!xe->info.enable_display)
+		return;
+
+	if (master_ctl & GEN11_DISPLAY_IRQ)
+		gen11_display_irq_handler(xe);
+}
+
+void xe_display_irq_enable(struct xe_device *xe, u32 gu_misc_iir)
+{
+	if (!xe->info.enable_display)
+		return;
+
+	if (gu_misc_iir & GEN11_GU_MISC_GSE)
+		intel_opregion_asle_intr(xe);
+}
+
+void xe_display_irq_reset(struct xe_device *xe)
+{
+	if (!xe->info.enable_display)
+		return;
+
+	gen11_display_irq_reset(xe);
+}
+
+void xe_display_irq_postinstall(struct xe_device *xe, struct xe_gt *gt)
+{
+	if (!xe->info.enable_display)
+		return;
+
+	if (gt->info.id == XE_GT0)
+		gen11_display_irq_postinstall(xe);
+}
+
 #endif
