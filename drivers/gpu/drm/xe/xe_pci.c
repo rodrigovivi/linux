@@ -17,6 +17,7 @@
 #include "xe_drv.h"
 #include "xe_device.h"
 #include "xe_macros.h"
+#include "xe_module.h"
 #include "xe_pm.h"
 #include "xe_step.h"
 
@@ -25,12 +26,6 @@
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 #include "display/intel_display.h"
 #endif
-
-static char *xe_param_force_probe = CONFIG_DRM_XE_FORCE_PROBE;
-module_param_named_unsafe(force_probe, xe_param_force_probe, charp, 0400);
-MODULE_PARM_DESC(force_probe,
-		 "Force probe options for specified devices. "
-		 "See CONFIG_DRM_XE_FORCE_PROBE for details.");
 
 #define DEV_INFO_FOR_EACH_FLAG(func) \
 	func(require_force_probe); \

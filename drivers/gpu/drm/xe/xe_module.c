@@ -8,8 +8,30 @@
 
 #include "xe_drv.h"
 #include "xe_hw_fence.h"
+#include "xe_module.h"
 #include "xe_pci.h"
 #include "xe_sched_job.h"
+
+bool enable_guc = true;
+module_param_named_unsafe(enable_guc, enable_guc, bool, 0444);
+MODULE_PARM_DESC(enable_guc, "Enable GuC submission");
+
+bool enable_display = true;
+module_param_named(enable_display, enable_display, bool, 0444);
+MODULE_PARM_DESC(enable_display, "Enable display");
+
+u32 xe_force_lmem_bar_size;
+module_param_named(lmem_bar_size, xe_force_lmem_bar_size, uint, 0600);
+MODULE_PARM_DESC(lmem_bar_size, "Set the lmem bar size(in MiB)");
+
+int xe_guc_log_level = 5;
+module_param_named(guc_log_level, xe_guc_log_level, int, 0600);
+MODULE_PARM_DESC(guc_log_level, "GuC firmware logging level (0=disable, 1..5=enable with verbosity min..max)");
+
+char *xe_param_force_probe = CONFIG_DRM_XE_FORCE_PROBE;
+module_param_named_unsafe(force_probe, xe_param_force_probe, charp, 0400);
+MODULE_PARM_DESC(force_probe,
+		 "Force probe options for specified devices. See CONFIG_DRM_XE_FORCE_PROBE for details.");
 
 struct init_funcs {
 	int (*init)(void);
