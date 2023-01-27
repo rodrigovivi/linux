@@ -5,7 +5,6 @@
 
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 
-#include "xe_device.h"
 #include "xe_display.h"
 #include "xe_module.h"
 
@@ -17,12 +16,18 @@
 #include "display/intel_audio.h"
 #include "display/intel_bw.h"
 #include "display/intel_display.h"
+#include "display/intel_display_types.h"
+#include "display/intel_dmc.h"
+#include "display/intel_dp.h"
 #include "display/intel_fbdev.h"
 #include "display/intel_hdcp.h"
+#include "display/intel_hotplug.h"
 #include "display/intel_opregion.h"
 #include "display/ext/i915_irq.h"
 #include "display/ext/intel_dram.h"
 #include "display/ext/intel_pm.h"
+
+#include <linux/fb.h>
 
 /* Xe device functions */
 
@@ -227,6 +232,98 @@ void xe_display_irq_postinstall(struct xe_device *xe, struct xe_gt *gt)
 
 	if (gt->info.id == XE_GT0)
 		gen11_display_irq_postinstall(xe);
+}
+
+static void intel_suspend_encoders(struct xe_device *xe)
+{
+	struct drm_device *dev = &xe->drm;
+	struct intel_encoder *encoder;
+
+	if (!xe->info.display.pipe_mask)
+		return;
+
+	drm_modeset_lock_all(dev);
+	for_each_intel_encoder(dev, encoder)
+		if (encoder->suspend)
+			encoder->suspend(encoder);
+	drm_modeset_unlock_all(dev);
+}
+
+void xe_display_pm_suspend(struct xe_device *xe)
+{
+	if (!xe->info.enable_display)
+		return;
+
+	/*
+	 * We do a lot of poking in a lot of registers, make sure they work
+	 * properly.
+	 */
+	intel_power_domains_disable(xe);
+	if (xe->info.display.pipe_mask)
+		drm_kms_helper_poll_disable(&xe->drm);
+
+	intel_display_suspend(&xe->drm);
+
+	intel_dp_mst_suspend(xe);
+
+	intel_hpd_cancel_work(xe);
+
+	intel_suspend_encoders(xe);
+
+	intel_opregion_suspend(xe, PCI_D3cold);
+
+	intel_fbdev_set_suspend(&xe->drm, FBINFO_STATE_SUSPENDED, true);
+
+	intel_dmc_suspend(xe);
+}
+
+void xe_display_pm_suspend_late(struct xe_device *xe)
+{
+	if (!xe->info.enable_display)
+		return;
+
+	intel_power_domains_suspend(xe, I915_DRM_SUSPEND_MEM);
+
+	intel_display_power_suspend_late(xe);
+}
+
+void xe_display_pm_resume_early(struct xe_device *xe)
+{
+	if (!xe->info.enable_display)
+		return;
+
+	intel_display_power_resume_early(xe);
+
+	intel_power_domains_resume(xe);
+}
+
+void xe_display_pm_resume(struct xe_device *xe)
+{
+	if (!xe->info.enable_display)
+		return;
+
+	intel_dmc_resume(xe);
+
+	if (xe->info.display.pipe_mask)
+		drm_mode_config_reset(&xe->drm);
+
+	intel_modeset_init_hw(xe);
+	intel_init_clock_gating(xe);
+	intel_hpd_init(xe);
+
+	/* MST sideband requires HPD interrupts enabled */
+	intel_dp_mst_resume(xe);
+	intel_display_resume(&xe->drm);
+
+	intel_hpd_poll_disable(xe);
+	if (xe->info.display.pipe_mask)
+		drm_kms_helper_poll_enable(&xe->drm);
+
+	intel_opregion_resume(xe);
+
+	intel_fbdev_set_suspend(&xe->drm, FBINFO_STATE_RUNNING, false);
+
+	intel_power_domains_enable(xe);
 }
 
 #endif
