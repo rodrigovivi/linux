@@ -112,6 +112,7 @@ CFLAGS_display/intel_fbdev.o = $(call cc-disable-warning, override-init)
 
 # Display..
 xe-$(CONFIG_DRM_XE_DISPLAY) += \
+	xe_display.o \
 	display/icl_dsi.o \
 	display/intel_atomic.o \
 	display/intel_atomic_plane.o \
