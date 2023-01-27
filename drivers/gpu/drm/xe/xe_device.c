@@ -20,6 +20,7 @@
 #include "xe_exec.h"
 #include "xe_gt.h"
 #include "xe_irq.h"
+#include "xe_module.h"
 #include "xe_mmio.h"
 #include "xe_pcode.h"
 #include "xe_pm.h"
@@ -41,15 +42,6 @@
 #include "display/ext/intel_dram.h"
 #include "display/ext/intel_pm.h"
 #endif
-
-/* FIXME: Move to common param infrastructure */
-static bool enable_guc = true;
-module_param_named_unsafe(enable_guc, enable_guc, bool, 0444);
-MODULE_PARM_DESC(enable_guc, "Enable GuC submission");
-
-static bool enable_display = true;
-module_param_named(enable_display, enable_display, bool, 0444);
-MODULE_PARM_DESC(enable_display, "Enable display");
 
 static int xe_file_open(struct drm_device *dev, struct drm_file *file)
 {
