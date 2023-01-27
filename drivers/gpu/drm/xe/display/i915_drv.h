@@ -1,7 +1,14 @@
-#ifndef fake_display_h
-#define fake_display_h
+/* SPDX-License-Identifier: MIT */
+/*
+ * Copyright © 2023 Intel Corporation
+ */
+#ifndef _XE_I915_DRV_H_
+#define _XE_I915_DRV_H_
 
-/* Exists of anger.. */
+/*
+ * "Adaptation header" to allow i915 display to also build for xe driver.
+ * TODO: refactor i915 and xe so this can cease to exist
+ */
 
 #include "xe_device.h"
 #include "xe_bo.h"
