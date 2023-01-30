@@ -264,15 +264,22 @@ int xe_ggtt_insert_special_node(struct xe_ggtt *ggtt, struct drm_mm_node *node,
 
 void xe_ggtt_map_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 {
+	struct xe_device *xe = gt_to_xe(ggtt->gt);
 	u64 start = bo->ggtt_node.start;
 	u64 offset, pte;
+
+	lockdep_assert_held(&ggtt->lock);
 
 	for (offset = 0; offset < bo->size; offset += GEN8_PAGE_SIZE) {
 		pte = xe_ggtt_pte_encode(bo, offset);
 		xe_ggtt_set_pte(ggtt, start + offset, pte);
 	}
 
-	xe_ggtt_invalidate(ggtt->gt);
+	/* XXX: Without doing this everytime on integrated driver load fails */
+	if (ggtt->invalidate || !IS_DGFX(xe)) {
+		xe_ggtt_invalidate(ggtt->gt);
+		ggtt->invalidate = false;
+	}
 }
 
 static int __xe_ggtt_insert_bo_at(struct xe_ggtt *ggtt, struct xe_bo *bo,
@@ -330,7 +337,7 @@ void xe_ggtt_remove_node(struct xe_ggtt *ggtt, struct drm_mm_node *node)
 	drm_mm_remove_node(node);
 	node->size = 0;
 
-	xe_ggtt_invalidate(ggtt->gt);
+	ggtt->invalidate = true;
 
 	mutex_unlock(&ggtt->lock);
 }
