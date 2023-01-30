@@ -385,6 +385,16 @@ static void xe_device_unlink_display(struct xe_device *xe)
 #endif
 }
 
+static void xe_device_sanitize(struct drm_device *drm, void *arg)
+{
+	struct xe_device *xe = arg;
+	struct xe_gt *gt;
+	u8 id;
+
+	for_each_gt(gt, xe, id)
+		xe_gt_sanitize(gt);
+}
+
 int xe_device_probe(struct xe_device *xe)
 {
 	struct xe_gt *gt;
@@ -470,6 +480,10 @@ int xe_device_probe(struct xe_device *xe)
 #endif
 
 	xe_debugfs_register(xe);
+
+	err = drmm_add_action_or_reset(&xe->drm, xe_device_sanitize, xe);
+	if (err)
+		return err;
 
 	return 0;
 
