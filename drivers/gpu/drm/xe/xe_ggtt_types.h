@@ -26,6 +26,8 @@ struct xe_ggtt {
 	u64 __iomem *gsm;
 
 	struct drm_mm mm;
+
+	bool invalidate;
 };
 
 #endif
