@@ -13,6 +13,7 @@
 #include "xe_device.h"
 #include "xe_bo.h"
 #include "xe_gt.h"
+#include "xe_map.h"
 #include "xe_mmio.h"
 #include "xe_wopcm.h"
 
@@ -108,6 +109,9 @@ int xe_ggtt_init_noalloc(struct xe_gt *gt, struct xe_ggtt *ggtt)
 	ggtt->gsm = gt->mmio.regs + SZ_8M;
 	ggtt->size = (gsm_size / 8) * (u64)GEN8_PAGE_SIZE;
 
+	if (IS_DGFX(xe) && xe->info.vram_flags & XE_VRAM_FLAGS_NEED64K)
+		ggtt->flags |= XE_GGTT_FLAGS_64K;
+
 	/*
 	 * 8B per entry, each points to a 4KB page.
 	 *
@@ -149,23 +153,30 @@ static void xe_ggtt_initial_clear(struct xe_ggtt *ggtt)
 int xe_ggtt_init(struct xe_gt *gt, struct xe_ggtt *ggtt)
 {
 	struct xe_device *xe = gt_to_xe(gt);
+	unsigned int flags;
 	int err;
 
-	ggtt->scratch = xe_bo_create_locked(xe, gt, NULL, GEN8_PAGE_SIZE,
-					    ttm_bo_type_kernel,
-					    XE_BO_CREATE_VRAM_IF_DGFX(gt) |
-					    XE_BO_CREATE_PINNED_BIT);
+	/*
+	 * So we don't need to worry about 64K GGTT layout when dealing with
+	 * scratch entires, rather keep the scratch page in system memory on
+	 * platforms where 64K pages are needed for VRAM.
+	 */
+	flags = XE_BO_CREATE_PINNED_BIT;
+	if (ggtt->flags & XE_GGTT_FLAGS_64K)
+		flags |= XE_BO_CREATE_SYSTEM_BIT;
+	else
+		flags |= XE_BO_CREATE_VRAM_IF_DGFX(gt);
+
+	ggtt->scratch = xe_bo_create_pin_map(xe, gt, NULL, GEN8_PAGE_SIZE,
+					     ttm_bo_type_kernel,
+					     flags);
+
 	if (IS_ERR(ggtt->scratch)) {
 		err = PTR_ERR(ggtt->scratch);
 		goto err;
 	}
 
-	err = xe_bo_pin(ggtt->scratch);
-	xe_bo_unlock_no_vm(ggtt->scratch);
-	if (err) {
-		xe_bo_put(ggtt->scratch);
-		goto err;
-	}
+	xe_map_memset(xe, &ggtt->scratch->vmap, 0, 0, ggtt->scratch->size);
 
 	xe_ggtt_initial_clear(ggtt);
 	return 0;
@@ -256,7 +267,8 @@ void xe_ggtt_map_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 	xe_ggtt_invalidate(ggtt->gt);
 }
 
-static int __xe_ggtt_insert_bo_at(struct xe_ggtt *ggtt, struct xe_bo *bo, u64 start, u64 end)
+static int __xe_ggtt_insert_bo_at(struct xe_ggtt *ggtt, struct xe_bo *bo,
+				  u64 start, u64 end, u64 alignment)
 {
 	int err;
 
@@ -271,7 +283,8 @@ static int __xe_ggtt_insert_bo_at(struct xe_ggtt *ggtt, struct xe_bo *bo, u64 st
 		return err;
 
 	mutex_lock(&ggtt->lock);
-	err = drm_mm_insert_node_in_range(&ggtt->mm, &bo->ggtt_node, bo->size, 0, 0, start, end, 0);
+	err = drm_mm_insert_node_in_range(&ggtt->mm, &bo->ggtt_node, bo->size,
+					  alignment, 0, start, end, 0);
 	if (!err)
 		xe_ggtt_map_bo(ggtt, bo);
 	mutex_unlock(&ggtt->lock);
@@ -281,12 +294,24 @@ static int __xe_ggtt_insert_bo_at(struct xe_ggtt *ggtt, struct xe_bo *bo, u64 st
 
 int xe_ggtt_insert_bo_at(struct xe_ggtt *ggtt, struct xe_bo *bo, u64 ofs)
 {
-	return __xe_ggtt_insert_bo_at(ggtt, bo, ofs, ofs + bo->size);
+	if (xe_bo_is_vram(bo) && ggtt->flags & XE_GGTT_FLAGS_64K) {
+		if (XE_WARN_ON(!IS_ALIGNED(ofs, SZ_64K)) ||
+		    XE_WARN_ON(!IS_ALIGNED(bo->size, SZ_64K)))
+			return -EINVAL;
+	}
+
+	return __xe_ggtt_insert_bo_at(ggtt, bo, ofs, ofs + bo->size, 0);
 }
 
 int xe_ggtt_insert_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 {
-	return __xe_ggtt_insert_bo_at(ggtt, bo, 0, U64_MAX);
+	u64 alignment;
+
+	alignment = GEN8_PAGE_SIZE;
+	if (xe_bo_is_vram(bo) && ggtt->flags & XE_GGTT_FLAGS_64K)
+		alignment = SZ_64K;
+
+	return __xe_ggtt_insert_bo_at(ggtt, bo, 0, U64_MAX, alignment);
 }
 
 void xe_ggtt_remove_node(struct xe_ggtt *ggtt, struct drm_mm_node *node)
