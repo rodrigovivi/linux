@@ -20,7 +20,9 @@
 #include "xe_eudebug.h"
 #include "xe_eudebug_hw.h"
 #include "xe_eudebug_types.h"
+#include "xe_exec_queue.h"
 #include "xe_gt.h"
+#include "xe_hw_engine.h"
 #include "xe_macros.h"
 #include "xe_oa.h"
 #include "xe_pm.h"
@@ -158,6 +160,8 @@ static void xe_eudebug_free(struct kref *ref)
 {
 	struct xe_eudebug *d = container_of(ref, typeof(*d), ref);
 
+	WARN_ON(work_pending(&d->discovery_work));
+
 	xe_assert(d->xe, xe_eudebug_detached(d));
 
 	xe_eudebug_resources_destroy(d);
@@ -169,7 +173,7 @@ static void xe_eudebug_free(struct kref *ref)
 	kfree(d);
 }
 
-static void xe_eudebug_put(struct xe_eudebug *d)
+void xe_eudebug_put(struct xe_eudebug *d)
 {
 	kref_put(&d->ref, xe_eudebug_free);
 }
@@ -266,7 +270,7 @@ static int event_fifo_pending(struct xe_eudebug *d,
 }
 
 static struct xe_eudebug *
-xe_eudebug_get(struct xe_file *xef)
+__xe_eudebug_get(struct xe_file *xef)
 {
 	struct xe_device *xe = xef->xe;
 	struct xe_eudebug *d;
@@ -286,6 +290,42 @@ xe_eudebug_get(struct xe_file *xef)
 	}
 
 	return d;
+}
+
+static struct xe_eudebug *
+_xe_eudebug_get(struct xe_file *xef)
+{
+	struct xe_eudebug *d;
+
+	d = __xe_eudebug_get(xef);
+
+	if (d && !completion_done(&d->discovery)) {
+		xe_eudebug_put(d);
+		return NULL;
+	}
+
+	return d;
+}
+
+static struct xe_eudebug *
+xe_eudebug_get(struct xe_file *xef)
+{
+	lockdep_assert_held(&xef->eudebug.ioctl_lock);
+
+	return _xe_eudebug_get(xef);
+}
+
+struct xe_eudebug *
+xe_eudebug_get_nolock(struct xe_file *xef)
+{
+	return _xe_eudebug_get(xef);
+}
+
+/* Returns eudebug instance even if discovery is running */
+struct xe_eudebug *
+xe_eudebug_get_nolock_with_discovery(struct xe_file *xef)
+{
+	return __xe_eudebug_get(xef);
 }
 
 static int xe_eudebug_queue_event(struct xe_eudebug *d,
@@ -476,6 +516,8 @@ static int xe_eudebug_remove_handle(struct xe_eudebug *d, int type, void *p,
 {
 	int ret;
 
+	XE_WARN_ON(!completion_done(&d->discovery));
+
 	ret = _xe_eudebug_remove_handle(d, type, p, seqno);
 
 	eu_dbg(d, "handle type %d handle %p removed: %d\n", type, p, ret);
@@ -612,6 +654,87 @@ void xe_eudebug_vm_destroy(struct xe_file *xef, struct xe_vm *vm)
 	err = vm_destroy_event(d, vm);
 	if (err && err != -ENOENT)
 		xe_eudebug_disconnect(d, err);
+
+	xe_eudebug_put(d);
+}
+
+static struct xe_file *xe_eudebug_target_get(struct xe_eudebug *d)
+{
+	struct xe_file *xef = NULL;
+
+	mutex_lock(&d->xe->eudebug.lock);
+	if (d->target.xef)
+		xef = xe_file_get(d->target.xef);
+	mutex_unlock(&d->xe->eudebug.lock);
+
+	return xef;
+}
+
+static void discover_client(struct xe_eudebug *d)
+{
+	struct xe_file *xef;
+	struct xe_vm *vm;
+	unsigned long i;
+	unsigned int vm_count = 0;
+	int err = 0;
+
+	xef = xe_eudebug_target_get(d);
+	if (!xef) {
+		complete_all(&d->discovery);
+		return;
+	}
+
+	/*
+	 * An xe_eudebug ref is taken for the discovery worker, which holds a
+	 * ref to the target xe_file; the xe_file in turn holds the vm and
+	 * exec_queue refs.
+	 *
+	 * All the relevant ioctls that manipulate the xe_file resources eudebug
+	 * cares about are gated behind down_read(&xef->eudebug.ioctl_lock).
+	 * Thus taking the write lock excludes all those ioctls, which lets us
+	 * peek into the resource lists without taking their individual locks.
+	 */
+	down_write(&xef->eudebug.ioctl_lock);
+
+	if (xe_eudebug_detached(d))
+		goto out;
+
+	eu_dbg(d, "Discovery start for %lld", d->session);
+
+	/* vm lifetime guaranteed by the ioctl_lock */
+	xa_for_each(&xef->vm.xa, i, vm) {
+		err = vm_create_event(d, vm);
+		if (err)
+			goto out;
+		vm_count++;
+	}
+
+out:
+	complete_all(&d->discovery);
+
+	up_write(&xef->eudebug.ioctl_lock);
+
+	if (vm_count)
+		eu_dbg(d, "Discovery found %u vms",
+		       vm_count);
+
+	xe_file_put(xef);
+
+	eu_dbg(d, "Discovery end for %lld: %d", d->session, err);
+
+	if (err < 0)
+		xe_eudebug_disconnect(d, err);
+}
+
+static void discovery_work_fn(struct work_struct *work)
+{
+	struct xe_eudebug *d = container_of(work, typeof(*d),
+					    discovery_work);
+
+	if (xe_eudebug_detached(d))
+		complete_all(&d->discovery);
+	else
+		discover_client(d);
 
 	xe_eudebug_put(d);
 }
@@ -923,8 +1046,10 @@ xe_eudebug_connect(struct xe_device *xe,
 
 	kref_init(&d->ref);
 	init_waitqueue_head(&d->events.write_done);
-
 	spin_lock_init(&d->events.lock);
+
+	init_completion(&d->discovery);
+	INIT_WORK(&d->discovery_work, discovery_work_fn);
 
 	err = xe_eudebug_resources_init(d);
 	if (XE_IOCTL_DBG(xe, err)) {
@@ -973,6 +1098,9 @@ xe_eudebug_connect(struct xe_device *xe,
 		goto err_fd;
 	}
 
+	kref_get(&d->ref); /* for discovery */
+	queue_work(xe->eudebug.discovery_wq, &d->discovery_work);
+
 	eu_dbg(d, "connected session %lld", d->session);
 
 	drm_dev_get(&xe->drm);
@@ -995,11 +1123,15 @@ void xe_eudebug_file_close(struct xe_file *xef)
 {
 	struct xe_eudebug *d;
 
-	d = xe_eudebug_get(xef);
+	down_write(&xef->eudebug.ioctl_lock);
+
+	d = __xe_eudebug_get(xef);
 	if (d) {
 		xe_eudebug_detach(d, 0);
 		xe_eudebug_put(d);
 	}
+
+	up_write(&xef->eudebug.ioctl_lock);
 }
 
 bool xe_eudebug_is_supported(struct xe_device *xe)
@@ -1204,13 +1336,45 @@ void xe_eudebug_init_early(struct xe_device *xe)
  */
 void xe_eudebug_init(struct xe_device *xe)
 {
+	struct drm_device *dev = &xe->drm;
+	struct workqueue_struct *wq;
+	int err;
+
 	/* early init failed */
 	if (xe->eudebug.cap_state == XE_EUDEBUG_CAP_NOT_SUPPORTED)
 		return;
 
+	/*
+	 * Deliberately not ordered. discover_client() takes the target's
+	 * eudebug.ioctl_lock for write, and that lock is held across whole
+	 * ioctls - including the copy_from_user() inside them, which
+	 * userspace can stall for as long as it likes by pointing the
+	 * argument at a userfaultfd or FUSE mapping. On an ordered queue
+	 * (max_active = 1) one such client would block discovery for every
+	 * other debugger connection on the device; here it only delays its
+	 * own.
+	 */
+	wq = alloc_workqueue("xe-eudebug-discovery", WQ_UNBOUND, 0);
+	if (!wq) {
+		err = -ENOMEM;
+		goto out_err;
+	}
+
+	err = drmm_add_action_or_reset(dev, __drmm_workqueue_release, wq);
+	if (err)
+		goto out_err;
+	xe->eudebug.discovery_wq = wq;
+
 	/* Last: once the file exists it can enable us */
 	debugfs_create_file("eudebug", 0600, xe->drm.primary->debugfs_root,
 			    xe, &eudebug_fops);
+
+	return;
+
+out_err:
+	drm_warn(&xe->drm, "eudebug disabled, init fail: %d\n", err);
+
+	WRITE_ONCE(xe->eudebug.cap_state, XE_EUDEBUG_CAP_NOT_SUPPORTED);
 }
 
 /**

@@ -656,6 +656,9 @@ struct xe_device {
 
 		/** @eudebug.lock: protects the eudebug state of this device */
 		struct mutex lock;
+
+		/** @eudebug.discovery_wq: used for client resource discovery */
+		struct workqueue_struct *discovery_wq;
 	} eudebug;
 #endif
 
@@ -752,6 +755,18 @@ struct xe_file {
 	struct {
 		/** @eudebug.debugger: the debugger connection into this xe_file */
 		struct xe_eudebug *debugger;
+
+		/**
+		 * @eudebug.ioctl_lock: excludes the ioctls that mutate the
+		 * eudebug visible resources of this client, so that a writer
+		 * sees a stable set of vms and exec queues. Taken for read
+		 * around the whole ioctl by xe_eudebug_discovery_lock(), for
+		 * the ioctls named in xe_eudebug_needs_ioctl_lock(), and for
+		 * write by resource discovery and by file close. Held across
+		 * an entire ioctl, so it nests outside every lock those
+		 * ioctls take.
+		 */
+		struct rw_semaphore ioctl_lock;
 	} eudebug;
 #endif
 };

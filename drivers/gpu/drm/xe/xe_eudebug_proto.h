@@ -87,6 +87,7 @@ struct drm_xe_eudebug_event {
 #define DRM_XE_EUDEBUG_EVENT_NONE		0
 #define DRM_XE_EUDEBUG_EVENT_READ		1
 #define DRM_XE_EUDEBUG_EVENT_VM			2
+#define DRM_XE_EUDEBUG_EVENT_EXEC_QUEUE		3
 
 	/** @flags: Flags */
 	__u16 flags;
@@ -136,6 +137,31 @@ struct drm_xe_eudebug_event_vm {
 	__u64 vm_handle;
 };
 
+/**
+ * struct drm_xe_eudebug_event_exec_queue - Exec Queue resource event
+ *
+ * Resource creation/destruction event for an Exec Queue
+ */
+struct drm_xe_eudebug_event_exec_queue {
+	/** @base: base event */
+	struct drm_xe_eudebug_event base;
+
+	/** @vm_handle: the vm handle this exec queue belongs to */
+	__u64 vm_handle;
+
+	/** @exec_queue_handle: unique handle for this exec queue */
+	__u64 exec_queue_handle;
+
+	/** @engine_class: engine class for the exec queue */
+	__u32 engine_class;
+
+	/** @width: width of exec queue, how many lrcs (handles) it has */
+	__u32 width;
+
+	/** @lrc_handle: array of lrc handles */
+	__u64 lrc_handle[];
+};
+
 /*
  * To be added to xe_drm.h when the eudebug uAPI is exposed.
  */
@@ -147,6 +173,9 @@ struct drm_xe_eudebug_event_vm {
  * struct drm_xe_eudebug_connect - Input of &DRM_IOCTL_XE_EUDEBUG_CONNECT
  *
  * This structure is used to connect to an eudebug interface of target drm file.
+ *
+ * On connect, the resources the target already has are first relayed to
+ * the debugger as events. This is called discovery.
  */
 struct drm_xe_eudebug_connect {
 	/** @extensions: Pointer to the first extension struct, if any */

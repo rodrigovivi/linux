@@ -53,6 +53,10 @@ void xe_eudebug_vm_create(struct xe_file *xef, struct xe_vm *vm);
 void xe_eudebug_vm_destroy(struct xe_file *xef, struct xe_vm *vm);
 int xe_eudebug_enable(struct xe_device *xe, bool enable);
 
+struct xe_eudebug *xe_eudebug_get_nolock(struct xe_file *xef);
+struct xe_eudebug *xe_eudebug_get_nolock_with_discovery(struct xe_file *xef);
+void xe_eudebug_put(struct xe_eudebug *d);
+
 #else
 
 static inline int xe_eudebug_connect_ioctl(struct drm_device *dev,

@@ -19,6 +19,7 @@
 #include "xe_eudebug_proto.h"
 
 struct xe_device;
+struct workqueue_struct;
 
 /**
  * enum xe_eudebug_cap_state - eudebug capability state
@@ -33,7 +34,7 @@ enum xe_eudebug_cap_state {
 	XE_EUDEBUG_CAP_ENABLED,
 };
 
-#define XE_EUDEBUG_MAX_EVENT_TYPE DRM_XE_EUDEBUG_EVENT_VM
+#define XE_EUDEBUG_MAX_EVENT_TYPE DRM_XE_EUDEBUG_EVENT_EXEC_QUEUE
 
 /**
  * struct xe_eudebug_handle - eudebug resource handle
@@ -99,6 +100,12 @@ struct xe_eudebug {
 	/** @flags: state flags */
 	unsigned long flags;
 #define XE_EUDEBUG_READER_ACTIVE 0
+
+	/** @discovery: completion to wait for discovery */
+	struct completion discovery;
+
+	/** @discovery_work: worker to discover resources for target_task */
+	struct work_struct discovery_work;
 
 	/** @events: kfifo queue of to-be-delivered events */
 	struct {
