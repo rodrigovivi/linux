@@ -60,7 +60,7 @@ initial_plane_bo(struct xe_device *xe,
 	if (plane_config->size == 0)
 		return NULL;
 
-	flags = XE_BO_CREATE_PINNED_BIT | XE_BO_SCANOUT_BIT;
+	flags = XE_BO_CREATE_PINNED_BIT | XE_BO_SCANOUT_BIT | XE_BO_CREATE_GGTT_BIT;
 
 	base = round_down(plane_config->base, page_size);
 	if (IS_DGFX(xe)) {
@@ -106,8 +106,8 @@ initial_plane_bo(struct xe_device *xe,
 		 * important and we should probably use that space with FBC or other
 		 * features.
 		 */
-		if (!stolen || (IS_ENABLED(CONFIG_FRAMEBUFFER_CONSOLE) &&
-				plane_config->size * 2 >> PAGE_SHIFT >= stolen->size))
+		if (IS_ENABLED(CONFIG_FRAMEBUFFER_CONSOLE) &&
+		    plane_config->size * 2 >> PAGE_SHIFT >= stolen->size)
 			return NULL;
 	}
 
@@ -122,16 +122,6 @@ initial_plane_bo(struct xe_device *xe,
 			"Failed to create bo phys_base=%pa size %u with flags %x: %li\n",
 			&phys_base, size, flags, PTR_ERR(bo));
 		return NULL;
-	}
-
-	if (!bo->ggtt_node.size) {
-		int err;
-
-		err = xe_ggtt_insert_bo_at(gt0->mem.ggtt, bo, base);
-		if (err) {
-			xe_bo_unpin_map_no_vm(bo);
-			return NULL;
-		}
 	}
 
 	return bo;
@@ -194,6 +184,8 @@ intel_find_initial_plane_obj(struct intel_crtc *crtc,
 		to_intel_plane(crtc->base.primary);
 	struct intel_plane_state *plane_state =
 		to_intel_plane_state(plane->base.state);
+	struct intel_crtc_state *crtc_state =
+		to_intel_crtc_state(crtc->base.state);
 	struct drm_framebuffer *fb;
 	struct i915_vma *vma;
 
@@ -237,6 +229,14 @@ intel_find_initial_plane_obj(struct intel_crtc *crtc,
 	intel_plane_copy_uapi_to_hw_state(plane_state, plane_state, crtc);
 
 	atomic_or(plane->frontbuffer_bit, &to_intel_frontbuffer(fb)->bits);
+
+	/*
+	 * Flip to the newly created mapping ASAP, so we can re-use the
+	 * first part of GGTT for WOPCM, prevent flickering, and prevent
+	 * the lookup of sysmem scratch pages.
+	 */
+	plane->check_plane(crtc_state, plane_state);
+	plane->async_flip(plane, crtc_state, plane_state, true);
 	return;
 
 nofb:

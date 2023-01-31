@@ -1234,9 +1234,9 @@ xe_bo_create_locked_range(struct xe_device *xe,
 
 		XE_BUG_ON(!gt);
 
-		if (flags & XE_BO_CREATE_STOLEN_BIT &&
-		    flags & XE_BO_FIXED_PLACEMENT_BIT) {
-			err = xe_ggtt_insert_bo_at(gt->mem.ggtt, bo, start);
+		if (flags & XE_BO_FIXED_PLACEMENT_BIT) {
+			err = xe_ggtt_insert_bo_at(gt->mem.ggtt, bo,
+						   start + bo->size, U64_MAX);
 		} else {
 			err = xe_ggtt_insert_bo(gt->mem.ggtt, bo);
 		}
