@@ -23,7 +23,9 @@ struct xe_vm;
 struct xe_bo {
 	/** @ttm: TTM base buffer object */
 	struct ttm_buffer_object ttm;
-	/** @size: Size of this buffer object */
+	/** @requested_size: Requested size of this buffer object */
+	size_t requested_size;
+	/** @size: Size of this buffer object after alignment adjusting */
 	size_t size;
 	/** @flags: flags for this buffer object */
 	u32 flags;
