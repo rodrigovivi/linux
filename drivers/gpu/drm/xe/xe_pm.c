@@ -120,6 +120,10 @@ void xe_pm_runtime_init(struct xe_device *xe)
 {
 	struct device *dev = xe->drm.dev;
 
+	/* No low power mechanism in PVC should be enabled */
+	if (xe->info.platform == XE_PVC)
+		return;
+
 	pm_runtime_use_autosuspend(dev);
 	pm_runtime_set_autosuspend_delay(dev, 1000);
 	pm_runtime_set_active(dev);
