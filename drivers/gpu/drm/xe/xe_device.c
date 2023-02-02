@@ -435,7 +435,8 @@ void xe_device_mem_access_get(struct xe_device *xe)
 	if (resumed)
 		xe_pm_runtime_put(xe);
 
-	XE_WARN_ON(xe->mem_access.ref == S32_MAX);
+	if (WARN_ON(xe->mem_access.ref == S32_MAX))
+		drm_err(&xe->drm, "Memory Access counter overflow!");
 }
 
 void xe_device_mem_access_put(struct xe_device *xe)
@@ -445,5 +446,6 @@ void xe_device_mem_access_put(struct xe_device *xe)
 		xe_pm_runtime_put(xe);
 	mutex_unlock(&xe->mem_access.lock);
 
-	XE_WARN_ON(xe->mem_access.ref < 0);
+	if (WARN_ON(xe->mem_access.ref < 0))
+		drm_err(&xe->drm, "Memory Access counter underflow!");
 }

@@ -93,7 +93,8 @@ void xe_device_mem_access_put(struct xe_device *xe);
 
 static inline void xe_device_assert_mem_access(struct xe_device *xe)
 {
-	XE_WARN_ON(!xe->mem_access.ref);
+	if (WARN_ON(!xe->mem_access.ref))
+		drm_err(&xe->drm, "Unprotected memory access!\n");
 }
 
 static inline bool xe_device_mem_access_ongoing(struct xe_device *xe)
