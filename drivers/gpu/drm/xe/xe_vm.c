@@ -3279,6 +3279,8 @@ int xe_vm_lock(struct xe_vm *vm, struct ww_acquire_ctx *ww,
 
 	XE_BUG_ON(!ww);
 
+	xe_device_mem_access_get(vm->xe);
+
 	tv_vm.num_shared = num_resv;
 	tv_vm.bo = xe_vm_ttm_bo(vm);;
 	list_add_tail(&tv_vm.head, &objs);
@@ -3290,6 +3292,7 @@ void xe_vm_unlock(struct xe_vm *vm, struct ww_acquire_ctx *ww)
 {
 	dma_resv_unlock(&vm->resv);
 	ww_acquire_fini(ww);
+	xe_device_mem_access_put(vm->xe);
 }
 
 /**
