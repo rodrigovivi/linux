@@ -21,7 +21,7 @@
 #include "xe_pm.h"
 #include "xe_step.h"
 
-#include "../i915/i915_reg.h"
+#include "i915_reg.h"
 
 #define DEV_INFO_FOR_EACH_FLAG(func) \
 	func(require_force_probe); \

@@ -9,7 +9,7 @@
 #include "xe_gt_types.h"
 #include "xe_rtp.h"
 
-#include "../i915/gt/intel_gt_regs.h"
+#include "gt/intel_gt_regs.h"
 
 static const struct xe_rtp_entry gt_tunings[] = {
 	{ XE_RTP_NAME("Tuning: 32B Access Enable"),

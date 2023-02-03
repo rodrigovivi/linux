@@ -18,7 +18,7 @@
 #include "xe_macros.h"
 #include "xe_mmio.h"
 
-#include "../i915/gt/intel_engine_regs.h"
+#include "gt/intel_engine_regs.h"
 
 #define XE_REG_SR_GROW_STEP_DEFAULT	16
 

@@ -16,9 +16,9 @@
 #include "xe_rtp.h"
 #include "xe_step.h"
 
-#include "../i915/gt/intel_engine_regs.h"
-#include "../i915/gt/intel_gt_regs.h"
-#include "../i915/i915_reg.h"
+#include "gt/intel_engine_regs.h"
+#include "gt/intel_gt_regs.h"
+#include "i915_reg.h"
 
 /**
  * DOC: Hardware workarounds

@@ -3,8 +3,8 @@
  * Copyright © 2022 Intel Corporation
  */
 
-#include "../i915/i915_reg.h"
-#include "../i915/gt/intel_gt_regs.h"
+#include "i915_reg.h"
+#include "gt/intel_gt_regs.h"
 
 #include "xe_device.h"
 #include "xe_gt.h"

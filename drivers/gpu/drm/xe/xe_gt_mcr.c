@@ -9,7 +9,7 @@
 #include "xe_gt_types.h"
 #include "xe_mmio.h"
 
-#include "../i915/gt/intel_gt_regs.h"
+#include "gt/intel_gt_regs.h"
 
 /**
  * DOC: GT Multicast/Replicated (MCR) Register Support

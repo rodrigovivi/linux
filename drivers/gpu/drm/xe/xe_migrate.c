@@ -25,7 +25,7 @@
 #include <drm/ttm/ttm_tt.h>
 #include <drm/xe_drm.h>
 
-#include "../i915/gt/intel_gpu_commands.h"
+#include "gt/intel_gpu_commands.h"
 
 /**
  * struct xe_migrate - migrate context.

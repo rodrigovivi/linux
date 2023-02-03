@@ -11,7 +11,7 @@
 #include "xe_sched_job.h"
 #include "xe_vm_types.h"
 
-#include "../i915/gt/intel_gpu_commands.h"
+#include "gt/intel_gpu_commands.h"
 
 struct xe_bb *xe_bb_new(struct xe_gt *gt, u32 dwords, bool usm)
 {

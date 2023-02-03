@@ -105,10 +105,30 @@ xe-y += xe_bb.o \
 
 # i915 compat #defines and #includes
 subdir-ccflags-$(CONFIG_DRM_XE_DISPLAY) += -I$(srctree)/$(src)/display/ext \
+	-I$(srctree)/drivers/gpu/drm/xe/display/ \
+	-I$(srctree)/drivers/gpu/drm/i915/display/ \
+	-I$(srctree)/drivers/gpu/drm/i915/ \
+	-DBUILD_FOR_XE=1 \
 	-Ddrm_i915_gem_object=xe_bo \
 	-Ddrm_i915_private=xe_device
 
 CFLAGS_display/intel_fbdev.o = $(call cc-disable-warning, override-init)
+
+$(obj)/display/i915_%.o: $(srctree)/drivers/gpu/drm/i915/display/i915_%.c FORCE
+	$(call cmd,force_checksrc)
+	$(call if_changed_rule,cc_o_c)
+
+$(obj)/display/skl_%.o: $(srctree)/drivers/gpu/drm/i915/display/skl_%.c FORCE
+	$(call cmd,force_checksrc)
+	$(call if_changed_rule,cc_o_c)
+
+$(obj)/display/icl_dsi.o: $(srctree)/drivers/gpu/drm/i915/display/icl_dsi.c FORCE
+	$(call cmd,force_checksrc)
+	$(call if_changed_rule,cc_o_c)
+
+$(obj)/display/intel_%.o: $(srctree)/drivers/gpu/drm/i915/display/intel_%.c FORCE
+	$(call cmd,force_checksrc)
+	$(call if_changed_rule,cc_o_c)
 
 # Display..
 xe-$(CONFIG_DRM_XE_DISPLAY) += \

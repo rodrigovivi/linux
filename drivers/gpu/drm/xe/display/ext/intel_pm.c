@@ -29,8 +29,8 @@
 #include "display/intel_display_trace.h"
 #include "display/skl_watermark.h"
 
-#include "../i915_drv.h"
-#include "../i915/intel_mchbar_regs.h"
+#include "i915_drv.h"
+#include "intel_mchbar_regs.h"
 #include "intel_pm.h"
 
 bool intel_set_memory_cxsr(struct drm_i915_private *dev_priv, bool enable)

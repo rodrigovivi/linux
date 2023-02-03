@@ -3,7 +3,7 @@
  * Copyright 2019 Intel Corporation.
  */
 
-#include "../i915_drv.h"
+#include "i915_drv.h"
 #include "i915_utils.h"
 #include "intel_pch.h"
 

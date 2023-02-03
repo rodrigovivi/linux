@@ -20,7 +20,7 @@
 #include "xe_mmio.h"
 #include "xe_force_wake.h"
 #include "i915_reg_defs.h"
-#include "../i915/gt/intel_gt_regs.h"
+#include "gt/intel_gt_regs.h"
 
 /* TODO: move to common file */
 #define GUC_PVC_MOCS_INDEX_MASK		REG_GENMASK(25, 24)

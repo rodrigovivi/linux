@@ -15,8 +15,8 @@
 #include "xe_map.h"
 #include "xe_mmio.h"
 #include "xe_platform_types.h"
-#include "../i915/gt/intel_gt_regs.h"
-#include "../i915/gt/intel_engine_regs.h"
+#include "gt/intel_gt_regs.h"
+#include "gt/intel_engine_regs.h"
 
 /* Slack of a few additional entries per engine */
 #define ADS_REGSET_EXTRA_MAX	8

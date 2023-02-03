@@ -43,7 +43,7 @@
 #include "display/intel_lpe_audio.h"
 #include "display/intel_psr.h"
 
-#include "../i915_drv.h"
+#include "i915_drv.h"
 #include "../intel_de.h"
 
 #define intel_uncore_read(uncore, reg) intel_de_read(dev_priv, (reg))

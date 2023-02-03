@@ -15,8 +15,8 @@
 #include "xe_hw_engine.h"
 #include "xe_mmio.h"
 
-#include "../i915/i915_reg.h"
-#include "../i915/gt/intel_gt_regs.h"
+#include "i915_reg.h"
+#include "gt/intel_gt_regs.h"
 
 static void gen3_assert_iir_is_zero(struct xe_gt *gt, i915_reg_t reg)
 {

@@ -18,8 +18,8 @@
 #include "xe_mmio.h"
 #include "xe_wopcm.h"
 
-#include "../i915/i915_reg.h"
-#include "../i915/gt/intel_gt_regs.h"
+#include "i915_reg.h"
+#include "gt/intel_gt_regs.h"
 
 /* FIXME: Common file, preferably auto-gen */
 #define MTL_GGTT_PTE_PAT0	BIT_ULL(52)
