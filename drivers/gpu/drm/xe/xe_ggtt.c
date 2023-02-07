@@ -264,7 +264,6 @@ int xe_ggtt_insert_special_node(struct xe_ggtt *ggtt, struct drm_mm_node *node,
 
 void xe_ggtt_map_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 {
-	struct xe_device *xe = gt_to_xe(ggtt->gt);
 	u64 start = bo->ggtt_node.start;
 	u64 offset, pte;
 
@@ -275,21 +274,28 @@ void xe_ggtt_map_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 		xe_ggtt_set_pte(ggtt, start + offset, pte);
 	}
 
-	/* XXX: Without doing this everytime on integrated driver load fails */
-	if (ggtt->invalidate || !IS_DGFX(xe)) {
+	if (bo->size == bo->requested_size) {
+		pte = xe_ggtt_pte_encode(ggtt->scratch ?: bo, 0);
+		xe_ggtt_set_pte(ggtt, start + bo->size, pte);
+	}
+
+	if (ggtt->invalidate) {
 		xe_ggtt_invalidate(ggtt->gt);
 		ggtt->invalidate = false;
 	}
 }
 
 static int __xe_ggtt_insert_bo_at(struct xe_ggtt *ggtt, struct xe_bo *bo,
-				  u64 start, u64 end, u64 alignment)
+				  u64 start, u64 end)
 {
+	u64 size = bo->size;
 	int err;
+	u64 alignment = GEN8_PAGE_SIZE;
+
+	if (xe_bo_is_vram(bo) && ggtt->flags & XE_GGTT_FLAGS_64K)
+		alignment = SZ_64K;
 
 	if (XE_WARN_ON(bo->ggtt_node.size)) {
-		/* Someone's already inserted this BO in the GGTT */
-		XE_BUG_ON(bo->ggtt_node.size != bo->size);
 		return 0;
 	}
 
@@ -297,8 +303,21 @@ static int __xe_ggtt_insert_bo_at(struct xe_ggtt *ggtt, struct xe_bo *bo,
 	if (err)
 		return err;
 
+	/*
+	 * We add an extra page when mapping a BO in the GGTT so we can coalesce
+	 * GGTT invalidations. Without this extra page GGTT prefetches can leave
+	 * entries in the TLB pointing to an invalidation GGTT entry when in
+	 * fact we have programmed this GGTT entry to a valid entry. BO aligned
+	 * to 64k already have padding so no need to add an extra page.
+	 */
+	if (bo->size == bo->requested_size) {
+		size += SZ_4K;
+		if (end != U64_MAX)
+			end += SZ_4K;
+	}
+
 	mutex_lock(&ggtt->lock);
-	err = drm_mm_insert_node_in_range(&ggtt->mm, &bo->ggtt_node, bo->size,
+	err = drm_mm_insert_node_in_range(&ggtt->mm, &bo->ggtt_node, size,
 					  alignment, 0, start, end, 0);
 	if (!err)
 		xe_ggtt_map_bo(ggtt, bo);
@@ -307,26 +326,15 @@ static int __xe_ggtt_insert_bo_at(struct xe_ggtt *ggtt, struct xe_bo *bo,
 	return err;
 }
 
-int xe_ggtt_insert_bo_at(struct xe_ggtt *ggtt, struct xe_bo *bo, u64 ofs)
+int xe_ggtt_insert_bo_at(struct xe_ggtt *ggtt, struct xe_bo *bo,
+			 u64 start, u64 end)
 {
-	if (xe_bo_is_vram(bo) && ggtt->flags & XE_GGTT_FLAGS_64K) {
-		if (XE_WARN_ON(!IS_ALIGNED(ofs, SZ_64K)) ||
-		    XE_WARN_ON(!IS_ALIGNED(bo->size, SZ_64K)))
-			return -EINVAL;
-	}
-
-	return __xe_ggtt_insert_bo_at(ggtt, bo, ofs, ofs + bo->size, 0);
+	return __xe_ggtt_insert_bo_at(ggtt, bo, start, end);
 }
 
 int xe_ggtt_insert_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 {
-	u64 alignment;
-
-	alignment = GEN8_PAGE_SIZE;
-	if (xe_bo_is_vram(bo) && ggtt->flags & XE_GGTT_FLAGS_64K)
-		alignment = SZ_64K;
-
-	return __xe_ggtt_insert_bo_at(ggtt, bo, 0, U64_MAX, alignment);
+	return __xe_ggtt_insert_bo_at(ggtt, bo, 0, U64_MAX);
 }
 
 void xe_ggtt_remove_node(struct xe_ggtt *ggtt, struct drm_mm_node *node)
@@ -347,8 +355,18 @@ void xe_ggtt_remove_bo(struct xe_ggtt *ggtt, struct xe_bo *bo)
 	if (XE_WARN_ON(!bo->ggtt_node.size))
 		return;
 
-	/* This BO is not currently in the GGTT */
-	XE_BUG_ON(bo->ggtt_node.size != bo->size);
-
 	xe_ggtt_remove_node(ggtt, &bo->ggtt_node);
+}
+
+int xe_ggtt_dump(struct xe_ggtt *ggtt, struct drm_printer *p)
+{
+	int err;
+
+	err = mutex_lock_interruptible(&ggtt->lock);
+	if (err)
+		return err;
+
+	drm_mm_print(&ggtt->mm, p);
+	mutex_unlock(&ggtt->lock);
+	return err;
 }

@@ -968,6 +968,7 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
 			return bo;
 	}
 
+	bo->requested_size = size;
 	if (flags & (XE_BO_CREATE_VRAM0_BIT | XE_BO_CREATE_VRAM1_BIT |
 		     XE_BO_CREATE_STOLEN_BIT) &&
 	    !(flags & XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT) &&
@@ -1100,9 +1101,9 @@ xe_bo_create_locked_range(struct xe_device *xe,
 
 		XE_BUG_ON(!gt);
 
-		if (flags & XE_BO_CREATE_STOLEN_BIT &&
-		    flags & XE_BO_FIXED_PLACEMENT_BIT) {
-			err = xe_ggtt_insert_bo_at(gt->mem.ggtt, bo, start);
+		if (flags & XE_BO_FIXED_PLACEMENT_BIT) {
+			err = xe_ggtt_insert_bo_at(gt->mem.ggtt, bo,
+						   start + bo->size, U64_MAX);
 		} else {
 			err = xe_ggtt_insert_bo(gt->mem.ggtt, bo);
 		}
