@@ -103,7 +103,7 @@ xe-y += xe_bb.o \
 	xe_wa.o \
 	xe_wopcm.o
 
-# i915 compat #defines and #includes
+# i915 Display compat #defines and #includes
 subdir-ccflags-$(CONFIG_DRM_XE_DISPLAY) += -I$(srctree)/$(src)/display/ext \
 	-I$(srctree)/drivers/gpu/drm/xe/display/ \
 	-I$(srctree)/drivers/gpu/drm/i915/display/ \
@@ -111,6 +111,9 @@ subdir-ccflags-$(CONFIG_DRM_XE_DISPLAY) += -I$(srctree)/$(src)/display/ext \
 	-DBUILD_FOR_XE=1 \
 	-Ddrm_i915_gem_object=xe_bo \
 	-Ddrm_i915_private=xe_device
+
+# XXX: Needed for i915 register definitions. Will be removed after xe-regs.
+subdir-ccflags-y += -I$(srctree)/drivers/gpu/drm/i915/
 
 CFLAGS_display/intel_fbdev.o = $(call cc-disable-warning, override-init)
 
@@ -220,7 +223,7 @@ obj-$(CONFIG_DRM_XE) += xe.o
 obj-$(CONFIG_DRM_XE_KUNIT_TEST) += tests/
 
 ifneq ($(CONFIG_DRM_XE_DISPLAY),y)
-	skipdisplay:=-not -path display/\*
+	skipdisplay:=-not -path display/\* -not -path xe_display.h
 endif
 
 # header test
