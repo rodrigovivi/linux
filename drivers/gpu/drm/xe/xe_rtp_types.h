@@ -13,16 +13,20 @@
 struct xe_hw_engine;
 struct xe_gt;
 
+enum {
+	XE_RTP_REG_REGULAR,
+	XE_RTP_REG_MCR,
+};
+
 /**
- * struct xe_rtp_regval - register and value for rtp table
+ * struct xe_rtp_action - action to take for any matching rule
+ *
+ * This struct records what action should be taken in a register that has a
+ * matching rule. Example of actions: set/clear bits.
  */
-struct xe_rtp_regval {
+struct xe_rtp_action {
 	/** @reg: Register */
-	i915_reg_t	reg;
-	/*
-	 * TODO: maybe we need a union here with a func pointer for cases
-	 * that are too specific to be generalized
-	 */
+	u32		reg;
 	/** @clr_bits: bits to clear when updating register */
 	u32		clr_bits;
 	/** @set_bits: bits to set when updating register */
@@ -30,11 +34,12 @@ struct xe_rtp_regval {
 #define XE_RTP_NOCHECK		.read_mask = 0
 	/** @read_mask: mask for bits to consider when reading value back */
 	u32		read_mask;
-#define XE_RTP_FLAG_FOREACH_ENGINE	BIT(0)
-#define XE_RTP_FLAG_MASKED_REG		BIT(1)
-#define XE_RTP_FLAG_ENGINE_BASE		BIT(2)
+#define XE_RTP_ACTION_FLAG_MASKED_REG		BIT(0)
+#define XE_RTP_ACTION_FLAG_ENGINE_BASE		BIT(1)
 	/** @flags: flags to apply on rule evaluation or action */
 	u8		flags;
+	/** @reg_type: register type, see ``XE_RTP_REG_*`` */
+	u8		reg_type;
 };
 
 enum {
@@ -90,9 +95,12 @@ struct xe_rtp_rule {
 /** struct xe_rtp_entry - Entry in an rtp table */
 struct xe_rtp_entry {
 	const char *name;
-	const struct xe_rtp_regval regval;
+	const struct xe_rtp_action *actions;
 	const struct xe_rtp_rule *rules;
-	unsigned int n_rules;
+	u8 n_rules;
+	u8 n_actions;
+#define XE_RTP_ENTRY_FLAG_FOREACH_ENGINE	BIT(0)
+	u8 flags;
 };
 
 #endif

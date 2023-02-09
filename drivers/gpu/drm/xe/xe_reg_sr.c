@@ -12,13 +12,16 @@
 #include <drm/drm_print.h>
 #include <drm/drm_managed.h>
 
+#include "xe_rtp_types.h"
 #include "xe_device_types.h"
 #include "xe_force_wake.h"
 #include "xe_gt.h"
+#include "xe_gt_mcr.h"
 #include "xe_macros.h"
 #include "xe_mmio.h"
 
 #include "gt/intel_engine_regs.h"
+#include "gt/intel_gt_regs.h"
 
 #define XE_REG_SR_GROW_STEP_DEFAULT	16
 
@@ -59,7 +62,7 @@ int xe_reg_sr_dump_kv(struct xe_reg_sr *sr,
 
 	iter = *dst;
 	xa_for_each(&sr->xa, idx, entry) {
-		iter->k = _MMIO(idx);
+		iter->k = idx;
 		iter->v = *entry;
 		iter++;
 	}
@@ -100,13 +103,16 @@ static bool compatible_entries(const struct xe_reg_sr_entry *e1,
 	if (e1->masked_reg != e2->masked_reg)
 		return false;
 
+	if (e1->reg_type != e2->reg_type)
+		return false;
+
 	return true;
 }
 
-int xe_reg_sr_add(struct xe_reg_sr *sr, i915_reg_t reg,
+int xe_reg_sr_add(struct xe_reg_sr *sr, u32 reg,
 		  const struct xe_reg_sr_entry *e)
 {
-	unsigned long idx = i915_mmio_reg_offset(reg);
+	unsigned long idx = reg;
 	struct xe_reg_sr_entry *pentry = xa_load(&sr->xa, idx);
 	int ret;
 
@@ -161,7 +167,9 @@ static void apply_one_mmio(struct xe_gt *gt, u32 reg,
 	if (entry->masked_reg)
 		val = (entry->clr_bits ?: entry->set_bits << 16);
 	else if (entry->clr_bits + 1)
-		val = xe_mmio_read32(gt, reg) & (~entry->clr_bits);
+		val = (entry->reg_type == XE_RTP_REG_MCR ?
+		       xe_gt_mcr_unicast_read_any(gt, MCR_REG(reg)) :
+		       xe_mmio_read32(gt, reg)) & (~entry->clr_bits);
 	else
 		val = 0;
 
@@ -173,7 +181,11 @@ static void apply_one_mmio(struct xe_gt *gt, u32 reg,
 	val |= entry->set_bits;
 
 	drm_dbg(&xe->drm, "REG[0x%x] = 0x%08x", reg, val);
-	xe_mmio_write32(gt, reg, val);
+
+	if (entry->reg_type == XE_RTP_REG_MCR)
+		xe_gt_mcr_multicast_write(gt, MCR_REG(reg), val);
+	else
+		xe_mmio_write32(gt, reg, val);
 }
 
 void xe_reg_sr_apply_mmio(struct xe_reg_sr *sr, struct xe_gt *gt)
@@ -191,6 +203,41 @@ void xe_reg_sr_apply_mmio(struct xe_reg_sr *sr, struct xe_gt *gt)
 
 	xa_for_each(&sr->xa, reg, entry)
 		apply_one_mmio(gt, reg, entry);
+
+	err = xe_force_wake_put(&gt->mmio.fw, XE_FORCEWAKE_ALL);
+	XE_WARN_ON(err);
+
+	return;
+
+err_force_wake:
+	drm_err(&xe->drm, "Failed to apply, err=%d\n", err);
+}
+
+void xe_reg_sr_apply_whitelist(struct xe_reg_sr *sr, u32 mmio_base,
+			       struct xe_gt *gt)
+{
+	struct xe_device *xe = gt_to_xe(gt);
+	struct xe_reg_sr_entry *entry;
+	unsigned long reg;
+	unsigned int slot = 0;
+	int err;
+
+	drm_dbg(&xe->drm, "Whitelisting %s registers\n", sr->name);
+
+	err = xe_force_wake_get(&gt->mmio.fw, XE_FORCEWAKE_ALL);
+	if (err)
+		goto err_force_wake;
+
+	xa_for_each(&sr->xa, reg, entry) {
+		xe_mmio_write32(gt, RING_FORCE_TO_NONPRIV(mmio_base, slot).reg,
+				reg | entry->set_bits);
+		slot++;
+	}
+
+	/* And clear the rest just in case of garbage */
+	for (; slot < RING_MAX_NONPRIV_SLOTS; slot++)
+		xe_mmio_write32(gt, RING_FORCE_TO_NONPRIV(mmio_base, slot).reg,
+				RING_NOPID(mmio_base).reg);
 
 	err = xe_force_wake_put(&gt->mmio.fw, XE_FORCEWAKE_ALL);
 	XE_WARN_ON(err);
