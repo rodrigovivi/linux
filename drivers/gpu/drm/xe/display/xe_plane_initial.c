@@ -230,6 +230,8 @@ intel_find_initial_plane_obj(struct intel_crtc *crtc,
 
 	atomic_or(plane->frontbuffer_bit, &to_intel_frontbuffer(fb)->bits);
 
+	plane_config->vma = vma;
+
 	/*
 	 * Flip to the newly created mapping ASAP, so we can re-use the
 	 * first part of GGTT for WOPCM, prevent flickering, and prevent
@@ -263,6 +265,9 @@ static void plane_config_fini(struct intel_initial_plane_config *plane_config)
 		else
 			kfree(fb);
 	}
+
+	if (plane_config->vma)
+		drm_gem_object_put(&plane_config->vma->bo->ttm.base);
 }
 
 void intel_crtc_initial_plane_config(struct intel_crtc *crtc)
