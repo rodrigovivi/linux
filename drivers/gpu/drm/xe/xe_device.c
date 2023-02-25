@@ -207,11 +207,14 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 	INIT_LIST_HEAD(&xe->pinned.external_vram);
 	INIT_LIST_HEAD(&xe->pinned.evicted);
 
+	drmm_mutex_init(&xe->drm, &xe->mem_access.lock);
+
 	xe->ordered_wq = alloc_ordered_workqueue("xe-ordered-wq", 0);
-	xe->display.hotplug.dp_wq = alloc_ordered_workqueue("xe-dp", 0);
 
 	/* Initialize display parts here.. */
 	spin_lock_init(&xe->display.fb_tracking.lock);
+
+	xe->display.hotplug.dp_wq = alloc_ordered_workqueue("xe-dp", 0);
 
 	drmm_mutex_init(&xe->drm, &xe->sb_lock);
 	drmm_mutex_init(&xe->drm, &xe->display.backlight.lock);
@@ -234,15 +237,13 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 
 	err = drmm_add_action_or_reset(&xe->drm, xe_device_destroy, NULL);
 	if (err)
-		goto err;
-
-	drmm_mutex_init(&xe->drm, &xe->mem_access.lock);
+		goto err_put;
 
 	return xe;
 
 err_put:
 	drm_dev_put(&xe->drm);
-err:
+
 	return ERR_PTR(err);
 }
 
