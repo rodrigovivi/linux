@@ -17,9 +17,9 @@
 #include "xe_step_types.h"
 
 /* For display substruct */
-#include "display/intel_display_core.h"
 #include "display/ext/intel_device_info.h"
 #include "display/ext/intel_pch.h"
+#include "display/intel_display_core.h"
 
 #define XE_BO_INVALID_OFFSET	LONG_MAX
 
