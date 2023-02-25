@@ -160,7 +160,6 @@ static void xe_device_destroy(struct drm_device *dev, void *dummy)
 
 	destroy_workqueue(xe->display.hotplug.dp_wq);
 	destroy_workqueue(xe->ordered_wq);
-	mutex_destroy(&xe->persitent_engines.lock);
 	ttm_device_fini(&xe->ttm);
 }
 
@@ -197,10 +196,10 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 
 	init_waitqueue_head(&xe->ufence_wq);
 
-	mutex_init(&xe->usm.lock);
+	drmm_mutex_init(&xe->drm, &xe->usm.lock);
 	xa_init_flags(&xe->usm.asid_to_vm, XA_FLAGS_ALLOC1);
 
-	mutex_init(&xe->persitent_engines.lock);
+	drmm_mutex_init(&xe->drm, &xe->persitent_engines.lock);
 	INIT_LIST_HEAD(&xe->persitent_engines.list);
 
 	spin_lock_init(&xe->pinned.lock);
@@ -214,12 +213,12 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 	/* Initialize display parts here.. */
 	spin_lock_init(&xe->display.fb_tracking.lock);
 
-	mutex_init(&xe->sb_lock);
-	mutex_init(&xe->display.backlight.lock);
-	mutex_init(&xe->display.audio.mutex);
-	mutex_init(&xe->display.wm.wm_mutex);
-	mutex_init(&xe->display.pps.mutex);
-	mutex_init(&xe->display.hdcp.comp_mutex);
+	drmm_mutex_init(&xe->drm, &xe->sb_lock);
+	drmm_mutex_init(&xe->drm, &xe->display.backlight.lock);
+	drmm_mutex_init(&xe->drm, &xe->display.audio.mutex);
+	drmm_mutex_init(&xe->drm, &xe->display.wm.wm_mutex);
+	drmm_mutex_init(&xe->drm, &xe->display.pps.mutex);
+	drmm_mutex_init(&xe->drm, &xe->display.hdcp.comp_mutex);
 	xe->enabled_irq_mask = ~0;
 
 	xe->params.invert_brightness = -1;
@@ -237,7 +236,8 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 	if (err)
 		goto err;
 
-	mutex_init(&xe->mem_access.lock);
+	drmm_mutex_init(&xe->drm, &xe->mem_access.lock);
+
 	return xe;
 
 err_put:
