@@ -6,13 +6,11 @@
 #ifndef _XE_DISPLAY_H_
 #define _XE_DISPLAY_H_
 
-#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 #include <drm/drm_drv.h>
 
 #include "xe_device.h"
 
-#include "display/ext/i915_irq.h"
-#include "display/intel_opregion.h"
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 
 int xe_display_enable(struct pci_dev *pdev, struct drm_driver *driver);
 
@@ -44,6 +42,7 @@ void xe_display_pm_resume_early(struct xe_device *xe);
 void xe_display_pm_resume(struct xe_device *xe);
 
 #else
+
 static inline int
 xe_display_enable(struct pci_dev *pdev, struct drm_driver *driver) { return 0; };
 
