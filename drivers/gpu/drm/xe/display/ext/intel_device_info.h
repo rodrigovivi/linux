@@ -28,6 +28,8 @@
 #include <linux/types.h>
 #include "xe_device_types.h"
 
+struct drm_i915_private;
+
 /* Minimal parts used by xe */
 #define intel_runtime_info xe_device_display_info
 
