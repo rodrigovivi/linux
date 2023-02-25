@@ -10,7 +10,6 @@
 #ifdef I915
 #include "display/intel_display_reg_defs.h"	/* VLV_DISPLAY_BASE */
 #endif
-#define MCR_REG(offset)	((const i915_mcr_reg_t){ .reg = (offset) })
 
 /*
  * The perf control registers are technically multicast registers, but the
