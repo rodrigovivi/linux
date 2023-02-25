@@ -11,8 +11,8 @@
 
 #include "xe_device.h"
 
-#include "display/intel_opregion.h"
 #include "display/ext/i915_irq.h"
+#include "display/intel_opregion.h"
 
 int xe_display_enable(struct pci_dev *pdev, struct drm_driver *driver);
 
