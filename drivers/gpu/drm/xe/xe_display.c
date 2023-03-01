@@ -412,6 +412,12 @@ __diag_ignore_all("-Woverride-init", "Allow field overrides in table");
 		[TRANSCODER_DSI_0] = PIPE_DSI0_OFFSET,			\
 		[TRANSCODER_DSI_1] = PIPE_DSI1_OFFSET,			\
 	},								\
+	.cursor_offsets = { \
+		[PIPE_A] = CURSOR_A_OFFSET, \
+		[PIPE_B] = CURSOR_B_OFFSET, \
+		[PIPE_C] = CURSOR_C_OFFSET, \
+		[PIPE_D] = CURSOR_D_OFFSET, \
+	}, \
 	.trans_offsets = {						\
 		[TRANSCODER_A] = TRANSCODER_A_OFFSET,			\
 		[TRANSCODER_B] = TRANSCODER_B_OFFSET,			\
