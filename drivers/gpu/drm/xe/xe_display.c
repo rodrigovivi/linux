@@ -439,7 +439,7 @@ __diag_ignore_all("-Woverride-init", "Allow field overrides in table");
 	.has_psr_hw_tracking = 1,					\
 	.color = { .degamma_lut_size = 33, .gamma_lut_size = 262145 }
 
-#define GEN13_DISPLAY							\
+#define XE_LPD								\
 	__DISPLAY_DEFAULTS,						\
 	.ver = 13,							\
 	.abox_mask = GENMASK(1, 0),					\
@@ -460,6 +460,13 @@ __diag_ignore_all("-Woverride-init", "Allow field overrides in table");
 	.has_hdcp = 1,							\
 	.has_ipc = 1,							\
 	.has_psr = 1
+
+#define XE_LPDP								\
+	XE_LPD,								\
+	.ver = 14,							\
+	.has_cdclk_crawl = 1,						\
+	.has_cdclk_squash = 1
+
 
 void xe_display_info_init(struct xe_device *xe)
 {
@@ -495,19 +502,14 @@ void xe_display_info_init(struct xe_device *xe)
 		break;
 	case XE_DG2:
 		xe->info.display = (struct xe_device_display_info) {
-			GEN13_DISPLAY,
+			XE_LPD,
 			.cpu_transcoder_mask =
 				BIT(TRANSCODER_A) | BIT(TRANSCODER_B) |
 				BIT(TRANSCODER_C) | BIT(TRANSCODER_D),
 		};
 		break;
 	case XE_METEORLAKE:
-		xe->info.display = (struct xe_device_display_info) {
-			GEN13_DISPLAY,
-			.ver = 14,
-			.has_cdclk_crawl = 1,
-			.has_cdclk_squash = 1,
-		};
+		xe->info.display = (struct xe_device_display_info) { XE_LPDP };
 		break;
 	default:
 		/*
