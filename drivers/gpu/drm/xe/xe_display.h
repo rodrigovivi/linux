@@ -6,15 +6,17 @@
 #ifndef _XE_DISPLAY_H_
 #define _XE_DISPLAY_H_
 
-#include <drm/drm_drv.h>
-
 #include "xe_device.h"
+
+struct drm_driver;
 
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 
 int xe_display_set_driver_hooks(struct pci_dev *pdev, struct drm_driver *driver);
 
 int xe_display_create(struct xe_device *xe);
+
+void xe_display_info_init(struct xe_device *xe);
 
 int xe_display_init_nommio(struct xe_device *xe);
 void xe_display_fini_nommio(struct drm_device *dev, void *dummy);
@@ -51,6 +53,8 @@ xe_display_set_driver_hooks(struct pci_dev *pdev, struct drm_driver *driver) { r
 static inline int
 xe_display_create(struct xe_device *xe) { return 0; }
 
+static inline void xe_display_info_init(struct xe_device *xe) { }
+
 static inline int
 xe_display_enable(struct pci_dev *pdev, struct drm_driver *driver) { return 0; }
 
@@ -58,12 +62,7 @@ static inline int
 xe_display_init_nommio(struct xe_device *xe) { return 0; }
 static inline void xe_display_fini_nommio(struct drm_device *dev, void *dummy) {}
 
-static inline int xe_display_init_noirq(struct xe_device *xe)
-{
-	if (xe->info.display.pipe_mask != 0)
-		drm_warn(&xe->drm, "CONFIG_DRM_XE_DISPLAY is unset, but device is display capable\n");
-	return 0;
-}
+static inline int xe_display_init_noirq(struct xe_device *xe) { return 0; }
 
 static inline void
 xe_display_fini_noirq(struct drm_device *dev, void *dummy) {}
