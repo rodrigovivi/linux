@@ -10,6 +10,7 @@
 
 #include <linux/fb.h>
 
+#include <drm/drm_drv.h>
 #include <drm/drm_managed.h>
 #include <drm/xe_drm.h>
 
@@ -391,5 +392,132 @@ void xe_display_pm_resume(struct xe_device *xe)
 
 	intel_power_domains_enable(xe);
 }
+
+/* Display info initialization */
+__diag_push();
+__diag_ignore_all("-Woverride-init", "Allow field overrides in table");
+
+#define __DISPLAY_DEFAULTS \
+	.pipe_mask = BIT(PIPE_A) | BIT(PIPE_B) |			\
+		     BIT(PIPE_C) | BIT(PIPE_D),				\
+	.cpu_transcoder_mask =						\
+	BIT(TRANSCODER_A) | BIT(TRANSCODER_B) |				\
+	BIT(TRANSCODER_C) | BIT(TRANSCODER_D) |				\
+	BIT(TRANSCODER_DSI_0) | BIT(TRANSCODER_DSI_1),			\
+	.pipe_offsets = {						\
+		[TRANSCODER_A] = PIPE_A_OFFSET,				\
+		[TRANSCODER_B] = PIPE_B_OFFSET,				\
+		[TRANSCODER_C] = PIPE_C_OFFSET,				\
+		[TRANSCODER_D] = PIPE_D_OFFSET,				\
+		[TRANSCODER_DSI_0] = PIPE_DSI0_OFFSET,			\
+		[TRANSCODER_DSI_1] = PIPE_DSI1_OFFSET,			\
+	},								\
+	.trans_offsets = {						\
+		[TRANSCODER_A] = TRANSCODER_A_OFFSET,			\
+		[TRANSCODER_B] = TRANSCODER_B_OFFSET,			\
+		[TRANSCODER_C] = TRANSCODER_C_OFFSET,			\
+		[TRANSCODER_D] = TRANSCODER_D_OFFSET,			\
+		[TRANSCODER_DSI_0] = TRANSCODER_DSI0_OFFSET,		\
+		[TRANSCODER_DSI_1] = TRANSCODER_DSI1_OFFSET,		\
+	}
+
+#define GEN12_DISPLAY \
+	__DISPLAY_DEFAULTS,						\
+	.ver = 12,							\
+	.abox_mask = GENMASK(2, 1),					\
+	.has_dmc = 1,							\
+	.has_dp_mst = 1,						\
+	.has_dsb = 0, /* FIXME: LUT load is broken with huge DSB */	\
+	.dbuf.size = 2048,						\
+	.dbuf.slice_mask = BIT(DBUF_S1) | BIT(DBUF_S2),			\
+	.has_dsc = 1,							\
+	.fbc_mask = BIT(INTEL_FBC_A),					\
+	.has_fpga_dbg = 1,						\
+	.has_hdcp = 1,							\
+	.has_ipc = 1,							\
+	.has_psr = 1,							\
+	.has_psr_hw_tracking = 1,					\
+	.color = { .degamma_lut_size = 33, .gamma_lut_size = 262145 }
+
+#define GEN13_DISPLAY							\
+	__DISPLAY_DEFAULTS,						\
+	.ver = 13,							\
+	.abox_mask = GENMASK(1, 0),					\
+	.color = {							\
+		.degamma_lut_size = 128, .gamma_lut_size = 1024,	\
+		.degamma_lut_tests = DRM_COLOR_LUT_NON_DECREASING |	\
+		DRM_COLOR_LUT_EQUAL_CHANNELS,				\
+	},								\
+	.dbuf.size = 4096,						\
+	.dbuf.slice_mask = BIT(DBUF_S1) | BIT(DBUF_S2) | BIT(DBUF_S3) |	\
+	BIT(DBUF_S4),							\
+	.has_dmc = 1,							\
+	.has_dp_mst = 1,						\
+	.has_dsb = 1,							\
+	.has_dsc = 1,							\
+	.fbc_mask = BIT(INTEL_FBC_A),					\
+	.has_fpga_dbg = 1,						\
+	.has_hdcp = 1,							\
+	.has_ipc = 1,							\
+	.has_psr = 1
+
+void xe_display_info_init(struct xe_device *xe)
+{
+	if (!xe->info.enable_display)
+		return;
+
+	switch (xe->info.platform) {
+	case XE_TIGERLAKE:
+	case XE_DG1:
+		xe->info.display = (struct xe_device_display_info) { GEN12_DISPLAY };
+		break;
+	case XE_ROCKETLAKE:
+		xe->info.display = (struct xe_device_display_info) {
+			GEN12_DISPLAY,
+			.abox_mask = BIT(0),
+			.has_hti = 1,
+			.has_psr_hw_tracking = 0,
+			.cpu_transcoder_mask =
+				BIT(TRANSCODER_A) | BIT(TRANSCODER_B) |
+				BIT(TRANSCODER_C),
+			.pipe_mask =
+				BIT(PIPE_A) | BIT(PIPE_B) | BIT(PIPE_C),
+		};
+		break;
+	case XE_ALDERLAKE_S:
+	case XE_ALDERLAKE_P:
+	case XE_ALDERLAKE_N:
+		xe->info.display = (struct xe_device_display_info) {
+			GEN12_DISPLAY,
+			.has_hti = 1,
+			.has_psr_hw_tracking = 0,
+		};
+		break;
+	case XE_DG2:
+		xe->info.display = (struct xe_device_display_info) {
+			GEN13_DISPLAY,
+			.cpu_transcoder_mask =
+				BIT(TRANSCODER_A) | BIT(TRANSCODER_B) |
+				BIT(TRANSCODER_C) | BIT(TRANSCODER_D),
+		};
+		break;
+	case XE_METEORLAKE:
+		xe->info.display = (struct xe_device_display_info) {
+			GEN13_DISPLAY,
+			.ver = 14,
+			.has_cdclk_crawl = 1,
+			.has_cdclk_squash = 1,
+		};
+		break;
+	default:
+		/*
+		 * If platform doesn't have display, enable_display should
+		 * had been forced to false already at this point
+		 */
+		drm_WARN_ON(&xe->drm, 1);
+	}
+}
+
+__diag_pop();
 
 #endif
