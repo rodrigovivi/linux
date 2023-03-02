@@ -175,7 +175,7 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 	struct xe_device *xe;
 	int err;
 
-	err = xe_display_enable(pdev, &driver);
+	err = xe_display_set_driver_hooks(pdev, &driver);
 	if (err)
 		return ERR_PTR(err);
 
