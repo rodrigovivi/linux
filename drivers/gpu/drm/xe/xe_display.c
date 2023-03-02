@@ -37,7 +37,17 @@ static void xe_display_last_close(struct drm_device *dev)
 	intel_fbdev_restore_mode(to_xe_device(dev));
 }
 
-int xe_display_enable(struct pci_dev *pdev, struct drm_driver *driver)
+/**
+ * xe_display_set_driver_hooks - set driver flags and hooks for display
+ * @pdev: PCI device
+ * @driver: DRM device driver
+ *
+ * Set features and function hooks in @driver that are needed for driving the
+ * display IP, when that is enabled.
+ *
+ * Returns: 0 on success
+ */
+int xe_display_set_driver_hooks(struct pci_dev *pdev, struct drm_driver *driver)
 {
 	if (!enable_display)
 		return 0;
