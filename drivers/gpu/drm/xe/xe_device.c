@@ -158,7 +158,6 @@ static void xe_device_destroy(struct drm_device *dev, void *dummy)
 {
 	struct xe_device *xe = to_xe_device(dev);
 
-	destroy_workqueue(xe->display.hotplug.dp_wq);
 	destroy_workqueue(xe->ordered_wq);
 	ttm_device_fini(&xe->ttm);
 }
@@ -209,31 +208,9 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 
 	xe->ordered_wq = alloc_ordered_workqueue("xe-ordered-wq", 0);
 
-	/* Initialize display parts here.. */
-	spin_lock_init(&xe->display.fb_tracking.lock);
-
-	xe->display.hotplug.dp_wq = alloc_ordered_workqueue("xe-dp", 0);
-
-	drmm_mutex_init(&xe->drm, &xe->sb_lock);
-	drmm_mutex_init(&xe->drm, &xe->display.backlight.lock);
-	drmm_mutex_init(&xe->drm, &xe->display.audio.mutex);
-	drmm_mutex_init(&xe->drm, &xe->display.wm.wm_mutex);
-	drmm_mutex_init(&xe->drm, &xe->display.pps.mutex);
-	drmm_mutex_init(&xe->drm, &xe->display.hdcp.comp_mutex);
-	xe->enabled_irq_mask = ~0;
-
-	xe->params.invert_brightness = -1;
-	xe->params.vbt_sdvo_panel_type = -1;
-	xe->params.disable_power_well = -1;
-	xe->params.enable_dc = -1;
-	xe->params.enable_dpcd_backlight = -1;
-	xe->params.enable_dp_mst = -1;
-	xe->params.enable_dpt = true;
-	xe->params.enable_fbc = -1;
-	xe->params.enable_psr = -1;
-	xe->params.enable_psr2_sel_fetch = -1;
-	xe->params.enable_sagv = true;
-	xe->params.panel_use_ssc = -1;
+	err = xe_display_create(xe);
+	if (WARN_ON(err))
+		goto err_put;
 
 	err = drmm_add_action_or_reset(&xe->drm, xe_device_destroy, NULL);
 	if (err)

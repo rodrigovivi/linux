@@ -62,6 +62,61 @@ int xe_display_set_driver_hooks(struct pci_dev *pdev, struct drm_driver *driver)
 	return 0;
 }
 
+static void display_destroy(struct drm_device *dev, void *dummy)
+{
+	struct xe_device *xe = to_xe_device(dev);
+
+	destroy_workqueue(xe->display.hotplug.dp_wq);
+}
+
+/**
+ * xe_display_create - create display struct
+ * @xe: XE device instance
+ *
+ * Initialize all fields used by the display part.
+ *
+ * TODO: once everything can be inside a single struct, make the struct opaque
+ * to the rest of xe and return it to be xe->display.
+ *
+ * Returns: 0 on success
+ */
+int xe_display_create(struct xe_device *xe)
+{
+	int err;
+
+	/* Initialize display parts here.. */
+	spin_lock_init(&xe->display.fb_tracking.lock);
+
+	xe->display.hotplug.dp_wq = alloc_ordered_workqueue("xe-dp", 0);
+
+	drmm_mutex_init(&xe->drm, &xe->sb_lock);
+	drmm_mutex_init(&xe->drm, &xe->display.backlight.lock);
+	drmm_mutex_init(&xe->drm, &xe->display.audio.mutex);
+	drmm_mutex_init(&xe->drm, &xe->display.wm.wm_mutex);
+	drmm_mutex_init(&xe->drm, &xe->display.pps.mutex);
+	drmm_mutex_init(&xe->drm, &xe->display.hdcp.comp_mutex);
+	xe->enabled_irq_mask = ~0;
+
+	xe->params.invert_brightness = -1;
+	xe->params.vbt_sdvo_panel_type = -1;
+	xe->params.disable_power_well = -1;
+	xe->params.enable_dc = -1;
+	xe->params.enable_dpcd_backlight = -1;
+	xe->params.enable_dp_mst = -1;
+	xe->params.enable_dpt = true;
+	xe->params.enable_fbc = -1;
+	xe->params.enable_psr = -1;
+	xe->params.enable_psr2_sel_fetch = -1;
+	xe->params.enable_sagv = true;
+	xe->params.panel_use_ssc = -1;
+
+	err = drmm_add_action_or_reset(&xe->drm, display_destroy, NULL);
+	if (err)
+		return err;
+
+	return 0;
+}
+
 void xe_display_fini_nommio(struct drm_device *dev, void *dummy)
 {
 	struct xe_device *xe = to_xe_device(dev);
