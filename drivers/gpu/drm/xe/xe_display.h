@@ -14,6 +14,8 @@
 
 int xe_display_set_driver_hooks(struct pci_dev *pdev, struct drm_driver *driver);
 
+int xe_display_create(struct xe_device *xe);
+
 int xe_display_init_nommio(struct xe_device *xe);
 void xe_display_fini_nommio(struct drm_device *dev, void *dummy);
 
@@ -45,6 +47,9 @@ void xe_display_pm_resume(struct xe_device *xe);
 
 static inline int
 xe_display_set_driver_hooks(struct pci_dev *pdev, struct drm_driver *driver) { return 0; }
+
+static inline int
+xe_display_create(struct xe_device *xe) { return 0; }
 
 static inline int
 xe_display_enable(struct pci_dev *pdev, struct drm_driver *driver) { return 0; }
