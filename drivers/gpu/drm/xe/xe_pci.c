@@ -16,6 +16,7 @@
 
 #include "regs/xe_regs.h"
 #include "xe_device.h"
+#include "xe_display.h"
 #include "xe_drv.h"
 #include "xe_macros.h"
 #include "xe_module.h"
@@ -62,8 +63,6 @@ struct xe_device_desc {
 	DEV_INFO_FOR_EACH_FLAG(DEFINE_FLAG);
 #undef DEFINE_FLAG
 
-	struct xe_device_display_info display;
-
 	u8 vram_flags;
 	u8 max_tiles;
 	u8 vm_max_level;
@@ -76,78 +75,14 @@ struct xe_device_desc {
 	bool has_link_copy_engine;
 };
 
+__diag_push();
+__diag_ignore_all("-Woverride-init", "Allow field overrides in table");
+
 #define PLATFORM(x)		\
 	.platform = (x),	\
 	.platform_name = #x
 
 #define NOP(x)	x
-
-#define __DISPLAY_DEFAULTS \
-		.pipe_mask = BIT(PIPE_A) | BIT(PIPE_B) | BIT(PIPE_C) | BIT(PIPE_D), \
-		.cpu_transcoder_mask = \
-			BIT(TRANSCODER_A) | BIT(TRANSCODER_B) | \
-			BIT(TRANSCODER_C) | BIT(TRANSCODER_D) | \
-			BIT(TRANSCODER_DSI_0) | BIT(TRANSCODER_DSI_1), \
-		.pipe_offsets = { \
-			[TRANSCODER_A] = PIPE_A_OFFSET, \
-			[TRANSCODER_B] = PIPE_B_OFFSET, \
-			[TRANSCODER_C] = PIPE_C_OFFSET, \
-			[TRANSCODER_D] = PIPE_D_OFFSET, \
-			[TRANSCODER_DSI_0] = PIPE_DSI0_OFFSET, \
-			[TRANSCODER_DSI_1] = PIPE_DSI1_OFFSET, \
-		}, \
-		.trans_offsets = { \
-			[TRANSCODER_A] = TRANSCODER_A_OFFSET, \
-			[TRANSCODER_B] = TRANSCODER_B_OFFSET, \
-			[TRANSCODER_C] = TRANSCODER_C_OFFSET, \
-			[TRANSCODER_D] = TRANSCODER_D_OFFSET, \
-			[TRANSCODER_DSI_0] = TRANSCODER_DSI0_OFFSET, \
-			[TRANSCODER_DSI_1] = TRANSCODER_DSI1_OFFSET, \
-		}, \
-
-#define GEN12_DISPLAY \
-	.display = (struct xe_device_display_info){ \
-		__DISPLAY_DEFAULTS \
-		.ver = 12, \
-		.abox_mask = GENMASK(2, 1), \
-		.has_dmc = 1, \
-		.has_dp_mst = 1, \
-		.has_dsb = 0, /* FIXME: LUT load is broken with huge DSB */ \
-		.dbuf.size = 2048, \
-		.dbuf.slice_mask = BIT(DBUF_S1) | BIT(DBUF_S2), \
-		.has_dsc = 1, \
-		.fbc_mask = BIT(INTEL_FBC_A), \
-		.has_fpga_dbg = 1, \
-		.has_hdcp = 1, \
-		.has_ipc = 1, \
-		.has_psr = 1, \
-		.has_psr_hw_tracking = 1, \
-		.color = { .degamma_lut_size = 33, .gamma_lut_size = 262145 }, \
-	}
-
-#define GEN13_DISPLAY \
-	.display = (struct xe_device_display_info){ \
-		__DISPLAY_DEFAULTS \
-		.ver = 13,							\
-		.abox_mask = GENMASK(1, 0),					\
-		.color = {							\
-			.degamma_lut_size = 128, .gamma_lut_size = 1024,	\
-			.degamma_lut_tests = DRM_COLOR_LUT_NON_DECREASING |	\
-				     DRM_COLOR_LUT_EQUAL_CHANNELS,		\
-		},								\
-		.dbuf.size = 4096,						\
-		.dbuf.slice_mask = BIT(DBUF_S1) | BIT(DBUF_S2) | BIT(DBUF_S3) |	\
-				   BIT(DBUF_S4),				\
-		.has_dmc = 1,							\
-		.has_dp_mst = 1,						\
-		.has_dsb = 1,							\
-		.has_dsc = 1,							\
-		.fbc_mask = BIT(INTEL_FBC_A),					\
-		.has_fpga_dbg = 1,						\
-		.has_hdcp = 1,							\
-		.has_ipc = 1,							\
-		.has_psr = 1,							\
-	}
 
 /* Keep in gen based order, and chronological order within a gen */
 #define GEN12_FEATURES \
@@ -161,20 +96,15 @@ struct xe_device_desc {
 
 static const struct xe_device_desc tgl_desc = {
 	GEN12_FEATURES,
-	GEN12_DISPLAY,
 	PLATFORM(XE_TIGERLAKE),
 	.platform_engine_mask =
 		BIT(XE_HW_ENGINE_RCS0) | BIT(XE_HW_ENGINE_BCS0) |
 		BIT(XE_HW_ENGINE_VECS0) | BIT(XE_HW_ENGINE_VCS0) |
 		BIT(XE_HW_ENGINE_VCS2),
-	GEN12_DISPLAY,
 };
 
 static const struct xe_device_desc adl_s_desc = {
 	GEN12_FEATURES,
-	GEN12_DISPLAY,
-	.display.has_hti = 1,
-	.display.has_psr_hw_tracking = 0,
 	PLATFORM(XE_ALDERLAKE_S),
 	.platform_engine_mask =
 		BIT(XE_HW_ENGINE_RCS0) | BIT(XE_HW_ENGINE_BCS0) |
@@ -202,7 +132,6 @@ static const struct xe_device_desc adl_p_desc = {
 
 static const struct xe_device_desc dg1_desc = {
 	GEN12_FEATURES,
-	GEN12_DISPLAY,
 	DGFX_FEATURES,
 	.graphics_rel = 10,
 	PLATFORM(XE_DG1),
@@ -263,9 +192,6 @@ static const struct xe_device_desc dg2_desc = {
 	XE_HPM_FEATURES,
 
 	DG2_FEATURES,
-	GEN13_DISPLAY,
-	.display.cpu_transcoder_mask = BIT(TRANSCODER_A) | BIT(TRANSCODER_B) |
-				       BIT(TRANSCODER_C) | BIT(TRANSCODER_D),
 };
 
 #define PVC_ENGINES \
@@ -342,13 +268,10 @@ static const struct xe_device_desc mtl_desc = {
 	PLATFORM(XE_METEORLAKE),
 	.extra_gts = xelpmp_gts,
 	.platform_engine_mask = MTL_MAIN_ENGINES,
-	GEN13_DISPLAY,
-	.display.ver = 14,
-	.display.has_cdclk_crawl = 1,
-	.display.has_cdclk_squash = 1,
 };
 
 #undef PLATFORM
+__diag_pop();
 
 #define INTEL_VGA_DEVICE(id, info) {			\
 	PCI_DEVICE(PCI_VENDOR_ID_INTEL, id),		\
@@ -499,7 +422,6 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	xe->info.has_4tile = desc->has_4tile;
 	xe->info.has_range_tlb_invalidation = desc->has_range_tlb_invalidation;
 	xe->info.has_link_copy_engine = desc->has_link_copy_engine;
-	xe->info.display = desc->display;
 
 	spd = subplatform_get(xe, desc);
 	xe->info.subplatform = spd ? spd->subplatform : XE_SUBPLATFORM_NONE;
@@ -527,6 +449,8 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 				desc->extra_gts[id - 1].mmio_adj_offset;
 		}
 	}
+
+	xe_display_info_init(xe);
 
 	drm_dbg(&xe->drm, "%s %s %04x:%04x dgfx:%d gfx100:%d media100:%d dma_m_s:%d tc:%d",
 		desc->platform_name, spd ? spd->name : "",
