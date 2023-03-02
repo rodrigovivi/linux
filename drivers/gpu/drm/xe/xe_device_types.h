@@ -16,10 +16,11 @@
 #include "xe_platform_types.h"
 #include "xe_step_types.h"
 
-/* For display substruct */
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 #include "display/ext/intel_device_info.h"
 #include "display/ext/intel_pch.h"
 #include "display/intel_display_core.h"
+#endif
 
 #define XE_BO_INVALID_OFFSET	LONG_MAX
 
@@ -97,6 +98,7 @@ struct xe_device {
 		/** @enable_display: display enabled */
 		bool enable_display;
 
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 		struct xe_device_display_info {
 			u8 ver;
 
@@ -147,6 +149,7 @@ struct xe_device {
 			u8 num_scalers[I915_MAX_PIPES];
 			u32 rawclk_freq;
 		} display;
+#endif
 	} info;
 
 	/** @irq: device interrupt state */
@@ -241,8 +244,7 @@ struct xe_device {
 	/** @d3cold_allowed: Indicates if d3cold is a valid device state */
 	bool d3cold_allowed;
 
-	/* private: */
-
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 	/*
 	 * Any fields below this point are the ones used by display.
 	 * They are temporarily added here so xe_device can be desguised as
@@ -308,6 +310,7 @@ struct xe_device {
 		const char *vbt_firmware;
 		u32 lvds_channel_mode;
 	} params;
+#endif
 };
 
 /**
