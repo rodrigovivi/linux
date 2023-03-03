@@ -8,8 +8,6 @@
 
 #include <linux/types.h>
 
-#include "display/intel_display.h"
-
 enum intel_ddb_partitioning {
 	INTEL_DDB_PART_1_2,
 	INTEL_DDB_PART_5_6, /* IVB+ */
