@@ -96,7 +96,9 @@ xe-y += xe_bb.o \
 	xe_wopcm.o
 
 # i915 Display compat #defines and #includes
-subdir-ccflags-$(CONFIG_DRM_XE_DISPLAY) += -I$(srctree)/$(src)/display/ext \
+subdir-ccflags-$(CONFIG_DRM_XE_DISPLAY) += \
+	-I$(srctree)/$(src)/display/ext \
+	-I$(srctree)/$(src)/compat-i915-headers \
 	-I$(srctree)/drivers/gpu/drm/xe/display/ \
 	-I$(srctree)/drivers/gpu/drm/i915/display/ \
 	-I$(srctree)/drivers/gpu/drm/i915/ \
@@ -218,7 +220,7 @@ obj-$(CONFIG_DRM_XE) += xe.o
 obj-$(CONFIG_DRM_XE_KUNIT_TEST) += tests/
 
 ifneq ($(CONFIG_DRM_XE_DISPLAY),y)
-	skipdisplay:=-not -path display/\* -not -path xe_display.h
+	skipdisplay:=-not -path display/\* -not -path compat-i915-headers/\* -not -path xe_display.h
 endif
 
 # header test
