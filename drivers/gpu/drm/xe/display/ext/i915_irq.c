@@ -44,7 +44,7 @@
 #include "intel_psr.h"
 
 #include "i915_drv.h"
-#include "../intel_de.h"
+#include "intel_de.h"
 
 #define intel_uncore_read(uncore, reg) intel_de_read(dev_priv, (reg))
 #define intel_uncore_read64(uncore, reg) intel_de_read64(dev_priv, (reg))
