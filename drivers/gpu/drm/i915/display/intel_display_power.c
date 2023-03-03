@@ -16,7 +16,7 @@
 #include "intel_display_power_well.h"
 #include "intel_display_types.h"
 #include "intel_dmc.h"
-#include "../i915/intel_mchbar_regs.h"
+#include "intel_mchbar_regs.h"
 #include "intel_pch_refclk.h"
 #include "intel_snps_phy.h"
 #include "skl_watermark.h"

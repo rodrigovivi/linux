@@ -19,7 +19,7 @@
 #include "intel_dp_aux_backlight.h"
 #include "intel_dsi_dcs_backlight.h"
 #include "intel_panel.h"
-#include "../i915/intel_pci_config.h"
+#include "intel_pci_config.h"
 #include "intel_pps.h"
 #include "intel_quirks.h"
 
