@@ -17,9 +17,9 @@
 #include "xe_step_types.h"
 
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
-#include "display/ext/intel_device_info.h"
-#include "display/ext/intel_pch.h"
-#include "display/intel_display_core.h"
+#include "ext/intel_device_info.h"
+#include "ext/intel_pch.h"
+#include "intel_display_core.h"
 #endif
 
 #define XE_BO_INVALID_OFFSET	LONG_MAX

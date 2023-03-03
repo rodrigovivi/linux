@@ -181,7 +181,7 @@ static inline struct drm_i915_private *kdev_to_i915(struct device *kdev)
 #define intel_overlay_cleanup(a) do { (void)a; } while (0)
 #define intel_overlay_setup(a) do { (void)a; } while (0)
 
-#include "display/intel_wakeref.h"
+#include "intel_wakeref.h"
 
 static inline bool intel_runtime_pm_get(struct xe_runtime_pm *pm)
 {

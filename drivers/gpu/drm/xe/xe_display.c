@@ -15,19 +15,19 @@
 #include <drm/drm_managed.h>
 #include <drm/xe_drm.h>
 
-#include "display/ext/i915_irq.h"
-#include "display/ext/intel_dram.h"
-#include "display/ext/intel_pm.h"
-#include "display/intel_acpi.h"
-#include "display/intel_audio.h"
-#include "display/intel_bw.h"
-#include "display/intel_display.h"
-#include "display/intel_display_types.h"
-#include "display/intel_dp.h"
-#include "display/intel_fbdev.h"
-#include "display/intel_hdcp.h"
-#include "display/intel_hotplug.h"
-#include "display/intel_opregion.h"
+#include "ext/i915_irq.h"
+#include "ext/intel_dram.h"
+#include "ext/intel_pm.h"
+#include "intel_acpi.h"
+#include "intel_audio.h"
+#include "intel_bw.h"
+#include "intel_display.h"
+#include "intel_display_types.h"
+#include "intel_dp.h"
+#include "intel_fbdev.h"
+#include "intel_hdcp.h"
+#include "intel_hotplug.h"
+#include "intel_opregion.h"
 #include "xe_module.h"
 
 /* Xe device functions */
