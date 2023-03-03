@@ -25,7 +25,6 @@
 #include "intel_cdclk.h"
 #include "intel_de.h"
 #include "intel_display.h"
-#include "gt/intel_gt_regs.h"
 #include "intel_device_info.h"
 #include "i915_drv.h"
 #include <drm/drm_drv.h>
