@@ -6,6 +6,6 @@
 #ifndef _XE_REG_DEFS_H_
 #define _XE_REG_DEFS_H_
 
-#include "../../i915/i915_reg_defs.h"
+#include "compat-i915-headers/i915_reg_defs.h"
 
 #endif
