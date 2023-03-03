@@ -34,14 +34,14 @@
 
 #include <drm/drm_drv.h>
 
-#include "display/icl_dsi_regs.h"
-#include "display/intel_de.h"
-#include "display/intel_display_trace.h"
-#include "display/intel_display_types.h"
-#include "display/intel_fifo_underrun.h"
-#include "display/intel_hotplug.h"
-#include "display/intel_lpe_audio.h"
-#include "display/intel_psr.h"
+#include "icl_dsi_regs.h"
+#include "intel_de.h"
+#include "intel_display_trace.h"
+#include "intel_display_types.h"
+#include "intel_fifo_underrun.h"
+#include "intel_hotplug.h"
+#include "intel_lpe_audio.h"
+#include "intel_psr.h"
 
 #include "i915_drv.h"
 #include "../intel_de.h"
