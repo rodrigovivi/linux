@@ -6,6 +6,7 @@
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 
 #include "xe_display.h"
+#include "regs/xe_regs.h"
 
 #include <linux/fb.h>
 
