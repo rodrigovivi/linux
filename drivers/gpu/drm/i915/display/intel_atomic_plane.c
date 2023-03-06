@@ -434,6 +434,7 @@ static bool i9xx_must_disable_cxsr(const struct intel_crtc_state *new_crtc_state
 				   const struct intel_plane_state *old_plane_state,
 				   const struct intel_plane_state *new_plane_state)
 {
+#ifdef I915
 	struct intel_plane *plane = to_intel_plane(new_plane_state->uapi.plane);
 	bool old_visible = old_plane_state->uapi.visible;
 	bool new_visible = new_plane_state->uapi.visible;
@@ -469,6 +470,9 @@ static bool i9xx_must_disable_cxsr(const struct intel_crtc_state *new_crtc_state
 	}
 
 	return old_ctl != new_ctl;
+#else
+	return false;
+#endif
 }
 
 static int intel_plane_atomic_calc_changes(const struct intel_crtc_state *old_crtc_state,
