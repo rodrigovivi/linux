@@ -9,8 +9,6 @@
 #include <linux/ktime.h>
 #include <linux/types.h>
 
-#include "i915_reg.h"
-
 enum pipe;
 struct drm_crtc;
 struct drm_device;
