@@ -224,10 +224,7 @@ static size_t calculate_regset_size(struct xe_gt *gt)
 		xa_for_each(&hwe->reg_sr.xa, sr_idx, sr_entry)
 			count++;
 
-	count += ADS_REGSET_EXTRA_MAX * XE_NUM_HW_ENGINES;
-
-	if (needs_wa_1607983814(gt_to_xe(gt)))
-		count += LNCFCMOCS_REG_COUNT;
+	count += (ADS_REGSET_EXTRA_MAX + LNCFCMOCS_REG_COUNT) * XE_NUM_HW_ENGINES;
 
 	return count * sizeof(struct guc_mmio_reg);
 }
