@@ -63,6 +63,11 @@ int xe_display_set_driver_hooks(struct pci_dev *pdev, struct drm_driver *driver)
 	return 0;
 }
 
+static void unset_driver_hooks(struct xe_device *xe)
+{
+	xe->drm.driver_features &= ~(DRIVER_MODESET | DRIVER_ATOMIC);
+}
+
 static void display_destroy(struct drm_device *dev, void *dummy)
 {
 	struct xe_device *xe = to_xe_device(dev);
@@ -85,7 +90,6 @@ int xe_display_create(struct xe_device *xe)
 {
 	int err;
 
-	/* Initialize display parts here.. */
 	spin_lock_init(&xe->display.fb_tracking.lock);
 
 	xe->display.hotplug.dp_wq = alloc_ordered_workqueue("xe-dp", 0);
@@ -525,11 +529,10 @@ void xe_display_info_init(struct xe_device *xe)
 		xe->info.display = (struct xe_device_display_info) { XE_LPDP };
 		break;
 	default:
-		/*
-		 * If platform doesn't have display, enable_display should
-		 * had been forced to false already at this point
-		 */
-		drm_WARN_ON(&xe->drm, 1);
+		drm_dbg(&xe->drm, "No display IP, skipping\n");
+		xe->info.enable_display = false;
+		unset_driver_hooks(xe);
+		return;
 	}
 }
 
