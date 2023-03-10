@@ -79,6 +79,7 @@ static int vmw_bo_pin_in_placement(struct vmw_private *dev_priv,
 		goto err;
 
 	ret = ttm_bo_validate(bo, placement, &ctx);
+
 	if (!ret)
 		vmw_bo_pin_reserved(buf, true);
 
