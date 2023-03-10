@@ -108,12 +108,6 @@ void intel_device_info_runtime_init(struct drm_i915_private *dev_priv)
 			runtime->has_dsc = 0;
 	}
 
-	if (!HAS_DISPLAY(dev_priv)) {
-		dev_priv->drm.driver_features &= ~(DRIVER_MODESET |
-						   DRIVER_ATOMIC);
-		memset(runtime, 0, sizeof(*runtime));
-	}
-
 	runtime->rawclk_freq = intel_read_rawclk(dev_priv);
 	drm_dbg(&dev_priv->drm, "rawclk rate: %d kHz\n", runtime->rawclk_freq);
 }
