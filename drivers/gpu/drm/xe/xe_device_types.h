@@ -375,6 +375,8 @@ struct xe_device {
 	 */
 	struct task_struct *pm_callback_task;
 
+	/* private: */
+
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 	/*
 	 * Any fields below this point are the ones used by display.
