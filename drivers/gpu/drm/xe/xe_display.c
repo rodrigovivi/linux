@@ -498,11 +498,17 @@ void xe_display_info_init(struct xe_device *xe)
 		};
 		break;
 	case XE_ALDERLAKE_S:
-	case XE_ALDERLAKE_P:
-	case XE_ALDERLAKE_N:
 		xe->info.display = (struct xe_device_display_info) {
 			GEN12_DISPLAY,
 			.has_hti = 1,
+			.has_psr_hw_tracking = 0,
+		};
+		break;
+	case XE_ALDERLAKE_P:
+	case XE_ALDERLAKE_N:
+		xe->info.display = (struct xe_device_display_info) {
+			XE_LPD,
+			.has_cdclk_crawl = 1,
 			.has_psr_hw_tracking = 0,
 		};
 		break;
@@ -512,6 +518,7 @@ void xe_display_info_init(struct xe_device *xe)
 			.cpu_transcoder_mask =
 				BIT(TRANSCODER_A) | BIT(TRANSCODER_B) |
 				BIT(TRANSCODER_C) | BIT(TRANSCODER_D),
+			.has_cdclk_squash = 1,
 		};
 		break;
 	case XE_METEORLAKE:
