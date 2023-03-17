@@ -747,14 +747,35 @@ err_sync:
 	return fence;
 }
 
-static int emit_clear(struct xe_gt *gt, struct xe_bb *bb, u64 src_ofs,
-		      u32 size, u32 pitch, bool is_vram)
+static void emit_clear_link_copy(struct xe_gt *gt, struct xe_bb *bb, u64 src_ofs,
+				 u32 size, u32 pitch)
 {
+	u32 *cs = bb->cs + bb->len;
+	u32 mocs = xe_mocs_index_to_value(gt->mocs.uc_index);
+	u32 len = PVC_MEM_SET_CMD_LEN_DW;
+
+	*cs++ = PVC_MEM_SET_CMD | PVC_MS_MATRIX | (len - 2);
+	*cs++ = pitch - 1;
+	*cs++ = (size / pitch) - 1;
+	*cs++ = pitch - 1;
+	*cs++ = lower_32_bits(src_ofs);
+	*cs++ = upper_32_bits(src_ofs);
+	*cs++ = FIELD_PREP(PVC_MS_MOCS_INDEX_MASK, mocs);
+
+	XE_BUG_ON(cs - bb->cs != len + bb->len);
+
+	bb->len += len;
+}
+
+static void emit_clear_main_copy(struct xe_gt *gt, struct xe_bb *bb,
+				 u64 src_ofs, u32 size, u32 pitch, bool is_vram)
+{
+	struct xe_device *xe = gt_to_xe(gt);
 	u32 *cs = bb->cs + bb->len;
 	u32 len = XY_FAST_COLOR_BLT_DW;
 	u32 mocs = xe_mocs_index_to_value(gt->mocs.uc_index);
 
-	if (GRAPHICS_VERx100(gt->xe) < 1250)
+	if (GRAPHICS_VERx100(xe) < 1250)
 		len = 11;
 
 	*cs++ = XY_FAST_COLOR_BLT_CMD | XY_FAST_COLOR_BLT_DEPTH_32 |
@@ -780,7 +801,30 @@ static int emit_clear(struct xe_gt *gt, struct xe_bb *bb, u64 src_ofs,
 	}
 
 	XE_BUG_ON(cs - bb->cs != len + bb->len);
+
 	bb->len += len;
+}
+
+static u32 emit_clear_cmd_len(struct xe_device *xe)
+{
+	if (xe->info.has_link_copy_engine)
+		return PVC_MEM_SET_CMD_LEN_DW;
+	else
+		return XY_FAST_COLOR_BLT_DW;
+}
+
+static int emit_clear(struct xe_gt *gt, struct xe_bb *bb, u64 src_ofs,
+		      u32 size, u32 pitch, bool is_vram)
+{
+	struct xe_device *xe = gt_to_xe(gt);
+
+	if (xe->info.has_link_copy_engine) {
+		emit_clear_link_copy(gt, bb, src_ofs, size, pitch);
+
+	} else {
+		emit_clear_main_copy(gt, bb, src_ofs, size, pitch,
+				     is_vram);
+	}
 
 	return 0;
 }
@@ -835,7 +879,8 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		batch_size = 2 +
 			pte_update_size(m, clear_vram, &src_it,
 					&clear_L0, &clear_L0_ofs, &clear_L0_pt,
-					XY_FAST_COLOR_BLT_DW, 0, NUM_PT_PER_BLIT);
+					emit_clear_cmd_len(xe), 0,
+					NUM_PT_PER_BLIT);
 		if (xe_device_has_flat_ccs(xe) && clear_vram)
 			batch_size += EMIT_COPY_CCS_DW;
 
