@@ -748,7 +748,7 @@ err_sync:
 }
 
 static int emit_clear(struct xe_gt *gt, struct xe_bb *bb, u64 src_ofs,
-		      u32 size, u32 pitch, u32 value, bool is_vram)
+		      u32 size, u32 pitch, bool is_vram)
 {
 	u32 *cs = bb->cs + bb->len;
 	u32 len = XY_FAST_COLOR_BLT_DW;
@@ -766,7 +766,7 @@ static int emit_clear(struct xe_gt *gt, struct xe_bb *bb, u64 src_ofs,
 	*cs++ = lower_32_bits(src_ofs);
 	*cs++ = upper_32_bits(src_ofs);
 	*cs++ = (is_vram ? 0x0 : 0x1) <<  XY_FAST_COLOR_BLT_MEM_TYPE_SHIFT;
-	*cs++ = value;
+	*cs++ = 0;
 	*cs++ = 0;
 	*cs++ = 0;
 	*cs++ = 0;
@@ -790,10 +790,9 @@ static int emit_clear(struct xe_gt *gt, struct xe_bb *bb, u64 src_ofs,
  * @m: The migration context.
  * @bo: The buffer object @dst is currently bound to.
  * @dst: The dst TTM resource to be cleared.
- * @value: Clear value.
  *
- * Clear the contents of @dst. On flat CCS devices,
- * the CCS metadata is cleared to zero as well on VRAM destionations.
+ * Clear the contents of @dst to zero. On flat CCS devices,
+ * the CCS metadata is cleared to zero as well on VRAM destinations.
  * TODO: Eliminate the @bo argument.
  *
  * Return: Pointer to a dma_fence representing the last clear batch, or
@@ -802,8 +801,7 @@ static int emit_clear(struct xe_gt *gt, struct xe_bb *bb, u64 src_ofs,
  */
 struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 				   struct xe_bo *bo,
-				   struct ttm_resource *dst,
-				   u32 value)
+				   struct ttm_resource *dst)
 {
 	bool clear_vram = mem_type_is_vram(dst->mem_type);
 	struct xe_gt *gt = m->gt;
@@ -868,7 +866,7 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 		update_idx = bb->len;
 
 		emit_clear(gt, bb, clear_L0_ofs, clear_L0, GEN8_PAGE_SIZE,
-			   value, clear_vram);
+			   clear_vram);
 		if (xe_device_has_flat_ccs(xe) && clear_vram) {
 			emit_copy_ccs(gt, bb, clear_L0_ofs, true,
 				      m->cleared_vram_ofs, false, clear_L0);
