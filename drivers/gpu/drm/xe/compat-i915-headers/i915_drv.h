@@ -118,6 +118,7 @@ static inline struct drm_i915_private *kdev_to_i915(struct device *kdev)
 #define SUPPORTS_TV(xe) (xe && 0)
 #define HAS_MBUS_JOINING(xe) (xe && 0)
 #define HAS_HW_SAGV_WM(xe) (DISPLAY_VER(xe) >= 13 && !IS_DGFX(xe))
+#define HAS_DPT(xe) (DISPLAY_VER(xe) >= 13)
 
 /* Workarounds not handled yet */
 #define IS_DISPLAY_STEP(xe, first, last) ({u8 __step = (xe)->info.step.display; first <= __step && __step <= last;})

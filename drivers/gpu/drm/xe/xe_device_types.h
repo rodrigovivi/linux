@@ -313,8 +313,10 @@ struct xe_device {
 		const char *dmc_firmware_path;
 		s32 enable_dpcd_backlight;
 		s32 enable_dp_mst;
+		bool enable_dpt;
 		s32 enable_fbc;
 		s32 enable_psr;
+		bool enable_sagv;
 		bool psr_safest_params;
 		s32 enable_psr2_sel_fetch;
 

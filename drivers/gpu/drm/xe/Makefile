@@ -156,9 +156,10 @@ xe-$(CONFIG_DRM_XE_DISPLAY) += \
 	display/intel_dp.o \
 	display/intel_dp_hdcp.o \
 	display/intel_dp_link_training.o \
+	display/intel_dp_mst.o \
 	display/intel_dpll.o \
 	display/intel_dpll_mgr.o \
-	display/intel_dp_mst.o \
+	display/intel_dpt.o \
 	display/intel_drrs.o \
 	display/intel_dsb.o \
 	display/intel_dsi.o \
@@ -194,7 +195,9 @@ xe-$(CONFIG_DRM_XE_DISPLAY) += \
 	display/intel_vrr.o \
 	display/intel_wm.o \
 	display/xe_fb_pin.o \
+	display/xe_hdcp_gsc.o \
 	display/xe_plane_initial.o \
+	display/xe_display_rps.o \
 	display/skl_scaler.o \
 	display/skl_universal_plane.o \
 	display/skl_watermark.o \

@@ -108,9 +108,11 @@ int xe_display_create(struct xe_device *xe)
 	xe->params.enable_dc = -1;
 	xe->params.enable_dpcd_backlight = -1;
 	xe->params.enable_dp_mst = -1;
+	xe->params.enable_dpt = true;
 	xe->params.enable_fbc = -1;
 	xe->params.enable_psr = -1;
 	xe->params.enable_psr2_sel_fetch = -1;
+	xe->params.enable_sagv = true;
 	xe->params.panel_use_ssc = -1;
 
 	err = drmm_add_action_or_reset(&xe->drm, display_destroy, NULL);
