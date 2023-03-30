@@ -101,18 +101,141 @@ xe-y += xe_bb.o \
 	xe_wa.o \
 	xe_wopcm.o
 
+# i915 Display compat #defines and #includes
+subdir-ccflags-$(CONFIG_DRM_XE_DISPLAY) += -I$(srctree)/$(src)/display/ext \
+	-I$(srctree)/drivers/gpu/drm/xe/display/ \
+	-I$(srctree)/drivers/gpu/drm/i915/display/ \
+	-I$(srctree)/drivers/gpu/drm/i915/ \
+	-DBUILD_FOR_XE=1 \
+	-Ddrm_i915_gem_object=xe_bo \
+	-Ddrm_i915_private=xe_device
+
 # XXX: Needed for i915 register definitions. Will be removed after xe-regs.
 subdir-ccflags-y += -I$(srctree)/drivers/gpu/drm/i915/
 
+CFLAGS_display/intel_fbdev.o = $(call cc-disable-warning, override-init)
+
+$(obj)/display/i915_%.o: $(srctree)/drivers/gpu/drm/i915/display/i915_%.c FORCE
+	$(call cmd,force_checksrc)
+	$(call if_changed_rule,cc_o_c)
+
+
+$(obj)/display/skl_%.o: $(srctree)/drivers/gpu/drm/i915/display/skl_%.c FORCE
+	$(call cmd,force_checksrc)
+	$(call if_changed_rule,cc_o_c)
+
+$(obj)/display/icl_dsi.o: $(srctree)/drivers/gpu/drm/i915/display/icl_dsi.c FORCE
+	$(call cmd,force_checksrc)
+	$(call if_changed_rule,cc_o_c)
+
+$(obj)/display/intel_%.o: $(srctree)/drivers/gpu/drm/i915/display/intel_%.c FORCE
+	$(call cmd,force_checksrc)
+	$(call if_changed_rule,cc_o_c)
+
+# Display..
+xe-$(CONFIG_DRM_XE_DISPLAY) += \
+	xe_display.o \
+	display/icl_dsi.o \
+	display/intel_atomic.o \
+	display/intel_atomic_plane.o \
+	display/intel_audio.o \
+	display/intel_backlight.o \
+	display/intel_bios.o \
+	display/intel_bw.o \
+	display/intel_cdclk.o \
+	display/intel_color.o \
+	display/intel_combo_phy.o \
+	display/intel_connector.o \
+	display/intel_crtc_state_dump.o \
+	display/intel_crtc.o \
+	display/intel_cursor.o \
+	display/intel_ddi_buf_trans.o \
+	display/intel_ddi.o \
+	display/intel_display.o \
+	display/intel_display_debugfs.o \
+	display/intel_display_power.o \
+	display/intel_display_power_map.o \
+	display/intel_display_power_well.o \
+	display/intel_display_trace.o \
+	display/intel_dkl_phy.o \
+	display/intel_dmc.o \
+	display/intel_dp_aux_backlight.o \
+	display/intel_dp_aux.o \
+	display/intel_dp.o \
+	display/intel_dp_hdcp.o \
+	display/intel_dp_link_training.o \
+	display/intel_dpll.o \
+	display/intel_dpll_mgr.o \
+	display/intel_dp_mst.o \
+	display/intel_drrs.o \
+	display/intel_dsb.o \
+	display/intel_dsi.o \
+	display/intel_dsi_dcs_backlight.o \
+	display/intel_dsi_vbt.o \
+	display/intel_fb.o \
+	display/intel_fbc.o \
+	display/intel_fdi.o \
+	display/intel_fifo_underrun.o \
+	display/intel_frontbuffer.o \
+	display/intel_global_state.o \
+	display/intel_gmbus.o \
+	display/intel_hdcp.o \
+	display/intel_hdmi.o \
+	display/intel_hotplug.o \
+	display/intel_hti.o \
+	display/intel_lspcon.o \
+	display/intel_lvds.o \
+	display/intel_modeset_setup.o \
+	display/intel_modeset_verify.o \
+	display/intel_panel.o \
+	display/intel_pipe_crc.o \
+	display/intel_pps_stub.o \
+	display/intel_psr.o \
+	display/intel_qp_tables.o \
+	display/intel_quirks.o \
+	display/intel_snps_phy.o \
+	display/intel_sprite.o \
+	display/intel_tc.o \
+	display/intel_vblank.o \
+	display/intel_vdsc.o \
+	display/intel_vga.o \
+	display/intel_vrr.o \
+	display/intel_wm.o \
+	display/xe_fb_pin.o \
+	display/xe_plane_initial.o \
+	display/skl_scaler.o \
+	display/skl_universal_plane.o \
+	display/skl_watermark.o \
+	display/ext/i915_irq.o \
+	display/ext/i9xx_wm.o \
+	display/ext/intel_device_info.o \
+	display/ext/intel_dram.o \
+	display/ext/intel_pch.o \
+	display/ext/intel_pm.o
+
+ifeq ($(CONFIG_ACPI),y)
+	xe-$(CONFIG_DRM_XE_DISPLAY) += \
+		display/intel_acpi.o \
+		display/intel_opregion.o
+endif
+
+ifeq ($(CONFIG_DRM_FBDEV_EMULATION),y)
+	xe-$(CONFIG_DRM_XE_DISPLAY) += display/intel_fbdev.o
+endif
+
 obj-$(CONFIG_DRM_XE) += xe.o
 obj-$(CONFIG_DRM_XE_KUNIT_TEST) += tests/
-\
+
+ifneq ($(CONFIG_DRM_XE_DISPLAY),y)
+	skipdisplay:=-not -path display/\* -not -path xe_display.h
+endif
+
 # header test
 always-$(CONFIG_DRM_XE_WERROR) += \
-	$(patsubst %.h,%.hdrtest, $(shell cd $(srctree)/$(src) && find * -name '*.h'))
+	$(patsubst %.h,%.hdrtest, $(shell cd $(srctree)/$(src) && find * -name '*.h' $(skipdisplay)))
 
 quiet_cmd_hdrtest = HDRTEST $(patsubst %.hdrtest,%.h,$@)
-      cmd_hdrtest = $(CC) -DHDRTEST $(filter-out $(CFLAGS_GCOV), $(c_flags)) -S -o /dev/null -x c /dev/null -include $<; touch $@
+      cmd_hdrtest = $(CC) -DHDRTEST $(filter-out $(CFLAGS_GCOV), $(c_flags)) $(cflags-display) -S -o /dev/null -x c /dev/null -include $<; touch $@
 
 $(obj)/%.hdrtest: $(src)/%.h FORCE
 	$(call if_changed_dep,hdrtest)

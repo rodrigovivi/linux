@@ -8,6 +8,7 @@
 #include <drm/drm_managed.h>
 
 #include "xe_device.h"
+#include "xe_display.h"
 #include "xe_drv.h"
 #include "xe_guc.h"
 #include "xe_gt.h"
@@ -293,9 +294,13 @@ static irqreturn_t gen11_irq_handler(int irq, void *arg)
 
 	gen11_gt_irq_handler(xe, gt, master_ctl, intr_dw, identity);
 
+	xe_display_irq_handler(xe, master_ctl);
+
 	gu_misc_iir = gen11_gu_misc_irq_ack(gt, master_ctl);
 
 	gen11_intr_enable(gt, false);
+
+	xe_display_irq_enable(xe, gu_misc_iir);
 
 	return IRQ_HANDLED;
 }
@@ -378,9 +383,13 @@ static irqreturn_t dg1_irq_handler(int irq, void *arg)
 		gen11_gt_irq_handler(xe, gt, master_ctl, intr_dw, identity);
 	}
 
+	xe_display_irq_handler(xe, master_ctl);
+
 	gu_misc_iir = gen11_gu_misc_irq_ack(gt, master_ctl);
 
 	dg1_intr_enable(xe, false);
+
+	xe_display_irq_enable(xe, gu_misc_iir);
 
 	return IRQ_HANDLED;
 }
@@ -462,6 +471,8 @@ void xe_irq_reset(struct xe_device *xe)
 			drm_err(&xe->drm, "No interrupt reset hook");
 		}
 	}
+
+	xe_display_irq_reset(xe);
 }
 
 void xe_gt_irq_postinstall(struct xe_gt *gt)
@@ -474,6 +485,8 @@ void xe_gt_irq_postinstall(struct xe_gt *gt)
 		gen11_irq_postinstall(xe, gt);
 	else
 		drm_err(&xe->drm, "No interrupt postinstall hook");
+
+	xe_display_irq_postinstall(xe, gt);
 }
 
 static void xe_irq_postinstall(struct xe_device *xe)
