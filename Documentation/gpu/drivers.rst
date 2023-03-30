@@ -6,6 +6,7 @@ GPU Driver Documentation
 
    amdgpu/index
    i915
+   xe/index
    mcde
    meson
    pl111
