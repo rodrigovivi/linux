@@ -218,13 +218,9 @@ typedef struct {
 
 #define _MMIO(r) ((const i915_reg_t){ .reg = (r) })
 
-#ifdef I915
 typedef struct {
 	u32 reg;
 } i915_mcr_reg_t;
-#else
-#define i915_mcr_reg_t i915_reg_t
-#endif
 
 #define MCR_REG(offset)	((const i915_mcr_reg_t){ .reg = (offset) })
 
