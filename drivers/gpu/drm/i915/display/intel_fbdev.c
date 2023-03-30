@@ -214,7 +214,8 @@ static int intelfb_alloc(struct drm_fb_helper *helper,
 	}
 #else
 	if (!IS_DGFX(dev_priv)) {
-		obj = xe_bo_create_pin_map(dev_priv, to_gt(dev_priv), NULL, size,
+		obj = xe_bo_create_pin_map(dev_priv, xe_device_get_root_tile(dev_priv),
+					   NULL, size,
 					   ttm_bo_type_kernel, XE_BO_SCANOUT_BIT |
 					   XE_BO_CREATE_STOLEN_BIT |
 					   XE_BO_CREATE_PINNED_BIT);
@@ -224,9 +225,9 @@ static int intelfb_alloc(struct drm_fb_helper *helper,
 			drm_info(&dev_priv->drm, "Allocated fbdev into stolen failed: %li\n", PTR_ERR(obj));
 	}
 	if (IS_ERR(obj)) {
-		obj = xe_bo_create_pin_map(dev_priv, to_gt(dev_priv), NULL, size,
+		obj = xe_bo_create_pin_map(dev_priv, xe_device_get_root_tile(dev_priv), NULL, size,
 					  ttm_bo_type_kernel, XE_BO_SCANOUT_BIT |
-					  XE_BO_CREATE_VRAM_IF_DGFX(to_gt(dev_priv)) |
+					  XE_BO_CREATE_VRAM_IF_DGFX(xe_device_get_root_tile(dev_priv)) |
 					  XE_BO_CREATE_PINNED_BIT);
 	}
 #endif
@@ -462,17 +463,8 @@ static void intel_fbdev_destroy(struct intel_fbdev *ifbdev)
 	if (ifbdev->vma)
 		intel_unpin_fb_vma(ifbdev->vma, ifbdev->vma_flags);
 
-	if (ifbdev->fb) {
-#ifndef I915
-		struct xe_bo *bo = intel_fb_obj(&ifbdev->fb->base);
-
-		/* Unpin our kernel fb first */
-		xe_bo_lock_no_vm(bo, NULL);
-		xe_bo_unpin(bo);
-		xe_bo_unlock_no_vm(bo);
-#endif
+	if (ifbdev->fb)
 		drm_framebuffer_remove(&ifbdev->fb->base);
-	}
 
 	drm_fb_helper_unprepare(&ifbdev->helper);
 	kfree(ifbdev);

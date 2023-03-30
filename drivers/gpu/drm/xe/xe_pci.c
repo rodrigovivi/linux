@@ -17,6 +17,7 @@
 #include "regs/xe_regs.h"
 #include "regs/xe_gt_regs.h"
 #include "xe_device.h"
+#include "xe_display.h"
 #include "xe_drv.h"
 #include "xe_gt.h"
 #include "xe_macros.h"
@@ -55,6 +56,8 @@ struct xe_device_desc {
 
 	u8 require_force_probe:1;
 	u8 is_dgfx:1;
+	u8 has_display:1;
+
 	/*
 	 * FIXME: Xe doesn't care about presence/lack of 4tile since we can
 	 * already determine that from the graphics IP version.  This flag
@@ -63,6 +66,9 @@ struct xe_device_desc {
 	u8 has_4tile:1;
 	u8 has_llc:1;
 };
+
+__diag_push();
+__diag_ignore_all("-Woverride-init", "Allow field overrides in table");
 
 #define PLATFORM(x)		\
 	.platform = (x),	\
@@ -179,7 +185,8 @@ static const struct xe_device_desc tgl_desc = {
 	.graphics = &graphics_xelp,
 	.media = &media_xem,
 	PLATFORM(XE_TIGERLAKE),
-	.has_llc = 1,
+	.has_display = true,
+	.has_llc = true,
 	.require_force_probe = true,
 };
 
@@ -187,6 +194,7 @@ static const struct xe_device_desc rkl_desc = {
 	.graphics = &graphics_xelp,
 	.media = &media_xem,
 	PLATFORM(XE_ROCKETLAKE),
+	.has_display = true,
 	.require_force_probe = true,
 };
 
@@ -194,7 +202,8 @@ static const struct xe_device_desc adl_s_desc = {
 	.graphics = &graphics_xelp,
 	.media = &media_xem,
 	PLATFORM(XE_ALDERLAKE_S),
-	.has_llc = 1,
+	.has_display = true,
+	.has_llc = true,
 	.require_force_probe = true,
 };
 
@@ -204,7 +213,8 @@ static const struct xe_device_desc adl_p_desc = {
 	.graphics = &graphics_xelp,
 	.media = &media_xem,
 	PLATFORM(XE_ALDERLAKE_P),
-	.has_llc = 1,
+	.has_display = true,
+	.has_llc = true,
 	.require_force_probe = true,
 	.subplatforms = (const struct xe_subplatform_desc[]) {
 		{ XE_SUBPLATFORM_ADLP_RPLU, "RPLU", adlp_rplu_ids },
@@ -216,7 +226,8 @@ static const struct xe_device_desc adl_n_desc = {
 	.graphics = &graphics_xelp,
 	.media = &media_xem,
 	PLATFORM(XE_ALDERLAKE_N),
-	.has_llc = 1,
+	.has_display = true,
+	.has_llc = true,
 	.require_force_probe = true,
 };
 
@@ -228,6 +239,7 @@ static const struct xe_device_desc dg1_desc = {
 	.media = &media_xem,
 	DGFX_FEATURES,
 	PLATFORM(XE_DG1),
+	.has_display = true,
 	.require_force_probe = true,
 };
 
@@ -252,6 +264,7 @@ static const struct xe_device_desc ats_m_desc = {
 	.require_force_probe = true,
 
 	DG2_FEATURES,
+	.has_display = false,
 };
 
 static const struct xe_device_desc dg2_desc = {
@@ -260,12 +273,14 @@ static const struct xe_device_desc dg2_desc = {
 	.require_force_probe = true,
 
 	DG2_FEATURES,
+	.has_display = true,
 };
 
 static const struct xe_device_desc pvc_desc = {
 	.graphics = &graphics_xehpc,
 	DGFX_FEATURES,
 	PLATFORM(XE_PVC),
+	.has_display = false,
 	.require_force_probe = true,
 };
 
@@ -273,9 +288,11 @@ static const struct xe_device_desc mtl_desc = {
 	/* .graphics and .media determined via GMD_ID */
 	.require_force_probe = true,
 	PLATFORM(XE_METEORLAKE),
+	.has_display = true,
 };
 
 #undef PLATFORM
+__diag_pop();
 
 /* Map of GMD_ID values to graphics IP */
 static struct gmdid_map graphics_ip_map[] = {
@@ -528,6 +545,9 @@ static int xe_info_init(struct xe_device *xe,
 	xe->info.has_range_tlb_invalidation = graphics_desc->has_range_tlb_invalidation;
 	xe->info.has_link_copy_engine = graphics_desc->has_link_copy_engine;
 
+	xe->info.enable_display = IS_ENABLED(CONFIG_DRM_XE_DISPLAY) &&
+				  enable_display &&
+				  desc->has_display;
 	/*
 	 * All platforms have at least one primary GT.  Any platform with media
 	 * version 13 or higher has an additional dedicated media GT.  And
@@ -626,6 +646,10 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		return -ENODEV;
 	}
 
+	err = xe_display_driver_probe_defer(pdev);
+	if (err)
+		return err;
+
 	xe = xe_device_create(pdev, ent);
 	if (IS_ERR(xe))
 		return PTR_ERR(xe);
@@ -647,7 +671,9 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (err)
 		goto err_pci_disable;
 
-	drm_dbg(&xe->drm, "%s %s %04x:%04x dgfx:%d gfx:%s (%d.%02d) media:%s (%d.%02d) dma_m_s:%d tc:%d",
+	xe_display_info_init(xe);
+
+	drm_dbg(&xe->drm, "%s %s %04x:%04x dgfx:%d gfx:%s (%d.%02d) media:%s (%d.%02d) display:%s dma_m_s:%d tc:%d",
 		desc->platform_name,
 		subplatform_desc ? subplatform_desc->name : "",
 		xe->info.devid, xe->info.revid,
@@ -658,6 +684,7 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		xe->info.media_name,
 		xe->info.media_verx100 / 100,
 		xe->info.media_verx100 % 100,
+		str_yes_no(xe->info.enable_display),
 		xe->info.dma_mask_size, xe->info.tile_count);
 
 	drm_dbg(&xe->drm, "Stepping = (G:%s, M:%s, D:%s, B:%s)\n",
