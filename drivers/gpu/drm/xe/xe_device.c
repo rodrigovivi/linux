@@ -16,6 +16,7 @@
 #include "regs/xe_regs.h"
 #include "xe_bo.h"
 #include "xe_debugfs.h"
+#include "xe_display.h"
 #include "xe_dma_buf.h"
 #include "xe_drv.h"
 #include "xe_engine.h"
@@ -162,6 +163,11 @@ static void xe_device_destroy(struct drm_device *dev, void *dummy)
 	if (xe->ordered_wq)
 		destroy_workqueue(xe->ordered_wq);
 
+	if (xe->unordered_wq)
+		destroy_workqueue(xe->unordered_wq);
+
+	destroy_workqueue(xe->display.hotplug.dp_wq);
+
 	ttm_device_fini(&xe->ttm);
 }
 
@@ -170,6 +176,10 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 {
 	struct xe_device *xe;
 	int err;
+
+	err = xe_display_enable(pdev, &driver);
+	if (err)
+		return ERR_PTR(err);
 
 	err = drm_aperture_remove_conflicting_pci_framebuffers(pdev, &driver);
 	if (err)
@@ -192,6 +202,7 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 	xe->info.devid = pdev->device;
 	xe->info.revid = pdev->revision;
 	xe->info.enable_guc = enable_guc;
+	xe->info.enable_display = enable_display;
 
 	spin_lock_init(&xe->irq.lock);
 
@@ -209,14 +220,38 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 	INIT_LIST_HEAD(&xe->pinned.evicted);
 
 	xe->ordered_wq = alloc_ordered_workqueue("xe-ordered-wq", 0);
-	if (!xe->ordered_wq) {
-		drm_err(&xe->drm, "Failed to allocate xe-ordered-wq\n");
+	xe->unordered_wq = alloc_workqueue("xe-unordered-wq", 0, 0);
+	if (!xe->ordered_wq || !xe->unordered_wq) {
+		drm_err(&xe->drm, "Failed to allocate xe workqueues\n");
 		err = -ENOMEM;
 		goto err_put;
 	}
 
+	/* Initialize display parts here.. */
+	spin_lock_init(&xe->display.fb_tracking.lock);
+
+	xe->display.hotplug.dp_wq = alloc_ordered_workqueue("xe-dp", 0);
+
 	drmm_mutex_init(&xe->drm, &xe->sb_lock);
+	drmm_mutex_init(&xe->drm, &xe->display.backlight.lock);
+	drmm_mutex_init(&xe->drm, &xe->display.audio.mutex);
+	drmm_mutex_init(&xe->drm, &xe->display.wm.wm_mutex);
+	drmm_mutex_init(&xe->drm, &xe->display.pps.mutex);
+	drmm_mutex_init(&xe->drm, &xe->display.hdcp.hdcp_mutex);
 	xe->enabled_irq_mask = ~0;
+
+	xe->params.invert_brightness = -1;
+	xe->params.vbt_sdvo_panel_type = -1;
+	xe->params.disable_power_well = -1;
+	xe->params.enable_dc = -1;
+	xe->params.enable_dpcd_backlight = -1;
+	xe->params.enable_dp_mst = -1;
+	xe->params.enable_dpt = true;
+	xe->params.enable_fbc = -1;
+	xe->params.enable_psr = -1;
+	xe->params.enable_psr2_sel_fetch = -1;
+	xe->params.enable_sagv = true;
+	xe->params.panel_use_ssc = -1;
 
 	return xe;
 
@@ -244,6 +279,9 @@ int xe_device_probe(struct xe_device *xe)
 	u8 id;
 
 	xe->info.mem_region_mask = 1;
+	err = xe_display_init_nommio(xe);
+	if (err)
+		return err;
 
 	for_each_tile(tile, xe, id) {
 		err = xe_tile_alloc(tile);
@@ -261,9 +299,13 @@ int xe_device_probe(struct xe_device *xe)
 			return err;
 	}
 
-	err = xe_irq_install(xe);
+	err = xe_display_init_noirq(xe);
 	if (err)
 		return err;
+
+	err = xe_irq_install(xe);
+	if (err)
+		goto err;
 
 	for_each_gt(gt, xe, id) {
 		err = xe_gt_init_early(gt);
@@ -286,15 +328,31 @@ int xe_device_probe(struct xe_device *xe)
 	/* Allocate and map stolen after potential VRAM resize */
 	xe_ttm_stolen_mgr_init(xe);
 
+	/*
+	 * Now that GT is initialized (TTM in particular),
+	 * we can try to init display, and inherit the initial fb.
+	 * This is the reason the first allocation needs to be done
+	 * inside display.
+	 */
+	err = xe_display_init_noaccel(xe);
+	if (err)
+		goto err_irq_shutdown;
+
 	for_each_gt(gt, xe, id) {
 		err = xe_gt_init(gt);
 		if (err)
 			goto err_irq_shutdown;
 	}
 
+	err = xe_display_init(xe);
+	if (err)
+		goto err_fini_display;
+
 	err = drm_dev_register(&xe->drm, 0);
 	if (err)
 		goto err_irq_shutdown;
+
+	xe_display_register(xe);
 
 	xe_debugfs_register(xe);
 
@@ -304,13 +362,30 @@ int xe_device_probe(struct xe_device *xe)
 
 	return 0;
 
+err_fini_display:
+	xe_display_modset_driver_remove(xe);
+
 err_irq_shutdown:
 	xe_irq_shutdown(xe);
+err:
+	xe_display_unlink(xe);
 	return err;
+}
+
+static void xe_device_remove_display(struct xe_device *xe)
+{
+	xe_display_unregister(xe);
+
+	drm_dev_unplug(&xe->drm);
+	xe_display_modset_driver_remove(xe);
 }
 
 void xe_device_remove(struct xe_device *xe)
 {
+	xe_device_remove_display(xe);
+
+	xe_display_unlink(xe);
+
 	xe_irq_shutdown(xe);
 }
 
