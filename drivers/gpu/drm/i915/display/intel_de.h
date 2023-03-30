@@ -3,6 +3,9 @@
  * Copyright © 2019 Intel Corporation
  */
 
+#ifdef BUILD_FOR_XE
+#include_next "intel_de.h"
+#else
 #ifndef __INTEL_DE_H__
 #define __INTEL_DE_H__
 
@@ -174,3 +177,4 @@ static inline int intel_de_pcode_request(struct drm_i915_private *i915, u32 mbox
 }
 
 #endif /* __INTEL_DE_H__ */
+#endif
