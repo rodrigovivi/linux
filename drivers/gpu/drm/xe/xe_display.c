@@ -275,7 +275,7 @@ void xe_display_irq_handler(struct xe_device *xe, u32 master_ctl)
 	if (!xe->info.enable_display)
 		return;
 
-	if (master_ctl & GEN11_DISPLAY_IRQ)
+	if (master_ctl & DISPLAY_IRQ)
 		gen11_display_irq_handler(xe);
 }
 
@@ -284,7 +284,7 @@ void xe_display_irq_enable(struct xe_device *xe, u32 gu_misc_iir)
 	if (!xe->info.enable_display)
 		return;
 
-	if (gu_misc_iir & GEN11_GU_MISC_GSE)
+	if (gu_misc_iir & GU_MISC_GSE)
 		intel_opregion_asle_intr(xe);
 }
 
