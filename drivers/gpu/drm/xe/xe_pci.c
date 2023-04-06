@@ -125,7 +125,6 @@ static const struct xe_media_desc media_xelpmp = {
 
 /* Keep in gen based order, and chronological order within a gen */
 #define GEN12_FEATURES \
-	.require_force_probe = true, \
 	.dma_mask_size = 39, \
 	.max_tiles = 1, \
 	.vm_max_level = 3, \
@@ -136,6 +135,7 @@ static const struct xe_device_desc tgl_desc = {
 	.media = &media_xem,
 	GEN12_FEATURES,
 	PLATFORM(XE_TIGERLAKE),
+	.require_force_probe = true,
 	.platform_engine_mask =
 		BIT(XE_HW_ENGINE_RCS0) | BIT(XE_HW_ENGINE_BCS0) |
 		BIT(XE_HW_ENGINE_VECS0) | BIT(XE_HW_ENGINE_VCS0) |
@@ -147,6 +147,7 @@ static const struct xe_device_desc adl_s_desc = {
 	.media = &media_xem,
 	GEN12_FEATURES,
 	PLATFORM(XE_ALDERLAKE_S),
+	.require_force_probe = true,
 	.platform_engine_mask =
 		BIT(XE_HW_ENGINE_RCS0) | BIT(XE_HW_ENGINE_BCS0) |
 		BIT(XE_HW_ENGINE_VECS0) | BIT(XE_HW_ENGINE_VCS0) |
@@ -160,6 +161,7 @@ static const struct xe_device_desc adl_p_desc = {
 	.media = &media_xem,
 	GEN12_FEATURES,
 	PLATFORM(XE_ALDERLAKE_P),
+	.require_force_probe = true,
 	.platform_engine_mask =
 		BIT(XE_HW_ENGINE_RCS0) | BIT(XE_HW_ENGINE_BCS0) |
 		BIT(XE_HW_ENGINE_VECS0) | BIT(XE_HW_ENGINE_VCS0) |
@@ -179,6 +181,7 @@ static const struct xe_device_desc dg1_desc = {
 	GEN12_FEATURES,
 	DGFX_FEATURES,
 	PLATFORM(XE_DG1),
+	.require_force_probe = true,
 	.platform_engine_mask =
 		BIT(XE_HW_ENGINE_RCS0) | BIT(XE_HW_ENGINE_BCS0) |
 		BIT(XE_HW_ENGINE_VECS0) | BIT(XE_HW_ENGINE_VCS0) |
@@ -186,7 +189,6 @@ static const struct xe_device_desc dg1_desc = {
 };
 
 #define XE_HP_FEATURES \
-	.require_force_probe = true, \
 	.has_range_tlb_invalidation = true, \
 	.has_flat_ccs = true, \
 	.dma_mask_size = 46, \
@@ -212,13 +214,13 @@ static const u16 dg2_g12_ids[] = { XE_DG2_G12_IDS(NOP), 0 };
 		BIT(XE_HW_ENGINE_VCS0) | BIT(XE_HW_ENGINE_VCS2) | \
 		BIT(XE_HW_ENGINE_CCS0) | BIT(XE_HW_ENGINE_CCS1) | \
 		BIT(XE_HW_ENGINE_CCS2) | BIT(XE_HW_ENGINE_CCS3), \
-	.require_force_probe = true, \
 	.vram_flags = XE_VRAM_FLAGS_NEED64K, \
 	.has_4tile = 1
 
 static const struct xe_device_desc ats_m_desc = {
 	.graphics = &graphics_xehpg,
 	.media = &media_xehpm,
+	.require_force_probe = true,
 	XE_HP_FEATURES,
 
 	DG2_FEATURES,
@@ -227,6 +229,7 @@ static const struct xe_device_desc ats_m_desc = {
 static const struct xe_device_desc dg2_desc = {
 	.graphics = &graphics_xehpg,
 	.media = &media_xehpm,
+	.require_force_probe = true,
 	XE_HP_FEATURES,
 
 	DG2_FEATURES,
@@ -258,6 +261,7 @@ static const struct xe_device_desc pvc_desc = {
 	XE_HP_FEATURES,
 	DGFX_FEATURES,
 	PLATFORM(XE_PVC),
+	.require_force_probe = true,
 	.extra_gts = pvc_gts,
 	.has_flat_ccs = 0,
 	.platform_engine_mask = PVC_ENGINES,
