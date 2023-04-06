@@ -75,6 +75,7 @@ __diag_ignore_all("-Woverride-init", "Allow field overrides in table");
 #define NOP(x)	x
 
 static const struct xe_graphics_desc graphics_xelp = {
+	.name = "Xe_LP",
 	.ver = 12,
 	.rel = 0,
 
@@ -85,6 +86,7 @@ static const struct xe_graphics_desc graphics_xelp = {
 };
 
 static const struct xe_graphics_desc graphics_xelpp = {
+	.name = "Xe_LP+",
 	.ver = 12,
 	.rel = 10,
 
@@ -101,6 +103,7 @@ static const struct xe_graphics_desc graphics_xelpp = {
 	.vm_max_level = 3
 
 static const struct xe_graphics_desc graphics_xehpg = {
+	.name = "Xe_HPG",
 	.ver = 12,
 	.rel = 55,
 
@@ -114,6 +117,7 @@ static const struct xe_graphics_desc graphics_xehpg = {
 };
 
 static const struct xe_graphics_desc graphics_xehpc = {
+	.name = "Xe_HPC",
 	.ver = 12,
 	.rel = 60,
 
@@ -139,6 +143,7 @@ static const struct xe_graphics_desc graphics_xehpc = {
 };
 
 static const struct xe_graphics_desc graphics_xelpg = {
+	.name = "Xe_LPG",
 	.ver = 12,
 	.rel = 70,
 
@@ -151,6 +156,7 @@ static const struct xe_graphics_desc graphics_xelpg = {
 };
 
 static const struct xe_media_desc media_xem = {
+	.name = "Xe_M",
 	.ver = 12,
 	.rel = 0,
 
@@ -160,6 +166,7 @@ static const struct xe_media_desc media_xem = {
 };
 
 static const struct xe_media_desc media_xehpm = {
+	.name = "Xe_HPM",
 	.ver = 12,
 	.rel = 55,
 
@@ -169,6 +176,7 @@ static const struct xe_media_desc media_xehpm = {
 };
 
 static const struct xe_media_desc media_xelpmp = {
+	.name = "Xe_LPM+",
 	.ver = 13,
 	.rel = 0,
 
@@ -390,6 +398,8 @@ static void xe_info_init(struct xe_device *xe,
 					 desc->media->rel;
 	xe->info.is_dgfx = desc->is_dgfx;
 	xe->info.platform = desc->platform;
+	xe->info.graphics_name = desc->graphics->name;
+	xe->info.media_name = desc->media ? desc->media->name : "none";
 	xe->info.dma_mask_size = desc->graphics->dma_mask_size;
 	xe->info.vram_flags = desc->graphics->vram_flags;
 	xe->info.vm_max_level = desc->graphics->vm_max_level;
@@ -493,12 +503,17 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	xe_info_init(xe, desc, subplatform_desc);
 	xe_display_info_init(xe);
 
-	drm_dbg(&xe->drm, "%s %s %04x:%04x dgfx:%d gfx100:%d media100:%d dma_m_s:%d tc:%d",
+	drm_dbg(&xe->drm, "%s %s %04x:%04x dgfx:%d gfx:%s (%d.%02d) media:%s (%d.%02d) dma_m_s:%d tc:%d",
 		desc->platform_name,
 		subplatform_desc ? subplatform_desc->name : "",
 		xe->info.devid, xe->info.revid,
-		xe->info.is_dgfx, xe->info.graphics_verx100,
-		xe->info.media_verx100,
+		xe->info.is_dgfx,
+		xe->info.graphics_name,
+		xe->info.graphics_verx100 / 100,
+		xe->info.graphics_verx100 % 100,
+		xe->info.media_name,
+		xe->info.media_verx100 / 100,
+		xe->info.media_verx100 % 100,
 		xe->info.dma_mask_size, xe->info.tile_count);
 
 	drm_dbg(&xe->drm, "Stepping = (G:%s, M:%s, D:%s, B:%s)\n",
