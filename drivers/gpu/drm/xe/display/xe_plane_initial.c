@@ -67,10 +67,10 @@ initial_plane_bo(struct xe_device *xe,
 		u64 __iomem *gte = gt0->mem.ggtt->gsm;
 		u64 pte;
 
-		gte += base / GEN8_PAGE_SIZE;
+		gte += base / XE_PAGE_SIZE;
 
 		pte = ioread64(gte);
-		if (!(pte & GEN12_GGTT_PTE_LM)) {
+		if (!(pte & XE_GGTT_PTE_LM)) {
 			drm_err(&xe->drm,
 				"Initial plane programming missing PTE_LM bit\n");
 			return NULL;

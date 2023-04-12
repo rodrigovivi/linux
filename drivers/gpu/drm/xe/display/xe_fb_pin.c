@@ -27,7 +27,7 @@ write_dpt_rotated(struct xe_bo *bo, struct iosys_map *map, u32 *dpt_ofs, u32 bo_
 
 		for (row = 0; row < height; row++) {
 			iosys_map_wr(map, *dpt_ofs, u64,
-				     xe_ggtt_pte_encode(bo, src_idx * GEN8_PAGE_SIZE));
+				     xe_ggtt_pte_encode(bo, src_idx * XE_PAGE_SIZE));
 			*dpt_ofs += 8;
 			src_idx -= src_stride;
 		}
@@ -49,10 +49,11 @@ static int __xe_pin_fb_vma_dpt(struct intel_framebuffer *fb,
 	u32 dpt_size, size = bo->ttm.base.size;
 
 	if (view->type == I915_GTT_VIEW_NORMAL)
-		dpt_size = ALIGN(size / GEN8_PAGE_SIZE * 8, GEN8_PAGE_SIZE);
+		dpt_size = ALIGN(size / XE_PAGE_SIZE * 8, XE_PAGE_SIZE);
 	else
 		/* display uses 4K tiles instead of bytes here, convert to entries.. */
-		dpt_size = ALIGN(intel_rotation_info_size(&view->rotated) * 8, GEN8_PAGE_SIZE);
+		dpt_size = ALIGN(intel_rotation_info_size(&view->rotated) * 8,
+				 XE_PAGE_SIZE);
 
 	dpt = xe_bo_create_pin_map(xe, to_gt(xe), NULL, dpt_size,
 				  ttm_bo_type_kernel,
@@ -74,9 +75,9 @@ static int __xe_pin_fb_vma_dpt(struct intel_framebuffer *fb,
 	if (view->type == I915_GTT_VIEW_NORMAL) {
 		u32 x;
 
-		for (x = 0; x < size / GEN8_PAGE_SIZE; x++)
+		for (x = 0; x < size / XE_PAGE_SIZE; x++)
 			iosys_map_wr(&dpt->vmap, x * 8, u64,
-				     xe_ggtt_pte_encode(bo, x * GEN8_PAGE_SIZE));
+				     xe_ggtt_pte_encode(bo, x * XE_PAGE_SIZE));
 	} else {
 		const struct intel_rotation_info *rot_info = &view->rotated;
 		u32 i, dpt_ofs = 0;
@@ -106,13 +107,13 @@ write_ggtt_rotated(struct xe_bo *bo, struct xe_ggtt *ggtt, u32 *ggtt_ofs, u32 bo
 
 		for (row = 0; row < height; row++) {
 			xe_ggtt_set_pte(ggtt, *ggtt_ofs,
-					xe_ggtt_pte_encode(bo, src_idx * GEN8_PAGE_SIZE));
-			*ggtt_ofs += GEN8_PAGE_SIZE;
+					xe_ggtt_pte_encode(bo, src_idx * XE_PAGE_SIZE));
+			*ggtt_ofs += XE_PAGE_SIZE;
 			src_idx -= src_stride;
 		}
 
 		/* The DE ignores the PTEs for the padding tiles */
-		*ggtt_ofs += (dst_stride - height) * GEN8_PAGE_SIZE;
+		*ggtt_ofs += (dst_stride - height) * XE_PAGE_SIZE;
 	}
 }
 
@@ -133,7 +134,7 @@ static int __xe_pin_fb_vma_ggtt(struct intel_framebuffer *fb,
 	if (ret)
 		return ret;
 
-	align = GEN8_PAGE_SIZE;
+	align = XE_PAGE_SIZE;
 	if (xe_bo_is_vram(bo) && ggtt->flags & XE_GGTT_FLAGS_64K)
 		align = max_t(u32, align, SZ_64K);
 
@@ -147,14 +148,14 @@ static int __xe_pin_fb_vma_ggtt(struct intel_framebuffer *fb,
 		if (ret)
 			goto out;
 
-		for (x = 0; x < size; x += GEN8_PAGE_SIZE)
+		for (x = 0; x < size; x += XE_PAGE_SIZE)
 			xe_ggtt_set_pte(ggtt, vma->node.start + x, xe_ggtt_pte_encode(bo, x));
 	} else {
 		u32 i, ggtt_ofs;
 		const struct intel_rotation_info *rot_info = &view->rotated;
 
 		/* display seems to use tiles instead of bytes here, so convert it back.. */
-		u32 size = intel_rotation_info_size(rot_info) * GEN8_PAGE_SIZE;
+		u32 size = intel_rotation_info_size(rot_info) * XE_PAGE_SIZE;
 
 		ret = xe_ggtt_insert_special_node_locked(ggtt, &vma->node, size,
 							 align, 0);
