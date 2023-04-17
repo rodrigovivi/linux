@@ -16,6 +16,7 @@
 
 #include "regs/xe_regs.h"
 #include "regs/xe_gt_regs.h"
+#include "xe_devcoredump.h"
 #include "xe_device.h"
 #include "xe_display.h"
 #include "xe_drv.h"
@@ -655,6 +656,7 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		return err;
 	}
 
+	xe_devcoredump_init(xe);
 	xe_pm_runtime_init(xe);
 
 	return 0;
