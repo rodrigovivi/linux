@@ -42,6 +42,11 @@
  * hang capture.
  */
 
+static struct xe_device *coredump_to_xe(const struct xe_devcoredump *coredump)
+{
+	return container_of(coredump, struct xe_device, devcoredump);
+}
+
 static ssize_t xe_devcoredump_read(char *buffer, loff_t offset,
 				   size_t count, void *data, size_t datalen)
 {
@@ -50,6 +55,10 @@ static ssize_t xe_devcoredump_read(char *buffer, loff_t offset,
 	struct drm_printer p;
 	struct drm_print_iterator iter;
 	struct timespec64 ts;
+
+	/* Our device is gone already... */
+	if (!data || !coredump_to_xe(coredump))
+		return -ENODEV;
 
 	iter.data = buffer;
 	iter.offset = 0;
@@ -80,12 +89,16 @@ static ssize_t xe_devcoredump_read(char *buffer, loff_t offset,
 static void xe_devcoredump_free(void *data)
 {
 	struct xe_devcoredump *coredump = data;
-	struct xe_device *xe = container_of(coredump, struct xe_device,
-					    devcoredump);
+
+	/* Our device is gone. Nothing to do... */
+	if (!data || !coredump_to_xe(coredump))
+		return;
+
 	mutex_lock(&coredump->lock);
 
 	coredump->faulty_engine = NULL;
-	drm_info(&xe->drm, "Xe device coredump has been deleted.\n");
+	drm_info(&coredump_to_xe(coredump)->drm,
+		 "Xe device coredump has been deleted.\n");
 
 	mutex_unlock(&coredump->lock);
 }
