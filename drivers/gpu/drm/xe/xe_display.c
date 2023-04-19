@@ -517,6 +517,7 @@ void xe_display_info_init(struct xe_device *xe)
 		};
 		break;
 	case XE_ALDERLAKE_P:
+	case XE_ALDERLAKE_N:
 		xe->info.display = (struct xe_device_display_info) {
 			XE_LPD,
 			.has_cdclk_crawl = 1,
