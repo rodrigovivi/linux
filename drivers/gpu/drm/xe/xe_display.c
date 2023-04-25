@@ -449,7 +449,7 @@ __diag_ignore_all("-Woverride-init", "Allow field overrides in table");
 	.has_hdcp = 1,							\
 	.has_ipc = 1,							\
 	.has_psr = 1,							\
-	.has_psr_hw_tracking = 1,					\
+	.has_psr_hw_tracking = 0,					\
 	.color = { .degamma_lut_size = 33, .gamma_lut_size = 262145 }
 
 #define XE_LPD								\
@@ -472,7 +472,8 @@ __diag_ignore_all("-Woverride-init", "Allow field overrides in table");
 	.has_fpga_dbg = 1,						\
 	.has_hdcp = 1,							\
 	.has_ipc = 1,							\
-	.has_psr = 1
+	.has_psr = 1,							\
+	.has_psr_hw_tracking = 0
 
 #define XE_LPDP								\
 	XE_LPD,								\
@@ -489,14 +490,16 @@ void xe_display_info_init(struct xe_device *xe)
 	switch (xe->info.platform) {
 	case XE_TIGERLAKE:
 	case XE_DG1:
-		xe->info.display = (struct xe_device_display_info) { GEN12_DISPLAY };
+		xe->info.display = (struct xe_device_display_info) {
+			GEN12_DISPLAY,
+			.has_psr_hw_tracking = 1,
+		};
 		break;
 	case XE_ROCKETLAKE:
 		xe->info.display = (struct xe_device_display_info) {
 			GEN12_DISPLAY,
 			.abox_mask = BIT(0),
 			.has_hti = 1,
-			.has_psr_hw_tracking = 0,
 			.cpu_transcoder_mask =
 				BIT(TRANSCODER_A) | BIT(TRANSCODER_B) |
 				BIT(TRANSCODER_C),
@@ -508,14 +511,12 @@ void xe_display_info_init(struct xe_device *xe)
 		xe->info.display = (struct xe_device_display_info) {
 			GEN12_DISPLAY,
 			.has_hti = 1,
-			.has_psr_hw_tracking = 0,
 		};
 		break;
 	case XE_ALDERLAKE_P:
 		xe->info.display = (struct xe_device_display_info) {
 			XE_LPD,
 			.has_cdclk_crawl = 1,
-			.has_psr_hw_tracking = 0,
 		};
 		break;
 	case XE_DG2:
