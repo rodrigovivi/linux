@@ -16,6 +16,7 @@
 #include "xe_guc_ct.h"
 #include "xe_guc_submit.h"
 #include "xe_hw_engine.h"
+#include "xe_vm.h"
 
 /**
  * DOC: Xe device coredump
@@ -103,6 +104,9 @@ static ssize_t xe_devcoredump_read(char *buffer, loff_t offset,
 	for_each_hw_engine(hwe, e->gt, id)
 		xe_hw_engine_snapshot_print(coredump->snapshot.hwe[id], &p);
 
+	drm_printf(&p, "\n**** VM ****\n");
+	xe_vm_snapshot_print(coredump->snapshot.vm, &p);
+
 	mutex_unlock(&coredump->lock);
 
 	return count - iter.remain;
@@ -124,6 +128,7 @@ static void xe_devcoredump_free(void *data)
 	xe_guc_engine_snapshot_free(coredump->snapshot.ge);
 	for_each_hw_engine(hwe, coredump->faulty_engine->gt, id)
 		xe_hw_engine_snapshot_free(coredump->snapshot.hwe[id]);
+	xe_vm_snapshot_free(coredump->snapshot.vm);
 
 	coredump->faulty_engine = NULL;
 	drm_info(&coredump_to_xe(coredump)->drm,
@@ -171,6 +176,7 @@ static void devcoredump_snapshot(struct xe_devcoredump *coredump)
 									   true);
 	}
 
+	coredump->snapshot.vm = xe_vm_snapshot_capture(e->vm, e->gt->info.id);
 	xe_force_wake_put(gt_to_fw(e->gt), XE_FORCEWAKE_ALL);
 }
 
