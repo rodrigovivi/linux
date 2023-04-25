@@ -145,6 +145,7 @@ xe-$(CONFIG_DRM_XE_DISPLAY) += \
 	i915-display/intel_ddi.o \
 	i915-display/intel_ddi_buf_trans.o \
 	i915-display/intel_display.o \
+	i915-display/intel_display_driver.o \
 	i915-display/intel_display_debugfs.o \
 	i915-display/intel_display_power.o \
 	i915-display/intel_display_power_map.o \

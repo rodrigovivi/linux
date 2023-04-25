@@ -22,6 +22,7 @@
 #include "intel_bw.h"
 #include "intel_clock_gating.h"
 #include "intel_display.h"
+#include "intel_display_driver.h"
 #include "intel_display_types.h"
 #include "intel_dmc.h"
 #include "intel_dp.h"
@@ -54,7 +55,7 @@ int xe_display_set_driver_hooks(struct pci_dev *pdev, struct drm_driver *driver)
 		return 0;
 
 	/* Detect if we need to wait for other drivers early on */
-	if (intel_modeset_probe_defer(pdev))
+	if (intel_display_driver_probe_defer(pdev))
 		return -EPROBE_DEFER;
 
 	driver->driver_features |= DRIVER_MODESET | DRIVER_ATOMIC;
@@ -159,7 +160,7 @@ void xe_display_fini_noirq(struct drm_device *dev, void *dummy)
 	if (!xe->info.enable_display)
 		return;
 
-	intel_modeset_driver_remove_noirq(xe);
+	intel_display_driver_remove_noirq(xe);
 	intel_power_domains_driver_remove(xe);
 }
 
@@ -169,6 +170,8 @@ int xe_display_init_noirq(struct xe_device *xe)
 
 	if (!xe->info.enable_display)
 		return 0;
+
+	intel_display_driver_early_probe(xe);
 
 	/* Early display init.. */
 	intel_opregion_setup(xe);
@@ -188,7 +191,7 @@ int xe_display_init_noirq(struct xe_device *xe)
 	if (err)
 		return err;
 
-	err = intel_modeset_init_noirq(xe);
+	err = intel_display_driver_probe_noirq(xe);
 	if (err)
 		return err;
 
@@ -202,7 +205,7 @@ void xe_display_fini_noaccel(struct drm_device *dev, void *dummy)
 	if (!xe->info.enable_display)
 		return;
 
-	intel_modeset_driver_remove_nogem(xe);
+	intel_display_driver_remove_nogem(xe);
 }
 
 int xe_display_init_noaccel(struct xe_device *xe)
@@ -212,7 +215,7 @@ int xe_display_init_noaccel(struct xe_device *xe)
 	if (!xe->info.enable_display)
 		return 0;
 
-	err = intel_modeset_init_nogem(xe);
+	err = intel_display_driver_probe_nogem(xe);
 	if (err)
 		return err;
 
@@ -224,7 +227,7 @@ int xe_display_init(struct xe_device *xe)
 	if (!xe->info.enable_display)
 		return 0;
 
-	return intel_modeset_init(xe);
+	return intel_display_driver_probe(xe);
 }
 
 void xe_display_unlink(struct xe_device *xe)
@@ -265,7 +268,7 @@ void xe_display_modset_driver_remove(struct xe_device *xe)
 	if (!xe->info.enable_display)
 		return;
 
-	intel_modeset_driver_remove(xe);
+	intel_display_driver_remove(xe);
 }
 
 /* IRQ-related functions */
@@ -333,7 +336,7 @@ void xe_display_pm_suspend(struct xe_device *xe)
 	if (xe->info.display.pipe_mask)
 		drm_kms_helper_poll_disable(&xe->drm);
 
-	intel_display_suspend(&xe->drm);
+	intel_display_driver_suspend(xe);
 
 	intel_dp_mst_suspend(xe);
 
@@ -378,13 +381,13 @@ void xe_display_pm_resume(struct xe_device *xe)
 	if (xe->info.display.pipe_mask)
 		drm_mode_config_reset(&xe->drm);
 
-	intel_modeset_init_hw(xe);
+	intel_display_driver_init_hw(xe);
 	intel_clock_gating_init(xe);
 	intel_hpd_init(xe);
 
 	/* MST sideband requires HPD interrupts enabled */
 	intel_dp_mst_resume(xe);
-	intel_display_resume(&xe->drm);
+	intel_display_driver_resume(xe);
 
 	intel_hpd_poll_disable(xe);
 	if (xe->info.display.pipe_mask)
