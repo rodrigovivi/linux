@@ -703,7 +703,6 @@ static int xe_pci_resume(struct device *dev)
 
 	return 0;
 }
-#endif
 
 static int xe_pci_runtime_suspend(struct device *dev)
 {
@@ -766,6 +765,7 @@ static int xe_pci_runtime_idle(struct device *dev)
 
 	return 0;
 }
+#endif
 
 static const struct dev_pm_ops xe_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(xe_pci_suspend, xe_pci_resume)
