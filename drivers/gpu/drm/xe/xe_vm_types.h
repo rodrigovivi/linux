@@ -149,6 +149,24 @@ struct xe_vma {
 	} extobj;
 };
 
+
+struct vm_node_snapshot {
+	bool is_userptr;
+	bool is_vram;
+	struct {
+		u64 start;
+		u64 end;
+	} vma;
+	u64 addr;
+};
+
+struct xe_vm_snapshot {
+	bool acquired;
+	struct vm_node_snapshot *vm_root;
+	struct vm_node_snapshot *vm_nodes;
+	int num_nodes;
+};
+
 struct xe_device;
 
 #define xe_vm_assert_held(vm) dma_resv_assert_held(&(vm)->resv)

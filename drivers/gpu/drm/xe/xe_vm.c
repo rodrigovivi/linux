@@ -3391,40 +3391,153 @@ int xe_vm_invalidate_vma(struct xe_vma *vma)
 	return 0;
 }
 
-int xe_analyze_vm(struct drm_printer *p, struct xe_vm *vm, int gt_id)
+/**
+ * xe_vm_snapshot_capture - Take a quick snapshot of the HW Engine.
+ * @vm: Xe VM
+ * @gt_id: GT id number
+ *
+ * This can be printed out in a later stage like during dev_coredump
+ * analysis.
+ *
+ * Returns: a Xe VM snapshot object that must be freed by the
+ * 	    caller, using `xe_vm_snapshot_free`.
+ */
+struct xe_vm_snapshot *xe_vm_snapshot_capture(struct xe_vm *vm, int gt_id)
 {
+	struct xe_device *xe = vm->xe;
+	struct xe_vm_snapshot *snapshot;
 	struct rb_node *node;
-	bool is_vram;
-	uint64_t addr;
+	int i = 0;
 
-	if (!down_read_trylock(&vm->lock)) {
-		drm_printf(p, " Failed to acquire VM lock to dump capture");
-		return 0;
+	snapshot = kzalloc(sizeof(struct xe_vm_snapshot), GFP_ATOMIC);
+
+	if (!snapshot) {
+		drm_err(&xe->drm, "Skipping VM snapshot entirely.\n");
+		return NULL;
 	}
+
+	if (!down_read_trylock(&vm->lock))
+		return snapshot;
+
+	snapshot->acquired = true;
+
+	for (node = rb_first(&vm->vmas); node; node = rb_next(node))
+		snapshot->num_nodes++;
+
 	if (vm->pt_root[gt_id]) {
-		addr = xe_bo_addr(vm->pt_root[gt_id]->bo, 0, XE_PAGE_SIZE,
-				  &is_vram);
-		drm_printf(p, " VM root: A:0x%llx %s\n", addr, is_vram ? "VRAM" : "SYS");
+		snapshot->vm_root = kzalloc(sizeof(struct vm_node_snapshot),
+					    GFP_ATOMIC);
+		if (!snapshot->vm_root)
+			drm_err(&xe->drm, "Skipping VM Root snapshot.\n");
+		else
+			snapshot->vm_root->addr = xe_bo_addr(vm->pt_root[gt_id]->bo,
+							     0, XE_PAGE_SIZE,
+							     &snapshot->vm_root->is_vram);
+	}
+
+	snapshot->vm_nodes = kmalloc_array(snapshot->num_nodes,
+					   sizeof(struct vm_node_snapshot),
+					   GFP_ATOMIC);
+
+	if (!snapshot->vm_nodes) {
+		drm_err(&xe->drm, "Skipping VM Nodes snapshot.\n");
+		goto out;
 	}
 
 	for (node = rb_first(&vm->vmas); node; node = rb_next(node)) {
 		struct xe_vma *vma = to_xe_vma(node);
-		bool is_userptr = xe_vma_is_userptr(vma);
+		snapshot->vm_nodes[i].is_userptr = xe_vma_is_userptr(vma);
 
-		if (is_userptr) {
+		if (snapshot->vm_nodes[i].is_userptr) {
 			struct xe_res_cursor cur;
 
 			xe_res_first_sg(vma->userptr.sg, 0, XE_PAGE_SIZE,
 					&cur);
-			addr = xe_res_dma(&cur);
+			snapshot->vm_nodes[i].addr = xe_res_dma(&cur);
 		} else {
-			addr = __xe_bo_addr(vma->bo, 0, XE_PAGE_SIZE, &is_vram);
+			snapshot->vm_nodes[i].addr = __xe_bo_addr(vma->bo, 0,
+								  XE_PAGE_SIZE,
+								  &snapshot->vm_nodes[i].is_vram);
 		}
-		drm_printf(p, " [%016llx-%016llx] S:0x%016llx A:%016llx %s\n",
-			   vma->start, vma->end, vma->end - vma->start + 1ull,
-			   addr, is_userptr ? "USR" : is_vram ? "VRAM" : "SYS");
+		snapshot->vm_nodes[i].vma.start = vma->start;
+		snapshot->vm_nodes[i].vma.end = vma->end;
+		i++;
 	}
+
+out:
 	up_read(&vm->lock);
 
-	return 0;
+	return snapshot;
+}
+
+/**
+ * xe_vm_snapshot_print - Print out a given Xe HW Engine snapshot.
+ * @snapshot: Xe VM snapshot object.
+ * @p: drm_printer where it will be printed out.
+ *
+ * This function prints out a given Xe HW Engine snapshot object.
+ */
+void xe_vm_snapshot_print(struct xe_vm_snapshot *snapshot,
+			  struct drm_printer *p)
+{
+	int i;
+
+	if (!snapshot)
+		return;
+
+	if (!snapshot->acquired) {
+		drm_printf(p, " Failed to acquire VM lock to dump capture");
+		return;
+	}
+
+	if (snapshot->vm_root) {
+		drm_printf(p, " VM root: A:0x%llx %s\n",
+			   snapshot->vm_root->addr,
+			   snapshot->vm_root->is_vram ? "VRAM" : "SYS");
+	}
+
+	for (i = 0; snapshot->vm_nodes && i < snapshot->num_nodes; i++)
+		drm_printf(p, " [%016llx-%016llx] S:0x%016llx A:%016llx %s\n",
+			   snapshot->vm_nodes[i].vma.start,
+			   snapshot->vm_nodes[i].vma.end,
+			   snapshot->vm_nodes[i].vma.end -
+			   snapshot->vm_nodes[i].vma.start + 1ull,
+			   snapshot->vm_nodes[i].addr,
+			   snapshot->vm_nodes[i].is_userptr ?
+			   "USR" : snapshot->vm_nodes[i].is_vram ?
+			   "VRAM" : "SYS");
+}
+
+/**
+ * xe_vm_snapshot_free - Free all allocated objects for a given snapshot.
+ * @snapshot: Xe VM snapshot object.
+ *
+ * This function free all the memory that needed to be allocated at capture
+ * time.
+ */
+void xe_vm_snapshot_free(struct xe_vm_snapshot *snapshot)
+{
+	if (!snapshot)
+		return;
+
+	kfree(snapshot->vm_root);
+	kfree(snapshot->vm_nodes);
+	kfree(snapshot);
+}
+
+/**
+ * xe_vm_print - Xe VM Print.
+ * @p: drm_printer
+ * @vm: Xe VM
+ * @gt_id: GT id number
+ *
+ * This function quickly capture a snapshot and immediately print it out.
+ */
+void xe_vm_print(struct drm_printer *p, struct xe_vm *vm, int gt_id)
+{
+	struct xe_vm_snapshot *snapshot;
+
+	snapshot = xe_vm_snapshot_capture(vm, gt_id);
+	xe_vm_snapshot_print(snapshot, p);
+	xe_vm_snapshot_free(snapshot);
 }

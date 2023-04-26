@@ -753,7 +753,7 @@ static void simple_error_capture(struct xe_engine *e)
 				continue;
 			xe_hw_engine_print(hwe, &p);
 		}
-		xe_analyze_vm(&p, e->vm, e->gt->info.id);
+		xe_vm_print(&p, e->vm, e->gt->info.id);
 		xe_force_wake_put(gt_to_fw(guc_to_gt(guc)), XE_FORCEWAKE_ALL);
 		dma_fence_end_signalling(cookie);
 	}
