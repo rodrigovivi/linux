@@ -231,7 +231,6 @@ struct xe_reg_sr;
  * XE_RTP_ACTION_WR - Helper to write a value to the register, overriding all
  *                    the bits
  * @reg_: Register
- * @reg_type_: Register type - automatically expanded by XE_REG
  * @val_: Value to set
  * @...: Additional fields to override in the struct xe_rtp_action entry
  *
@@ -239,15 +238,14 @@ struct xe_reg_sr;
  *
  *	REGNAME = VALUE
  */
-#define XE_RTP_ACTION_WR(reg_, reg_type_, val_, ...)				\
-	{ .reg = (reg_), .reg_type = (reg_type_),				\
+#define XE_RTP_ACTION_WR(reg_, val_, ...)					\
+	{ .reg = XE_RTP_DROP_CAST(reg_),					\
 	  .clr_bits = ~0u, .set_bits = (val_),					\
 	  .read_mask = (~0u), ##__VA_ARGS__ }
 
 /**
  * XE_RTP_ACTION_SET - Set bits from @val_ in the register.
  * @reg_: Register
- * @reg_type_: Register type - automatically expanded by XE_REG
  * @val_: Bits to set in the register
  * @...: Additional fields to override in the struct xe_rtp_action entry
  *
@@ -258,15 +256,14 @@ struct xe_reg_sr;
  *	REGNAME[2] = 1
  *	REGNAME[5] = 1
  */
-#define XE_RTP_ACTION_SET(reg_, reg_type_, val_, ...)				\
-	{ .reg = (reg_), .reg_type = (reg_type_),				\
-	  .clr_bits = (val_), .set_bits = (val_),				\
-	  .read_mask = (val_), ##__VA_ARGS__ }
+#define XE_RTP_ACTION_SET(reg_, val_, ...)					\
+	{ .reg = XE_RTP_DROP_CAST(reg_),					\
+	  .clr_bits = val_, .set_bits = val_,					\
+	  .read_mask = val_, ##__VA_ARGS__ }
 
 /**
  * XE_RTP_ACTION_CLR: Clear bits from @val_ in the register.
  * @reg_: Register
- * @reg_type_: Register type - automatically expanded by XE_REG
  * @val_: Bits to clear in the register
  * @...: Additional fields to override in the struct xe_rtp_action entry
  *
@@ -277,15 +274,14 @@ struct xe_reg_sr;
  *	REGNAME[2] = 0
  *	REGNAME[5] = 0
  */
-#define XE_RTP_ACTION_CLR(reg_, reg_type_, val_, ...)				\
-	{ .reg = (reg_), .reg_type = (reg_type_),				\
-	  .clr_bits = (val_), .set_bits = 0,					\
-	  .read_mask = (val_), ##__VA_ARGS__ }
+#define XE_RTP_ACTION_CLR(reg_, val_, ...)					\
+	{ .reg = XE_RTP_DROP_CAST(reg_),					\
+	  .clr_bits = val_, .set_bits = 0,					\
+	  .read_mask = val_, ##__VA_ARGS__ }
 
 /**
  * XE_RTP_ACTION_FIELD_SET: Set a bit range
  * @reg_: Register
- * @reg_type_: Register type - automatically expanded by XE_REG
  * @mask_bits_: Mask of bits to be changed in the register, forming a field
  * @val_: Value to set in the field denoted by @mask_bits_
  * @...: Additional fields to override in the struct xe_rtp_action entry
@@ -295,29 +291,29 @@ struct xe_reg_sr;
  *
  *	REGNAME[<end>:<start>] = VALUE
  */
-#define XE_RTP_ACTION_FIELD_SET(reg_, reg_type_, mask_bits_, val_, ...)		\
-	{ .reg = (reg_), .reg_type = (reg_type_),				\
-	  .clr_bits = (mask_bits_), .set_bits = (val_),				\
-	  .read_mask = (mask_bits_), ##__VA_ARGS__ }
+#define XE_RTP_ACTION_FIELD_SET(reg_, mask_bits_, val_, ...)			\
+	{ .reg = XE_RTP_DROP_CAST(reg_),					\
+	  .clr_bits = mask_bits_, .set_bits = val_,				\
+	  .read_mask = mask_bits_, ##__VA_ARGS__ }
 
-#define XE_RTP_ACTION_FIELD_SET_NO_READ_MASK(reg_, reg_type_, mask_bits_, val_, ...)	\
-	{ .reg = (reg_), .reg_type = (reg_type_),				\
+#define XE_RTP_ACTION_FIELD_SET_NO_READ_MASK(reg_, mask_bits_, val_, ...)	\
+	{ .reg = XE_RTP_DROP_CAST(reg_),					\
 	  .clr_bits = (mask_bits_), .set_bits = (val_),				\
 	  .read_mask = 0, ##__VA_ARGS__ }
 
 /**
  * XE_RTP_ACTION_WHITELIST - Add register to userspace whitelist
  * @reg_: Register
- * @reg_type_: Register type - automatically expanded by XE_REG
  * @val_: Whitelist-specific flags to set
  * @...: Additional fields to override in the struct xe_rtp_action entry
  *
  * Add a register to the whitelist, allowing userspace to modify the ster with
  * regular user privileges.
  */
-#define XE_RTP_ACTION_WHITELIST(reg_, reg_type_, val_, ...)			\
+#define XE_RTP_ACTION_WHITELIST(reg_, val_, ...)				\
 	/* TODO fail build if ((flags) & ~(RING_FORCE_TO_NONPRIV_MASK_VALID)) */\
-	{ .reg = (reg_), .reg_type = (reg_type_), .set_bits = (val_),		\
+	{ .reg = XE_RTP_DROP_CAST(reg_),					\
+	  .set_bits = val_,							\
 	  .clr_bits = RING_FORCE_TO_NONPRIV_MASK_VALID,				\
 	  ##__VA_ARGS__ }
 
