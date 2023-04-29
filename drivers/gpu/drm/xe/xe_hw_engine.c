@@ -637,7 +637,7 @@ void xe_hw_engine_print_state(struct xe_hw_engine *hwe, struct drm_printer *p)
 		hw_engine_mmio_read32(hwe, IPEHR(0).reg));
 
 	if (hwe->class == XE_ENGINE_CLASS_COMPUTE)
-		drm_printf(p, "\tGEN12_RCU_MODE: 0x%08x\n",
+		drm_printf(p, "\tRCU_MODE: 0x%08x\n",
 			xe_mmio_read32(hwe->gt, RCU_MODE.reg));
 
 }
