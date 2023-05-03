@@ -356,7 +356,11 @@
 #define GEN7_TLB_RD_ADDR			_MMIO(0x4700)
 
 #define GEN12_PAT_INDEX(index)			_MMIO(0x4800 + (index) * 4)
-#define XEHP_PAT_INDEX(index)			MCR_REG(0x4800 + (index) * 4)
+#define _PAT_INDEX(index)			_PICK_EVEN_2RANGES(index, 8, \
+								   0x4800, 0x4804, \
+								   0x4848, 0x484c)
+#define XEHP_PAT_INDEX(index)			MCR_REG(_PAT_INDEX(index))
+#define XELPMP_PAT_INDEX(index)			_MMIO(_PAT_INDEX(index))
 
 #define XEHP_TILE0_ADDR_RANGE			MCR_REG(0x4900)
 #define   XEHP_TILE_LMEM_RANGE_SHIFT		8
@@ -524,6 +528,11 @@
 #define   POLYGON_TRIFAN_LINELOOP_DISABLE	REG_BIT(4)
 
 #define GEN8_RC6_CTX_INFO			_MMIO(0x8504)
+
+#define GEN12_SQCNT1				_MMIO(0x8718)
+#define   GEN12_SQCNT1_PMON_ENABLE		REG_BIT(30)
+#define   GEN12_SQCNT1_OABPC			REG_BIT(29)
+#define   GEN12_STRICT_RAR_ENABLE		REG_BIT(23)
 
 #define XEHP_SQCM				MCR_REG(0x8724)
 #define   EN_32B_ACCESS				REG_BIT(30)
