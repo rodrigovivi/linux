@@ -54,7 +54,7 @@ static inline int hsw_ips_compute_config(struct intel_atomic_state *state,
 static inline void hsw_ips_get_config(struct intel_crtc_state *crtc_state)
 {
 }
-static inline void hsw_ips_debugfs_register(struct drm_i915_private *i915)
+static inline void hsw_ips_crtc_debugfs_add(struct intel_crtc *crtc)
 {
 }
 #endif
