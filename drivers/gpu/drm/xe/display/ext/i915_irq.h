@@ -15,6 +15,7 @@ struct drm_device;
 struct drm_display_mode;
 struct drm_i915_private;
 struct intel_crtc;
+struct intel_encoder;
 struct intel_uncore;
 
 void intel_display_irq_init(struct drm_i915_private *dev_priv);
@@ -39,6 +40,7 @@ static inline void valleyview_disable_display_irqs(struct drm_i915_private *dev_
 {
 }
 
+void intel_hpd_enable_detection(struct intel_encoder *encoder);
 void intel_hpd_irq_setup(struct drm_i915_private *i915);
 void i915_hotplug_interrupt_update(struct drm_i915_private *dev_priv,
 				   u32 mask,
