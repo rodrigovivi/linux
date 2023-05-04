@@ -133,9 +133,13 @@ static int intel_fbdev_mmap(struct fb_info *info, struct vm_area_struct *vma)
 {
 	struct intel_fbdev *fbdev = to_intel_fbdev(info->par);
 	struct drm_gem_object *bo = drm_gem_fb_get_obj(&fbdev->fb->base, 0);
+#ifdef I915
 	struct drm_i915_gem_object *obj = to_intel_bo(bo);
 
 	return i915_gem_fb_mmap(obj, vma);
+#else
+	return drm_gem_prime_mmap(bo, vma);
+#endif
 }
 
 static const struct fb_ops intelfb_ops = {
