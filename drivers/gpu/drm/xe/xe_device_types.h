@@ -133,7 +133,6 @@ struct xe_device {
 			func(has_hdcp); \
 			func(has_hti); \
 			func(has_ipc); \
-			func(has_modular_fia); \
 			func(has_psr); \
 			func(has_psr_hw_tracking);
 
