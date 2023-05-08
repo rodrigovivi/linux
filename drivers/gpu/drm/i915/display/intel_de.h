@@ -22,12 +22,6 @@ intel_de_read8(struct drm_i915_private *i915, i915_reg_t reg)
 	return intel_uncore_read8(&i915->uncore, reg);
 }
 
-static inline u8
-intel_de_read64(struct drm_i915_private *i915, i915_reg_t reg)
-{
-	return intel_uncore_read64(&i915->uncore, reg);
-}
-
 static inline u64
 intel_de_read64_2x32(struct drm_i915_private *i915,
 		     i915_reg_t lower_reg, i915_reg_t upper_reg)
