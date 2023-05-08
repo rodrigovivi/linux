@@ -3,8 +3,8 @@
  * Copyright © 2019 Intel Corporation
  */
 
-#ifndef I915
-#include "xe_de.h"
+#ifdef BUILD_FOR_XE
+#include_next "intel_de.h"
 #else
 #ifndef __INTEL_DE_H__
 #define __INTEL_DE_H__

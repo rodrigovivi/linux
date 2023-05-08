@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * Copyright © 2019-2022 Intel Corporation
+ * Copyright © 2019 Intel Corporation
  */
 
-#ifndef _XE_DE_H_
-#define _XE_DE_H_
+#ifndef __INTEL_DE_H__
+#define __INTEL_DE_H__
 
 #include "i915_drv.h"
 #include "xe_mmio.h"
@@ -160,4 +160,4 @@ static inline int intel_de_pcode_request(struct drm_i915_private *i915, u32 mbox
 				timeout_base_ms);
 }
 
-#endif
+#endif /* __INTEL_DE_H__ */
