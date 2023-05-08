@@ -17,6 +17,14 @@ struct xe_device;
 
 int xe_mmio_init(struct xe_device *xe);
 
+static inline u8 xe_mmio_read8(struct xe_gt *gt, u32 reg)
+{
+	if (reg < gt->mmio.adj_limit)
+		reg += gt->mmio.adj_offset;
+
+	return readb(gt->mmio.regs + reg);
+}
+
 static inline void xe_mmio_write32(struct xe_gt *gt,
 				   u32 reg, u32 val)
 {
