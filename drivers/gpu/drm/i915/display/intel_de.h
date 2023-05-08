@@ -111,12 +111,6 @@ intel_de_write_fw(struct drm_i915_private *i915, i915_reg_t reg, u32 val)
 	intel_uncore_write_fw(&i915->uncore, reg, val);
 }
 
-static inline void
-intel_de_posting_read_fw(struct drm_i915_private *i915, i915_reg_t reg)
-{
-	intel_uncore_posting_read_fw(&i915->uncore, reg);
-}
-
 static inline u32
 intel_de_read_notrace(struct drm_i915_private *i915, i915_reg_t reg)
 {
