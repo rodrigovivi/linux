@@ -82,9 +82,9 @@ intel_sagv_block_time(struct drm_i915_private *i915)
 		u32 val = 0;
 		int ret;
 
-		ret = intel_de_pcode_read(i915,
-					  GEN12_PCODE_READ_SAGV_BLOCK_TIME_US,
-					  &val, NULL);
+		ret = snb_pcode_read(&i915->uncore,
+				     GEN12_PCODE_READ_SAGV_BLOCK_TIME_US,
+				     &val, NULL);
 		if (ret) {
 			drm_dbg_kms(&i915->drm, "Couldn't read SAGV block time!\n");
 			return 0;
@@ -151,8 +151,8 @@ static void skl_sagv_enable(struct drm_i915_private *i915)
 		return;
 
 	drm_dbg_kms(&i915->drm, "Enabling SAGV\n");
-	ret = intel_de_pcode_write(i915, GEN9_PCODE_SAGV_CONTROL,
-				   GEN9_SAGV_ENABLE);
+	ret = snb_pcode_write(&i915->uncore, GEN9_PCODE_SAGV_CONTROL,
+			      GEN9_SAGV_ENABLE);
 
 	/* We don't need to wait for SAGV when enabling */
 
@@ -184,10 +184,10 @@ static void skl_sagv_disable(struct drm_i915_private *i915)
 
 	drm_dbg_kms(&i915->drm, "Disabling SAGV\n");
 	/* bspec says to keep retrying for at least 1 ms */
-	ret = intel_de_pcode_request(i915, GEN9_PCODE_SAGV_CONTROL,
-				     GEN9_SAGV_DISABLE,
-				     GEN9_SAGV_IS_DISABLED, GEN9_SAGV_IS_DISABLED,
-				     1);
+	ret = skl_pcode_request(&i915->uncore, GEN9_PCODE_SAGV_CONTROL,
+				GEN9_SAGV_DISABLE,
+				GEN9_SAGV_IS_DISABLED, GEN9_SAGV_IS_DISABLED,
+				1);
 	/*
 	 * Some skl systems, pre-release machines in particular,
 	 * don't actually have SAGV.
@@ -3364,7 +3364,7 @@ static void skl_read_wm_latency(struct drm_i915_private *i915, u16 wm[])
 
 	/* read the first set of memory latencies[0:3] */
 	val = 0; /* data0 to be programmed to 0 for first set */
-	ret = intel_de_pcode_read(i915, GEN9_PCODE_READ_MEM_LATENCY, &val, NULL);
+	ret = snb_pcode_read(&i915->uncore, GEN9_PCODE_READ_MEM_LATENCY, &val, NULL);
 	if (ret) {
 		drm_err(&i915->drm, "SKL Mailbox read error = %d\n", ret);
 		return;
@@ -3377,7 +3377,7 @@ static void skl_read_wm_latency(struct drm_i915_private *i915, u16 wm[])
 
 	/* read the second set of memory latencies[4:7] */
 	val = 1; /* data0 to be programmed to 1 for second set */
-	ret = intel_de_pcode_read(i915, GEN9_PCODE_READ_MEM_LATENCY, &val, NULL);
+	ret = snb_pcode_read(&i915->uncore, GEN9_PCODE_READ_MEM_LATENCY, &val, NULL);
 	if (ret) {
 		drm_err(&i915->drm, "SKL Mailbox read error = %d\n", ret);
 		return;

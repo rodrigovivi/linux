@@ -31,7 +31,6 @@
 
 #include "i915_drv.h"
 #include "i915_reg.h"
-#include "intel_de.h"
 #include "intel_display.h"
 #include "intel_display_types.h"
 #include "intel_gmbus.h"
@@ -3039,16 +3038,16 @@ static struct vbt_header *spi_oprom_get_vbt(struct drm_i915_private *i915)
 	u16 vbt_size;
 	u32 *vbt;
 
-	static_region = intel_de_read(i915, SPI_STATIC_REGIONS);
+	static_region = intel_uncore_read(&i915->uncore, SPI_STATIC_REGIONS);
 	static_region &= OPTIONROM_SPI_REGIONID_MASK;
-	intel_de_write(i915, PRIMARY_SPI_REGIONID, static_region);
+	intel_uncore_write(&i915->uncore, PRIMARY_SPI_REGIONID, static_region);
 
-	oprom_offset = intel_de_read(i915, OROM_OFFSET);
+	oprom_offset = intel_uncore_read(&i915->uncore, OROM_OFFSET);
 	oprom_offset &= OROM_OFFSET_MASK;
 
 	for (count = 0; count < oprom_size; count += 4) {
-		intel_de_write(i915, PRIMARY_SPI_ADDRESS, oprom_offset + count);
-		data = intel_de_read(i915, PRIMARY_SPI_TRIGGER);
+		intel_uncore_write(&i915->uncore, PRIMARY_SPI_ADDRESS, oprom_offset + count);
+		data = intel_uncore_read(&i915->uncore, PRIMARY_SPI_TRIGGER);
 
 		if (data == *((const u32 *)"$VBT")) {
 			found = oprom_offset + count;
@@ -3060,9 +3059,9 @@ static struct vbt_header *spi_oprom_get_vbt(struct drm_i915_private *i915)
 		goto err_not_found;
 
 	/* Get VBT size and allocate space for the VBT */
-	intel_de_write(i915, PRIMARY_SPI_ADDRESS, found +
+	intel_uncore_write(&i915->uncore, PRIMARY_SPI_ADDRESS, found +
 		   offsetof(struct vbt_header, vbt_size));
-	vbt_size = intel_de_read(i915, PRIMARY_SPI_TRIGGER);
+	vbt_size = intel_uncore_read(&i915->uncore, PRIMARY_SPI_TRIGGER);
 	vbt_size &= 0xffff;
 
 	vbt = kzalloc(round_up(vbt_size, 4), GFP_KERNEL);
@@ -3070,8 +3069,8 @@ static struct vbt_header *spi_oprom_get_vbt(struct drm_i915_private *i915)
 		goto err_not_found;
 
 	for (count = 0; count < vbt_size; count += 4) {
-		intel_de_write(i915, PRIMARY_SPI_ADDRESS, found + count);
-		data = intel_de_read(i915, PRIMARY_SPI_TRIGGER);
+		intel_uncore_write(&i915->uncore, PRIMARY_SPI_ADDRESS, found + count);
+		data = intel_uncore_read(&i915->uncore, PRIMARY_SPI_TRIGGER);
 		*(vbt + store++) = data;
 	}
 

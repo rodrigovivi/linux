@@ -25,6 +25,7 @@
 #include "intel_hdcp.h"
 #include "intel_hdcp_gsc.h"
 #include "intel_hdcp_regs.h"
+#include "intel_pcode.h"
 
 #define KEY_LOAD_TRIES	5
 #define HDCP2_LC_RETRY_CNT			3
@@ -335,7 +336,7 @@ static int intel_hdcp_load_keys(struct drm_i915_private *dev_priv)
 	 * Mailbox interface.
 	 */
 	if (DISPLAY_VER(dev_priv) == 9 && !IS_BROXTON(dev_priv)) {
-		ret = intel_de_pcode_write(dev_priv, SKL_PCODE_LOAD_HDCP_KEYS, 1);
+		ret = snb_pcode_write(&dev_priv->uncore, SKL_PCODE_LOAD_HDCP_KEYS, 1);
 		if (ret) {
 			drm_err(&dev_priv->drm,
 				"Failed to initiate HDCP key load (%d)\n",
@@ -347,9 +348,9 @@ static int intel_hdcp_load_keys(struct drm_i915_private *dev_priv)
 	}
 
 	/* Wait for the keys to load (500us) */
-	ret = __intel_de_wait_for_register(dev_priv, HDCP_KEY_STATUS,
-					   HDCP_KEY_LOAD_DONE, HDCP_KEY_LOAD_DONE,
-					   10, 1, &val);
+	ret = __intel_wait_for_register(&dev_priv->uncore, HDCP_KEY_STATUS,
+					HDCP_KEY_LOAD_DONE, HDCP_KEY_LOAD_DONE,
+					10, 1, &val);
 	if (ret)
 		return ret;
 	else if (!(val & HDCP_KEY_LOAD_STATUS))
