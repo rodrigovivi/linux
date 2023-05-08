@@ -311,6 +311,10 @@ struct xe_device {
 	bool display_irqs_enabled;
 	u32 enabled_irq_mask;
 
+	struct fake_uncore {
+		spinlock_t lock;
+	} uncore;
+
 	/* only to allow build, not used functionally */
 	struct {
 		unsigned int hpll_freq;

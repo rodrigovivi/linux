@@ -140,6 +140,9 @@ int xe_display_init_nommio(struct xe_device *xe)
 	if (!xe->info.enable_display)
 		return 0;
 
+	/* Fake uncore lock */
+	spin_lock_init(&xe->uncore.lock);
+
 	/* This must be called before any calls to HAS_PCH_* */
 	intel_detect_pch(xe);
 	intel_display_irq_init(xe);
