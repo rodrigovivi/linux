@@ -27,6 +27,7 @@
 #include "intel_display.h"
 #include "intel_device_info.h"
 #include "i915_drv.h"
+#include "i915_reg.h"
 #include <drm/drm_drv.h>
 
 /**
