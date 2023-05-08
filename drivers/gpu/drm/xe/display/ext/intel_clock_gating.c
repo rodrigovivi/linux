@@ -29,6 +29,7 @@
 #include "intel_display_trace.h"
 
 #include "i915_drv.h"
+#include "i915_reg.h"
 #include "intel_clock_gating.h"
 #include "intel_mchbar_regs.h"
 
