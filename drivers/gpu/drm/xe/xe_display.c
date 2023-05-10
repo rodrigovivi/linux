@@ -487,8 +487,10 @@ __diag_ignore_all("-Woverride-init", "Allow field overrides in table");
 
 void xe_display_info_init(struct xe_device *xe)
 {
-	if (!xe->info.enable_display)
+	if (!xe->info.enable_display) {
+		unset_driver_hooks(xe);
 		return;
+	}
 
 	switch (xe->info.platform) {
 	case XE_TIGERLAKE:
@@ -536,7 +538,7 @@ void xe_display_info_init(struct xe_device *xe)
 		xe->info.display = (struct xe_device_display_info) { XE_LPDP };
 		break;
 	default:
-		drm_dbg(&xe->drm, "No display IP, skipping\n");
+		drm_warn(&xe->drm, "Unknown display IP\n");
 		xe->info.enable_display = false;
 		unset_driver_hooks(xe);
 		return;
