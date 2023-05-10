@@ -305,6 +305,33 @@ static ssize_t devcd_read_from_sgtable(char *buffer, loff_t offset,
 				  offset);
 }
 
+void dev_coredump_remove(struct device *dev, struct module *owner)
+{
+	struct device *existing;
+	struct devcd_entry *devcd;
+
+	existing = class_find_device(&devcd_class, NULL, dev,
+				     devcd_match_failing);
+
+	if (!existing)
+		return;
+
+	put_device(existing);
+
+	devcd = dev_to_devcd(existing);
+
+	if (owner != devcd->owner)
+		return;
+
+	mutex_lock(&devcd->mutex);
+	if (!devcd->delete_work) {
+		devcd->delete_work = true;
+		mod_delayed_work(system_wq, &devcd->del_wk, 0);
+	}
+	mutex_unlock(&devcd->mutex);
+}
+EXPORT_SYMBOL_GPL(dev_coredump_remove);
+
 /**
  * dev_coredumpm - create device coredump with read/free methods
  * @dev: the struct device for the crashed device
