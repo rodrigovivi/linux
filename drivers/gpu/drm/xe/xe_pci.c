@@ -51,6 +51,7 @@ struct xe_device_desc {
 
 	u8 require_force_probe:1;
 	u8 is_dgfx:1;
+	u8 has_display:1;
 
 	/*
 	 * FIXME: Xe doesn't care about presence/lack of 4tile since we can
@@ -179,7 +180,8 @@ static const struct xe_device_desc tgl_desc = {
 	.graphics = &graphics_xelp,
 	.media = &media_xem,
 	PLATFORM(XE_TIGERLAKE),
-	.has_llc = 1,
+	.has_display = true,
+	.has_llc = true,
 	.require_force_probe = true,
 };
 
@@ -187,6 +189,7 @@ static const struct xe_device_desc rkl_desc = {
 	.graphics = &graphics_xelp,
 	.media = &media_xem,
 	PLATFORM(XE_ROCKETLAKE),
+	.has_display = true,
 	.require_force_probe = true,
 };
 
@@ -194,7 +197,8 @@ static const struct xe_device_desc adl_s_desc = {
 	.graphics = &graphics_xelp,
 	.media = &media_xem,
 	PLATFORM(XE_ALDERLAKE_S),
-	.has_llc = 1,
+	.has_display = true,
+	.has_llc = true,
 	.require_force_probe = true,
 };
 
@@ -204,7 +208,8 @@ static const struct xe_device_desc adl_p_desc = {
 	.graphics = &graphics_xelp,
 	.media = &media_xem,
 	PLATFORM(XE_ALDERLAKE_P),
-	.has_llc = 1,
+	.has_display = true,
+	.has_llc = true,
 	.require_force_probe = true,
 	.subplatforms = (const struct xe_subplatform_desc[]) {
 		{ XE_SUBPLATFORM_ADLP_RPLU, "RPLU", adlp_rplu_ids },
@@ -216,7 +221,8 @@ static const struct xe_device_desc adl_n_desc = {
 	.graphics = &graphics_xelp,
 	.media = &media_xem,
 	PLATFORM(XE_ALDERLAKE_N),
-	.has_llc = 1,
+	.has_display = true,
+	.has_llc = true,
 	.require_force_probe = true,
 };
 
@@ -228,6 +234,7 @@ static const struct xe_device_desc dg1_desc = {
 	.media = &media_xem,
 	DGFX_FEATURES,
 	PLATFORM(XE_DG1),
+	.has_display = true,
 	.require_force_probe = true,
 };
 
@@ -252,6 +259,7 @@ static const struct xe_device_desc ats_m_desc = {
 	.require_force_probe = true,
 
 	DG2_FEATURES,
+	.has_display = false,
 };
 
 static const struct xe_device_desc dg2_desc = {
@@ -260,12 +268,14 @@ static const struct xe_device_desc dg2_desc = {
 	.require_force_probe = true,
 
 	DG2_FEATURES,
+	.has_display = true,
 };
 
 static const struct xe_device_desc pvc_desc = {
 	.graphics = &graphics_xehpc,
 	DGFX_FEATURES,
 	PLATFORM(XE_PVC),
+	.has_display = false,
 	.require_force_probe = true,
 };
 
@@ -273,6 +283,7 @@ static const struct xe_device_desc mtl_desc = {
 	/* .graphics and .media determined via GMD_ID */
 	.require_force_probe = true,
 	PLATFORM(XE_METEORLAKE),
+	.has_display = true,
 };
 
 #undef PLATFORM
