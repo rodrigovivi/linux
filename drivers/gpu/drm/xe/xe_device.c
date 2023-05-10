@@ -199,7 +199,6 @@ struct xe_device *xe_device_create(struct pci_dev *pdev,
 	xe->info.devid = pdev->device;
 	xe->info.revid = pdev->revision;
 	xe->info.enable_guc = enable_guc;
-	xe->info.enable_display = enable_display;
 
 	spin_lock_init(&xe->irq.lock);
 
