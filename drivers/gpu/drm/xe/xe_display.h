@@ -12,7 +12,8 @@ struct drm_driver;
 
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 
-int xe_display_set_driver_hooks(struct pci_dev *pdev, struct drm_driver *driver);
+int xe_display_driver_probe_defer(struct pci_dev *pdev);
+void xe_display_driver_set_hooks(struct drm_driver *driver);
 
 int xe_display_create(struct xe_device *xe);
 
@@ -47,8 +48,9 @@ void xe_display_pm_resume(struct xe_device *xe);
 
 #else
 
-static inline int
-xe_display_set_driver_hooks(struct pci_dev *pdev, struct drm_driver *driver) { return 0; }
+static inline int xe_display_driver_probe_defer(struct pci_dev *pdev) { return 0; }
+
+static inline void xe_display_driver_set_hooks(struct drm_driver *driver) { }
 
 static inline int
 xe_display_create(struct xe_device *xe) { return 0; }
