@@ -264,9 +264,6 @@ struct intel_wm {
 	 */
 	struct mutex wm_mutex;
 
-	/* protects DSPARB registers on pre-g4x/vlv/chv */
-	spinlock_t dsparb_lock;
-
 	bool ipc_enabled;
 };
 
