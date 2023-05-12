@@ -202,6 +202,8 @@ out:
 static struct i915_vma *__xe_pin_fb_vma(struct intel_framebuffer *fb,
 					const struct i915_gtt_view *view)
 {
+	struct drm_device *dev = fb->base.dev;
+	struct xe_device *xe = to_xe_device(dev);
 	struct i915_vma *vma = kzalloc(sizeof(*vma), GFP_KERNEL);
 	struct xe_bo *bo = intel_fb_obj(&fb->base);
 	int ret;
@@ -223,7 +225,10 @@ static struct i915_vma *__xe_pin_fb_vma(struct intel_framebuffer *fb,
 	if (ret)
 		goto err;
 
-	ret = xe_bo_validate(bo, NULL, true);
+	if (IS_DGFX(xe))
+		ret = xe_bo_migrate(bo, XE_PL_VRAM0);
+	else
+		ret = xe_bo_validate(bo, NULL, true);
 	if (!ret)
 		ttm_bo_pin(&bo->ttm);
 	ttm_bo_unreserve(&bo->ttm);
