@@ -7,9 +7,7 @@
 #define __INTEL_GT_REGS__
 
 #include "i915_reg_defs.h"
-#ifdef I915
 #include "display/intel_display_reg_defs.h"	/* VLV_DISPLAY_BASE */
-#endif
 
 /*
  * The perf control registers are technically multicast registers, but the
