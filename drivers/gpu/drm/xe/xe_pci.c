@@ -222,7 +222,8 @@ static const struct xe_device_desc adl_n_desc = {
 	.graphics = &graphics_xelp,
 	.media = &media_xem,
 	PLATFORM(XE_ALDERLAKE_N),
-	.has_llc = 1,
+	.has_display = true,
+	.has_llc = true,
 	.require_force_probe = true,
 };
 
