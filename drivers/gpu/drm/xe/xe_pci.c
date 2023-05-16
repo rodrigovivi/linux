@@ -16,6 +16,7 @@
 
 #include "regs/xe_regs.h"
 #include "regs/xe_gt_regs.h"
+#include "xe_devcoredump.h"
 #include "xe_device.h"
 #include "xe_display.h"
 #include "xe_drv.h"
@@ -598,6 +599,7 @@ static void xe_pci_remove(struct pci_dev *pdev)
 	if (!xe) /* driver load aborted, nothing to cleanup */
 		return;
 
+	xe_devcoredump_fini(xe);
 	xe_device_remove(xe);
 	xe_pm_runtime_fini(xe);
 	pci_set_drvdata(pdev, NULL);

@@ -69,10 +69,6 @@ static ssize_t xe_devcoredump_read(char *buffer, loff_t offset,
 	struct timespec64 ts;
 	int i;
 
-	/* Our device is gone already... */
-	if (!data || !coredump_to_xe(coredump))
-		return -ENODEV;
-
 	iter.data = buffer;
 	iter.offset = 0;
 	iter.start = offset;
@@ -113,10 +109,6 @@ static void xe_devcoredump_free(void *data)
 {
 	struct xe_devcoredump *coredump = data;
 	int i;
-
-	/* Our device is gone. Nothing to do... */
-	if (!data || !coredump_to_xe(coredump))
-		return;
 
 	xe_guc_ct_snapshot_free(coredump->snapshot.ct);
 	xe_guc_engine_snapshot_free(coredump->snapshot.ge);
@@ -202,4 +194,22 @@ void xe_devcoredump(struct xe_engine *e)
 	dev_coredumpm(xe->drm.dev, THIS_MODULE, coredump, 0, GFP_KERNEL,
 		      xe_devcoredump_read, xe_devcoredump_free);
 }
+
+/**
+ * xe_devcoredump_fini - Ensure the devcoredump device is removed.
+ * @xe: Xe device.
+ *
+ * This function should be called at pci .remove time so we ensure that
+ * devcoredump is removed before we can unbind and unload the module.
+ */
+void xe_devcoredump_fini(struct xe_device *xe)
+{
+	struct xe_devcoredump *coredump = &xe->devcoredump;
+
+	if (!coredump->captured)
+		return;
+
+	dev_coredump_remove(xe->drm.dev, THIS_MODULE);
+}
+
 #endif
