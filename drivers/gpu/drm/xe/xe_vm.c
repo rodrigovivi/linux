@@ -978,6 +978,9 @@ static void xe_vma_destroy(struct xe_vma *vma, struct dma_fence *fence)
 	} else {
 		xe_bo_assert_held(vma->bo);
 		list_del(&vma->bo_link);
+		spin_lock(&vm->notifier.list_lock);
+		list_del(&vma->notifier.rebind_link);
+		spin_unlock(&vm->notifier.list_lock);
 		if (!vma->bo->vm)
 			vm_remove_extobj(vma);
 	}
