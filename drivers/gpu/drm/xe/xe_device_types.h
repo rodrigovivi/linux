@@ -307,7 +307,11 @@ struct xe_device {
 	struct drm_atomic_state *modeset_restore_state;
 	struct list_head global_obj_list;
 
-	u32 de_irq_mask[I915_MAX_PIPES];
+	union {
+		/* only to allow build, not used functionally */
+		u32 irq_mask;
+		u32 de_irq_mask[I915_MAX_PIPES];
+	};
 	bool display_irqs_enabled;
 	u32 enabled_irq_mask;
 

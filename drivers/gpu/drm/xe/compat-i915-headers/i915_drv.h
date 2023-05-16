@@ -101,6 +101,7 @@ static inline struct drm_i915_private *kdev_to_i915(struct device *kdev)
 #define HAS_DSC(xe) ((xe)->info.display.has_dsc)
 #define HAS_CUR_FBC(xe) (xe || 1)
 #define HAS_DOUBLE_BUFFERED_M_N(xe) ((xe) || 1)
+#define I915_HAS_HOTPLUG(xe) (true)
 #define HAS_D12_PLANE_MINIMIZATION(dev_priv) (IS_ROCKETLAKE(dev_priv) || \
 					      IS_ALDERLAKE_S(dev_priv))
 #define DISPLAY_VER(xe) ((xe)->info.display.ver)
