@@ -51,6 +51,9 @@ struct xe_device_desc {
 
 	u8 require_force_probe:1;
 	u8 is_dgfx:1;
+
+	struct xe_device_display_info display;
+
 	/*
 	 * FIXME: Xe doesn't care about presence/lack of 4tile since we can
 	 * already determine that from the graphics IP version.  This flag
@@ -171,9 +174,77 @@ static const struct xe_media_desc media_xelpmp = {
 		BIT(XE_HW_ENGINE_VECS0),	/* TODO: add GSC0 */
 };
 
+#define __DISPLAY_DEFAULTS \
+		.pipe_mask = BIT(PIPE_A) | BIT(PIPE_B) | BIT(PIPE_C) | BIT(PIPE_D), \
+		.cpu_transcoder_mask = \
+			BIT(TRANSCODER_A) | BIT(TRANSCODER_B) | \
+			BIT(TRANSCODER_C) | BIT(TRANSCODER_D) | \
+			BIT(TRANSCODER_DSI_0) | BIT(TRANSCODER_DSI_1), \
+		.pipe_offsets = { \
+			[TRANSCODER_A] = PIPE_A_OFFSET, \
+			[TRANSCODER_B] = PIPE_B_OFFSET, \
+			[TRANSCODER_C] = PIPE_C_OFFSET, \
+			[TRANSCODER_D] = PIPE_D_OFFSET, \
+			[TRANSCODER_DSI_0] = PIPE_DSI0_OFFSET, \
+			[TRANSCODER_DSI_1] = PIPE_DSI1_OFFSET, \
+		}, \
+		.trans_offsets = { \
+			[TRANSCODER_A] = TRANSCODER_A_OFFSET, \
+			[TRANSCODER_B] = TRANSCODER_B_OFFSET, \
+			[TRANSCODER_C] = TRANSCODER_C_OFFSET, \
+			[TRANSCODER_D] = TRANSCODER_D_OFFSET, \
+			[TRANSCODER_DSI_0] = TRANSCODER_DSI0_OFFSET, \
+			[TRANSCODER_DSI_1] = TRANSCODER_DSI1_OFFSET, \
+		}, \
+
+#define GEN12_DISPLAY \
+	.display = (struct xe_device_display_info){ \
+		__DISPLAY_DEFAULTS \
+		.ver = 12, \
+		.abox_mask = GENMASK(2, 1), \
+		.has_dmc = 1, \
+		.has_dp_mst = 1, \
+		.has_dsb = 0, /* FIXME: LUT load is broken with huge DSB */ \
+		.dbuf.size = 2048, \
+		.dbuf.slice_mask = BIT(DBUF_S1) | BIT(DBUF_S2), \
+		.has_dsc = 1, \
+		.fbc_mask = BIT(INTEL_FBC_A), \
+		.has_fpga_dbg = 1, \
+		.has_hdcp = 1, \
+		.has_ipc = 1, \
+		.has_psr = 1, \
+		.has_psr_hw_tracking = 1, \
+		.color = { .degamma_lut_size = 33, .gamma_lut_size = 262145 }, \
+	}
+
+#define GEN13_DISPLAY \
+	.display = (struct xe_device_display_info){ \
+		__DISPLAY_DEFAULTS \
+		.ver = 13,							\
+		.abox_mask = GENMASK(1, 0),					\
+		.color = {							\
+			.degamma_lut_size = 128, .gamma_lut_size = 1024,	\
+			.degamma_lut_tests = DRM_COLOR_LUT_NON_DECREASING |	\
+				     DRM_COLOR_LUT_EQUAL_CHANNELS,		\
+		},								\
+		.dbuf.size = 4096,						\
+		.dbuf.slice_mask = BIT(DBUF_S1) | BIT(DBUF_S2) | BIT(DBUF_S3) |	\
+				   BIT(DBUF_S4),				\
+		.has_dmc = 1,							\
+		.has_dp_mst = 1,						\
+		.has_dsb = 1,							\
+		.has_dsc = 1,							\
+		.fbc_mask = BIT(INTEL_FBC_A),					\
+		.has_fpga_dbg = 1,						\
+		.has_hdcp = 1,							\
+		.has_ipc = 1,							\
+		.has_psr = 1,							\
+	}
+
 static const struct xe_device_desc tgl_desc = {
 	.graphics = &graphics_xelp,
 	.media = &media_xem,
+	GEN12_DISPLAY,
 	PLATFORM(XE_TIGERLAKE),
 	.has_llc = 1,
 	.require_force_probe = true,
@@ -182,6 +253,9 @@ static const struct xe_device_desc tgl_desc = {
 static const struct xe_device_desc rkl_desc = {
 	.graphics = &graphics_xelp,
 	.media = &media_xem,
+	GEN12_DISPLAY,
+	.display.has_hti = 1,
+	.display.has_psr_hw_tracking = 0,
 	PLATFORM(XE_ROCKETLAKE),
 	.require_force_probe = true,
 };
@@ -189,6 +263,9 @@ static const struct xe_device_desc rkl_desc = {
 static const struct xe_device_desc adl_s_desc = {
 	.graphics = &graphics_xelp,
 	.media = &media_xem,
+	GEN12_DISPLAY,
+	.display.has_hti = 1,
+	.display.has_psr_hw_tracking = 0,
 	PLATFORM(XE_ALDERLAKE_S),
 	.has_llc = 1,
 	.require_force_probe = true,
@@ -199,6 +276,9 @@ static const u16 adlp_rplu_ids[] = { XE_RPLU_IDS(NOP), 0 };
 static const struct xe_device_desc adl_p_desc = {
 	.graphics = &graphics_xelp,
 	.media = &media_xem,
+	GEN12_DISPLAY,
+	.display.has_hti = 1,
+	.display.has_psr_hw_tracking = 0,
 	PLATFORM(XE_ALDERLAKE_P),
 	.has_llc = 1,
 	.require_force_probe = true,
@@ -211,6 +291,9 @@ static const struct xe_device_desc adl_p_desc = {
 static const struct xe_device_desc adl_n_desc = {
 	.graphics = &graphics_xelp,
 	.media = &media_xem,
+	GEN12_DISPLAY,
+	.display.has_hti = 1,
+	.display.has_psr_hw_tracking = 0,
 	PLATFORM(XE_ALDERLAKE_N),
 	.has_llc = 1,
 	.require_force_probe = true,
@@ -222,6 +305,7 @@ static const struct xe_device_desc adl_n_desc = {
 static const struct xe_device_desc dg1_desc = {
 	.graphics = &graphics_xelpp,
 	.media = &media_xem,
+	GEN12_DISPLAY,
 	DGFX_FEATURES,
 	PLATFORM(XE_DG1),
 	.require_force_probe = true,
@@ -256,6 +340,9 @@ static const struct xe_device_desc dg2_desc = {
 	.require_force_probe = true,
 
 	DG2_FEATURES,
+	GEN13_DISPLAY,
+	.display.cpu_transcoder_mask = BIT(TRANSCODER_A) | BIT(TRANSCODER_B) |
+				       BIT(TRANSCODER_C) | BIT(TRANSCODER_D),
 };
 
 static const struct xe_gt_desc pvc_gts[] = {
@@ -289,6 +376,10 @@ static const struct xe_device_desc mtl_desc = {
 	.require_force_probe = true,
 	PLATFORM(XE_METEORLAKE),
 	.extra_gts = xelpmp_gts,
+	GEN13_DISPLAY,
+	.display.ver = 14,
+	.display.has_cdclk_crawl = 1,
+	.display.has_cdclk_squash = 1,
 };
 
 #undef PLATFORM
@@ -521,6 +612,7 @@ static int xe_info_init(struct xe_device *xe,
 	xe->info.has_flat_ccs = graphics_desc->has_flat_ccs;
 	xe->info.has_range_tlb_invalidation = graphics_desc->has_range_tlb_invalidation;
 	xe->info.has_link_copy_engine = graphics_desc->has_link_copy_engine;
+	xe->info.display = desc->display;
 
 	/*
 	 * All platforms have at least one primary GT.  Any platform with media
