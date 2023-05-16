@@ -764,8 +764,7 @@ int xe_vm_userptr_pin(struct xe_vm *vm)
 		if (err < 0)
 			goto out_err;
 
-		list_del_init(&vma->userptr_link);
-		list_move_tail(&vma->rebind_link, &tmp_evict);
+		list_move_tail(&vma->userptr_link, &tmp_evict);
 	}
 
 	/* Take lock and move to rebind_list for rebinding. */
@@ -773,16 +772,17 @@ int xe_vm_userptr_pin(struct xe_vm *vm)
 	if (err)
 		goto out_err;
 
-	list_splice_tail(&tmp_evict, &vm->rebind_list);
+	list_for_each_entry_safe(vma, next, &tmp_evict, userptr_link) {
+		list_del_init(&vma->userptr_link);
+		list_move_tail(&vma->rebind_link, &vm->rebind_list);
+	}
+
 	dma_resv_unlock(&vm->resv);
 
 	return 0;
 
 out_err:
-	list_for_each_entry_safe(vma, next, &tmp_evict, rebind_link) {
-		list_del_init(&vma->rebind_link);
-		list_add_tail(&vma->userptr_link, &vm->userptr.repin_list);
-	}
+	list_splice_tail(&tmp_evict, &vm->userptr.repin_list);
 
 	return err;
 }
