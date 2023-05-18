@@ -262,11 +262,10 @@ struct xe_reg_sr;
 
 /**
  * XE_RTP_ENTRY_FLAG - Helper to add multiple flags to a struct xe_rtp_entry
- * @f1_: Last part of a ``XE_RTP_ENTRY_FLAG_*``
- * @...: Additional flags, defined like @f1_
+ * @...: Entry flags, without the ``XE_RTP_ENTRY_FLAG_`` prefix
  *
- * Helper to automatically add a ``XE_RTP_ENTRY_FLAG_`` prefix to @f1_ so it can
- * be easily used to define struct xe_rtp_action entries. Example:
+ * Helper to automatically add a ``XE_RTP_ENTRY_FLAG_`` prefix to the flags
+ * when defining struct xe_rtp_entry entries. Example:
  *
  * .. code-block:: c
  *
@@ -285,11 +284,10 @@ struct xe_reg_sr;
 
 /**
  * XE_RTP_ACTION_FLAG - Helper to add multiple flags to a struct xe_rtp_action
- * @f1_: Last part of a ``XE_RTP_ENTRY_*``
- * @...: Additional flags, defined like @f1_
+ * @...: Action flags, without the ``XE_RTP_ACTION_FLAG_`` prefix
  *
- * Helper to automatically add a ``XE_RTP_ACTION_FLAG_`` prefix to @f1_ so it
- * can be easily used to define struct xe_rtp_action entries. Example:
+ * Helper to automatically add a ``XE_RTP_ACTION_FLAG_`` prefix to the flags
+ * when defining struct xe_rtp_action entries. Example:
  *
  * .. code-block:: c
  *
@@ -308,8 +306,7 @@ struct xe_reg_sr;
 
 /**
  * XE_RTP_RULES - Helper to set multiple rules to a struct xe_rtp_entry entry
- * @r1: Last part of XE_RTP_MATCH_*
- * @...: Additional rules, defined like @r1
+ * @...: Rules
  *
  * At least one rule is needed and up to 4 are supported. Multiple rules are
  * AND'ed together, i.e. all the rules must evaluate to true for the entry to
