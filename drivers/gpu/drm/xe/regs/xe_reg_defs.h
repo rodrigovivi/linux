@@ -27,7 +27,7 @@ struct xe_reg {
 			 */
 			u32 masked:1;
 			/**
-			 * @__mcr: register is multicast/replicated in the
+			 * @mcr: register is multicast/replicated in the
 			 * hardware and needs special handling. Any register
 			 * with this set should also use a type of xe_reg_mcr_t.
 			 * It's only here so the few places that deal with MCR
@@ -42,12 +42,14 @@ struct xe_reg {
 };
 
 /**
- * xe_reg_mcr_t - MCR register is the same as a regular register, but uses
- * another type since the internal API used for accessing them is different:
- * it's never correct to use regular MMIO access.
+ * struct xe_reg_mcr - MCR register definition
+ *
+ * MCR register is the same as a regular register, but uses another type since
+ * the internal API used for accessing them is different: it's never correct to
+ * use regular MMIO access.
  */
 struct xe_reg_mcr {
-	/** reg: The register */
+	/** @__reg: The register */
 	struct xe_reg __reg;
 };
 
@@ -76,7 +78,7 @@ struct xe_reg_mcr {
 
 /**
  * XE_REG - Create a struct xe_reg from offset and additional flags
- * @r: Register offset
+ * @r_: Register offset
  * @...: Additional options like access mode. See struct xe_reg for available
  *       options.
  */
@@ -84,7 +86,7 @@ struct xe_reg_mcr {
 
 /**
  * XE_REG_MCR - Create a struct xe_reg_mcr from offset and additional flags
- * @r: Register offset
+ * @r_: Register offset
  * @...: Additional options like access mode. See struct xe_reg for available
  *       options.
  */
