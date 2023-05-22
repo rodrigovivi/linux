@@ -11,6 +11,7 @@
 
 #include "xe_hw_engine_types.h"
 
+struct xe_ct;
 struct xe_device;
 
 /**
