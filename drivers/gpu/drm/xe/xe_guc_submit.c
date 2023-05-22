@@ -1067,7 +1067,8 @@ static int guc_engine_init(struct xe_engine *e)
 	err = drm_sched_init(&ge->sched, &drm_sched_ops, NULL,
 			     e->lrc[0].ring.size / MAX_JOB_SIZE_BYTES,
 			     64, timeout, guc_to_gt(guc)->ordered_wq, NULL,
-			     e->name, gt_to_xe(e->gt)->drm.dev);
+			     e->name, DRM_SCHED_POLICY_DEFAULT,
+			     gt_to_xe(e->gt)->drm.dev);
 	if (err)
 		goto err_free;
 
