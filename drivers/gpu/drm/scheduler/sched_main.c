@@ -1176,6 +1176,7 @@ static void drm_sched_main(struct work_struct *w)
  *
  * @sched: scheduler instance
  * @ops: backend operations for this scheduler
+ * @run_wq: workqueue to use for run work. If NULL, the system_wq is used
  * @hw_submission: number of hw submissions that can be in flight
  * @hang_limit: number of times to allow a job to hang before dropping it
  * @timeout: timeout value in jiffies for the scheduler
@@ -1189,6 +1190,7 @@ static void drm_sched_main(struct work_struct *w)
  */
 int drm_sched_init(struct drm_gpu_scheduler *sched,
 		   const struct drm_sched_backend_ops *ops,
+		   struct workqueue_struct *run_wq,
 		   unsigned hw_submission, unsigned hang_limit,
 		   long timeout, struct workqueue_struct *timeout_wq,
 		   atomic_t *score, const char *name, struct device *dev)
@@ -1197,9 +1199,9 @@ int drm_sched_init(struct drm_gpu_scheduler *sched,
 	sched->ops = ops;
 	sched->hw_submission_limit = hw_submission;
 	sched->name = name;
+	sched->run_wq = run_wq ? : system_wq;
 	sched->timeout = timeout;
 	sched->timeout_wq = timeout_wq ? : system_wq;
-	sched->run_wq = system_wq;	/* FIXME: Let user pass this in */
 	sched->hang_limit = hang_limit;
 	sched->score = score ? score : &sched->_score;
 	sched->dev = dev;

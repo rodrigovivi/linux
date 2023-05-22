@@ -1081,7 +1081,7 @@ static int guc_engine_init(struct xe_engine *e)
 	init_waitqueue_head(&ge->suspend_wait);
 
 	timeout = xe_vm_no_dma_fences(e->vm) ? MAX_SCHEDULE_TIMEOUT : HZ * 5;
-	err = drm_sched_init(&ge->sched, &drm_sched_ops,
+	err = drm_sched_init(&ge->sched, &drm_sched_ops, NULL,
 			     e->lrc[0].ring.size / MAX_JOB_SIZE_BYTES,
 			     64, timeout, guc_to_gt(guc)->ordered_wq, NULL,
 			     e->name, gt_to_xe(e->gt)->drm.dev);
