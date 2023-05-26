@@ -105,7 +105,8 @@ static struct xe_reg sanitize_mcr(struct xe_reg_sr *sr,
 
 int xe_reg_sr_add(struct xe_reg_sr *sr,
 		  const struct xe_reg_sr_entry *e,
-		  struct xe_gt *gt)
+		  struct xe_gt *gt,
+		  bool overwrite)
 {
 	unsigned long idx = e->reg.addr;
 	struct xe_reg_sr_entry *pentry = xa_load(&sr->xa, idx);
@@ -115,14 +116,26 @@ int xe_reg_sr_add(struct xe_reg_sr *sr,
 	reg = sanitize_mcr(sr, e, gt);
 
 	if (pentry) {
-		if (!compatible_entries(pentry, e)) {
+		if (!overwrite && !compatible_entries(pentry, e)) {
 			ret = -EINVAL;
 			goto fail;
 		}
 
 		pentry->clr_bits |= e->clr_bits;
-		pentry->set_bits |= e->set_bits;
 		pentry->read_mask |= e->read_mask;
+
+		/*
+		 * Overwrite replaces the bits this entry owns instead of
+		 * accumulating them, so a caller can lower bits it raised
+		 * earlier. Same result as the plain or for a caller whose
+		 * set_bits and clr_bits are the same mask, but it also holds
+		 * when set_bits is a subset of clr_bits.
+		 */
+		if (overwrite)
+			pentry->set_bits = (pentry->set_bits & ~e->clr_bits) |
+					   e->set_bits;
+		else
+			pentry->set_bits |= e->set_bits;
 
 		return 0;
 	}
