@@ -416,6 +416,9 @@ static int __xe_exec_queue_init(struct xe_exec_queue *q, u32 exec_queue_flags)
 	if (q->flags & EXEC_QUEUE_FLAG_DISABLE_STATE_CACHE_PERF_FIX)
 		flags |= XE_LRC_DISABLE_STATE_CACHE_PERF_FIX;
 
+	if (q->eudebug_flags & EXEC_QUEUE_EUDEBUG_FLAG_ENABLE)
+		flags |= XE_LRC_CREATE_RUNALONE;
+
 	err = q->ops->init(q);
 	if (err)
 		return err;
@@ -1050,6 +1053,18 @@ static int exec_queue_set_state_cache_perf_fix(struct xe_device *xe, struct xe_e
 	return 0;
 }
 
+/**
+ * xe_exec_queue_is_debuggable() - Whether an exec_queue is debuggable
+ * @q: The exec_queue
+ *
+ * Return: True if @q was created with %DRM_XE_EXEC_QUEUE_SET_PROPERTY_EUDEBUG,
+ * false otherwise.
+ */
+bool xe_exec_queue_is_debuggable(struct xe_exec_queue *q)
+{
+	return q->eudebug_flags & EXEC_QUEUE_EUDEBUG_FLAG_ENABLE;
+}
+
 typedef int (*xe_exec_queue_set_property_fn)(struct xe_device *xe,
 					     struct xe_exec_queue *q,
 					     u64 value);
@@ -1134,6 +1149,17 @@ static int exec_queue_user_ext_check(struct xe_exec_queue *q, u64 properties)
 	 */
 	if (XE_IOCTL_DBG(xe, (properties & BIT_ULL(DRM_XE_EXEC_QUEUE_SET_PROPERTY_MULTI_GROUP)) &&
 			 (properties & BIT_ULL(DRM_XE_EXEC_QUEUE_SET_PROPERTY_PXP_TYPE))))
+		return -EINVAL;
+
+	/*
+	 * EUDEBUG turns on runalone, which lets a single engine of the group
+	 * execute at a time, while a multi-queue group is there to run several
+	 * in parallel. Reject the combination. Testing the property mask
+	 * covers the primary as well, and does not depend on the order in
+	 * which userspace chained the extensions.
+	 */
+	if (XE_IOCTL_DBG(xe, (properties & BIT_ULL(DRM_XE_EXEC_QUEUE_SET_PROPERTY_EUDEBUG)) &&
+			 (properties & BIT_ULL(DRM_XE_EXEC_QUEUE_SET_PROPERTY_MULTI_GROUP))))
 		return -EINVAL;
 
 	return 0;

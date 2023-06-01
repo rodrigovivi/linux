@@ -191,6 +191,9 @@ struct drm_xe_eudebug_connect {
 	__u64 reserved;
 };
 
+#define   DRM_XE_EXEC_QUEUE_SET_PROPERTY_EUDEBUG		7
+#define     DRM_XE_EXEC_QUEUE_EUDEBUG_FLAG_ENABLE		(1 << 0)
+
 #if defined(__cplusplus)
 }
 #endif
