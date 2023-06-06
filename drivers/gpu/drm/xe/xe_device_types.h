@@ -21,6 +21,7 @@
 #include "ext/intel_device_info.h"
 #include "ext/intel_pch.h"
 #include "intel_display_core.h"
+#include "intel_display_device.h"
 #endif
 
 struct xe_ggtt;
@@ -232,58 +233,11 @@ struct xe_device {
 		u8 enable_display:1;
 
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
-		struct xe_device_display_info {
-			u8 ver;
-
-			u8 pipe_mask;
-			u8 cpu_transcoder_mask;
-			u8 fbc_mask;
-			u8 abox_mask;
-
-			struct {
-				u16 size; /* in blocks */
-				u8 slice_mask;
-			} dbuf;
-
-#define DEV_INFO_DISPLAY_FOR_EACH_FLAG(func) \
-			/* Keep in alphabetical order */ \
-			func(has_cdclk_crawl); \
-			func(has_cdclk_squash); \
-			func(has_dmc); \
-			func(has_dp_mst); \
-			func(has_dsb); \
-			func(has_dsc); \
-			func(has_fpga_dbg); \
-			func(has_hdcp); \
-			func(has_hti); \
-			func(has_ipc); \
-			func(has_psr); \
-			func(has_psr_hw_tracking);
-
-#define DEFINE_FLAG(name) u8 name:1
-			DEV_INFO_DISPLAY_FOR_EACH_FLAG(DEFINE_FLAG);
-#undef DEFINE_FLAG
-
-			/* Register offsets for the various display pipes and transcoders */
-			u32 pipe_offsets[I915_MAX_TRANSCODERS];
-			u32 trans_offsets[I915_MAX_TRANSCODERS];
-			u32 cursor_offsets[I915_MAX_PIPES];
-
-			struct {
-				u32 degamma_lut_size;
-				u32 gamma_lut_size;
-				u32 degamma_lut_tests;
-				u32 gamma_lut_tests;
-			} color;
-
-			/* Populated by intel_device_runtime_init() */
-			u8 num_sprites[I915_MAX_PIPES];
-			u8 num_scalers[I915_MAX_PIPES];
+		const struct intel_display_device_info *display;
+		struct intel_display_runtime_info display_runtime;
+		struct {
 			u32 rawclk_freq;
-
-			/* Unused by xe, but for compat */
-			u32 mmio_offset;
-		} display;
+		} i915_runtime;
 #endif
 	} info;
 

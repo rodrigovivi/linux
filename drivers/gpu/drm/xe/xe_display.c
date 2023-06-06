@@ -196,7 +196,7 @@ int xe_display_init_noirq(struct xe_device *xe)
 
 	intel_bw_init_hw(xe);
 
-	intel_device_info_runtime_init(xe);
+	intel_display_device_info_runtime_init(xe);
 
 	err = intel_display_driver_probe_noirq(xe);
 	if (err)
@@ -320,7 +320,7 @@ static void intel_suspend_encoders(struct xe_device *xe)
 	struct drm_device *dev = &xe->drm;
 	struct intel_encoder *encoder;
 
-	if (!xe->info.display.pipe_mask)
+	if (xe->info.display_runtime.pipe_mask)
 		return;
 
 	drm_modeset_lock_all(dev);
@@ -340,7 +340,7 @@ void xe_display_pm_suspend(struct xe_device *xe)
 	 * properly.
 	 */
 	intel_power_domains_disable(xe);
-	if (xe->info.display.pipe_mask)
+	if (xe->info.display_runtime.pipe_mask)
 		drm_kms_helper_poll_disable(&xe->drm);
 
 	intel_display_driver_suspend(xe);
@@ -385,7 +385,7 @@ void xe_display_pm_resume(struct xe_device *xe)
 
 	intel_dmc_resume(xe);
 
-	if (xe->info.display.pipe_mask)
+	if (xe->info.display_runtime.pipe_mask)
 		drm_mode_config_reset(&xe->drm);
 
 	intel_display_driver_init_hw(xe);
@@ -397,7 +397,7 @@ void xe_display_pm_resume(struct xe_device *xe)
 	intel_display_driver_resume(xe);
 
 	intel_hpd_poll_disable(xe);
-	if (xe->info.display.pipe_mask)
+	if (xe->info.display_runtime.pipe_mask)
 		drm_kms_helper_poll_enable(&xe->drm);
 
 	intel_opregion_resume(xe);
@@ -411,142 +411,34 @@ void xe_display_pm_resume(struct xe_device *xe)
 __diag_push();
 __diag_ignore_all("-Woverride-init", "Allow field overrides in table");
 
-#define __DISPLAY_DEFAULTS \
-	.pipe_mask = BIT(PIPE_A) | BIT(PIPE_B) |			\
-		     BIT(PIPE_C) | BIT(PIPE_D),				\
-	.cpu_transcoder_mask =						\
-	BIT(TRANSCODER_A) | BIT(TRANSCODER_B) |				\
-	BIT(TRANSCODER_C) | BIT(TRANSCODER_D) |				\
-	BIT(TRANSCODER_DSI_0) | BIT(TRANSCODER_DSI_1),			\
-	.pipe_offsets = {						\
-		[TRANSCODER_A] = PIPE_A_OFFSET,				\
-		[TRANSCODER_B] = PIPE_B_OFFSET,				\
-		[TRANSCODER_C] = PIPE_C_OFFSET,				\
-		[TRANSCODER_D] = PIPE_D_OFFSET,				\
-		[TRANSCODER_DSI_0] = PIPE_DSI0_OFFSET,			\
-		[TRANSCODER_DSI_1] = PIPE_DSI1_OFFSET,			\
-	},								\
-	.cursor_offsets = { \
-		[PIPE_A] = CURSOR_A_OFFSET, \
-		[PIPE_B] = CURSOR_B_OFFSET, \
-		[PIPE_C] = CURSOR_C_OFFSET, \
-		[PIPE_D] = CURSOR_D_OFFSET, \
-	}, \
-	.trans_offsets = {						\
-		[TRANSCODER_A] = TRANSCODER_A_OFFSET,			\
-		[TRANSCODER_B] = TRANSCODER_B_OFFSET,			\
-		[TRANSCODER_C] = TRANSCODER_C_OFFSET,			\
-		[TRANSCODER_D] = TRANSCODER_D_OFFSET,			\
-		[TRANSCODER_DSI_0] = TRANSCODER_DSI0_OFFSET,		\
-		[TRANSCODER_DSI_1] = TRANSCODER_DSI1_OFFSET,		\
-	}
-
-#define GEN12_DISPLAY \
-	__DISPLAY_DEFAULTS,						\
-	.ver = 12,							\
-	.abox_mask = GENMASK(2, 1),					\
-	.has_dmc = 1,							\
-	.has_dp_mst = 1,						\
-	.has_dsb = 0, /* FIXME: LUT load is broken with huge DSB */	\
-	.dbuf.size = 2048,						\
-	.dbuf.slice_mask = BIT(DBUF_S1) | BIT(DBUF_S2),			\
-	.has_dsc = 1,							\
-	.fbc_mask = BIT(INTEL_FBC_A),					\
-	.has_fpga_dbg = 1,						\
-	.has_hdcp = 1,							\
-	.has_ipc = 1,							\
-	.has_psr = 1,							\
-	.has_psr_hw_tracking = 0,					\
-	.color = { .degamma_lut_size = 33, .gamma_lut_size = 262145 }
-
-#define XE_LPD								\
-	__DISPLAY_DEFAULTS,						\
-	.ver = 13,							\
-	.abox_mask = GENMASK(1, 0),					\
-	.color = {							\
-		.degamma_lut_size = 128, .gamma_lut_size = 1024,	\
-		.degamma_lut_tests = DRM_COLOR_LUT_NON_DECREASING |	\
-		DRM_COLOR_LUT_EQUAL_CHANNELS,				\
-	},								\
-	.dbuf.size = 4096,						\
-	.dbuf.slice_mask = BIT(DBUF_S1) | BIT(DBUF_S2) | BIT(DBUF_S3) |	\
-	BIT(DBUF_S4),							\
-	.has_dmc = 1,							\
-	.has_dp_mst = 1,						\
-	.has_dsb = 1,							\
-	.has_dsc = 1,							\
-	.fbc_mask = BIT(INTEL_FBC_A),					\
-	.has_fpga_dbg = 1,						\
-	.has_hdcp = 1,							\
-	.has_ipc = 1,							\
-	.has_psr = 1,							\
-	.has_psr_hw_tracking = 0
-
-#define XE_LPDP								\
-	XE_LPD,								\
-	.ver = 14,							\
-	.has_cdclk_crawl = 1,						\
-	.has_cdclk_squash = 1
-
-
 void xe_display_info_init(struct xe_device *xe)
 {
-	if (!xe->info.enable_display) {
-		unset_display_features(xe);
-		return;
+	u16 gmdid_ver, gmdid_rel, gmdid_step;
+	bool has_gmdid = GRAPHICS_VERx100(xe) >= 1270;
+
+	if (!xe->info.enable_display)
+		goto no_display;
+
+	xe->info.display = intel_display_device_probe(xe, has_gmdid, &gmdid_ver,
+						      &gmdid_rel, &gmdid_step);
+	memcpy(&xe->info.display_runtime,
+	       &xe->info.display->__runtime_defaults,
+	       sizeof(xe->info.display->__runtime_defaults));
+
+	if (!xe->info.display_runtime.pipe_mask)
+		goto no_display;
+
+	if (has_gmdid) {
+		xe->info.display_runtime.ip.ver = gmdid_ver;
+		xe->info.display_runtime.ip.rel = gmdid_rel;
+		xe->info.display_runtime.ip.step = gmdid_step;
 	}
 
-	switch (xe->info.platform) {
-	case XE_TIGERLAKE:
-	case XE_DG1:
-		xe->info.display = (struct xe_device_display_info) {
-			GEN12_DISPLAY,
-			.has_psr_hw_tracking = 1,
-		};
-		break;
-	case XE_ROCKETLAKE:
-		xe->info.display = (struct xe_device_display_info) {
-			GEN12_DISPLAY,
-			.abox_mask = BIT(0),
-			.has_hti = 1,
-			.cpu_transcoder_mask =
-				BIT(TRANSCODER_A) | BIT(TRANSCODER_B) |
-				BIT(TRANSCODER_C),
-			.pipe_mask =
-				BIT(PIPE_A) | BIT(PIPE_B) | BIT(PIPE_C),
-		};
-		break;
-	case XE_ALDERLAKE_S:
-		xe->info.display = (struct xe_device_display_info) {
-			GEN12_DISPLAY,
-			.has_hti = 1,
-		};
-		break;
-	case XE_ALDERLAKE_P:
-	case XE_ALDERLAKE_N:
-		xe->info.display = (struct xe_device_display_info) {
-			XE_LPD,
-			.has_cdclk_crawl = 1,
-		};
-		break;
-	case XE_DG2:
-		xe->info.display = (struct xe_device_display_info) {
-			XE_LPD,
-			.cpu_transcoder_mask =
-				BIT(TRANSCODER_A) | BIT(TRANSCODER_B) |
-				BIT(TRANSCODER_C) | BIT(TRANSCODER_D),
-			.has_cdclk_squash = 1,
-		};
-		break;
-	case XE_METEORLAKE:
-		xe->info.display = (struct xe_device_display_info) { XE_LPDP };
-		break;
-	default:
-		drm_warn(&xe->drm, "Unknown display IP\n");
-		xe->info.enable_display = false;
-		unset_display_features(xe);
-		return;
-	}
+	return;
+
+no_display:
+	xe->info.enable_display = false;
+	unset_display_features(xe);
 }
 
 __diag_pop();

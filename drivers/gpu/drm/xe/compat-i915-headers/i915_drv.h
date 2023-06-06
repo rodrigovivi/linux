@@ -84,44 +84,14 @@ static inline struct drm_i915_private *kdev_to_i915(struct device *kdev)
 #define IS_BDW_ULT(dev_priv) (dev_priv && 0)
 #define IS_BDW_ULX(dev_priv) (dev_priv && 0)
 
-#define INTEL_NUM_PIPES(xe) (hweight8((xe)->info.display.pipe_mask))
-#define HAS_DISPLAY(xe) ((xe)->info.display.pipe_mask != 0)
 #define INTEL_DISPLAY_ENABLED(xe) (HAS_DISPLAY((xe)) && !intel_opregion_headless_sku((xe)))
-#define HAS_CDCLK_CRAWL(xe) ((xe)->info.display.has_cdclk_crawl)
-#define HAS_CDCLK_SQUASH(xe) ((xe)->info.display.has_cdclk_squash)
-#define HAS_PSR(xe) ((xe)->info.display.has_psr)
-#define HAS_PSR2_SEL_FETCH(xe) (xe || 1)
-#define HAS_PSR_HW_TRACKING(xe) ((xe)->info.display.has_psr_hw_tracking)
-#define HAS_IPC(xe) ((xe)->info.display.has_ipc)
-#define HAS_IPS(xe) (xe && false)
-#define HAS_SAGV(xe) (xe || 1)
-#define HAS_DP_MST(xe) ((xe)->info.display.has_dp_mst)
-#define HAS_DMC(xe) ((xe)->info.display.has_dmc)
-#define HAS_DSB(xe) ((xe)->info.display.has_dsb)
-#define HAS_DSC(xe) ((xe)->info.display.has_dsc)
-#define HAS_CUR_FBC(xe) (xe || 1)
-#define HAS_DOUBLE_BUFFERED_M_N(xe) ((xe) || 1)
-#define I915_HAS_HOTPLUG(xe) (true)
-#define HAS_D12_PLANE_MINIMIZATION(dev_priv) (IS_ROCKETLAKE(dev_priv) || \
-					      IS_ALDERLAKE_S(dev_priv))
-#define DISPLAY_VER(xe) ((xe)->info.display.ver)
+#define DISPLAY_VER(xe) ((xe)->info.display_runtime.ip.ver)
 #define IS_DISPLAY_VER(xe, first, last) ((DISPLAY_VER(xe) >= first && DISPLAY_VER(xe) <= last))
 #define IS_GRAPHICS_VER(xe, first, last) \
 	((xe)->info.graphics_verx100 >= first * 100 && \
 	 (xe)->info.graphics_verx100 <= (last*100 + 99))
 #define IS_MOBILE(xe) (xe && 0)
-#define HAS_GMCH(xe) (xe && 0)
-#define HAS_DDI(xe) (xe || 1)
 #define HAS_LLC(xe) (!IS_DGFX((xe)))
-#define HAS_GMBUS_IRQ(xe) (xe || 1)
-#define HAS_GMBUS_BURST_READ(xe) (xe || 1)
-#define HAS_VRR(xe) (xe || 1)
-#define HAS_ASYNC_FLIPS(xe) (xe || 1)
-#define HAS_FBC(xe) ((xe)->info.display.fbc_mask)
-#define SUPPORTS_TV(xe) (xe && 0)
-#define HAS_MBUS_JOINING(xe) (xe && 0)
-#define HAS_HW_SAGV_WM(xe) (DISPLAY_VER(xe) >= 13 && !IS_DGFX(xe))
-#define HAS_DPT(xe) (DISPLAY_VER(xe) >= 13)
 
 /* Workarounds not handled yet */
 #define IS_DISPLAY_STEP(xe, first, last) ({u8 __step = (xe)->info.step.display; first <= __step && __step <= last;})
@@ -165,15 +135,11 @@ static inline struct drm_i915_private *kdev_to_i915(struct device *kdev)
 #define IS_DG2_G12(xe) ((xe)->info.subplatform == XE_SUBPLATFORM_DG2_G12)
 #define IS_ADLP_RPLU(xe) ((xe)->info.subplatform == XE_SUBPLATFORM_ADLP_RPLU)
 #define IS_ICL_WITH_PORT_F(xe) (xe && 0)
-#define HAS_LSPCON(xe) (xe && 0)
-#define HAS_MSO(xe) (xe || 1)
-#define HAS_DP20(xe) (IS_DG2(xe))
 #define HAS_FLAT_CCS(xe) (xe_device_has_flat_ccs(xe))
 #define HAS_4TILE(xe) ((xe)->info.has_4tile)
 #define to_intel_bo(x) gem_to_xe_bo((x))
 #define mkwrite_device_info(xe) (INTEL_INFO(xe))
 
-#define HAS_TRANSCODER(dev_priv, trans)  ((INTEL_INFO(dev_priv)->display.cpu_transcoder_mask & BIT(trans)) != 0)
 #define HAS_128_BYTE_Y_TILING(xe) (xe || 1)
 
 #define intel_has_gpu_reset(a) (a && 0)
@@ -228,7 +194,9 @@ static inline void intel_runtime_pm_put(struct xe_runtime_pm *pm, bool wakeref)
 
 #define intel_step_name xe_step_name
 #define pdev_to_i915 pdev_to_xe_device
-#define RUNTIME_INFO(xe) (&(xe)->info.display)
+#define DISPLAY_INFO(xe)		((xe)->info.display)
+#define RUNTIME_INFO(xe)		(&(xe)->info.i915_runtime)
+#define DISPLAY_RUNTIME_INFO(xe)	(&(xe)->info.display_runtime)
 
 #define FORCEWAKE_ALL XE_FORCEWAKE_ALL
 #define HPD_STORM_DEFAULT_THRESHOLD 50

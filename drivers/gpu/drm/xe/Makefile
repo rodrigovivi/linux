@@ -124,6 +124,7 @@ subdir-ccflags-$(CONFIG_DRM_XE_DISPLAY) += \
 	-Ddrm_i915_private=xe_device
 
 CFLAGS_i915-display/intel_fbdev.o = $(call cc-disable-warning, override-init)
+CFLAGS_i915-display/intel_display_device.o = $(call cc-disable-warning, override-init)
 
 # Rule to build display code shared with i915
 $(obj)/i915-display/%.o: $(srctree)/drivers/gpu/drm/i915/display/%.c FORCE
@@ -163,6 +164,7 @@ xe-$(CONFIG_DRM_XE_DISPLAY) += \
 	i915-display/intel_ddi.o \
 	i915-display/intel_ddi_buf_trans.o \
 	i915-display/intel_display.o \
+	i915-display/intel_display_device.o \
 	i915-display/intel_display_driver.o \
 	i915-display/intel_display_debugfs.o \
 	i915-display/intel_display_power.o \
