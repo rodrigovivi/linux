@@ -218,8 +218,7 @@ int xe_gt_eu_threads_needing_attention(struct xe_gt *gt)
 
 	err = xe_gt_foreach_dss_group_instance(gt, read_first_attention_mcr, NULL);
 
-	XE_WARN_ON(err < 0);
-
+	/* A negative here just means the device is asleep or gone; yield. */
 	return err < 0 ? 0 : err;
 }
 

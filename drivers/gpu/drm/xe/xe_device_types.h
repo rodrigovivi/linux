@@ -665,6 +665,15 @@ struct xe_device {
 
 		/** @eudebug.ufence_wq: used for deferred ufence signalling */
 		struct workqueue_struct *ufence_wq;
+
+		/** @eudebug.attention_wq: used for the attention poll work */
+		struct workqueue_struct *attention_wq;
+
+		/** @eudebug.attention_dwork: attention poll work */
+		struct delayed_work attention_dwork;
+
+		/** @eudebug.send_attentions: handle attentions or ignore */
+		bool send_attentions;
 	} eudebug;
 #endif
 

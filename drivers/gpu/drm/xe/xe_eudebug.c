@@ -8,6 +8,7 @@
 #include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/poll.h>
+#include <linux/string.h>
 #include <linux/uaccess.h>
 #include <linux/workqueue.h>
 
@@ -24,6 +25,8 @@
 #include "xe_eudebug_vm.h"
 #include "xe_exec_queue.h"
 #include "xe_gt.h"
+#include "xe_gt_debug.h"
+#include "xe_guc_submit.h"
 #include "xe_hw_engine.h"
 #include "xe_macros.h"
 #include "xe_oa.h"
@@ -1957,6 +1960,261 @@ static const struct file_operations fops = {
 	.compat_ioctl   = xe_eudebug_ioctl,
 };
 
+/*
+ * The uapi tells userspace it may scan the attention bitmask as u32 or u64
+ * words. Both hold today because the preceding members are u64, but a field
+ * added ahead of the array could quietly break it, so pin it down here.
+ */
+static_assert(__alignof__(struct drm_xe_eudebug_event_eu_attention) >=
+	      sizeof(__u64));
+static_assert(offsetof(struct drm_xe_eudebug_event_eu_attention, bitmask) %
+	      sizeof(__u64) == 0);
+
+static int send_attention_event(struct xe_eudebug *d, struct xe_exec_queue *q,
+				int lrc_idx, void *bitmap, unsigned int size)
+{
+	struct drm_xe_eudebug_event_eu_attention *e;
+	struct drm_xe_eudebug_event *event;
+	const u32 sz = struct_size(e, bitmask, size);
+	int h_queue, h_lrc;
+	int ret;
+
+	if (lrc_idx < 0 || lrc_idx >= q->width)
+		return -EINVAL;
+
+	h_queue = find_handle(d, XE_EUDEBUG_RES_TYPE_EXEC_QUEUE, q);
+	if (h_queue < 0)
+		return h_queue;
+
+	h_lrc = find_handle(d, XE_EUDEBUG_RES_TYPE_LRC, q->lrc[lrc_idx]);
+	if (h_lrc < 0)
+		return h_lrc;
+
+	spin_lock(&d->events.lock);
+	event = xe_eudebug_prepare_event(d, DRM_XE_EUDEBUG_EVENT_EU_ATTENTION, 0,
+					 DRM_XE_EUDEBUG_EVENT_STATE_CHANGE, sz);
+
+	event->seqno = atomic64_inc_return(&d->events.seqno);
+	e = cast_event(e, event);
+	e->exec_queue_handle = h_queue;
+	e->lrc_handle = h_lrc;
+	e->bitmask_size = size;
+
+	memcpy(e->bitmask, bitmap, size);
+	ret = xe_eudebug_queue_event(d, event);
+	spin_unlock(&d->events.lock);
+
+	return ret;
+}
+
+static int xe_send_gt_attention(struct xe_gt *gt, void *bitmap, unsigned int size)
+{
+	struct xe_eudebug *d;
+	struct xe_exec_queue *q;
+	int ret, lrc_idx;
+
+	q = xe_gt_runalone_active_queue_get(gt, NULL, &lrc_idx);
+	if (IS_ERR(q))
+		return PTR_ERR(q);
+
+	if (!xe_exec_queue_is_debuggable(q)) {
+		ret = -EPERM;
+		goto err_exec_queue_put;
+	}
+
+	d = xe_eudebug_get_nolock(q->vm->xef);
+	if (!d) {
+		ret = -ENOTCONN;
+		goto err_exec_queue_put;
+	}
+
+	if (!completion_done(&d->discovery)) {
+		eu_dbg(d, "discovery not yet done\n");
+		ret = -EBUSY;
+		goto err_eudebug_put;
+	}
+
+	ret = send_attention_event(d, q, lrc_idx, bitmap, size);
+	if (ret)
+		xe_eudebug_disconnect(d, ret);
+
+err_eudebug_put:
+	xe_eudebug_put(d);
+err_exec_queue_put:
+	xe_exec_queue_put(q);
+
+	return ret;
+}
+
+static int xe_eudebug_handle_gt_attention(struct xe_gt *gt)
+{
+	struct xe_device *xe = gt_to_xe(gt);
+	const u32 size = xe_gt_eu_attention_bitmap_size(gt);
+	int ret;
+	void *bitmask;
+
+	if (!READ_ONCE(xe->eudebug.send_attentions))
+		return 0;
+
+	ret = xe_gt_eu_threads_needing_attention(gt);
+	if (ret <= 0)
+		return ret;
+
+	/* If we fail at this time, assume we manage to send eventually */
+	bitmask = kvzalloc(size, GFP_KERNEL);
+	if (!bitmask)
+		return 0;
+
+	ret = xe_gt_eu_attention_bitmap(gt, bitmask, size);
+	if (ret)
+		goto out;
+
+	if (mem_is_zero(bitmask, size))
+		goto out;
+
+	ret = xe_send_gt_attention(gt, bitmask, size);
+out:
+	kvfree(bitmask);
+
+	/* Discovery in progress, fake it */
+	if (ret == -EBUSY)
+		return 0;
+
+	return ret;
+}
+
+static void handle_attention_fail(struct xe_gt *gt, int gt_id, int ret)
+{
+	/*
+	 * The owner of the attention cannot be resolved, but that covers two
+	 * different things. The context may have switched out between reading
+	 * the bits and looking it up, for instance after a debugger resumed
+	 * its threads, and then there is nothing left to service. Or the
+	 * threads are still waiting, in a workload that is not in debug mode,
+	 * and nobody is ever going to answer them.
+	 *
+	 * The error tells the two apart no better than the bits do: a
+	 * workload not in debug mode is not runalone either, so it fails the
+	 * same lookup. Read the attention again instead. If it is gone, the
+	 * scan raced something that serviced it; if it is still there, it is
+	 * stuck and the gt has to be reset to get the engine back.
+	 */
+	if (!xe_gt_eu_threads_needing_attention(gt))
+		return;
+
+	/* TODO: error capture */
+	drm_err_ratelimited(&gt_to_xe(gt)->drm,
+			    "gt:%d unable to handle eu attention ret = %d\n",
+			    gt_id, ret);
+
+	xe_gt_reset_async(gt);
+}
+
+/*
+ * A gt reset is in flight from the moment xe_gt_reset_async() marks GuC
+ * submission stopped until the restart at the end of gt_reset_worker()
+ * starts it again. The attention poll takes forcewake and does steered
+ * reads on every dss, none of which may race a reset of any gt on the
+ * device, so it has to stay out for that whole window.
+ */
+static bool attention_poll_reset_in_flight(struct xe_device *xe)
+{
+	struct xe_gt *gt;
+	u8 id;
+
+	if (xe_device_is_in_reset(xe))
+		return true;
+
+	for_each_gt(gt, xe, id) {
+		if (xe_guc_read_stopped(&gt->uc.guc))
+			return true;
+
+		if (work_busy(&gt->reset.worker))
+			return true;
+	}
+
+	return false;
+}
+
+static void attention_poll_work(struct work_struct *work)
+{
+	struct xe_device *xe = container_of(work, typeof(*xe),
+					    eudebug.attention_dwork.work);
+	const unsigned int poll_interval_ms = 100;
+	long delay = msecs_to_jiffies(poll_interval_ms);
+	struct xe_gt *gt;
+	u8 gt_id;
+
+	if (!READ_ONCE(xe->eudebug.send_attentions))
+		return;
+
+	/* Skip this round and look again at the poll interval */
+	if (attention_poll_reset_in_flight(xe))
+		goto requeue;
+
+	if (xe_pm_runtime_get_if_active(xe)) {
+		for_each_gt(gt, xe, gt_id) {
+			int ret;
+
+			if (gt->info.type != XE_GT_TYPE_MAIN)
+				continue;
+
+			ret = xe_eudebug_handle_gt_attention(gt);
+			if (ret)
+				handle_attention_fail(gt, gt_id, ret);
+		}
+
+		xe_pm_runtime_put(xe);
+	}
+
+	/*
+	 * Poll fast while the device carries any debuggable exec queue,
+	 * whether or not a debugger is attached to its client. Attention has
+	 * to be noticed with low latency to be worth anything, and for an
+	 * offline capture there is no debugger to key off at all.
+	 *
+	 * Poll fast for an attached debugger too, even with no debuggable
+	 * queue: attention from a workload that is not in debug mode has to
+	 * be spotted and the gt reset, and a debugger is the one waiting for
+	 * that to happen.
+	 *
+	 * Non critical if we get it wrong, just longer delay on race.
+	 */
+	if (data_race(list_empty(&xe->eudebug.targets)) &&
+	    !data_race(xe->eudebug.attached))
+		delay = 5 * HZ;
+
+	if (delay >= HZ)
+		delay = round_jiffies_up_relative(delay);
+
+requeue:
+	if (READ_ONCE(xe->eudebug.send_attentions))
+		queue_delayed_work(xe->eudebug.attention_wq,
+				   &xe->eudebug.attention_dwork, delay);
+}
+
+/*
+ * The cancel is deliberately the async one. This runs under
+ * xe->eudebug.lock and attention_poll_work() reaches that same lock
+ * through xe_gt_runalone_active_queue_get(), so waiting for the worker
+ * here would deadlock.
+ *
+ * Clearing send_attentions first is therefore what actually stops the
+ * poll: a worker already past its own requeue check can arm the work one
+ * more time, and that wakeup returns at the top guard without rearming.
+ */
+static void xe_eudebug_attention_poll_stop(struct xe_device *xe)
+{
+	WRITE_ONCE(xe->eudebug.send_attentions, false);
+	cancel_delayed_work(&xe->eudebug.attention_dwork);
+}
+
+static void xe_eudebug_attention_poll_start(struct xe_device *xe)
+{
+	WRITE_ONCE(xe->eudebug.send_attentions, true);
+	mod_delayed_work(xe->eudebug.attention_wq, &xe->eudebug.attention_dwork, 0);
+}
+
 static int
 xe_eudebug_connect(struct xe_device *xe,
 		   struct drm_file *drm_file,
@@ -2046,6 +2304,17 @@ xe_eudebug_connect(struct xe_device *xe,
 
 	kref_get(&d->ref); /* for discovery */
 	queue_work(xe->eudebug.discovery_wq, &d->discovery_work);
+
+	/*
+	 * add_debugger() dropped eudebug.lock, and the target closing its
+	 * fd since then detaches us and lets a disable run to completion,
+	 * lockdown release included. Starting the poll regardless would
+	 * leave it reading gt registers with eudebug off and VFs allowed.
+	 */
+	scoped_guard(mutex, &xe->eudebug.lock) {
+		if (xe_eudebug_is_enabled(xe))
+			xe_eudebug_attention_poll_start(xe);
+	}
 
 	eu_dbg(d, "connected session %lld", d->session);
 
@@ -2139,20 +2408,8 @@ static void eudebug_hw_update(struct xe_gt *gt, bool enable)
 	flush_work(&gt->reset.worker);
 }
 
-/**
- * xe_eudebug_enable - Enable or disable EU debug mode
- * @xe: the &xe_device
- * @enable: the new state
- *
- * EU debug mode and SR-IOV are exclusive: on a PF, enabling it locks
- * down VF enabling until it is disabled again. It is also exclusive with
- * OA streams.
- *
- * Return: 0 on success, -EPERM if the device does not support EU debug,
- * -EBUSY if an OA stream is open, or a negative error code if VFs are
- * enabled.
- */
-int xe_eudebug_enable(struct xe_device *xe, bool enable)
+static int __xe_eudebug_enable(struct xe_device *xe, bool enable,
+			       bool *end_lockdown)
 {
 	struct xe_gt *gt;
 	int ret;
@@ -2209,8 +2466,64 @@ int xe_eudebug_enable(struct xe_device *xe, bool enable)
 	WRITE_ONCE(xe->eudebug.cap_state, enable ?
 		   XE_EUDEBUG_CAP_ENABLED : XE_EUDEBUG_CAP_DISABLED);
 
-	if (!enable && IS_SRIOV_PF(xe))
-		xe_sriov_pf_end_lockdown(xe);
+	if (enable) {
+		xe_eudebug_attention_poll_start(xe);
+	} else {
+		xe_eudebug_attention_poll_stop(xe);
+		/*
+		 * The lockdown must outlive the attention worker: it reads GT
+		 * mmio, and VFs must not be enabled while it does. Stopping it
+		 * for good needs a synchronous cancel, which cannot happen
+		 * under eudebug.lock because the worker takes that same lock.
+		 * Hand the release to the caller, which runs after we drop it.
+		 */
+		*end_lockdown = IS_SRIOV_PF(xe);
+	}
+
+	return 0;
+}
+
+/**
+ * xe_eudebug_enable - Enable or disable EU debug mode
+ * @xe: the &xe_device
+ * @enable: the new state
+ *
+ * EU debug mode and SR-IOV are exclusive: on a PF, enabling it locks
+ * down VF enabling until it is disabled again. It is also exclusive with
+ * OA streams.
+ *
+ * Return: 0 on success, -EPERM if the device does not support EU debug,
+ * -EBUSY if an OA stream is open, or a negative error code if VFs are
+ * enabled.
+ */
+int xe_eudebug_enable(struct xe_device *xe, bool enable)
+{
+	bool end_lockdown = false;
+	int ret;
+
+	ret = __xe_eudebug_enable(xe, enable, &end_lockdown);
+	if (ret || !end_lockdown)
+		return ret;
+
+	/*
+	 * eudebug.lock is dropped by now, so the worker can finish and this
+	 * cannot deadlock against it. Only once it is truly stopped is it
+	 * safe to let VFs be enabled again.
+	 */
+	cancel_delayed_work_sync(&xe->eudebug.attention_dwork);
+
+	/*
+	 * An enable may have got in between dropping eudebug.lock and the
+	 * cancel, and the cancel then took out the poll it queued. That
+	 * enable holds a lockdown of its own, so only the poll needs putting
+	 * back.
+	 */
+	scoped_guard(mutex, &xe->eudebug.lock) {
+		if (xe_eudebug_is_enabled(xe))
+			xe_eudebug_attention_poll_start(xe);
+	}
+
+	xe_sriov_pf_end_lockdown(xe);
 
 	return 0;
 }
@@ -2251,6 +2564,33 @@ static const struct file_operations eudebug_fops = {
 	.write = eudebug_set,
 };
 
+/*
+ * xe_eudebug_fini() only runs at the final drm_dev_put(), which an open
+ * file, or a debugger connection, can hold off long past unbind. devm
+ * teardown unmaps the registers the poll reads well before that, and the
+ * device is left runtime active, so stop the poll at unbind. devm actions
+ * unwind in reverse, so this runs once nothing can enable eudebug and
+ * restart it.
+ */
+static void xe_eudebug_attention_fini(void *arg)
+{
+	struct xe_device *xe = arg;
+
+	xe_eudebug_attention_poll_stop(xe);
+	cancel_delayed_work_sync(&xe->eudebug.attention_dwork);
+}
+
+static void xe_eudebug_fini(struct drm_device *dev, void *__unused)
+{
+	struct xe_device *xe = to_xe_device(dev);
+
+	xe_assert(xe, !xe->eudebug.attached);
+	xe_assert(xe, list_empty(&xe->eudebug.targets));
+
+	xe_eudebug_attention_poll_stop(xe);
+	cancel_delayed_work_sync(&xe->eudebug.attention_dwork);
+}
+
 /**
  * xe_eudebug_init_early - Initialize EU debug mode state
  * @xe: the &xe_device
@@ -2261,6 +2601,8 @@ void xe_eudebug_init_early(struct xe_device *xe)
 	int err;
 
 	INIT_LIST_HEAD(&xe->eudebug.targets);
+	INIT_DELAYED_WORK(&xe->eudebug.attention_dwork, attention_poll_work);
+
 	WRITE_ONCE(xe->eudebug.cap_state, XE_EUDEBUG_CAP_NOT_SUPPORTED);
 
 	err = drmm_mutex_init(dev, &xe->eudebug.lock);
@@ -2323,6 +2665,21 @@ void xe_eudebug_init(struct xe_device *xe)
 		goto out_err;
 	xe->eudebug.ufence_wq = wq;
 
+	wq = drmm_alloc_ordered_workqueue(dev, "xe-eudebug-attn", 0);
+	if (IS_ERR(wq)) {
+		err = PTR_ERR(wq);
+		goto out_err;
+	}
+	xe->eudebug.attention_wq = wq;
+
+	err = drmm_add_action_or_reset(&xe->drm, xe_eudebug_fini, NULL);
+	if (err)
+		goto out_err;
+
+	err = devm_add_action_or_reset(dev->dev, xe_eudebug_attention_fini, xe);
+	if (err)
+		goto out_err;
+
 	/* Last: once the file exists it can enable us */
 	debugfs_create_file("eudebug", 0600, xe->drm.primary->debugfs_root,
 			    xe, &eudebug_fops);
@@ -2358,6 +2715,27 @@ void xe_eudebug_track_exec_queue(struct xe_exec_queue *q)
 
 	if (list_empty(&q->eudebug.target_link))
 		list_add_tail(&q->eudebug.target_link, &xe->eudebug.targets);
+
+	/*
+	 * Attention polling falls back to a lazy interval while the device
+	 * carries nothing debuggable. A queue that arrives during such a
+	 * sleep would have to wait it out before any attention of its own
+	 * is noticed, which is long enough for the job timeout to kill the
+	 * workload first. Wake the poll instead.
+	 *
+	 * Waking it for every queue, rather than only for the one that
+	 * finds the list empty, is deliberate: attention_poll_work() reads
+	 * the list without the lock and then picks its delay, so a queue
+	 * added between those two points can find a non-empty list and
+	 * still face a worker that is about to sleep the lazy interval out.
+	 * A stopped poll returns at its own guard, and queue creation is
+	 * not a hot path.
+	 *
+	 * The worker takes eudebug.lock itself, but mod_delayed_work() only
+	 * queues it, so doing this under the lock cannot deadlock.
+	 */
+	mod_delayed_work(xe->eudebug.attention_wq,
+			 &xe->eudebug.attention_dwork, 0);
 }
 
 /**

@@ -96,6 +96,7 @@ struct drm_xe_eudebug_event {
 #define DRM_XE_EUDEBUG_EVENT_VM_BIND		4
 #define DRM_XE_EUDEBUG_EVENT_VM_BIND_OP_DEBUG_DATA	5
 #define DRM_XE_EUDEBUG_EVENT_VM_BIND_UFENCE	6
+#define DRM_XE_EUDEBUG_EVENT_EU_ATTENTION	7
 
 	/** @flags: Flags */
 	__u16 flags;
@@ -440,6 +441,46 @@ struct drm_xe_eudebug_eu_control {
 
 	/** @bitmask_ptr: Bitmask pointer, each bit is one thread */
 	__u64 bitmask_ptr;
+};
+
+/**
+ * struct drm_xe_eudebug_event_eu_attention - EU Attention Event
+ *
+ * Whenever there is any thread in halted/attentions state, this
+ * event will be delivered. The event will be delivered periodically
+ * until there are no attentions detected.
+ *
+ */
+struct drm_xe_eudebug_event_eu_attention {
+	/** @base: base event */
+	struct drm_xe_eudebug_event base;
+
+	/** @exec_queue_handle: Exec queue handle for the attentions */
+	__u64 exec_queue_handle;
+
+	/** @lrc_handle: LRC handle for the attentions */
+	__u64 lrc_handle;
+
+	/**
+	 * @flags: Reserved for future use, reads as zero
+	 *
+	 * Event wide flags are carried in
+	 * :c:member:`drm_xe_eudebug_event_eu_attention.base`.
+	 */
+	__u32 flags;
+
+	/** @bitmask_size: Bitmask size in bytes for bitmask[] */
+	__u32 bitmask_size;
+
+	/**
+	 * @bitmask: Attention bits, one per thread
+	 *
+	 * @bitmask_size is always a multiple of 4, and the array is 8 byte
+	 * aligned within the event, so it can be scanned as u32 or u64
+	 * words instead of byte at a time. The content is hardware register
+	 * state in native endianness.
+	 */
+	__u8 bitmask[];
 };
 
 /*
