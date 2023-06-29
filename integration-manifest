@@ -1,0 +1,28 @@
+drm drm-fixes 9bd9be5cbaf8a8faa175ef4fba04a5623281debe
+	Merge tag 'drm-misc-fixes-2023-06-21' of git://anongit.freedesktop.org/drm/drm-misc into drm-fixes
+drm-misc drm-misc-fixes a590f03d8de7c4cb7ce4916dc7f2fd10711faabe
+	drm/ttm: Don't leak a resource on swapout move error
+drm-intel drm-intel-fixes 6995e2de6891c724bfeb2db33d7b87775f913ad1
+	Linux 6.4
+drm drm-next 5ff2977b19769fd24b0cfbe7cbe4d5114b6106af
+	Merge tag 'drm-intel-next-fixes-2023-06-21' of git://anongit.freedesktop.org/drm/drm-intel into drm-next
+drm-misc drm-misc-next-fixes 861c249cd782cb9f2d5a881bbb32e8da7f0c1192
+	arch/sparc: Add module license and description for fbdev helpers
+drm-intel drm-intel-next-fixes 5b7826355e5b9f48eea29275215fc55165cd17c3
+	drm/i915: Add missing forward declarations/includes to display power headers
+drm-misc drm-misc-next 98d4cb705bc00afd4a9a71cc1e84f7111682639a
+	drm/edid: Add quirk for OSVR HDK 2.0
+drm-intel drm-intel-next 9124f2b7ff7fdd185cd33612b459bafa6c605b46
+	drm/i915: Remove prototype for intel_cx0_phy_ddi_vswing_sequence()
+drm-intel drm-intel-gt-next 36dd2a6e5003a215a1d45e41589164dabae0ec5a
+	drm/i915: Replace kmap() with kmap_local_page()
+sound-upstream for-linus 7cf3dead1ad70c72edb03e2d98e1f3dcd332cdb2
+	Linux 5.13
+sound-upstream for-next 7cf3dead1ad70c72edb03e2d98e1f3dcd332cdb2
+	Linux 5.13
+drm-intel topic/core-for-CI 400ca0fcb875a0d6e649a44df25405a1fb310769
+	PCI/ASPM: pci_enable_link_state: Add argument to acquire bus lock
+drm-misc topic/i915-ttm 1e3944578b749449bd7fa6bf0bae4c3d3f5f1733
+	Merge tag 'amd-drm-next-5.16-2021-09-27' of https://gitlab.freedesktop.org/agd5f/linux into drm-next
+drm topic/nouveau-misc dfc4005f8c172eea359f9db08c3b2b0ff0153699
+	drm/nouveau/disp: move DAC load detection method
