@@ -34,6 +34,7 @@
 #include "intel_display.h"
 #include "intel_display_types.h"
 #include "intel_gmbus.h"
+#include "intel_uncore.h"
 
 #define _INTEL_BIOS_PRIVATE
 #include "intel_vbt_defs.h"
@@ -2914,11 +2915,11 @@ bool intel_bios_is_valid_vbt(const void *buf, size_t size)
 	return vbt;
 }
 
-static u32 intel_spi_read(struct intel_uncore *uncore, u32 offset)
+static u32 intel_spi_read(struct drm_i915_private *i915, u32 offset)
 {
-	intel_uncore_write(uncore, PRIMARY_SPI_ADDRESS, offset);
+	intel_uncore_write(&i915->uncore, PRIMARY_SPI_ADDRESS, offset);
 
-	return intel_uncore_read(uncore, PRIMARY_SPI_TRIGGER);
+	return intel_uncore_read(&i915->uncore, PRIMARY_SPI_TRIGGER);
 }
 
 static struct vbt_header *spi_oprom_get_vbt(struct drm_i915_private *i915)
@@ -2937,7 +2938,7 @@ static struct vbt_header *spi_oprom_get_vbt(struct drm_i915_private *i915)
 	oprom_offset &= OROM_OFFSET_MASK;
 
 	for (count = 0; count < oprom_size; count += 4) {
-		data = intel_spi_read(&i915->uncore, oprom_offset + count);
+		data = intel_spi_read(i915, oprom_offset + count);
 		if (data == *((const u32 *)"$VBT")) {
 			found = oprom_offset + count;
 			break;
@@ -2948,7 +2949,7 @@ static struct vbt_header *spi_oprom_get_vbt(struct drm_i915_private *i915)
 		goto err_not_found;
 
 	/* Get VBT size and allocate space for the VBT */
-	vbt_size = intel_spi_read(&i915->uncore,
+	vbt_size = intel_spi_read(i915,
 				  found + offsetof(struct vbt_header, vbt_size));
 	vbt_size &= 0xffff;
 
@@ -2957,7 +2958,7 @@ static struct vbt_header *spi_oprom_get_vbt(struct drm_i915_private *i915)
 		goto err_not_found;
 
 	for (count = 0; count < vbt_size; count += 4)
-		*(vbt + store++) = intel_spi_read(&i915->uncore, found + count);
+		*(vbt + store++) = intel_spi_read(i915, found + count);
 
 	if (!intel_bios_is_valid_vbt(vbt, vbt_size))
 		goto err_free_vbt;
