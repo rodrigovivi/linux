@@ -35,8 +35,10 @@
 #include <drm/drm_drv.h>
 
 #include "i915_drv.h"
+#include "i915_irq.h"
 #include "i915_reg.h"
 #include "icl_dsi_regs.h"
+#include "intel_clock_gating.h"
 #include "intel_display_trace.h"
 #include "intel_display_types.h"
 #include "intel_dp_aux.h"
@@ -47,19 +49,6 @@
 #include "intel_psr.h"
 #include "intel_psr_regs.h"
 #include "intel_uncore.h"
-
-static u32 raw_reg_read(void __iomem *base, i915_reg_t reg)
-{
-	return readl(base + reg.reg);
-}
-
-static void raw_reg_write(void __iomem *base, i915_reg_t reg, u32 value)
-{
-	writel(value, base + reg.reg);
-}
-
-#include "i915_irq.h"
-#include "intel_clock_gating.h"
 
 static void gen3_irq_reset(struct xe_device *dev_priv, i915_reg_t imr,
 		    i915_reg_t iir, i915_reg_t ier)
