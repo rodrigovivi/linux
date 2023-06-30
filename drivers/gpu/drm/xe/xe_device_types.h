@@ -400,7 +400,7 @@ struct xe_device {
 	bool display_irqs_enabled;
 	u32 enabled_irq_mask;
 
-	struct fake_uncore {
+	struct intel_uncore {
 		spinlock_t lock;
 	} uncore;
 
