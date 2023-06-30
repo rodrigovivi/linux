@@ -138,10 +138,7 @@ static struct drm_driver driver = {
 	.open = xe_file_open,
 	.postclose = xe_file_close,
 
-	.prime_handle_to_fd = drm_gem_prime_handle_to_fd,
-	.prime_fd_to_handle = drm_gem_prime_fd_to_handle,
 	.gem_prime_import = xe_gem_prime_import,
-	.gem_prime_mmap = drm_gem_prime_mmap,
 
 	.dumb_create = xe_bo_dumb_create,
 	.dumb_map_offset = drm_gem_ttm_dumb_map_offset,
