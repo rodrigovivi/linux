@@ -45,15 +45,11 @@ int __i915_inject_probe_error(struct drm_i915_private *i915, int err,
 {
 	return 0;
 }
-int i8xx_enable_vblank(struct drm_crtc *crtc) { return 0; }
 void intel_dvo_init(struct drm_i915_private *i915) {}
-int i965_enable_vblank(struct drm_crtc *crtc) { return 0; }
 int intel_tv_init(struct drm_i915_private *i915) { return 0; }
 int assert_dsi_pll_enabled(struct drm_i915_private *i915) { return 0; }
 bool intel_sdvo_init(struct drm_i915_private *dev_priv,
 		     i915_reg_t sdvo_reg, enum port port) { return false; }
-void i965_disable_vblank(struct drm_crtc *crtc) {}
-void i8xx_disable_vblank(struct drm_crtc *crtc) {}
 void g4x_hdmi_init(struct drm_i915_private *dev_priv,
 		   i915_reg_t hdmi_reg, enum port port) {}
 int g4x_hdmi_connector_atomic_check(struct drm_connector *connector,

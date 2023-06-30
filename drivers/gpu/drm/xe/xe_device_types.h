@@ -397,6 +397,8 @@ struct xe_device {
 		u32 irq_mask;
 		u32 de_irq_mask[I915_MAX_PIPES];
 	};
+	u32 pipestat_irq_mask[I915_MAX_PIPES];
+
 	bool display_irqs_enabled;
 	u32 enabled_irq_mask;
 
@@ -408,6 +410,7 @@ struct xe_device {
 	struct {
 		unsigned int hpll_freq;
 		unsigned int czclk_freq;
+		u8 vblank_enabled;
 	};
 
 	struct {

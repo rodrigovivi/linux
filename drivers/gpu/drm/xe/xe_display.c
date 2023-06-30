@@ -22,6 +22,7 @@
 #include "intel_clock_gating.h"
 #include "intel_display.h"
 #include "intel_display_driver.h"
+#include "intel_display_irq.h"
 #include "intel_display_types.h"
 #include "intel_dmc.h"
 #include "intel_dp.h"
