@@ -145,12 +145,12 @@ xe-$(CONFIG_DRM_XE_DISPLAY) += \
 	display/xe_display_rps.o \
 	display/ext/i915_irq.o \
 	display/ext/intel_clock_gating.o \
-	display/ext/intel_device_info.o \
-	display/ext/intel_pch.o
+	display/ext/intel_device_info.o
 
 # SOC code shared with i915
 xe-$(CONFIG_DRM_XE_DISPLAY) += \
-	i915-soc/intel_dram.o
+	i915-soc/intel_dram.o \
+	i915-soc/intel_pch.o
 
 # Display code shared with i915
 xe-$(CONFIG_DRM_XE_DISPLAY) += \

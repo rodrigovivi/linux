@@ -10,12 +10,12 @@
  * TODO: refactor i915 and xe so this can cease to exist
  */
 
+#include "soc/intel_pch.h"
 #include "xe_device.h"
 #include "xe_bo.h"
 #include "xe_pm.h"
 #include "xe_step.h"
 #include "i915_reg_defs.h"
-#include "intel_pch.h"
 #include "i915_utils.h"
 #include "intel_uncore.h"
 #include <linux/pm_runtime.h>
