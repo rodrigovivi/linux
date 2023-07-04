@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT */
+/*
+ * Copyright © 2023 Intel Corporation
+ */
+
 #include "intel_wakeref.h"
 
 enum i915_drm_suspend_mode {

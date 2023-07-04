@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: MIT */
+/*
+ * Copyright © 2023 Intel Corporation
+ */
+
 #ifndef I915_VMA_H
 #define I915_VMA_H
 
