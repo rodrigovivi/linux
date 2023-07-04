@@ -380,6 +380,12 @@ struct xe_device {
 		u8 num_psf_gv_points;
 	} dram_info;
 
+	/*
+	 * edram size in MB.
+	 * Cannot be determined by PCIID. You must always read a register.
+	 */
+	u32 edram_size_mb;
+
 	/* To shut up runtime pm macros.. */
 	struct xe_runtime_pm {} runtime_pm;
 
@@ -410,6 +416,7 @@ struct xe_device {
 	struct {
 		unsigned int hpll_freq;
 		unsigned int czclk_freq;
+		unsigned int fsb_freq, mem_freq, is_ddr3;
 		u8 vblank_enabled;
 	};
 

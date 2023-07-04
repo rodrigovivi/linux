@@ -126,6 +126,11 @@ subdir-ccflags-$(CONFIG_DRM_XE_DISPLAY) += \
 CFLAGS_i915-display/intel_fbdev.o = $(call cc-disable-warning, override-init)
 CFLAGS_i915-display/intel_display_device.o = $(call cc-disable-warning, override-init)
 
+# Rule to build SOC code shared with i915
+$(obj)/i915-soc/%.o: $(srctree)/drivers/gpu/drm/i915/soc/%.c FORCE
+	$(call cmd,force_checksrc)
+	$(call if_changed_rule,cc_o_c)
+
 # Rule to build display code shared with i915
 $(obj)/i915-display/%.o: $(srctree)/drivers/gpu/drm/i915/display/%.c FORCE
 	$(call cmd,force_checksrc)
@@ -141,8 +146,11 @@ xe-$(CONFIG_DRM_XE_DISPLAY) += \
 	display/ext/i915_irq.o \
 	display/ext/intel_clock_gating.o \
 	display/ext/intel_device_info.o \
-	display/ext/intel_dram.o \
 	display/ext/intel_pch.o
+
+# SOC code shared with i915
+xe-$(CONFIG_DRM_XE_DISPLAY) += \
+	i915-soc/intel_dram.o
 
 # Display code shared with i915
 xe-$(CONFIG_DRM_XE_DISPLAY) += \
