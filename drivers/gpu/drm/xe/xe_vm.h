@@ -6,6 +6,7 @@
 #ifndef _XE_VM_H_
 #define _XE_VM_H_
 
+#include "xe_bo_types.h"
 #include "xe_macros.h"
 #include "xe_map.h"
 #include "xe_vm_types.h"
@@ -61,7 +62,22 @@ static inline bool xe_vm_is_closed_or_banned(struct xe_vm *vm)
 }
 
 struct xe_vma *
-xe_vm_find_overlapping_vma(struct xe_vm *vm, struct xe_vma *vma);
+xe_vm_find_overlapping_vma(struct xe_vm *vm, u64 start, u64 range);
+
+static inline struct xe_vm *gpuva_to_vm(struct drm_gpuva *gpuva)
+{
+	return container_of(gpuva->vm, struct xe_vm, gpuvm);
+}
+
+static inline struct xe_vma *gpuva_to_vma(struct drm_gpuva *gpuva)
+{
+	return container_of(gpuva, struct xe_vma, gpuva);
+}
+
+static inline struct xe_vma_op *gpuva_op_to_vma_op(struct drm_gpuva_op *op)
+{
+	return container_of(op, struct xe_vma_op, base);
+}
 
 /**
  * DOC: Provide accessors for vma members to facilitate easy change of
@@ -69,12 +85,12 @@ xe_vm_find_overlapping_vma(struct xe_vm *vm, struct xe_vma *vma);
  */
 static inline u64 xe_vma_start(struct xe_vma *vma)
 {
-	return vma->start;
+	return vma->gpuva.va.addr;
 }
 
 static inline u64 xe_vma_size(struct xe_vma *vma)
 {
-	return vma->end - vma->start + 1;
+	return vma->gpuva.va.range;
 }
 
 static inline u64 xe_vma_end(struct xe_vma *vma)
@@ -84,32 +100,33 @@ static inline u64 xe_vma_end(struct xe_vma *vma)
 
 static inline u64 xe_vma_bo_offset(struct xe_vma *vma)
 {
-	return vma->bo_offset;
+	return vma->gpuva.gem.offset;
 }
 
 static inline struct xe_bo *xe_vma_bo(struct xe_vma *vma)
 {
-	return vma->bo;
+	return !vma->gpuva.gem.obj ? NULL :
+		container_of(vma->gpuva.gem.obj, struct xe_bo, ttm.base);
 }
 
 static inline struct xe_vm *xe_vma_vm(struct xe_vma *vma)
 {
-	return vma->vm;
+	return container_of(vma->gpuva.vm, struct xe_vm, gpuvm);
 }
 
 static inline bool xe_vma_read_only(struct xe_vma *vma)
 {
-	return vma->pte_flags & XE_PTE_FLAG_READ_ONLY;
+	return vma->gpuva.flags & XE_VMA_READ_ONLY;
 }
 
 static inline u64 xe_vma_userptr(struct xe_vma *vma)
 {
-	return vma->userptr.ptr;
+	return vma->gpuva.gem.offset;
 }
 
 static inline bool xe_vma_is_null(struct xe_vma *vma)
 {
-	return vma->pte_flags & XE_PTE_FLAG_NULL;
+	return vma->gpuva.flags & DRM_GPUVA_SPARSE;
 }
 
 static inline bool xe_vma_has_no_bo(struct xe_vma *vma)
