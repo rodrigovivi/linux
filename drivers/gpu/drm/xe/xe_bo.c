@@ -412,7 +412,8 @@ static int xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo,
 {
 	struct dma_resv_iter cursor;
 	struct dma_fence *fence;
-	struct xe_vma *vma;
+	struct drm_gpuva *gpuva;
+	struct drm_gem_object *obj = &bo->ttm.base;
 	int ret = 0;
 
 	dma_resv_assert_held(bo->ttm.base.resv);
@@ -425,7 +426,8 @@ static int xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo,
 		dma_resv_iter_end(&cursor);
 	}
 
-	list_for_each_entry(vma, &bo->vmas, bo_link) {
+	drm_gem_for_each_gpuva(gpuva, obj) {
+		struct xe_vma *vma = gpuva_to_vma(gpuva);
 		struct xe_vm *vm = xe_vma_vm(vma);
 
 		trace_xe_vma_evict(vma);
@@ -454,7 +456,6 @@ static int xe_bo_trigger_rebind(struct xe_device *xe, struct xe_bo *bo,
 
 		} else {
 			bool vm_resv_locked = false;
-			struct xe_vm *vm = xe_vma_vm(vma);
 
 			/*
 			 * We need to put the vma on the vm's rebind_list,
