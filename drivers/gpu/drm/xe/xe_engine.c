@@ -173,7 +173,7 @@ enum drm_sched_priority
 xe_engine_device_get_max_priority(struct xe_device *xe)
 {
 	return capable(CAP_SYS_NICE) ? DRM_SCHED_PRIORITY_HIGH :
-			               DRM_SCHED_PRIORITY_NORMAL;
+				       DRM_SCHED_PRIORITY_NORMAL;
 }
 
 static int engine_set_priority(struct xe_device *xe, struct xe_engine *e,
@@ -540,7 +540,7 @@ int xe_engine_create_ioctl(struct drm_device *dev, void *data,
 		return -EFAULT;
 
 	if (XE_IOCTL_ERR(xe, eci[0].gt_id >= xe->info.tile_count))
-	       return -EINVAL;
+		return -EINVAL;
 
 	if (eci[0].engine_class == DRM_XE_ENGINE_CLASS_VM_BIND) {
 		for_each_gt(gt, xe, id) {
