@@ -94,8 +94,8 @@ static inline struct drm_i915_private *kdev_to_i915(struct device *kdev)
 #define HAS_LLC(xe) (!IS_DGFX((xe)))
 
 /* Workarounds not handled yet */
-#define IS_DISPLAY_STEP(xe, first, last) ({u8 __step = (xe)->info.step.display; first <= __step && __step <= last;})
-#define IS_GRAPHICS_STEP(xe, first, last) ({u8 __step = (xe)->info.step.graphics; first <= __step && __step <= last;})
+#define IS_DISPLAY_STEP(xe, first, last) ({u8 __step = (xe)->info.step.display; first <= __step && __step <= last; })
+#define IS_GRAPHICS_STEP(xe, first, last) ({u8 __step = (xe)->info.step.graphics; first <= __step && __step <= last; })
 #define IS_LP(xe) (0)
 
 #define IS_TGL_UY(xe) (xe && 0)
