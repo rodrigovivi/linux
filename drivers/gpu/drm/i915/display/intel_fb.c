@@ -2011,7 +2011,7 @@ int intel_framebuffer_init(struct intel_framebuffer *intel_fb,
 		 * mode when the object is VM_BINDed, so we can only set
 		 * coherency with display when unbound.
 		 */
-		if (XE_IOCTL_ERR(dev_priv, !list_empty(&obj->vmas))) {
+		if (XE_IOCTL_DBG(dev_priv, !list_empty(&obj->vmas))) {
 			ttm_bo_unreserve(&obj->ttm);
 			goto err;
 		}
