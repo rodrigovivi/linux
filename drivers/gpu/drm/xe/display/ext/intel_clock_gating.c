@@ -119,7 +119,6 @@ void intel_clock_gating_init(struct drm_i915_private *dev_priv)
 		dg1_init_clock_gating(dev_priv);
 	else if (GRAPHICS_VER(dev_priv) == 12)
 		gen12lp_init_clock_gating(dev_priv);
-	else {
+	else
 		MISSING_CASE(INTEL_DEVID(dev_priv));
-	}
 }
