@@ -351,6 +351,9 @@ struct xe_device {
 	 */
 	struct task_struct *pm_callback_task;
 
+	/** d3cold_capable: Indicates if root port is d3cold capable */
+	bool d3cold_capable;
+
 	/** @d3cold_allowed: Indicates if d3cold is a valid device state */
 	bool d3cold_allowed;
 
