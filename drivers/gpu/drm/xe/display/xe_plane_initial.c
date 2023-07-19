@@ -250,8 +250,6 @@ nofb:
 	 * pretend the BIOS never had it enabled.
 	 */
 	intel_plane_disable_noatomic(crtc, plane);
-
-	return;
 }
 
 static void plane_config_fini(struct intel_initial_plane_config *plane_config)
