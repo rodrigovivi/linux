@@ -574,10 +574,8 @@ void xe_irq_shutdown(struct xe_device *xe)
 
 void xe_irq_suspend(struct xe_device *xe)
 {
-	spin_lock_irq(&xe->irq.lock);
 	xe->irq.enabled = false;
 	xe_irq_reset(xe);
-	spin_unlock_irq(&xe->irq.lock);
 }
 
 void xe_irq_resume(struct xe_device *xe)
@@ -585,13 +583,10 @@ void xe_irq_resume(struct xe_device *xe)
 	struct xe_gt *gt;
 	int id;
 
-	spin_lock_irq(&xe->irq.lock);
 	xe->irq.enabled = true;
 	xe_irq_reset(xe);
 	xe_irq_postinstall(xe);
 
 	for_each_gt(gt, xe, id)
 		xe_irq_enable_hwe(gt);
-
-	spin_unlock_irq(&xe->irq.lock);
 }
