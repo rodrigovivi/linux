@@ -1231,11 +1231,8 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 
 	INIT_LIST_HEAD(&vm->extobj.list);
 
-	if (!(flags & XE_VM_FLAG_MIGRATION)) {
-		/* We need to immeditatelly exit from any D3 state */
-		xe_pm_runtime_get(xe);
+	if (!(flags & XE_VM_FLAG_MIGRATION))
 		xe_device_mem_access_get(xe);
-	}
 
 	err = dma_resv_lock_interruptible(&vm->resv, NULL);
 	if (err)
@@ -1352,10 +1349,8 @@ err_destroy_root:
 err_put:
 	dma_resv_fini(&vm->resv);
 	kfree(vm);
-	if (!(flags & XE_VM_FLAG_MIGRATION)) {
+	if (!(flags & XE_VM_FLAG_MIGRATION))
 		xe_device_mem_access_put(xe);
-		xe_pm_runtime_put(xe);
-	}
 	return ERR_PTR(err);
 }
 
@@ -1513,7 +1508,6 @@ static void vm_destroy_work_func(struct work_struct *w)
 
 	if (!(vm->flags & XE_VM_FLAG_MIGRATION)) {
 		xe_device_mem_access_put(xe);
-		xe_pm_runtime_put(xe);
 
 		if (xe->info.has_asid) {
 			mutex_lock(&xe->usm.lock);
