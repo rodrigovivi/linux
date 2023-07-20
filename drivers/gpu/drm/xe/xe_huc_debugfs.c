@@ -55,9 +55,8 @@ void xe_huc_debugfs_register(struct xe_huc *huc, struct dentry *parent)
 
 #define DEBUGFS_SIZE	(ARRAY_SIZE(debugfs_list) * sizeof(struct drm_info_list))
 	local = drmm_kmalloc(&huc_to_xe(huc)->drm, DEBUGFS_SIZE, GFP_KERNEL);
-	if (!local) {
+	if (!local)
 		return;
-	}
 
 	memcpy(local, debugfs_list, DEBUGFS_SIZE);
 #undef DEBUGFS_SIZE
