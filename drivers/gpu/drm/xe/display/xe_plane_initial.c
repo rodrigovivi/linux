@@ -70,9 +70,9 @@ initial_plane_bo(struct xe_device *xe,
 		gte += base / XE_PAGE_SIZE;
 
 		pte = ioread64(gte);
-		if (!(pte & XE_GGTT_PTE_LM)) {
+		if (!(pte & XE_GGTT_PTE_DM)) {
 			drm_err(&xe->drm,
-				"Initial plane programming missing PTE_LM bit\n");
+				"Initial plane programming missing DM bit\n");
 			return NULL;
 		}
 
