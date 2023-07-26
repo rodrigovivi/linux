@@ -309,6 +309,13 @@ static irqreturn_t xelp_irq_handler(int irq, void *arg)
 	unsigned long intr_dw[2];
 	u32 identity[32];
 
+	spin_lock(&xe->irq.lock);
+	if (!xe->irq.enabled) {
+		spin_unlock(&xe->irq.lock);
+		return IRQ_NONE;
+	}
+	spin_unlock(&xe->irq.lock);
+
 	master_ctl = xelp_intr_disable(xe);
 	if (!master_ctl) {
 		xelp_intr_enable(xe, false);
@@ -370,6 +377,13 @@ static irqreturn_t dg1_irq_handler(int irq, void *arg)
 	u8 id;
 
 	/* TODO: This really shouldn't be copied+pasted */
+
+	spin_lock(&xe->irq.lock);
+	if (!xe->irq.enabled) {
+		spin_unlock(&xe->irq.lock);
+		return IRQ_NONE;
+	}
+	spin_unlock(&xe->irq.lock);
 
 	master_tile_ctl = dg1_intr_disable(xe);
 	if (!master_tile_ctl) {
@@ -574,10 +588,14 @@ void xe_irq_shutdown(struct xe_device *xe)
 
 void xe_irq_suspend(struct xe_device *xe)
 {
+	int irq = to_pci_dev(xe->drm.dev)->irq;
+
 	spin_lock_irq(&xe->irq.lock);
-	xe->irq.enabled = false;
-	xe_irq_reset(xe);
+	xe->irq.enabled = false; /* no new irqs */
 	spin_unlock_irq(&xe->irq.lock);
+
+	synchronize_irq(irq); /* flush irqs */
+	xe_irq_reset(xe); /* turn irqs off */
 }
 
 void xe_irq_resume(struct xe_device *xe)
@@ -585,13 +603,15 @@ void xe_irq_resume(struct xe_device *xe)
 	struct xe_gt *gt;
 	int id;
 
-	spin_lock_irq(&xe->irq.lock);
+	/*
+	 * lock not needed:
+	 * 1. no irq will arrive before the postinstall
+	 * 2. display is not yet resumed
+	 */
 	xe->irq.enabled = true;
 	xe_irq_reset(xe);
-	xe_irq_postinstall(xe);
+	xe_irq_postinstall(xe); /* turn irqs on */
 
 	for_each_gt(gt, xe, id)
 		xe_irq_enable_hwe(gt);
-
-	spin_unlock_irq(&xe->irq.lock);
 }
