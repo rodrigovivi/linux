@@ -37,10 +37,25 @@
 #define XE_BO_INTERNAL_TEST		BIT(30)
 #define XE_BO_INTERNAL_64K		BIT(31)
 
-#define PPAT_UNCACHED                   GENMASK_ULL(4, 3)
-#define PPAT_CACHED_PDE                 0
-#define PPAT_CACHED                     BIT_ULL(7)
-#define PPAT_DISPLAY_ELLC               BIT_ULL(4)
+/*
+ * PAT Index Mechanism
+ *
+ * Some bits encoded in the page table entries and directories,
+ * are put together to form the "PAT_INDEX". The value of
+ * PAT Index points to some cache options such as:
+ *
+ *   PAT_INDEX = 0 --> WB Cache
+ *   PAT_INDEX = 1 --> WC Cache
+ *   PAT_INDEX = 2 --> WT Cache
+ *   PAT_INDEX = 3 --> Uncached
+ *
+ * The bits that form the PAT index for PPGTT are:
+ *   PTE     - [62][ 7][4][3]
+ *   PDE/PDP - [62][12][4][3]
+ */
+#define PPAT_INDEX			(BIT_ULL(62) | BIT_ULL(7) | BIT_ULL(4) | BIT_ULL(3))
+#define PPAT_WT				BIT_ULL(4) /* PAT_INDEX = 2 */
+#define PPAT_UNCACHED			GENMASK_ULL(4, 3) /* PAT_INDEX = 3 */
 
 #define XE_PTE_SHIFT			12
 #define XE_PAGE_SIZE			(1 << XE_PTE_SHIFT)

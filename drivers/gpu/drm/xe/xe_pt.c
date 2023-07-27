@@ -68,7 +68,7 @@ u64 xe_pde_encode(struct xe_bo *bo, u64 bo_offset,
 	/* FIXME: I don't think the PPAT handling is correct for MTL */
 
 	if (level != XE_CACHE_NONE)
-		pde |= PPAT_CACHED_PDE;
+		pde &= ~PPAT_INDEX;
 	else
 		pde |= PPAT_UNCACHED;
 
@@ -93,10 +93,10 @@ static u64 __pte_encode(u64 pte, enum xe_cache_level cache,
 		pte |= PPAT_UNCACHED;
 		break;
 	case XE_CACHE_WT:
-		pte |= PPAT_DISPLAY_ELLC;
+		pte |= PPAT_WT;
 		break;
 	default:
-		pte |= PPAT_CACHED;
+		pte &= ~PPAT_INDEX;
 		break;
 	}
 
