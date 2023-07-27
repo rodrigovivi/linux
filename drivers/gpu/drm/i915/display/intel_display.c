@@ -6940,7 +6940,7 @@ static int i915_gem_object_read_from_page(struct xe_bo *bo,
 	int ret;
 	struct ww_acquire_ctx ww;
 
-	XE_BUG_ON(size != 8);
+	XE_WARN_ON(size != 8);
 
 	ret = xe_bo_lock(bo, &ww, 0, true);
 	if (ret)
