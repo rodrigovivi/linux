@@ -332,6 +332,7 @@ static void intel_suspend_encoders(struct xe_device *xe)
 
 void xe_display_pm_suspend(struct xe_device *xe)
 {
+	bool s2idle = acpi_target_system_state() < ACPI_STATE_S3;
 	if (!xe->info.enable_display)
 		return;
 
@@ -351,7 +352,7 @@ void xe_display_pm_suspend(struct xe_device *xe)
 
 	intel_suspend_encoders(xe);
 
-	intel_opregion_suspend(xe, PCI_D3cold);
+	intel_opregion_suspend(xe, s2idle ? PCI_D1 : PCI_D3cold);
 
 	intel_fbdev_set_suspend(&xe->drm, FBINFO_STATE_SUSPENDED, true);
 
@@ -360,10 +361,11 @@ void xe_display_pm_suspend(struct xe_device *xe)
 
 void xe_display_pm_suspend_late(struct xe_device *xe)
 {
+	bool s2idle = acpi_target_system_state() < ACPI_STATE_S3;
 	if (!xe->info.enable_display)
 		return;
 
-	intel_power_domains_suspend(xe, I915_DRM_SUSPEND_MEM);
+	intel_power_domains_suspend(xe, s2idle);
 
 	intel_display_power_suspend_late(xe);
 }
