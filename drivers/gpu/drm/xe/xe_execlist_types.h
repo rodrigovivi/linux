@@ -13,7 +13,7 @@
 #include <drm/gpu_scheduler.h>
 
 struct xe_hw_engine;
-struct xe_execlist_engine;
+struct xe_execlist_exec_queue;
 
 struct xe_execlist_port {
 	struct xe_hw_engine *hwe;
@@ -24,13 +24,13 @@ struct xe_execlist_port {
 
 	u32 last_ctx_id;
 
-	struct xe_execlist_engine *running_exl;
+	struct xe_execlist_exec_queue *running_exl;
 
 	struct timer_list irq_fail;
 };
 
-struct xe_execlist_engine {
-	struct xe_engine *engine;
+struct xe_execlist_exec_queue {
+	struct xe_exec_queue *q;
 
 	struct drm_gpu_scheduler sched;
 
