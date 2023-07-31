@@ -3,8 +3,8 @@
  * Copyright © 2022 Intel Corporation
  */
 
-#ifndef _XE_ENGINE_TYPES_H_
-#define _XE_ENGINE_TYPES_H_
+#ifndef _XE_EXEC_QUEUE_TYPES_H_
+#define _XE_EXEC_QUEUE_TYPES_H_
 
 #include <linux/kref.h>
 
@@ -15,20 +15,20 @@
 #include "xe_hw_fence_types.h"
 #include "xe_lrc_types.h"
 
-struct xe_execlist_engine;
+struct xe_execlist_exec_queue;
 struct xe_gt;
-struct xe_guc_engine;
+struct xe_guc_exec_queue;
 struct xe_hw_engine;
 struct xe_vm;
 
 /**
- * struct xe_engine - Submission engine
+ * struct xe_exec_queue - Execution queue
  *
  * Contains all state necessary for submissions. Can either be a user object or
  * a kernel object.
  */
-struct xe_engine {
-	/** @gt: graphics tile this engine can submit to */
+struct xe_exec_queue {
+	/** @gt: graphics tile this exec queue can submit to */
 	struct xe_gt *gt;
 	/**
 	 * @hwe: A hardware of the same class. May (physical engine) or may not
@@ -36,36 +36,36 @@ struct xe_engine {
 	 * really be used for submissions.
 	 */
 	struct xe_hw_engine *hwe;
-	/** @refcount: ref count of this engine */
+	/** @refcount: ref count of this exec queue */
 	struct kref refcount;
-	/** @vm: VM (address space) for this engine */
+	/** @vm: VM (address space) for this exec queue */
 	struct xe_vm *vm;
-	/** @class: class of this engine */
+	/** @class: class of this exec queue */
 	enum xe_engine_class class;
 	/** @priority: priority of this exec queue */
 	enum xe_sched_priority priority;
 	/**
-	 * @logical_mask: logical mask of where job submitted to engine can run
+	 * @logical_mask: logical mask of where job submitted to exec queue can run
 	 */
 	u32 logical_mask;
-	/** @name: name of this engine */
+	/** @name: name of this exec queue */
 	char name[MAX_FENCE_NAME_LEN];
-	/** @width: width (number BB submitted per exec) of this engine */
+	/** @width: width (number BB submitted per exec) of this exec queue */
 	u16 width;
 	/** @fence_irq: fence IRQ used to signal job completion */
 	struct xe_hw_fence_irq *fence_irq;
 
-#define ENGINE_FLAG_BANNED		BIT(0)
-#define ENGINE_FLAG_KERNEL		BIT(1)
-#define ENGINE_FLAG_PERSISTENT		BIT(2)
-#define ENGINE_FLAG_COMPUTE_MODE	BIT(3)
-/* Caller needs to hold rpm ref when creating engine with ENGINE_FLAG_VM */
-#define ENGINE_FLAG_VM			BIT(4)
-#define ENGINE_FLAG_BIND_ENGINE_CHILD	BIT(5)
-#define ENGINE_FLAG_WA			BIT(6)
+#define EXEC_QUEUE_FLAG_BANNED		BIT(0)
+#define EXEC_QUEUE_FLAG_KERNEL		BIT(1)
+#define EXEC_QUEUE_FLAG_PERSISTENT		BIT(2)
+#define EXEC_QUEUE_FLAG_COMPUTE_MODE	BIT(3)
+/* Caller needs to hold rpm ref when creating engine with EXEC_QUEUE_FLAG_VM */
+#define EXEC_QUEUE_FLAG_VM			BIT(4)
+#define EXEC_QUEUE_FLAG_BIND_ENGINE_CHILD	BIT(5)
+#define EXEC_QUEUE_FLAG_WA			BIT(6)
 
 	/**
-	 * @flags: flags for this engine, should statically setup aside from ban
+	 * @flags: flags for this exec queue, should statically setup aside from ban
 	 * bit
 	 */
 	unsigned long flags;
@@ -78,19 +78,19 @@ struct xe_engine {
 	};
 
 	union {
-		/** @execlist: execlist backend specific state for engine */
-		struct xe_execlist_engine *execlist;
-		/** @guc: GuC backend specific state for engine */
-		struct xe_guc_engine *guc;
+		/** @execlist: execlist backend specific state for exec queue */
+		struct xe_execlist_exec_queue *execlist;
+		/** @guc: GuC backend specific state for exec queue */
+		struct xe_guc_exec_queue *guc;
 	};
 
 	/**
-	 * @persistent: persistent engine state
+	 * @persistent: persistent exec queue state
 	 */
 	struct {
-		/** @xef: file which this engine belongs to */
+		/** @xef: file which this exec queue belongs to */
 		struct xe_file *xef;
-		/** @link: link in list of persistent engines */
+		/** @link: link in list of persistent exec queues */
 		struct list_head link;
 	} persistent;
 
@@ -123,7 +123,7 @@ struct xe_engine {
 		u32 preempt_timeout_us;
 	} sched_props;
 
-	/** @compute: compute engine state */
+	/** @compute: compute exec queue state */
 	struct {
 		/** @pfence: preemption fence */
 		struct dma_fence *pfence;
@@ -131,7 +131,7 @@ struct xe_engine {
 		u64 context;
 		/** @seqno: preemption fence seqno */
 		u32 seqno;
-		/** @link: link into VM's list of engines */
+		/** @link: link into VM's list of exec queues */
 		struct list_head link;
 		/** @lock: preemption fences lock */
 		spinlock_t lock;
@@ -147,53 +147,53 @@ struct xe_engine {
 		u32 acc_granularity;
 	} usm;
 
-	/** @ops: submission backend engine operations */
-	const struct xe_engine_ops *ops;
+	/** @ops: submission backend exec queue operations */
+	const struct xe_exec_queue_ops *ops;
 
-	/** @ring_ops: ring operations for this engine */
+	/** @ring_ops: ring operations for this exec queue */
 	const struct xe_ring_ops *ring_ops;
-	/** @entity: DRM sched entity for this engine (1 to 1 relationship) */
+	/** @entity: DRM sched entity for this exec queue (1 to 1 relationship) */
 	struct drm_sched_entity *entity;
-	/** @lrc: logical ring context for this engine */
+	/** @lrc: logical ring context for this exec queue */
 	struct xe_lrc lrc[];
 };
 
 /**
- * struct xe_engine_ops - Submission backend engine operations
+ * struct xe_exec_queue_ops - Submission backend exec queue operations
  */
-struct xe_engine_ops {
-	/** @init: Initialize engine for submission backend */
-	int (*init)(struct xe_engine *e);
+struct xe_exec_queue_ops {
+	/** @init: Initialize exec queue for submission backend */
+	int (*init)(struct xe_exec_queue *q);
 	/** @kill: Kill inflight submissions for backend */
-	void (*kill)(struct xe_engine *e);
-	/** @fini: Fini engine for submission backend */
-	void (*fini)(struct xe_engine *e);
-	/** @set_priority: Set priority for engine */
-	int (*set_priority)(struct xe_engine *e,
+	void (*kill)(struct xe_exec_queue *q);
+	/** @fini: Fini exec queue for submission backend */
+	void (*fini)(struct xe_exec_queue *q);
+	/** @set_priority: Set priority for exec queue */
+	int (*set_priority)(struct xe_exec_queue *q,
 			    enum drm_sched_priority priority);
-	/** @set_timeslice: Set timeslice for engine */
-	int (*set_timeslice)(struct xe_engine *e, u32 timeslice_us);
-	/** @set_preempt_timeout: Set preemption timeout for engine */
-	int (*set_preempt_timeout)(struct xe_engine *e, u32 preempt_timeout_us);
-	/** @set_job_timeout: Set job timeout for engine */
-	int (*set_job_timeout)(struct xe_engine *e, u32 job_timeout_ms);
+	/** @set_timeslice: Set timeslice for exec queue */
+	int (*set_timeslice)(struct xe_exec_queue *q, u32 timeslice_us);
+	/** @set_preempt_timeout: Set preemption timeout for exec queue */
+	int (*set_preempt_timeout)(struct xe_exec_queue *q, u32 preempt_timeout_us);
+	/** @set_job_timeout: Set job timeout for exec queue */
+	int (*set_job_timeout)(struct xe_exec_queue *q, u32 job_timeout_ms);
 	/**
-	 * @suspend: Suspend engine from executing, allowed to be called
+	 * @suspend: Suspend exec queue from executing, allowed to be called
 	 * multiple times in a row before resume with the caveat that
 	 * suspend_wait returns before calling suspend again.
 	 */
-	int (*suspend)(struct xe_engine *e);
+	int (*suspend)(struct xe_exec_queue *q);
 	/**
-	 * @suspend_wait: Wait for an engine to suspend executing, should be
+	 * @suspend_wait: Wait for an exec queue to suspend executing, should be
 	 * call after suspend.
 	 */
-	void (*suspend_wait)(struct xe_engine *e);
+	void (*suspend_wait)(struct xe_exec_queue *q);
 	/**
-	 * @resume: Resume engine execution, engine must be in a suspended
+	 * @resume: Resume exec queue execution, exec queue must be in a suspended
 	 * state and dma fence returned from most recent suspend call must be
 	 * signalled when this function is called.
 	 */
-	void (*resume)(struct xe_engine *e);
+	void (*resume)(struct xe_exec_queue *q);
 };
 
 #endif
