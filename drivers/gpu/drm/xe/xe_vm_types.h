@@ -142,8 +142,8 @@ struct xe_vm {
 
 	struct kref refcount;
 
-	/* engine used for (un)binding vma's */
-	struct xe_engine *eng[XE_MAX_TILES_PER_DEVICE];
+	/* exec queue used for (un)binding vma's */
+	struct xe_exec_queue *q[XE_MAX_TILES_PER_DEVICE];
 
 	/** Protects @rebind_list and the page-table structures */
 	struct dma_resv resv;
@@ -285,10 +285,10 @@ struct xe_vm {
 		 * an engine again
 		 */
 		s64 min_run_period_ms;
-		/** @engines: list of engines attached to this VM */
-		struct list_head engines;
-		/** @num_engines: number user engines attached to this VM */
-		int num_engines;
+		/** @exec_queues: list of exec queues attached to this VM */
+		struct list_head exec_queues;
+		/** @num_exec_queues: number exec queues attached to this VM */
+		int num_exec_queues;
 		/**
 		 * @rebind_deactivated: Whether rebind has been temporarily deactivated
 		 * due to no work available. Protected by the vm resv.
@@ -393,8 +393,8 @@ struct xe_vma_op {
 	 * operations is processed
 	 */
 	struct drm_gpuva_ops *ops;
-	/** @engine: engine for this operation */
-	struct xe_engine *engine;
+	/** @q: exec queue for this operation */
+	struct xe_exec_queue *q;
 	/**
 	 * @syncs: syncs for this operation, only used on first and last
 	 * operation
