@@ -142,8 +142,8 @@ struct xe_vm {
 
 	struct kref refcount;
 
-	/* engine used for (un)binding vma's */
-	struct xe_engine *eng[XE_MAX_TILES_PER_DEVICE];
+	/* exec queue used for (un)binding vma's */
+	struct xe_exec_queue *q[XE_MAX_TILES_PER_DEVICE];
 
 	/** Protects @rebind_list and the page-table structures */
 	struct dma_resv resv;
@@ -394,7 +394,7 @@ struct xe_vma_op {
 	 */
 	struct drm_gpuva_ops *ops;
 	/** @engine: engine for this operation */
-	struct xe_engine *engine;
+	struct xe_exec_queue *q;
 	/**
 	 * @syncs: syncs for this operation, only used on first and last
 	 * operation
