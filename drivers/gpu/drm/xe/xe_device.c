@@ -19,7 +19,7 @@
 #include "xe_display.h"
 #include "xe_dma_buf.h"
 #include "xe_drv.h"
-#include "xe_engine.h"
+#include "xe_exec_queue.h"
 #include "xe_exec.h"
 #include "xe_gt.h"
 #include "xe_irq.h"
