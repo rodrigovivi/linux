@@ -2120,6 +2120,17 @@ int xe_oa_stream_open_ioctl(struct drm_device *dev, u64 data, struct drm_file *f
 			ret = -EOPNOTSUPP;
 			goto err_exec_q;
 		}
+
+		/*
+		 * A debuggable queue runs with a preemption timeout of 0 so
+		 * that a debugger can hold its threads halted, and a stream
+		 * may change and restore engine settings around it. Keep
+		 * debuggable queues out of OA.
+		 */
+		if (XE_IOCTL_DBG(oa->xe, xe_exec_queue_is_debuggable(param.exec_q))) {
+			ret = -EBUSY;
+			goto err_exec_q;
+		}
 	}
 
 	/*

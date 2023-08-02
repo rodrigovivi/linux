@@ -48,6 +48,7 @@ extern "C" {
 #define DRM_XE_EUDEBUG_IOCTL_READ_EVENT		_IOWR('j', 0x40, struct drm_xe_eudebug_event)
 #define DRM_XE_EUDEBUG_IOCTL_ACK_EVENT		_IOW('j', 0x41, struct drm_xe_eudebug_ack)
 #define DRM_XE_EUDEBUG_IOCTL_VM_OPEN		_IOW('j', 0x42, struct drm_xe_eudebug_vm_open)
+#define DRM_XE_EUDEBUG_IOCTL_EU_CONTROL		_IOWR('j', 0x43, struct drm_xe_eudebug_eu_control)
 
 /**
  * struct drm_xe_eudebug_event - Base type of event delivered by xe_eudebug.
@@ -371,6 +372,74 @@ struct drm_xe_eudebug_vm_open {
 	 * cap. The value is rounded up to microseconds.
 	 */
 	__u64 timeout_ns;
+};
+
+/**
+ * struct drm_xe_eudebug_eu_control - Control EU states
+ *
+ * Issue commands to execution units in hardware.
+ *
+ * With DRM_XE_EUDEBUG_IOCTL_EU_CONTROL debugger can
+ * interrupt all threads on execution units, query thread
+ * state and resume execution.
+ *
+ * The ioctl returns -EBUSY while discovery is still in progress. Retry.
+ *
+ * :c:member:`drm_xe_eudebug_eu_control.seqno`
+ * will be updated to the timeline point when
+ * the command was issued.
+ *
+ * :c:member:`drm_xe_eudebug_eu_control.cmd` can
+ * be following:
+ *
+ * *DRM_XE_EUDEBUG_EU_CONTROL_CMD_INTERRUPT_ALL*
+ *  will instruct hardware to stop all threads on EUs
+ *  for exec_queue:lrc. This command takes no bitmask, so
+ *  :c:member:`drm_xe_eudebug_eu_control.bitmask_size`
+ *  must be set to zero.
+ *
+ * *DRM_XE_EUDEBUG_EU_CONTROL_CMD_STOPPED*
+ *  returns the bitmask for threads that are
+ *  in so called attention state.
+ *
+ * *DRM_XE_EUDEBUG_EU_CONTROL_CMD_RESUME*
+ *  resumes the threads whose bit is set in the bitmask.
+ *
+ */
+struct drm_xe_eudebug_eu_control {
+	/** @cmd: Command for execution units */
+#define DRM_XE_EUDEBUG_EU_CONTROL_CMD_INTERRUPT_ALL	0
+#define DRM_XE_EUDEBUG_EU_CONTROL_CMD_STOPPED		1
+#define DRM_XE_EUDEBUG_EU_CONTROL_CMD_RESUME		2
+	__u32 cmd;
+
+	/** @flags: Flags, must be set to zero */
+	__u32 flags;
+
+	/** @seqno: Seqno, must be set to zero */
+	__u64 seqno;
+
+	/** @exec_queue_handle: Exec queue handle for the command */
+	__u64 exec_queue_handle;
+
+	/** @lrc_handle: LRC handle for the command */
+	__u64 lrc_handle;
+
+	/** @reserved: Reserved field, must be set to zero */
+	__u32 reserved;
+
+	/**
+	 * @bitmask_size: Bitmask size in bytes
+	 *
+	 * Only the leading bytes that fit are used. If this differs from
+	 * the size the hardware bitmask needs, it is overwritten with that
+	 * size on return, so a short buffer can be grown and the command
+	 * retried.
+	 */
+	__u32 bitmask_size;
+
+	/** @bitmask_ptr: Bitmask pointer, each bit is one thread */
+	__u64 bitmask_ptr;
 };
 
 /*

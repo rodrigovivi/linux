@@ -19,7 +19,11 @@
 #include "xe_eudebug_proto.h"
 
 struct xe_device;
+struct xe_eudebug;
+struct xe_hw_engine;
 struct workqueue_struct;
+struct xe_exec_queue;
+struct xe_lrc;
 
 /**
  * enum xe_eudebug_cap_state - eudebug capability state
@@ -68,6 +72,24 @@ struct xe_eudebug_resource {
 #define XE_EUDEBUG_RES_TYPE_EXEC_QUEUE  1
 #define XE_EUDEBUG_RES_TYPE_LRC		2
 #define XE_EUDEBUG_RES_TYPE_COUNT	(XE_EUDEBUG_RES_TYPE_LRC + 1)
+
+/**
+ * struct xe_eudebug_eu_control_ops - interface for eu thread
+ * state control backend
+ */
+struct xe_eudebug_eu_control_ops {
+	/** @interrupt_all: interrupts workload active on given hwe */
+	int (*interrupt_all)(struct xe_eudebug *e, struct xe_exec_queue *q,
+			     struct xe_hw_engine *hwe, struct xe_lrc *lrc);
+
+	/** @resume: resumes threads reflected by bitmask active on given hwe */
+	int (*resume)(struct xe_eudebug *e, struct xe_exec_queue *q,
+		      struct xe_lrc *lrc, u8 *bitmap, unsigned int bitmap_size);
+
+	/** @stopped: returns bitmap reflecting threads which signal attention */
+	int (*stopped)(struct xe_eudebug *e, struct xe_exec_queue *q,
+		       struct xe_lrc *lrc, u8 *bitmap, unsigned int bitmap_size);
+};
 
 /**
  * struct xe_eudebug - Top level struct for eudebug: the connection
@@ -164,6 +186,9 @@ struct xe_eudebug {
 		/** @acks.tree: pending acks by seqnos */
 		struct rb_root tree;
 	} acks;
+
+	/** @ops: operations for eu_control */
+	const struct xe_eudebug_eu_control_ops *ops;
 };
 
 #endif /* _XE_EUDEBUG_TYPES_H_ */

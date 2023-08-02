@@ -84,6 +84,28 @@ out_pm:
 	return ret;
 }
 
+static int read_first_attention_mcr(struct xe_gt *gt, void *data,
+				    u16 group, u16 instance, bool present)
+{
+	unsigned int reg, row;
+
+	if (!present)
+		return 0;
+
+	for (reg = 0; reg < xe_gt_eu_att_regs(gt); reg++) {
+		for (row = 0; row < XE_GT_EU_ATT_ROWS; row++) {
+			u32 val;
+
+			val = xe_gt_mcr_unicast_read(gt, EU_ATT(reg, row), group, instance);
+
+			if (val)
+				return 1;
+		}
+	}
+
+	return 0;
+}
+
 #define MAX_EUS_PER_ROW 4u
 #define MAX_THREADS 8u
 
@@ -93,8 +115,8 @@ out_pm:
  * @gt: pointer to struct xe_gt
  *
  * The bitmask is u32 sized hardware register content, one bit per thread,
- * in native endianness. It is a byte array rather than a kernel bitmap,
- * and its size is expressed in bytes.
+ * in native endianness. It is a byte array rather than a kernel bitmap:
+ * it crosses to userspace as one, and its size is expressed in bytes.
  *
  * Return: size in bytes, always a multiple of sizeof(u32).
  */
@@ -181,6 +203,24 @@ int xe_gt_eu_attention_bitmap(struct xe_gt *gt, u8 *bits,
 		return -EINVAL;
 
 	return xe_gt_foreach_dss_group_instance(gt, read_eu_attentions_mcr, &iter);
+}
+
+/**
+ * xe_gt_eu_threads_needing_attention - Query host attention
+ *
+ * @gt: pointer to struct xe_gt
+ *
+ * Return: 1 if threads waiting host attention, 0 otherwise.
+ */
+int xe_gt_eu_threads_needing_attention(struct xe_gt *gt)
+{
+	int err;
+
+	err = xe_gt_foreach_dss_group_instance(gt, read_first_attention_mcr, NULL);
+
+	XE_WARN_ON(err < 0);
+
+	return err < 0 ? 0 : err;
 }
 
 static int eu_attention_show(struct seq_file *m, void *data)

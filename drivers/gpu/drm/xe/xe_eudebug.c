@@ -692,6 +692,33 @@ struct xe_vm *xe_eudebug_vm_get(struct xe_eudebug *d, u32 id)
 	return vm;
 }
 
+struct xe_exec_queue *xe_eudebug_exec_queue_get(struct xe_eudebug *d, u32 id)
+{
+	struct xe_eudebug_resource *r =
+		resource_from_type(d, XE_EUDEBUG_RES_TYPE_EXEC_QUEUE);
+	struct xe_exec_queue *eq;
+
+	mutex_lock(&r->lock);
+	eq = find_resource__unlocked(r, id);
+	if (eq)
+		xe_exec_queue_get(eq);
+	mutex_unlock(&r->lock);
+
+	return eq;
+}
+
+struct xe_lrc *xe_eudebug_find_lrc(struct xe_eudebug *d, u32 id)
+{
+	struct xe_eudebug_resource *r = resource_from_type(d, XE_EUDEBUG_RES_TYPE_LRC);
+	struct xe_lrc *lrc;
+
+	mutex_lock(&r->lock);
+	lrc = find_resource__unlocked(r, id);
+	mutex_unlock(&r->lock);
+
+	return lrc;
+}
+
 static struct drm_xe_eudebug_event *
 xe_eudebug_prepare_event(struct xe_eudebug *d, u16 type, u64 seqno, u16 flags,
 			 u32 len)
@@ -1911,6 +1938,10 @@ static long xe_eudebug_ioctl(struct file *file,
 		ret = discovery_pending(d) ?: xe_eudebug_vm_open_ioctl(d, arg);
 		eu_dbg(d, "ioctl cmd=VM_OPEN ret=%ld\n", ret);
 		break;
+	case DRM_XE_EUDEBUG_IOCTL_EU_CONTROL:
+		ret = discovery_pending(d) ?: xe_eudebug_eu_control(d, arg);
+		eu_dbg(d, "ioctl cmd=EU_CONTROL ret=%ld\n", ret);
+		break;
 	default:
 		ret = -ENOTTY;
 	}
@@ -2010,6 +2041,8 @@ xe_eudebug_connect(struct xe_device *xe,
 		err = PTR_ERR(file);
 		goto err_fd;
 	}
+
+	xe_eudebug_hw_init(d);
 
 	kref_get(&d->ref); /* for discovery */
 	queue_work(xe->eudebug.discovery_wq, &d->discovery_work);

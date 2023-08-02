@@ -6,15 +6,18 @@
 #ifndef __XE_GT_DEBUG_
 #define __XE_GT_DEBUG_
 
-#include <linux/types.h>
+#include <linux/bits.h>
+#include <linux/math.h>
 
 struct dentry;
 struct xe_gt;
 
+#define XE_GT_ATTENTION_TIMEOUT_MS 100
 #define XE_GT_EU_ATT_ROWS 2u
 
 unsigned int xe_gt_eu_att_regs(struct xe_gt *gt);
 
+int xe_gt_eu_threads_needing_attention(struct xe_gt *gt);
 int xe_gt_foreach_dss_group_instance(struct xe_gt *gt,
 				     int (*fn)(struct xe_gt *gt,
 					       void *data,
