@@ -2406,6 +2406,20 @@ static u64 xe_vma_max_pte_size(struct xe_vma *vma)
 	return SZ_4K;
 }
 
+static u64 xe_vma_set_pte_size(struct xe_vma *vma, u64 size)
+{
+	switch (size) {
+	case SZ_1G:
+		vma->gpuva.flags |= XE_VMA_PTE_1G;
+		break;
+	case SZ_2M:
+		vma->gpuva.flags |= XE_VMA_PTE_2M;
+		break;
+	}
+
+	return SZ_4K;
+}
+
 /*
  * Parse operations list and create any resources needed for the operations
  * prior to fully committing to the operations. This setup can fail.
@@ -2516,6 +2530,7 @@ static int vm_bind_ioctl_ops_parse(struct xe_vm *vm, struct xe_exec_queue *q,
 						IS_ALIGNED(xe_vma_end(vma),
 							   xe_vma_max_pte_size(old));
 					if (op->remap.skip_prev) {
+						xe_vma_set_pte_size(vma, xe_vma_max_pte_size(old));
 						op->remap.range -=
 							xe_vma_end(vma) -
 							xe_vma_start(old);
@@ -2550,10 +2565,12 @@ static int vm_bind_ioctl_ops_parse(struct xe_vm *vm, struct xe_exec_queue *q,
 					op->remap.skip_next = !xe_vma_is_userptr(old) &&
 						IS_ALIGNED(xe_vma_start(vma),
 							   xe_vma_max_pte_size(old));
-					if (op->remap.skip_next)
+					if (op->remap.skip_next) {
+						xe_vma_set_pte_size(vma, xe_vma_max_pte_size(old));
 						op->remap.range -=
 							xe_vma_end(old) -
 							xe_vma_start(vma);
+					}
 				}
 				break;
 			}
