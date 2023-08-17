@@ -136,7 +136,6 @@ static inline struct drm_i915_private *kdev_to_i915(struct device *kdev)
 #define IS_ADLP_RPLU(xe) ((xe)->info.subplatform == XE_SUBPLATFORM_ADLP_RPLU)
 #define IS_ICL_WITH_PORT_F(xe) (xe && 0)
 #define HAS_FLAT_CCS(xe) (xe_device_has_flat_ccs(xe))
-#define HAS_4TILE(xe) ((xe)->info.has_4tile)
 #define to_intel_bo(x) gem_to_xe_bo((x))
 #define mkwrite_device_info(xe) (INTEL_INFO(xe))
 
