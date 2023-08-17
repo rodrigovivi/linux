@@ -14,7 +14,6 @@
 #include <drm/drm_managed.h>
 #include <drm/xe_drm.h>
 
-#include "ext/i915_irq.h"
 #include "soc/intel_dram.h"
 #include "intel_acpi.h"
 #include "intel_audio.h"
