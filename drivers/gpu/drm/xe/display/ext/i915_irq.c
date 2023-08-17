@@ -6,7 +6,6 @@
 #include "i915_drv.h"
 #include "i915_irq.h"
 #include "i915_reg.h"
-#include "intel_hotplug.h"
 #include "intel_uncore.h"
 
 void gen3_irq_reset(struct intel_uncore *uncore, i915_reg_t imr,
@@ -54,19 +53,6 @@ void gen3_irq_init(struct intel_uncore *uncore,
 	intel_uncore_write(uncore, ier, ier_val);
 	intel_uncore_write(uncore, imr, imr_val);
 	intel_uncore_posting_read(uncore, imr);
-}
-
-/**
- * DOC: interrupt handling
- *
- * These functions provide the basic support for enabling and disabling the
- * interrupt handling support. There's a lot more functionality in i915_irq.c
- * and related files, but that will be described in separate chapters.
- */
-
-void intel_display_irq_uninstall(struct drm_i915_private *dev_priv)
-{
-	intel_hpd_cancel_work(dev_priv);
 }
 
 bool intel_irqs_enabled(struct xe_device *xe)
