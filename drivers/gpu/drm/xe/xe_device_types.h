@@ -20,6 +20,12 @@
 #include "xe_pmu.h"
 #include "xe_step_types.h"
 
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+#include "soc/intel_pch.h"
+#include "intel_display_core.h"
+#include "intel_display_device.h"
+#endif
+
 struct xe_ggtt;
 struct xe_pat_ops;
 
@@ -247,12 +253,20 @@ struct xe_device {
 		u8 has_llc:1;
 		/** @has_range_tlb_invalidation: Has range based TLB invalidations */
 		u8 has_range_tlb_invalidation:1;
+		/** @enable_display: display enabled */
+		u8 enable_display:1;
 		/** @bypass_mtcfg: Bypass Multi-Tile configuration from MTCFG register */
 		u8 bypass_mtcfg:1;
 		/** @supports_mmio_ext: supports MMIO extension/s */
 		u8 supports_mmio_ext:1;
 		/** @has_heci_gscfi: device has heci gscfi */
 		u8 has_heci_gscfi:1;
+
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+		struct {
+			u32 rawclk_freq;
+		} i915_runtime;
+#endif
 	} info;
 
 	/** @irq: device interrupt state */
@@ -323,6 +337,9 @@ struct xe_device {
 	/** @ordered_wq: used to serialize compute mode resume */
 	struct workqueue_struct *ordered_wq;
 
+	/** @unordered_wq: used to serialize unordered work, mostly display */
+	struct workqueue_struct *unordered_wq;
+
 	/** @tiles: device tiles */
 	struct xe_tile tiles[XE_MAX_TILES_PER_DEVICE];
 
@@ -388,10 +405,99 @@ struct xe_device {
 	/** @heci_gsc: graphics security controller */
 	struct xe_heci_gsc heci_gsc;
 
+#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
+	/*
+	 * Any fields below this point are the ones used by display.
+	 * They are temporarily added here so xe_device can be desguised as
+	 * drm_i915_private during build. After cleanup these should go away,
+	 * migrating to the right sub-structs
+	 */
+	struct intel_display display;
+	enum intel_pch pch_type;
+	u16 pch_id;
+
+	struct dram_info {
+		bool wm_lv_0_adjust_needed;
+		u8 num_channels;
+		bool symmetric_memory;
+		enum intel_dram_type {
+			INTEL_DRAM_UNKNOWN,
+			INTEL_DRAM_DDR3,
+			INTEL_DRAM_DDR4,
+			INTEL_DRAM_LPDDR3,
+			INTEL_DRAM_LPDDR4,
+			INTEL_DRAM_DDR5,
+			INTEL_DRAM_LPDDR5,
+		} type;
+		u8 num_qgv_points;
+		u8 num_psf_gv_points;
+	} dram_info;
+
+	/*
+	 * edram size in MB.
+	 * Cannot be determined by PCIID. You must always read a register.
+	 */
+	u32 edram_size_mb;
+
+	/* To shut up runtime pm macros.. */
+	struct xe_runtime_pm {} runtime_pm;
+
 	/* For pcode */
 	struct mutex sb_lock;
 
+	/* Should be in struct intel_display */
+	u32 skl_preferred_vco_freq, max_dotclk_freq, hti_state;
+	u8 snps_phy_failed_calibration;
+	struct drm_atomic_state *modeset_restore_state;
+	struct list_head global_obj_list;
+
+	union {
+		/* only to allow build, not used functionally */
+		u32 irq_mask;
+		u32 de_irq_mask[I915_MAX_PIPES];
+	};
+	u32 pipestat_irq_mask[I915_MAX_PIPES];
+
+	bool display_irqs_enabled;
 	u32 enabled_irq_mask;
+
+	struct intel_uncore {
+		spinlock_t lock;
+	} uncore;
+
+	/* only to allow build, not used functionally */
+	struct {
+		unsigned int hpll_freq;
+		unsigned int czclk_freq;
+		unsigned int fsb_freq, mem_freq, is_ddr3;
+		u8 vblank_enabled;
+	};
+
+	struct {
+		/* Backlight: XXX: needs to be set to -1 */
+		s32 invert_brightness;
+		s32 vbt_sdvo_panel_type;
+		u32 edp_vswing;
+
+		/* PM support, needs to be -1 as well */
+		s32 disable_power_well;
+		s32 enable_dc;
+
+		const char *dmc_firmware_path;
+		s32 enable_dpcd_backlight;
+		s32 enable_dp_mst;
+		bool enable_dpt;
+		s32 enable_fbc;
+		s32 enable_psr;
+		bool enable_sagv;
+		bool psr_safest_params;
+		s32 enable_psr2_sel_fetch;
+
+		s32 panel_use_ssc;
+		const char *vbt_firmware;
+		u32 lvds_channel_mode;
+	} params;
+#endif
 };
 
 /**
