@@ -378,9 +378,10 @@ struct intel_dsb *intel_dsb_prepare(struct intel_crtc *crtc,
 #else
 	/* ~1 qword per instruction, full cachelines */
 	size = ALIGN(max_cmds * 8, 64);
-	obj = xe_bo_create_pin_map(i915, to_gt(i915), NULL, PAGE_ALIGN(size),
+	obj = xe_bo_create_pin_map(i915, xe_device_get_root_tile(i915),
+				   NULL, PAGE_ALIGN(size),
 				   ttm_bo_type_kernel,
-				   XE_BO_CREATE_VRAM_IF_DGFX(to_gt(i915)) |
+				   XE_BO_CREATE_VRAM_IF_DGFX(xe_device_get_root_tile(i915)) |
 				   XE_BO_CREATE_GGTT_BIT);
 	if (IS_ERR(obj)) {
 		kfree(dsb);
