@@ -6,10 +6,7 @@
 #include "i915_drv.h"
 #include "i915_irq.h"
 #include "i915_reg.h"
-#include "intel_display_irq.h"
-#include "intel_display_types.h"
 #include "intel_hotplug.h"
-#include "intel_hotplug_irq.h"
 #include "intel_uncore.h"
 
 void gen3_irq_reset(struct intel_uncore *uncore, i915_reg_t imr,
@@ -66,39 +63,6 @@ void gen3_irq_init(struct intel_uncore *uncore,
  * interrupt handling support. There's a lot more functionality in i915_irq.c
  * and related files, but that will be described in separate chapters.
  */
-
-void gen11_display_irq_postinstall(struct drm_i915_private *dev_priv)
-{
-	if (!HAS_DISPLAY(dev_priv))
-		return;
-
-	if (INTEL_PCH_TYPE(dev_priv) >= PCH_ICP)
-		icp_irq_postinstall(dev_priv);
-
-	gen11_de_irq_postinstall(dev_priv);
-}
-
-void intel_display_irq_init(struct drm_i915_private *dev_priv)
-{
-	struct drm_device *dev = &dev_priv->drm;
-
-	if (!HAS_DISPLAY(dev_priv))
-		return;
-
-	dev->vblank_disable_immediate = true;
-
-	/* Most platforms treat the display irq block as an always-on
-	 * power domain. vlv/chv can disable it at runtime and need
-	 * special care to avoid writing any of the display block registers
-	 * outside of the power domain. We defer setting up the display irqs
-	 * in this case to the runtime pm.
-	 */
-	dev_priv->display_irqs_enabled = true;
-	if (IS_VALLEYVIEW(dev_priv) || IS_CHERRYVIEW(dev_priv))
-		dev_priv->display_irqs_enabled = false;
-
-	intel_hotplug_irq_init(dev_priv);
-}
 
 void intel_display_irq_uninstall(struct drm_i915_private *dev_priv)
 {

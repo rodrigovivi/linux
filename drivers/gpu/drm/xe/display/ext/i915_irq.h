@@ -13,8 +13,6 @@
 struct drm_i915_private;
 struct intel_uncore;
 
-void intel_display_irq_init(struct drm_i915_private *dev_priv);
-
 bool intel_irqs_enabled(struct drm_i915_private *dev_priv);
 void intel_synchronize_irq(struct drm_i915_private *i915);
 
@@ -27,8 +25,6 @@ void gen3_irq_init(struct intel_uncore *uncore,
 		   i915_reg_t imr, u32 imr_val,
 		   i915_reg_t ier, u32 ier_val,
 		   i915_reg_t iir);
-
-void gen11_display_irq_postinstall(struct drm_i915_private *dev_priv);
 
 #define GEN8_IRQ_RESET_NDX(uncore, type, which) \
 ({ \

@@ -155,7 +155,6 @@ int xe_display_init_nommio(struct xe_device *xe)
 
 	/* This must be called before any calls to HAS_PCH_* */
 	intel_detect_pch(xe);
-	intel_display_irq_init(xe);
 
 	err = intel_power_domains_init(xe);
 	if (err)
@@ -313,7 +312,7 @@ void xe_display_irq_postinstall(struct xe_device *xe, struct xe_gt *gt)
 		return;
 
 	if (gt->info.id == XE_GT0)
-		gen11_display_irq_postinstall(xe);
+		gen11_de_irq_postinstall(xe);
 }
 
 static void intel_suspend_encoders(struct xe_device *xe)
