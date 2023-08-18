@@ -294,7 +294,7 @@ int xe_vm_madvise_ioctl(struct drm_device *dev, void *data,
 	}
 
 	idx = array_index_nospec(args->property, ARRAY_SIZE(madvise_funcs));
-	err = madvise_funcs[idx](xe, vm, vmas, num_vmas, args->property);
+	err = madvise_funcs[idx](xe, vm, vmas, num_vmas, args->value);
 
 unlock_vm:
 	up_read(&vm->lock);
