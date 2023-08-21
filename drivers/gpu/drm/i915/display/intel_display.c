@@ -7969,6 +7969,9 @@ void intel_hpd_poll_fini(struct drm_i915_private *i915)
 	struct intel_connector *connector;
 	struct drm_connector_list_iter conn_iter;
 
+	if (!HAS_DISPLAY(i915))
+		return;
+
 	/* Kill all the work that may have been queued by hpd. */
 	drm_connector_list_iter_begin(&i915->drm, &conn_iter);
 	for_each_intel_connector_iter(connector, &conn_iter) {
