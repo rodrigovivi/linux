@@ -30,6 +30,18 @@
 #include "intel_dmc.h"
 #include "intel_dmc_regs.h"
 
+#ifndef I915
+#include "xe_uc_fw.h"
+
+#define INTEL_UC_FIRMWARE_URL XE_UC_FIRMWARE_URL
+
+__printf(2, 3)
+static inline void
+i915_error_printf(struct drm_i915_error_state_buf *e, const char *f, ...)
+{
+}
+#endif
+
 /**
  * DOC: DMC Firmware Support
  *
@@ -309,8 +321,11 @@ static const struct stepping_info *
 intel_get_stepping_info(struct drm_i915_private *i915,
 			struct stepping_info *si)
 {
+#ifdef I915
 	const char *step_name = intel_step_name(RUNTIME_INFO(i915)->step.display_step);
-
+#else
+	const char *step_name = xe_step_name(i915->info.step.display);
+#endif
 	si->stepping = step_name[0];
 	si->substepping = step_name[1];
 	return si;
