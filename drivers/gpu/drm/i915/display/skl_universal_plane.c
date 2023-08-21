@@ -22,7 +22,11 @@
 #include "skl_universal_plane.h"
 #include "skl_watermark.h"
 #include "gt/intel_gt.h"
+#ifdef I915
 #include "pxp/intel_pxp.h"
+#else
+// TODO: pxp?
+#endif
 
 static const u32 skl_plane_formats[] = {
 	DRM_FORMAT_C8,
@@ -1857,9 +1861,14 @@ static bool skl_fb_scalable(const struct drm_framebuffer *fb)
 
 static bool bo_has_valid_encryption(struct drm_i915_gem_object *obj)
 {
+#ifdef I915
 	struct drm_i915_private *i915 = to_i915(obj->base.dev);
 
 	return intel_pxp_key_check(i915->pxp, obj, false) == 0;
+#else
+#define i915_gem_object_is_protected(x) ((x) && 0)
+	return false;
+#endif
 }
 
 static bool pxp_is_borked(struct drm_i915_gem_object *obj)
