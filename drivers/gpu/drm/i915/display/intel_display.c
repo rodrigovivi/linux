@@ -7054,6 +7054,7 @@ void intel_atomic_helper_free_state_worker(struct work_struct *work)
 
 static void intel_atomic_commit_fence_wait(struct intel_atomic_state *intel_state)
 {
+#ifdef I915
 	struct wait_queue_entry wait_fence, wait_reset;
 	struct drm_i915_private *dev_priv = to_i915(intel_state->base.dev);
 
@@ -7077,6 +7078,24 @@ static void intel_atomic_commit_fence_wait(struct intel_atomic_state *intel_stat
 	finish_wait(bit_waitqueue(&to_gt(dev_priv)->reset.flags,
 				  I915_RESET_MODESET),
 		    &wait_reset);
+#else
+	struct intel_plane_state *plane_state;
+	struct intel_plane *plane;
+	int i;
+
+	for_each_new_intel_plane_in_state(intel_state, plane, plane_state, i) {
+		struct xe_bo *bo;
+
+		if (plane_state->uapi.fence)
+			dma_fence_wait(plane_state->uapi.fence, false);
+		bo = intel_fb_obj(plane_state->hw.fb);
+		if (!bo)
+			continue;
+
+		/* TODO: May deadlock, need to grab all fences in prepare_plane_fb */
+		dma_resv_wait_timeout(bo->ttm.base.resv, DMA_RESV_USAGE_KERNEL, false, MAX_SCHEDULE_TIMEOUT);
+	}
+#endif
 }
 
 static void intel_atomic_cleanup_work(struct work_struct *work)
@@ -7369,6 +7388,7 @@ static void intel_atomic_commit_work(struct work_struct *work)
 	intel_atomic_commit_tail(state);
 }
 
+#ifdef I915
 static int
 intel_atomic_commit_ready(struct i915_sw_fence *fence,
 			  enum i915_sw_fence_notify notify)
@@ -7394,6 +7414,7 @@ intel_atomic_commit_ready(struct i915_sw_fence *fence,
 
 	return NOTIFY_DONE;
 }
+#endif
 
 static void intel_atomic_track_fbs(struct intel_atomic_state *state)
 {
@@ -7417,9 +7438,11 @@ int intel_atomic_commit(struct drm_device *dev, struct drm_atomic_state *_state,
 
 	state->wakeref = intel_runtime_pm_get(&dev_priv->runtime_pm);
 
+#ifdef I915
 	drm_atomic_state_get(&state->base);
 	i915_sw_fence_init(&state->commit_ready,
 			   intel_atomic_commit_ready);
+#endif
 
 	/*
 	 * The intel_legacy_cursor_update() fast path takes care
