@@ -4193,8 +4193,8 @@ static u16 hsw_linetime_wm(const struct intel_crtc_state *crtc_state)
 	return min(linetime_wm, 0x1ff);
 }
 
-static u16 hsw_ips_linetime_wm(const struct intel_crtc_state *crtc_state,
-			       const struct intel_cdclk_state *cdclk_state)
+static inline u16 hsw_ips_linetime_wm(const struct intel_crtc_state *crtc_state,
+				      const struct intel_cdclk_state *cdclk_state)
 {
 	const struct drm_display_mode *pipe_mode =
 		&crtc_state->hw.pipe_mode;
@@ -4237,7 +4237,7 @@ static int hsw_compute_linetime_wm(struct intel_atomic_state *state,
 	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
 	struct intel_crtc_state *crtc_state =
 		intel_atomic_get_new_crtc_state(state, crtc);
-	const struct intel_cdclk_state *cdclk_state;
+	__maybe_unused const struct intel_cdclk_state *cdclk_state;
 
 	if (DISPLAY_VER(dev_priv) >= 9)
 		crtc_state->linetime = skl_linetime_wm(crtc_state);
