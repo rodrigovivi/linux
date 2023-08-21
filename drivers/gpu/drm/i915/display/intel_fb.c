@@ -1866,16 +1866,34 @@ int intel_plane_compute_gtt(struct intel_plane_state *plane_state)
 	return intel_plane_check_stride(plane_state);
 }
 
+static void intel_user_framebuffer_destroy_vm(struct drm_framebuffer *fb)
+{
+#ifdef I915
+	struct intel_framebuffer *intel_fb = to_intel_framebuffer(fb);
+	if (intel_fb_uses_dpt(fb))
+		intel_dpt_destroy(intel_fb->dpt_vm);
+#else
+	if (intel_fb_obj(fb)->flags & XE_BO_CREATE_PINNED_BIT) {
+		struct xe_bo *bo = intel_fb_obj(fb);
+
+		/* Unpin our kernel fb first */
+		xe_bo_lock_no_vm(bo, NULL);
+		xe_bo_unpin(bo);
+		xe_bo_unlock_no_vm(bo);
+	}
+	xe_bo_put(intel_fb_obj(fb));
+#endif
+}
+
 static void intel_user_framebuffer_destroy(struct drm_framebuffer *fb)
 {
 	struct intel_framebuffer *intel_fb = to_intel_framebuffer(fb);
 
 	drm_framebuffer_cleanup(fb);
 
-	if (intel_fb_uses_dpt(fb))
-		intel_dpt_destroy(intel_fb->dpt_vm);
-
 	intel_frontbuffer_put(intel_fb->frontbuffer);
+
+	intel_user_framebuffer_destroy_vm(fb);
 
 	kfree(intel_fb);
 }
@@ -2038,13 +2056,14 @@ int intel_framebuffer_init(struct intel_framebuffer *intel_fb,
 			}
 		}
 
-		fb->obj[i] = &obj->base;
+		fb->obj[i] = &obj->ttm.base;
 	}
 
 	ret = intel_fill_fb_info(dev_priv, intel_fb);
 	if (ret)
 		goto err;
 
+#ifdef I915
 	if (intel_fb_uses_dpt(fb)) {
 		struct i915_address_space *vm;
 
@@ -2057,6 +2076,10 @@ int intel_framebuffer_init(struct intel_framebuffer *intel_fb,
 
 		intel_fb->dpt_vm = vm;
 	}
+#else
+	/* Hold a reference to object while fb is alive */
+	xe_bo_get(obj);
+#endif
 
 	ret = drm_framebuffer_init(&dev_priv->drm, fb, &intel_fb_funcs);
 	if (ret) {
@@ -2067,8 +2090,7 @@ int intel_framebuffer_init(struct intel_framebuffer *intel_fb,
 	return 0;
 
 err_free_dpt:
-	if (intel_fb_uses_dpt(fb))
-		intel_dpt_destroy(intel_fb->dpt_vm);
+	intel_user_framebuffer_destroy_vm(fb);
 err:
 	intel_frontbuffer_put(intel_fb->frontbuffer);
 	return ret;
