@@ -143,7 +143,9 @@ struct intel_framebuffer {
 		struct intel_fb_view remapped_view;
 	};
 
+#ifdef I915
 	struct i915_address_space *dpt_vm;
+#endif
 };
 
 enum intel_hotplug_state {
@@ -698,7 +700,11 @@ struct intel_plane_state {
 	} hw;
 
 	struct i915_vma *ggtt_vma;
+#ifdef I915
 	struct i915_vma *dpt_vma;
+#else
+	struct i915_vma embed_vma;
+#endif
 	unsigned long flags;
 #define PLANE_HAS_FENCE BIT(0)
 
