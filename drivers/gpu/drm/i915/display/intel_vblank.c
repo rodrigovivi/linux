@@ -306,8 +306,11 @@ static bool i915_get_crtc_scanoutpos(struct drm_crtc *_crtc,
 	 * register reads, potentially with preemption disabled, so the
 	 * following code must not block on uncore.lock.
 	 */
+#ifdef I915
 	spin_lock_irqsave(&dev_priv->uncore.lock, irqflags);
-
+#else
+	local_irq_save(irqflags);
+#endif
 	/* preempt_disable_rt() should go right here in PREEMPT_RT patchset. */
 
 	/* Get optional system timestamp before query. */
@@ -374,8 +377,11 @@ static bool i915_get_crtc_scanoutpos(struct drm_crtc *_crtc,
 
 	/* preempt_enable_rt() should go right here in PREEMPT_RT patchset. */
 
+#ifdef I915
 	spin_unlock_irqrestore(&dev_priv->uncore.lock, irqflags);
-
+#else
+	local_irq_restore(irqflags);
+#endif
 	/*
 	 * While in vblank, position will be negative
 	 * counting up towards 0 at vbl_end. And outside
@@ -408,14 +414,19 @@ bool intel_crtc_get_vblank_timestamp(struct drm_crtc *crtc, int *max_error,
 
 int intel_get_crtc_scanline(struct intel_crtc *crtc)
 {
-	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
 	unsigned long irqflags;
 	int position;
+#ifdef I915
+	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
 
 	spin_lock_irqsave(&dev_priv->uncore.lock, irqflags);
 	position = __intel_get_crtc_scanline(crtc);
 	spin_unlock_irqrestore(&dev_priv->uncore.lock, irqflags);
-
+#else
+	local_irq_save(irqflags);
+	position = __intel_get_crtc_scanline(crtc);
+	local_irq_restore(irqflags);
+#endif
 	return position;
 }
 
@@ -537,7 +548,9 @@ void intel_crtc_update_active_timings(const struct intel_crtc_state *crtc_state,
 	 * Need to audit everything to make sure it's safe.
 	 */
 	spin_lock_irqsave(&i915->drm.vblank_time_lock, irqflags);
+#ifdef I915
 	spin_lock(&i915->uncore.lock);
+#endif
 
 	drm_calc_timestamping_constants(&crtc->base, &adjusted_mode);
 
@@ -546,7 +559,8 @@ void intel_crtc_update_active_timings(const struct intel_crtc_state *crtc_state,
 	crtc->mode_flags = mode_flags;
 
 	crtc->scanline_offset = intel_crtc_scanline_offset(crtc_state);
-
+#ifdef I915
 	spin_unlock(&i915->uncore.lock);
+#endif
 	spin_unlock_irqrestore(&i915->drm.vblank_time_lock, irqflags);
 }
