@@ -126,7 +126,7 @@ struct xe_exec_queue {
 		u32 preempt_timeout_us;
 	} sched_props;
 
-	/** @compute: compute engine state */
+	/** @compute: compute exec queue state */
 	struct {
 		/** @pfence: preemption fence */
 		struct dma_fence *pfence;
@@ -134,7 +134,7 @@ struct xe_exec_queue {
 		u64 context;
 		/** @seqno: preemption fence seqno */
 		u32 seqno;
-		/** @link: link into VM's list of engines */
+		/** @link: link into VM's list of exec queues */
 		struct list_head link;
 		/** @lock: preemption fences lock */
 		spinlock_t lock;

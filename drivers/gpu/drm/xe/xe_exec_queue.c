@@ -812,7 +812,7 @@ static void exec_queue_kill_compute(struct xe_exec_queue *q)
 
 	down_write(&q->vm->lock);
 	list_del(&q->compute.link);
-	--q->vm->preempt.num_engines;
+	--q->vm->preempt.num_exec_queues;
 	if (q->compute.pfence) {
 		dma_fence_enable_sw_signaling(q->compute.pfence);
 		dma_fence_put(q->compute.pfence);
