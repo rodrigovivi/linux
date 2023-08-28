@@ -315,6 +315,8 @@ int xe_device_probe(struct xe_device *xe)
 			goto err_irq_shutdown;
 	}
 
+	xe_heci_gsc_init(xe);
+
 	err = xe_mmio_probe_vram(xe);
 	if (err)
 		goto err_irq_shutdown;
@@ -391,6 +393,8 @@ void xe_device_remove(struct xe_device *xe)
 	xe_device_remove_display(xe);
 
 	xe_display_fini(xe);
+
+	xe_heci_gsc_fini(xe);
 
 	xe_irq_shutdown(xe);
 }
