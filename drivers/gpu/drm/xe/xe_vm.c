@@ -172,7 +172,7 @@ static bool preempt_fences_waiting(struct xe_vm *vm)
 	lockdep_assert_held(&vm->lock);
 	xe_vm_assert_held(vm);
 
-	list_for_each_entry(q, &vm->preempt.engines, compute.link) {
+	list_for_each_entry(q, &vm->preempt.exec_queues, compute.link) {
 		if (!q->compute.pfence ||
 		    (q->compute.pfence && test_bit(DMA_FENCE_FLAG_ENABLE_SIGNAL_BIT,
 						   &q->compute.pfence->flags))) {
@@ -197,10 +197,10 @@ static int alloc_preempt_fences(struct xe_vm *vm, struct list_head *list,
 	lockdep_assert_held(&vm->lock);
 	xe_vm_assert_held(vm);
 
-	if (*count >= vm->preempt.num_engines)
+	if (*count >= vm->preempt.num_exec_queues)
 		return 0;
 
-	for (; *count < vm->preempt.num_engines; ++(*count)) {
+	for (; *count < vm->preempt.num_exec_queues; ++(*count)) {
 		struct xe_preempt_fence *pfence = xe_preempt_fence_alloc();
 
 		if (IS_ERR(pfence))
@@ -218,7 +218,7 @@ static int wait_for_existing_preempt_fences(struct xe_vm *vm)
 
 	xe_vm_assert_held(vm);
 
-	list_for_each_entry(q, &vm->preempt.engines, compute.link) {
+	list_for_each_entry(q, &vm->preempt.exec_queues, compute.link) {
 		if (q->compute.pfence) {
 			long timeout = dma_fence_wait(q->compute.pfence, false);
 
@@ -237,7 +237,7 @@ static bool xe_vm_is_idle(struct xe_vm *vm)
 	struct xe_exec_queue *q;
 
 	xe_vm_assert_held(vm);
-	list_for_each_entry(q, &vm->preempt.engines, compute.link) {
+	list_for_each_entry(q, &vm->preempt.exec_queues, compute.link) {
 		if (!xe_exec_queue_is_idle(q))
 			return false;
 	}
@@ -250,7 +250,7 @@ static void arm_preempt_fences(struct xe_vm *vm, struct list_head *list)
 	struct list_head *link;
 	struct xe_exec_queue *q;
 
-	list_for_each_entry(q, &vm->preempt.engines, compute.link) {
+	list_for_each_entry(q, &vm->preempt.exec_queues, compute.link) {
 		struct dma_fence *fence;
 
 		link = list->next;
@@ -270,11 +270,11 @@ static int add_preempt_fences(struct xe_vm *vm, struct xe_bo *bo)
 	struct ww_acquire_ctx ww;
 	int err;
 
-	err = xe_bo_lock(bo, &ww, vm->preempt.num_engines, true);
+	err = xe_bo_lock(bo, &ww, vm->preempt.num_exec_queues, true);
 	if (err)
 		return err;
 
-	list_for_each_entry(q, &vm->preempt.engines, compute.link)
+	list_for_each_entry(q, &vm->preempt.exec_queues, compute.link)
 		if (q->compute.pfence) {
 			dma_resv_add_fence(bo->ttm.base.resv,
 					   q->compute.pfence,
@@ -311,7 +311,7 @@ static void resume_and_reinstall_preempt_fences(struct xe_vm *vm)
 	lockdep_assert_held(&vm->lock);
 	xe_vm_assert_held(vm);
 
-	list_for_each_entry(q, &vm->preempt.engines, compute.link) {
+	list_for_each_entry(q, &vm->preempt.exec_queues, compute.link) {
 		q->ops->resume(q);
 
 		dma_resv_add_fence(&vm->resv, q->compute.pfence,
@@ -346,8 +346,8 @@ int xe_vm_add_compute_exec_queue(struct xe_vm *vm, struct xe_exec_queue *q)
 		goto out_unlock;
 	}
 
-	list_add(&q->compute.link, &vm->preempt.engines);
-	++vm->preempt.num_engines;
+	list_add(&q->compute.link, &vm->preempt.exec_queues);
+	++vm->preempt.num_exec_queues;
 	q->compute.pfence = pfence;
 
 	down_read(&vm->userptr.notifier_lock);
@@ -528,7 +528,7 @@ static void xe_vm_kill(struct xe_vm *vm)
 	vm->flags |= XE_VM_FLAG_BANNED;
 	trace_xe_vm_kill(vm);
 
-	list_for_each_entry(q, &vm->preempt.engines, compute.link)
+	list_for_each_entry(q, &vm->preempt.exec_queues, compute.link)
 		q->ops->kill(q);
 	xe_vm_unlock(vm, &ww);
 
@@ -586,7 +586,7 @@ retry:
 	}
 
 	err = xe_vm_lock_dma_resv(vm, &ww, tv_onstack, &tv, &objs,
-				  false, vm->preempt.num_engines);
+				  false, vm->preempt.num_exec_queues);
 	if (err)
 		goto out_unlock_outer;
 
@@ -1229,7 +1229,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 
 	INIT_WORK(&vm->destroy_work, vm_destroy_work_func);
 
-	INIT_LIST_HEAD(&vm->preempt.engines);
+	INIT_LIST_HEAD(&vm->preempt.exec_queues);
 	vm->preempt.min_run_period_ms = 10;	/* FIXME: Wire up to uAPI */
 
 	for_each_tile(tile, xe, id)
@@ -1416,7 +1416,7 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 	struct drm_gpuva *gpuva, *next;
 	u8 id;
 
-	XE_WARN_ON(vm->preempt.num_engines);
+	XE_WARN_ON(vm->preempt.num_exec_queues);
 
 	xe_vm_close(vm);
 	flush_async_ops(vm);
@@ -2083,7 +2083,7 @@ int xe_vm_destroy_ioctl(struct drm_device *dev, void *data,
 	vm = xa_load(&xef->vm.xa, args->vm_id);
 	if (XE_IOCTL_DBG(xe, !vm))
 		err = -ENOENT;
-	else if (XE_IOCTL_DBG(xe, vm->preempt.num_engines))
+	else if (XE_IOCTL_DBG(xe, vm->preempt.num_exec_queues))
 		err = -EBUSY;
 	else
 		xa_erase(&xef->vm.xa, args->vm_id);
