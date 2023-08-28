@@ -141,6 +141,7 @@ void xe_irq_enable_hwe(struct xe_gt *gt)
 	struct xe_device *xe = gt_to_xe(gt);
 	u32 ccs_mask, bcs_mask;
 	u32 irqs, dmask, smask;
+	u32 gsc_mask;
 
 	if (xe_device_uc_enabled(xe)) {
 		irqs = GT_RENDER_USER_INTERRUPT |
@@ -190,9 +191,13 @@ void xe_irq_enable_hwe(struct xe_gt *gt)
 		xe_mmio_write32(gt, VCS2_VCS3_INTR_MASK, ~dmask);
 		xe_mmio_write32(gt, VECS0_VECS1_INTR_MASK, ~dmask);
 
-		if (xe_hw_engine_mask_per_class(gt, XE_ENGINE_CLASS_OTHER)) {
-			xe_mmio_write32(gt, GUNIT_GSC_INTR_ENABLE, irqs);
-			xe_mmio_write32(gt, GUNIT_GSC_INTR_MASK, ~irqs);
+		if (xe_hw_engine_mask_per_class(gt, XE_ENGINE_CLASS_OTHER))
+			gsc_mask = irqs;
+		else if (HAS_HECI_GSCFI(xe))
+			gsc_mask = GSC_IRQ_INTF(1);
+		if (gsc_mask) {
+			xe_mmio_write32(gt, GUNIT_GSC_INTR_ENABLE, gsc_mask);
+			xe_mmio_write32(gt, GUNIT_GSC_INTR_MASK, ~gsc_mask);
 		}
 	}
 }
@@ -296,6 +301,11 @@ static void gt_irq_handler(struct xe_tile *tile,
 			class = INTR_ENGINE_CLASS(identity[bit]);
 			instance = INTR_ENGINE_INSTANCE(identity[bit]);
 			intr_vec = INTR_ENGINE_INTR(identity[bit]);
+
+			if (class == XE_ENGINE_CLASS_OTHER && instance == OTHER_GSC_INSTANCE) {
+				xe_heci_gsc_irq_handler(xe, intr_vec);
+				continue;
+			}
 
 			engine_gt = pick_engine_gt(tile, class, instance);
 
@@ -480,8 +490,9 @@ static void gt_irq_reset(struct xe_tile *tile)
 	if (ccs_mask & (BIT(2)|BIT(3)))
 		xe_mmio_write32(mmio,  CCS2_CCS3_INTR_MASK, ~0);
 
-	if (tile->media_gt &&
-	    xe_hw_engine_mask_per_class(tile->media_gt, XE_ENGINE_CLASS_OTHER)) {
+	if ((tile->media_gt &&
+	     xe_hw_engine_mask_per_class(tile->media_gt, XE_ENGINE_CLASS_OTHER)) ||
+	    HAS_HECI_GSCFI(tile_to_xe(tile))) {
 		xe_mmio_write32(mmio, GUNIT_GSC_INTR_ENABLE, 0);
 		xe_mmio_write32(mmio, GUNIT_GSC_INTR_MASK, ~0);
 	}
