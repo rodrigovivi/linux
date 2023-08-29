@@ -240,6 +240,7 @@ static const struct xe_device_desc rkl_desc = {
 	.media = &media_xem,
 	PLATFORM(XE_ROCKETLAKE),
 	.has_display = true,
+	.has_llc = true,
 	.require_force_probe = true,
 };
 
