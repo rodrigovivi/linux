@@ -38,9 +38,9 @@
  *				   early on
  * @pdev: PCI device
  *
- * Returns: 0 if probe can continue, -EPROBE_DEFER otherwise
+ * Returns: true if probe needs to be deferred, false otherwise
  */
-int xe_display_driver_probe_defer(struct pci_dev *pdev)
+bool xe_display_driver_probe_defer(struct pci_dev *pdev)
 {
 	if (!enable_display)
 		return 0;

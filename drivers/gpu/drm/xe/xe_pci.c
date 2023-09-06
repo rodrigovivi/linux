@@ -677,9 +677,8 @@ static int xe_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		return -ENODEV;
 	}
 
-	err = xe_display_driver_probe_defer(pdev);
-	if (err)
-		return err;
+	if (xe_display_driver_probe_defer(pdev))
+		return -EPROBE_DEFER;
 
 	xe = xe_device_create(pdev, ent);
 	if (IS_ERR(xe))
