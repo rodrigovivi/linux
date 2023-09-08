@@ -158,8 +158,6 @@ int xe_display_init_nommio(struct xe_device *xe)
 	if (err)
 		return err;
 
-	intel_init_display_hooks(xe);
-
 	return drmm_add_action_or_reset(&xe->drm, xe_display_fini_nommio, xe);
 }
 
