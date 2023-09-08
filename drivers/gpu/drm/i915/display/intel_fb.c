@@ -1892,9 +1892,9 @@ static void intel_user_framebuffer_destroy_vm(struct drm_framebuffer *fb)
 		struct xe_bo *bo = intel_fb_obj(fb);
 
 		/* Unpin our kernel fb first */
-		xe_bo_lock_no_vm(bo, NULL);
+		xe_bo_lock(bo, false);
 		xe_bo_unpin(bo);
-		xe_bo_unlock_no_vm(bo);
+		xe_bo_unlock(bo);
 	}
 	xe_bo_put(intel_fb_obj(fb));
 #endif
