@@ -1084,6 +1084,33 @@ static void xe_vma_destroy(struct xe_vma *vma, struct dma_fence *fence)
 	}
 }
 
+/**
+ * xe_vm_prepare_vma() - drm_exec utility to lock a vma
+ * @exec: The drm_exec object we're currently locking for.
+ * @vma: The vma for witch we want to lock the vm resv and any attached
+ * object's resv.
+ * @num_shared: The number of dma-fence slots to pre-allocate in the
+ * objects' reservation objects.
+ *
+ * Return: 0 on success, negative error code on error. In particular
+ * may return -EDEADLK on WW transaction contention and -EINTR if
+ * an interruptible wait is terminated by a signal.
+ */
+int xe_vm_prepare_vma(struct drm_exec *exec, struct xe_vma *vma,
+		      unsigned int num_shared)
+{
+	struct xe_vm *vm = xe_vma_vm(vma);
+	struct xe_bo *bo = xe_vma_bo(vma);
+	int err;
+
+	XE_WARN_ON(!vm);
+	err = drm_exec_prepare_obj(exec, &xe_vm_ttm_bo(vm)->base, num_shared);
+	if (!err && bo && !bo->vm)
+		err = drm_exec_prepare_obj(exec, &bo->ttm.base, num_shared);
+
+	return err;
+}
+
 static void xe_vma_destroy_unlocked(struct xe_vma *vma)
 {
 	struct ttm_validate_buffer tv[2];
