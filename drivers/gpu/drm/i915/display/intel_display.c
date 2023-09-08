@@ -7010,11 +7010,10 @@ static int i915_gem_object_read_from_page(struct xe_bo *bo,
 	void *virtual;
 	bool is_iomem;
 	int ret;
-	struct ww_acquire_ctx ww;
 
 	XE_WARN_ON(size != 8);
 
-	ret = xe_bo_lock(bo, &ww, 0, true);
+	ret = xe_bo_lock(bo, true);
 	if (ret)
 		return ret;
 
@@ -7031,7 +7030,7 @@ static int i915_gem_object_read_from_page(struct xe_bo *bo,
 
 	ttm_bo_kunmap(&map);
 out_unlock:
-	xe_bo_unlock(bo, &ww);
+	xe_bo_unlock(bo);
 	return ret;
 }
 #endif
