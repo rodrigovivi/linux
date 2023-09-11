@@ -342,12 +342,12 @@ int xe_device_probe(struct xe_device *xe)
 	return 0;
 
 err_fini_display:
-	xe_display_modset_driver_remove(xe);
+	xe_display_driver_remove(xe);
 
 err_irq_shutdown:
 	xe_irq_shutdown(xe);
 err:
-	xe_display_unlink(xe);
+	xe_display_fini(xe);
 	return err;
 }
 
@@ -356,14 +356,14 @@ static void xe_device_remove_display(struct xe_device *xe)
 	xe_display_unregister(xe);
 
 	drm_dev_unplug(&xe->drm);
-	xe_display_modset_driver_remove(xe);
+	xe_display_driver_remove(xe);
 }
 
 void xe_device_remove(struct xe_device *xe)
 {
 	xe_device_remove_display(xe);
 
-	xe_display_unlink(xe);
+	xe_display_fini(xe);
 
 	xe_irq_shutdown(xe);
 }
