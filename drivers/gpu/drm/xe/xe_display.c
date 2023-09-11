@@ -132,7 +132,7 @@ int xe_display_create(struct xe_device *xe)
 	return 0;
 }
 
-void xe_display_fini_nommio(struct drm_device *dev, void *dummy)
+static void xe_display_fini_nommio(struct drm_device *dev, void *dummy)
 {
 	struct xe_device *xe = to_xe_device(dev);
 
@@ -164,7 +164,7 @@ int xe_display_init_nommio(struct xe_device *xe)
 	return drmm_add_action_or_reset(&xe->drm, xe_display_fini_nommio, xe);
 }
 
-void xe_display_fini_noirq(struct drm_device *dev, void *dummy)
+static void xe_display_fini_noirq(struct drm_device *dev, void *dummy)
 {
 	struct xe_device *xe = to_xe_device(dev);
 
@@ -204,7 +204,7 @@ int xe_display_init_noirq(struct xe_device *xe)
 	return drmm_add_action_or_reset(&xe->drm, xe_display_fini_noirq, NULL);
 }
 
-void xe_display_fini_noaccel(struct drm_device *dev, void *dummy)
+static void xe_display_fini_noaccel(struct drm_device *dev, void *dummy)
 {
 	struct xe_device *xe = to_xe_device(dev);
 
@@ -236,7 +236,7 @@ int xe_display_init(struct xe_device *xe)
 	return intel_display_driver_probe(xe);
 }
 
-void xe_display_unlink(struct xe_device *xe)
+void xe_display_fini(struct xe_device *xe)
 {
 	if (!xe->info.enable_display)
 		return;
@@ -269,7 +269,7 @@ void xe_display_unregister(struct xe_device *xe)
 	intel_display_driver_unregister(xe);
 }
 
-void xe_display_modset_driver_remove(struct xe_device *xe)
+void xe_display_driver_remove(struct xe_device *xe)
 {
 	if (!xe->info.enable_display)
 		return;
