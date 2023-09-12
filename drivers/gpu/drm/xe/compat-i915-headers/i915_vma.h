@@ -16,4 +16,6 @@ struct i915_vma {
 	struct drm_mm_node node;
 };
 
+#define i915_ggtt_clear_scanout(bo) do { } while (0)
+
 #endif
