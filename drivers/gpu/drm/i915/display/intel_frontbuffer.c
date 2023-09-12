@@ -244,8 +244,6 @@ static void frontbuffer_release(struct kref *ref)
 
 #ifdef I915
 	i915_active_fini(&front->write);
-
-	i915_gem_object_put(obj);
 #endif
 	kfree_rcu(front, rcu);
 }
