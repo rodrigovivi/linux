@@ -187,7 +187,7 @@ struct ttm_buffer_object *xe_vm_ttm_bo(struct xe_vm *vm);
 
 static inline void xe_vm_queue_rebind_worker(struct xe_vm *vm)
 {
-	XE_WARN_ON(!xe_vm_in_compute_mode(vm));
+	xe_assert(vm->xe, xe_vm_in_compute_mode(vm));
 	queue_work(vm->xe->ordered_wq, &vm->preempt.rebind_work);
 }
 
