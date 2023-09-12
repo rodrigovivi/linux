@@ -168,6 +168,7 @@ static inline int __i915_gem_object_lock(struct drm_i915_gem_object *obj,
 
 	if (intr)
 		ret = dma_resv_lock_interruptible(obj->base.resv, ww ? &ww->ctx : NULL);
+		i915_gem_object_put(obj);
 	else
 		ret = dma_resv_lock(obj->base.resv, ww ? &ww->ctx : NULL);
 
