@@ -233,9 +233,8 @@ static void frontbuffer_release(struct kref *ref)
 
 #ifdef I915
 	i915_ggtt_clear_scanout(obj);
-
-	(void) i915_gem_object_set_frontbuffer(obj, NULL);
 #endif
+	(void) i915_gem_object_set_frontbuffer(obj, NULL);
 	spin_unlock(&intel_bo_to_i915(obj)->display.fb_tracking.lock);
 
 #ifdef I915
@@ -247,17 +246,12 @@ static void frontbuffer_release(struct kref *ref)
 struct intel_frontbuffer *
 intel_frontbuffer_get(struct drm_i915_gem_object *obj)
 {
-#ifdef I915
 	struct drm_i915_private *i915 = intel_bo_to_i915(obj);
-	struct intel_frontbuffer *cur;
-#endif
-	struct intel_frontbuffer *front;
+	struct intel_frontbuffer *front, *cur;
 
-#ifdef I915
 	front = i915_gem_object_get_frontbuffer(obj);
 	if (front)
 		return front;
-#endif
 
 	front = kmalloc(sizeof(*front), GFP_KERNEL);
 	if (!front)
@@ -271,16 +265,14 @@ intel_frontbuffer_get(struct drm_i915_gem_object *obj)
 			 frontbuffer_active,
 			 frontbuffer_retire,
 			 I915_ACTIVE_RETIRE_SLEEPS);
-
+#endif
 	spin_lock(&i915->display.fb_tracking.lock);
 	cur = i915_gem_object_set_frontbuffer(obj, front);
 	spin_unlock(&i915->display.fb_tracking.lock);
 	if (cur != front)
 		kfree(front);
-	return cur;
-#endif
 
-	return front;
+	return cur;
 }
 
 void intel_frontbuffer_put(struct intel_frontbuffer *front)
