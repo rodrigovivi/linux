@@ -305,6 +305,9 @@ static inline unsigned int xe_sg_segment_size(struct device *dev)
 	return round_down(max / 2, PAGE_SIZE);
 }
 
+#define i915_gem_object_get_frontbuffer(obj)		NULL
+#define i915_gem_object_set_frontbuffer(obj, front)	(front)
+
 #if IS_ENABLED(CONFIG_DRM_XE_KUNIT_TEST)
 /**
  * xe_bo_is_mem_type - Whether the bo currently resides in the given
