@@ -416,6 +416,7 @@ int devfreq_update_target(struct devfreq *devfreq, unsigned long freq)
 
 	/* Reevaluate the proper frequency */
 	err = devfreq->governor->get_target_freq(devfreq, &freq);
+
 	if (err)
 		return err;
 	devfreq_get_freq_range(devfreq, &min_freq, &max_freq);
@@ -1436,7 +1437,7 @@ static ssize_t governor_store(struct device *dev, struct device_attribute *attr,
 	struct devfreq *df = to_devfreq(dev);
 	int ret;
 	char str_governor[DEVFREQ_NAME_LEN + 1];
-	const struct devfreq_governor *governor, *prev_governor;
+	struct devfreq_governor *governor, *prev_governor;
 
 	if (!df->governor)
 		return -EINVAL;
@@ -1578,6 +1579,11 @@ static ssize_t target_freq_show(struct device *dev,
 {
 	struct devfreq *df = to_devfreq(dev);
 
+	if (IS_SUPPORTED_FLAG(df->governor->flags, IRQ_DRIVEN)) {
+		mutex_lock(&df->lock);
+		update_devfreq(df);
+		mutex_unlock(&df->lock);
+	}
 	return sprintf(buf, "%lu\n", df->previous_freq);
 }
 static DEVICE_ATTR_RO(target_freq);

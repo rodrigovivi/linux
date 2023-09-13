@@ -14,6 +14,7 @@
 #include "xe_assert.h"
 #include "xe_bb.h"
 #include "xe_bo.h"
+#include "xe_devfreq.h"
 #include "xe_device.h"
 #include "xe_exec_queue.h"
 #include "xe_execlist.h"
@@ -75,6 +76,7 @@ static void gt_fini(struct drm_device *drm, void *arg)
 	struct xe_gt *gt = arg;
 	int i;
 
+	xe_devfreq_fini(gt);
 	destroy_workqueue(gt->ordered_wq);
 
 	for (i = 0; i < XE_ENGINE_CLASS_MAX; ++i)
@@ -464,6 +466,8 @@ int xe_gt_init(struct xe_gt *gt)
 	xe_mocs_init_early(gt);
 
 	xe_gt_sysfs_init(gt);
+
+	xe_devfreq_init(gt);
 
 	err = gt_fw_domain_init(gt);
 	if (err)

@@ -15,17 +15,27 @@ static int devfreq_active_get_target_freq(struct devfreq *devfreq,
 					  unsigned long *freq)
 {
 	struct devfreq_dev_status *stat;
+	struct devfreq_active_data *data = devfreq->data;
 //	struct tegra_devfreq *tegra;
 //	struct tegra_devfreq_device *dev;
-	unsigned long target_freq = 0;
-	unsigned int i;
+//	unsigned long target_freq = 0;
+	//unsigned int i;
 	int err;
+
+	printk(KERN_ERR "KERNEL-DEBUG: %s %d\n", __FUNCTION__, __LINE__);
+
 
 	err = devfreq_update_stats(devfreq);
 	if (err)
 		return err;
 
 	stat = &devfreq->last_status;
+
+printk(KERN_ERR "KERNEL-DEBUG: %s %d\n", __FUNCTION__, __LINE__);
+
+	if (data->get_target_freq)
+		data->get_target_freq(devfreq, freq);
+printk(KERN_ERR "KERNEL-DEBUG: %s %d\n", __FUNCTION__, __LINE__);
 
 //	tegra = stat->private_data;
 
@@ -37,7 +47,7 @@ static int devfreq_active_get_target_freq(struct devfreq *devfreq,
 //		target_freq = max(target_freq, dev->target_freq);
 //	}
 
-	*freq = target_freq;
+//	*freq = target_freq;
 
 	return 0;
 }
@@ -47,7 +57,12 @@ static int devfreq_active_event_handler(struct devfreq *devfreq,
 {
 //	struct tegra_devfreq *tegra = dev_get_drvdata(devfreq->dev.parent);
 	unsigned int *new_delay = data;
+	struct devfreq_active_data *gov_data = devfreq->data;
 	int ret = 0;
+
+	devfreq->governor->flags |= gov_data->governor_extra_flags;
+	printk(KERN_ERR "KERNEL-DEBUG: %s %d\n", __FUNCTION__, __LINE__);
+
 
 	/*
 	 * Couple devfreq-device with the governor early because it is
@@ -57,16 +72,22 @@ static int devfreq_active_event_handler(struct devfreq *devfreq,
 
 	switch (event) {
 	case DEVFREQ_GOV_START:
+		printk(KERN_ERR "KERNEL-DEBUG: %s %d\n", __FUNCTION__, __LINE__);
+
 		devfreq_monitor_start(devfreq);
 //		ret = tegra_actmon_start(tegra);
 		break;
 
 	case DEVFREQ_GOV_STOP:
+printk(KERN_ERR "KERNEL-DEBUG: %s %d\n", __FUNCTION__, __LINE__);
+
 //		tegra_actmon_stop(tegra);
 		devfreq_monitor_stop(devfreq);
 		break;
 
 	case DEVFREQ_GOV_UPDATE_INTERVAL:
+printk(KERN_ERR "KERNEL-DEBUG: %s %d\n", __FUNCTION__, __LINE__);
+
 		/*
 		 * ACTMON hardware supports up to 256 milliseconds for the
 		 * sampling period.
@@ -82,15 +103,20 @@ static int devfreq_active_event_handler(struct devfreq *devfreq,
 		break;
 
 	case DEVFREQ_GOV_SUSPEND:
+printk(KERN_ERR "KERNEL-DEBUG: %s %d\n", __FUNCTION__, __LINE__);
+
 //		tegra_actmon_stop(tegra);
 		devfreq_monitor_suspend(devfreq);
 		break;
 
 	case DEVFREQ_GOV_RESUME:
+printk(KERN_ERR "KERNEL-DEBUG: %s %d\n", __FUNCTION__, __LINE__);
+
 		devfreq_monitor_resume(devfreq);
 //		ret = tegra_actmon_start(tegra);
 		break;
 	}
+printk(KERN_ERR "KERNEL-DEBUG: %s %d %d\n", __FUNCTION__, __LINE__, event);
 
 	return ret;
 }
@@ -98,8 +124,8 @@ static int devfreq_active_event_handler(struct devfreq *devfreq,
 static struct devfreq_governor devfreq_active = {
 	.name = DEVFREQ_GOV_ACTIVE,
 	.attrs = DEVFREQ_GOV_ATTR_POLLING_INTERVAL,
-	.flags = DEVFREQ_GOV_FLAG_IMMUTABLE
-		| DEVFREQ_GOV_FLAG_IRQ_DRIVEN,
+	.flags = DEVFREQ_GOV_FLAG_IMMUTABLE,
+//		| DEVFREQ_GOV_FLAG_IRQ_DRIVEN,
 	.get_target_freq = devfreq_active_get_target_freq,
 	.event_handler = devfreq_active_event_handler,
 };

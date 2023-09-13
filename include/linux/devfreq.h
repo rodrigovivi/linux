@@ -23,6 +23,16 @@
 #define DEVFREQ_GOV_PASSIVE		"passive"
 #define DEVFREQ_GOV_ACTIVE		"active"
 
+/*
+ * Definition of the governor feature flags
+ * - DEVFREQ_GOV_FLAG_IMMUTABLE
+ *   : This governor is never changeable to other governors.
+ * - DEVFREQ_GOV_FLAG_IRQ_DRIVEN
+ *   : The devfreq won't schedule the work for this governor.
+ */
+#define DEVFREQ_GOV_FLAG_IMMUTABLE			BIT(0)
+#define DEVFREQ_GOV_FLAG_IRQ_DRIVEN			BIT(1)
+
 /* DEVFREQ notifier interface */
 #define DEVFREQ_TRANSITION_NOTIFIER	(0)
 
@@ -192,7 +202,7 @@ struct devfreq {
 	struct mutex lock;
 	struct device dev;
 	struct devfreq_dev_profile *profile;
-	const struct devfreq_governor *governor;
+	struct devfreq_governor *governor;
 	struct opp_table *opp_table;
 	struct notifier_block nb;
 	struct delayed_work work;
@@ -301,6 +311,18 @@ struct devfreq *devfreq_get_devfreq_by_phandle(struct device *dev,
 struct devfreq_simple_ondemand_data {
 	unsigned int upthreshold;
 	unsigned int downdifferential;
+};
+
+/**
+ * struct devfreq_active_data - ``void *data`` fed to struct devfreq
+ *	and devfreq_add_device
+ * @parent:	the devfreq instance of parent device.
+ * @get_target_freq:	Optional callback. Returns current target frequency
+ *			that hardware or underlaying firmware are targeting
+ */
+struct devfreq_active_data {
+	u64 governor_extra_flags;
+	int (*get_target_freq)(struct devfreq *devfreq, unsigned long *freq);
 };
 
 enum devfreq_parent_dev_type {

@@ -48,6 +48,7 @@ xe-y += xe_bb.o \
 	xe_bo_evict.o \
 	xe_debugfs.o \
 	xe_devcoredump.o \
+	xe_devfreq.o \
 	xe_device.o \
 	xe_device_sysfs.o \
 	xe_dma_buf.o \

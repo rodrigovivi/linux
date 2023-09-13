@@ -28,16 +28,6 @@
 #define DEVFREQ_MAX_FREQ			ULONG_MAX
 
 /*
- * Definition of the governor feature flags
- * - DEVFREQ_GOV_FLAG_IMMUTABLE
- *   : This governor is never changeable to other governors.
- * - DEVFREQ_GOV_FLAG_IRQ_DRIVEN
- *   : The devfreq won't schedule the work for this governor.
- */
-#define DEVFREQ_GOV_FLAG_IMMUTABLE			BIT(0)
-#define DEVFREQ_GOV_FLAG_IRQ_DRIVEN			BIT(1)
-
-/*
  * Definition of governor attribute flags except for common sysfs attributes
  * - DEVFREQ_GOV_ATTR_POLLING_INTERVAL
  *   : Indicate polling_interval sysfs attribute
@@ -94,7 +84,7 @@ struct devfreq_governor {
 
 	const char name[DEVFREQ_NAME_LEN];
 	const u64 attrs;
-	const u64 flags;
+	u64 flags;
 	int (*get_target_freq)(struct devfreq *this, unsigned long *freq);
 	int (*event_handler)(struct devfreq *devfreq,
 				unsigned int event, void *data);
