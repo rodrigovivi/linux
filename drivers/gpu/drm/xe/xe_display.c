@@ -18,7 +18,6 @@
 #include "intel_acpi.h"
 #include "intel_audio.h"
 #include "intel_bw.h"
-#include "intel_clock_gating.h"
 #include "intel_display.h"
 #include "intel_display_driver.h"
 #include "intel_display_irq.h"
@@ -399,7 +398,6 @@ void xe_display_pm_resume(struct xe_device *xe)
 		drm_mode_config_reset(&xe->drm);
 
 	intel_display_driver_init_hw(xe);
-	intel_clock_gating_init(xe);
 	intel_hpd_init(xe);
 
 	/* MST sideband requires HPD interrupts enabled */
