@@ -18,4 +18,5 @@ struct i915_vma {
 
 #define i915_ggtt_clear_scanout(bo) do { } while (0)
 
+#define i915_vma_fence_id(vma) -1
 #endif
