@@ -73,6 +73,12 @@ config DEVFREQ_GOV_PASSIVE
 	  through sysfs entries. The passive governor recommends that
 	  devfreq device uses the OPP table to get the frequency/voltage.
 
+config DEVFREQ_GOV_ACTIVE
+	tristate "Active"
+	help
+	  Frequency is actively selected by hardware or underlayinf firmware,
+	  without depending on any input from Software.
+
 comment "DEVFREQ Drivers"
 
 config ARM_EXYNOS_BUS_DEVFREQ
