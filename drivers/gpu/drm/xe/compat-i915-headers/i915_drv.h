@@ -21,6 +21,7 @@
 #include "i915_utils.h"
 #include "intel_gt_types.h"
 #include "intel_uncore.h"
+#include "intel_runtime_pm.h"
 #include <linux/pm_runtime.h>
 
 static inline struct drm_i915_private *to_i915(const struct drm_device *dev)
