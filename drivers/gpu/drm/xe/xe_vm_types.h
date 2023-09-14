@@ -17,7 +17,6 @@
 #include "xe_pt_types.h"
 #include "xe_range_fence.h"
 
-struct async_op_fence;
 struct xe_bo;
 struct xe_sync_entry;
 struct xe_vm;
@@ -163,7 +162,7 @@ struct xe_vm {
 	 */
 #define XE_VM_FLAG_64K			BIT(0)
 #define XE_VM_FLAG_COMPUTE_MODE		BIT(1)
-#define XE_VM_FLAG_ASYNC_BIND_OPS	BIT(2)
+#define XE_VM_FLAG_ASYNC_DEFAULT	BIT(2)
 #define XE_VM_FLAG_MIGRATION		BIT(3)
 #define XE_VM_FLAG_SCRATCH_PAGE		BIT(4)
 #define XE_VM_FLAG_FAULT_MODE		BIT(5)
@@ -213,30 +212,6 @@ struct xe_vm {
 		/** @list: list of vmas with external bos attached */
 		struct list_head list;
 	} extobj;
-
-	/** @async_ops: async VM operations (bind / unbinds) */
-	struct {
-		/** @list: list of pending async VM ops */
-		struct list_head pending;
-		/** @work: worker to execute async VM ops */
-		struct work_struct work;
-		/** @lock: protects list of pending async VM ops and fences */
-		spinlock_t lock;
-		/** @fence: fence state */
-		struct {
-			/** @context: context of async fence */
-			u64 context;
-			/** @seqno: seqno of async fence */
-			u32 seqno;
-		} fence;
-		/** @error: error state for async VM ops */
-		int error;
-		/**
-		 * @munmap_rebind_inflight: an munmap style VM bind is in the
-		 * middle of a set of ops which requires a rebind at the end.
-		 */
-		bool munmap_rebind_inflight;
-	} async_ops;
 
 	/** @userptr: user pointer state */
 	struct {
@@ -399,10 +374,6 @@ struct xe_vma_op {
 	u32 num_syncs;
 	/** @link: async operation link */
 	struct list_head link;
-	/**
-	 * @fence: async operation fence, signaled on last operation complete
-	 */
-	struct async_op_fence *fence;
 	/** @tile_mask: gt mask for this operation */
 	u8 tile_mask;
 	/** @flags: operation flags */
