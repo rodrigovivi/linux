@@ -710,15 +710,13 @@ void intel_pipe_update_end(struct intel_atomic_state *state,
 					 drm_crtc_accurate_vblank_count(&crtc->base) + 1,
 					 false);
 	} else if (new_crtc_state->uapi.event) {
-		unsigned long flags;
-
 		drm_WARN_ON(&dev_priv->drm,
 			    drm_crtc_vblank_get(&crtc->base) != 0);
 
-		spin_lock_irqsave(&crtc->base.dev->event_lock, flags);
+		spin_lock(&crtc->base.dev->event_lock);
 		drm_crtc_arm_vblank_event(&crtc->base,
 					  new_crtc_state->uapi.event);
-		spin_unlock_irqrestore(&crtc->base.dev->event_lock, flags);
+		spin_unlock(&crtc->base.dev->event_lock);
 
 		new_crtc_state->uapi.event = NULL;
 	}
