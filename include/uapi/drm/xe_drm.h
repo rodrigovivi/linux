@@ -1054,7 +1054,7 @@ struct drm_xe_vm_madvise {
 };
 
 /**
- * XE PMU event config IDs
+ * DOC: XE PMU event config IDs
  *
  * Check 'man perf_event_open' to use these ID's in 'struct perf_event_attr'
  * as part of perf_event_open syscall to read a particular event.
