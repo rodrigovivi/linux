@@ -249,8 +249,8 @@ struct drm_xe_query_mem_region {
  * relevant GPU timestamp. clockid is used to return the specific CPU
  * timestamp.
  *
- * The query returns the command streamer cycles and the frequency that can
- * be used to calculate the command streamer timestamp. In addition the
+ * The query returns the command streamer cycles and the reference clock that
+ * can be used to calculate the command streamer timestamp. In addition the
  * query returns a set of cpu timestamps that indicate when the command
  * streamer cycle count was captured.
  */
@@ -267,8 +267,8 @@ struct drm_xe_query_cs_cycles {
 	 */
 	__u64 cs_cycles;
 
-	/** Frequency of the cs cycles in Hz. */
-	__u64 cs_frequency;
+	/** Reference Clock of the cs cycles in Hz. */
+	__u64 cs_reference_clock;
 
 	/**
 	 * CPU timestamp in ns. The timestamp is captured before reading the
@@ -382,8 +382,6 @@ struct drm_xe_query_gt {
 	__u16 type;
 	/** @gt_id: Unique ID of this GT within the PCI Device */
 	__u16 gt_id;
-	/** @clock_freq: A clock frequency for timestamp */
-	__u32 clock_freq;
 	/**
 	 * @native_mem_regions: Bit mask of instances from
 	 * drm_xe_query_mem_usage that lives on the same GPU/Tile and have
