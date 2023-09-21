@@ -1056,12 +1056,14 @@ struct drm_xe_vm_madvise {
 /**
  * DOC: XE PMU event config IDs
  *
- * Check 'man perf_event_open' to use these ID's in 'struct perf_event_attr'
- * as part of perf_event_open syscall to read a particular event.
+ * Check 'man perf_event_open' to use the ID's XE_PMU_XXXX listed in xe_drm.h
+ * in 'struct perf_event_attr' as part of perf_event_open syscall to read a
+ * particular event.
  *
  * For example to open the XE_PMU_INTERRUPTS(0):
  *
  * .. code-block:: C
+ *
  *	struct perf_event_attr attr;
  *	long long count;
  *	int cpu = 0;
