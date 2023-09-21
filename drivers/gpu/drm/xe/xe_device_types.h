@@ -401,6 +401,9 @@ struct xe_device {
 	 */
 	u32 edram_size_mb;
 
+	/* To shut up runtime pm macros.. */
+	struct xe_runtime_pm {} runtime_pm;
+
 	/* For pcode */
 	struct mutex sb_lock;
 

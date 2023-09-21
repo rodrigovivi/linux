@@ -5,6 +5,8 @@
 
 #include "intel_wakeref.h"
 
+#define intel_runtime_pm xe_runtime_pm
+
 static inline void disable_rpm_wakeref_asserts(void *rpm)
 {
 }
