@@ -528,6 +528,15 @@ query_uc_fw_version(struct xe_device *xe, struct drm_xe_device_query *query)
 		resp.branch_ver = 0;
 		break;
 	}
+	case DRM_XE_QUERY_UC_TYPE_HUC: {
+		struct xe_huc *huc = &xe->tiles[0].primary_gt->uc.huc;
+
+		resp.major_ver = huc->fw.major_ver_found;
+		resp.minor_ver = huc->fw.minor_ver_found;
+		resp.patch_ver = huc->fw.patch_ver_found;
+		resp.branch_ver = 0;
+		break;
+	}
 	default:
 		return -EINVAL;
 	}
