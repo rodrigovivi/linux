@@ -143,6 +143,8 @@ struct drm_xe_engine_class_instance {
 
 	__u16 engine_instance;
 	__u16 gt_id;
+	/** @pad: MBZ */
+	__u32 pad;
 };
 
 /**
