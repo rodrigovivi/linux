@@ -305,9 +305,10 @@ static int query_memory_usage(struct xe_device *xe,
 
 static int query_config(struct xe_device *xe, struct drm_xe_device_query *query)
 {
-	u32 num_params = XE_QUERY_CONFIG_NUM_PARAM;
+#define XE_QUERY_CONFIG_NUM_PARAM	(XE_QUERY_CONFIG_MAX_EXEC_QUEUE_PRIORITY + 1)
 	size_t size =
-		sizeof(struct drm_xe_query_config) + num_params * sizeof(u64);
+		sizeof(struct drm_xe_query_config)
+		+ XE_QUERY_CONFIG_NUM_PARAM * sizeof(u64);
 	struct drm_xe_query_config __user *query_ptr =
 		u64_to_user_ptr(query->data);
 	struct drm_xe_query_config *config;
@@ -323,7 +324,6 @@ static int query_config(struct xe_device *xe, struct drm_xe_device_query *query)
 	if (!config)
 		return -ENOMEM;
 
-	config->num_params = num_params;
 	config->info[XE_QUERY_CONFIG_REV_AND_DEVICE_ID] =
 		xe->info.devid | (xe->info.revid << 16);
 	if (xe_device_get_root_tile(xe)->mem.vram.usable_size)
