@@ -79,15 +79,15 @@ static int check_hw_engines(struct xe_device *xe,
 	return 0;
 }
 
-#define VALID_FLAGS	(DRM_XE_UFENCE_WAIT_SOFT_OP | \
-			 DRM_XE_UFENCE_WAIT_ABSTIME)
+#define VALID_FLAGS	(DRM_XE_UFENCE_WAIT_FLAG_SOFT_OP | \
+			 DRM_XE_UFENCE_WAIT_FLAG_ABSTIME)
 #define MAX_OP		DRM_XE_UFENCE_WAIT_LTE
 
 static unsigned long to_jiffies_timeout(struct drm_xe_wait_user_fence *args)
 {
 	unsigned long timeout;
 
-	if (args->flags & DRM_XE_UFENCE_WAIT_ABSTIME)
+	if (args->flags & DRM_XE_UFENCE_WAIT_FLAG_ABSTIME)
 		return drm_timeout_abs_to_jiffies(args->timeout);
 
 	if (args->timeout == MAX_SCHEDULE_TIMEOUT || args->timeout == 0)
@@ -109,7 +109,7 @@ int xe_wait_user_fence_ioctl(struct drm_device *dev, void *data,
 		u64_to_user_ptr(args->instances);
 	u64 addr = args->addr;
 	int err;
-	bool no_engines = args->flags & DRM_XE_UFENCE_WAIT_SOFT_OP;
+	bool no_engines = args->flags & DRM_XE_UFENCE_WAIT_FLAG_SOFT_OP;
 	unsigned long timeout;
 	ktime_t start;
 
@@ -187,7 +187,7 @@ int xe_wait_user_fence_ioctl(struct drm_device *dev, void *data,
 	}
 	remove_wait_queue(&xe->ufence_wq, &w_wait);
 
-	if (!(args->flags & DRM_XE_UFENCE_WAIT_ABSTIME)) {
+	if (!(args->flags & DRM_XE_UFENCE_WAIT_FLAG_ABSTIME)) {
 		args->timeout -= ktime_to_ns(ktime_sub(ktime_get(), start));
 		if (args->timeout < 0)
 			args->timeout = 0;
