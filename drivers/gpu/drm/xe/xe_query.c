@@ -261,7 +261,7 @@ static int query_memory_usage(struct xe_device *xe,
 		return -ENOMEM;
 
 	man = ttm_manager_type(&xe->ttm, XE_PL_TT);
-	usage->regions[0].mem_class = XE_MEM_REGION_CLASS_SYSMEM;
+	usage->regions[0].mem_class = DRM_XE_MEM_REGION_CLASS_SYSMEM;
 	usage->regions[0].instance = 0;
 	usage->regions[0].min_page_size = PAGE_SIZE;
 	usage->regions[0].total_size = man->size << PAGE_SHIFT;
@@ -273,7 +273,7 @@ static int query_memory_usage(struct xe_device *xe,
 		man = ttm_manager_type(&xe->ttm, i);
 		if (man) {
 			usage->regions[usage->num_regions].mem_class =
-				XE_MEM_REGION_CLASS_VRAM;
+				DRM_XE_MEM_REGION_CLASS_VRAM;
 			usage->regions[usage->num_regions].instance =
 				usage->num_regions;
 			usage->regions[usage->num_regions].min_page_size =
@@ -305,7 +305,7 @@ static int query_memory_usage(struct xe_device *xe,
 
 static int query_config(struct xe_device *xe, struct drm_xe_device_query *query)
 {
-#define XE_QUERY_CONFIG_NUM_PARAM	(XE_QUERY_CONFIG_MAX_EXEC_QUEUE_PRIORITY + 1)
+#define XE_QUERY_CONFIG_NUM_PARAM	(DRM_XE_QUERY_CONFIG_MAX_EXEC_QUEUE_PRIORITY + 1)
 	size_t size =
 		sizeof(struct drm_xe_query_config)
 		+ XE_QUERY_CONFIG_NUM_PARAM * sizeof(u64);
@@ -324,18 +324,18 @@ static int query_config(struct xe_device *xe, struct drm_xe_device_query *query)
 	if (!config)
 		return -ENOMEM;
 
-	config->info[XE_QUERY_CONFIG_REV_AND_DEVICE_ID] =
+	config->info[DRM_XE_QUERY_CONFIG_REV_AND_DEVICE_ID] =
 		xe->info.devid | (xe->info.revid << 16);
 	if (xe_device_get_root_tile(xe)->mem.vram.usable_size)
-		config->info[XE_QUERY_CONFIG_FLAGS] =
-			XE_QUERY_CONFIG_FLAGS_HAS_VRAM;
-	config->info[XE_QUERY_CONFIG_MIN_ALIGNMENT] =
+		config->info[DRM_XE_QUERY_CONFIG_FLAGS] =
+			DRM_XE_QUERY_CONFIG_FLAGS_HAS_VRAM;
+	config->info[DRM_XE_QUERY_CONFIG_MIN_ALIGNMENT] =
 		xe->info.vram_flags & XE_VRAM_FLAGS_NEED64K ? SZ_64K : SZ_4K;
-	config->info[XE_QUERY_CONFIG_VA_BITS] = xe->info.va_bits;
-	config->info[XE_QUERY_CONFIG_GT_COUNT] = xe->info.gt_count;
-	config->info[XE_QUERY_CONFIG_MEM_REGION_COUNT] =
+	config->info[DRM_XE_QUERY_CONFIG_VA_BITS] = xe->info.va_bits;
+	config->info[DRM_XE_QUERY_CONFIG_GT_COUNT] = xe->info.gt_count;
+	config->info[DRM_XE_QUERY_CONFIG_MEM_REGION_COUNT] =
 		hweight_long(xe->info.mem_region_mask);
-	config->info[XE_QUERY_CONFIG_MAX_EXEC_QUEUE_PRIORITY] =
+	config->info[DRM_XE_QUERY_CONFIG_MAX_EXEC_QUEUE_PRIORITY] =
 		xe_exec_queue_device_get_max_priority(xe);
 
 	if (copy_to_user(query_ptr, config, size)) {
@@ -371,11 +371,11 @@ static int query_gt_list(struct xe_device *xe, struct drm_xe_device_query *query
 	gt_list->num_gt = xe->info.gt_count;
 	for_each_gt(gt, xe, id) {
 		if (xe_gt_is_media_type(gt))
-			gt_list->gt_list[id].type = XE_QUERY_GT_TYPE_MEDIA;
+			gt_list->gt_list[id].type = DRM_XE_QUERY_GT_TYPE_MEDIA;
 		else if (gt_to_tile(gt)->id > 0)
-			gt_list->gt_list[id].type = XE_QUERY_GT_TYPE_REMOTE;
+			gt_list->gt_list[id].type = DRM_XE_QUERY_GT_TYPE_REMOTE;
 		else
-			gt_list->gt_list[id].type = XE_QUERY_GT_TYPE_MAIN;
+			gt_list->gt_list[id].type = DRM_XE_QUERY_GT_TYPE_MAIN;
 		gt_list->gt_list[id].gt_id = gt->info.id;
 		gt_list->gt_list[id].clock_freq = gt->info.clock_freq;
 		if (!IS_DGFX(xe))
@@ -473,21 +473,21 @@ static int query_gt_topology(struct xe_device *xe,
 	for_each_gt(gt, xe, id) {
 		topo.gt_id = id;
 
-		topo.type = XE_TOPO_DSS_GEOMETRY;
+		topo.type = DRM_XE_TOPO_DSS_GEOMETRY;
 		query_ptr = copy_mask(query_ptr, &topo,
 				      gt->fuse_topo.g_dss_mask,
 				      sizeof(gt->fuse_topo.g_dss_mask));
 		if (IS_ERR(query_ptr))
 			return PTR_ERR(query_ptr);
 
-		topo.type = XE_TOPO_DSS_COMPUTE;
+		topo.type = DRM_XE_TOPO_DSS_COMPUTE;
 		query_ptr = copy_mask(query_ptr, &topo,
 				      gt->fuse_topo.c_dss_mask,
 				      sizeof(gt->fuse_topo.c_dss_mask));
 		if (IS_ERR(query_ptr))
 			return PTR_ERR(query_ptr);
 
-		topo.type = XE_TOPO_EU_PER_DSS;
+		topo.type = DRM_XE_TOPO_EU_PER_DSS;
 		query_ptr = copy_mask(query_ptr, &topo,
 				      gt->fuse_topo.eu_mask_per_dss,
 				      sizeof(gt->fuse_topo.eu_mask_per_dss));

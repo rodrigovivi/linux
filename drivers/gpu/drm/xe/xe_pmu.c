@@ -114,17 +114,17 @@ config_status(struct xe_device *xe, u64 config)
 		return -ENOENT;
 
 	switch (config_counter(config)) {
-	case XE_PMU_INTERRUPTS(0):
+	case DRM_XE_PMU_INTERRUPTS(0):
 		if (gt_id)
 			return -ENOENT;
 		break;
-	case XE_PMU_RENDER_GROUP_BUSY(0):
-	case XE_PMU_COPY_GROUP_BUSY(0):
-	case XE_PMU_ANY_ENGINE_GROUP_BUSY(0):
+	case DRM_XE_PMU_RENDER_GROUP_BUSY(0):
+	case DRM_XE_PMU_COPY_GROUP_BUSY(0):
+	case DRM_XE_PMU_ANY_ENGINE_GROUP_BUSY(0):
 		if (gt->info.type == XE_GT_TYPE_MEDIA)
 			return -ENOENT;
 		break;
-	case XE_PMU_MEDIA_GROUP_BUSY(0):
+	case DRM_XE_PMU_MEDIA_GROUP_BUSY(0):
 		if (!(gt->info.engine_mask & (BIT(XE_HW_ENGINE_VCS0) | BIT(XE_HW_ENGINE_VECS0))))
 			return -ENOENT;
 		break;
@@ -185,13 +185,13 @@ static u64 __xe_pmu_event_read(struct perf_event *event)
 	u64 val;
 
 	switch (config_counter(config)) {
-	case XE_PMU_INTERRUPTS(0):
+	case DRM_XE_PMU_INTERRUPTS(0):
 		val = READ_ONCE(pmu->irq_count);
 		break;
-	case XE_PMU_RENDER_GROUP_BUSY(0):
-	case XE_PMU_COPY_GROUP_BUSY(0):
-	case XE_PMU_ANY_ENGINE_GROUP_BUSY(0):
-	case XE_PMU_MEDIA_GROUP_BUSY(0):
+	case DRM_XE_PMU_RENDER_GROUP_BUSY(0):
+	case DRM_XE_PMU_COPY_GROUP_BUSY(0):
+	case DRM_XE_PMU_ANY_ENGINE_GROUP_BUSY(0):
+	case DRM_XE_PMU_MEDIA_GROUP_BUSY(0):
 		val = engine_group_busyness_read(gt, config);
 		break;
 	default:

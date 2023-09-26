@@ -19,10 +19,10 @@ static int madvise_preferred_mem_class(struct xe_device *xe, struct xe_vm *vm,
 {
 	int i, err;
 
-	if (XE_IOCTL_DBG(xe, value > XE_MEM_REGION_CLASS_VRAM))
+	if (XE_IOCTL_DBG(xe, value > DRM_XE_MEM_REGION_CLASS_VRAM))
 		return -EINVAL;
 
-	if (XE_IOCTL_DBG(xe, value == XE_MEM_REGION_CLASS_VRAM &&
+	if (XE_IOCTL_DBG(xe, value == DRM_XE_MEM_REGION_CLASS_VRAM &&
 			 !xe->info.is_dgfx))
 		return -EINVAL;
 
@@ -75,10 +75,10 @@ static int madvise_preferred_mem_class_gt(struct xe_device *xe,
 	u32 gt_id = upper_32_bits(value);
 	u32 mem_class = lower_32_bits(value);
 
-	if (XE_IOCTL_DBG(xe, mem_class > XE_MEM_REGION_CLASS_VRAM))
+	if (XE_IOCTL_DBG(xe, mem_class > DRM_XE_MEM_REGION_CLASS_VRAM))
 		return -EINVAL;
 
-	if (XE_IOCTL_DBG(xe, mem_class == XE_MEM_REGION_CLASS_VRAM &&
+	if (XE_IOCTL_DBG(xe, mem_class == DRM_XE_MEM_REGION_CLASS_VRAM &&
 			 !xe->info.is_dgfx))
 		return -EINVAL;
 
