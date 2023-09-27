@@ -25,6 +25,7 @@
 #endif
 
 struct xe_ggtt;
+struct xe_pat_ops;
 
 #define XE_BO_INVALID_OFFSET	LONG_MAX
 
@@ -328,6 +329,18 @@ struct xe_device {
 		/** @ref: ref count of memory accesses */
 		atomic_t ref;
 	} mem_access;
+
+	/**
+	 * @pat: Encapsulate PAT related stuff
+	 */
+	struct {
+		/** Internal operations to abstract platforms */
+		const struct xe_pat_ops *ops;
+		/** PAT table to program in the HW */
+		const u32 *table;
+		/** Number of PAT entries */
+		int n_entries;
+	} pat;
 
 	/** @d3cold: Encapsulate d3cold related stuff */
 	struct {
