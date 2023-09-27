@@ -249,6 +249,8 @@ struct xe_vm {
 		bool munmap_rebind_inflight;
 	} async_ops;
 
+	const struct xe_pt_ops *pt_ops;
+
 	/** @userptr: user pointer state */
 	struct {
 		/**
