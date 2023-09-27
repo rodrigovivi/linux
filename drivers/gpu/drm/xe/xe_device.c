@@ -26,6 +26,7 @@
 #include "xe_irq.h"
 #include "xe_mmio.h"
 #include "xe_module.h"
+#include "xe_pat.h"
 #include "xe_pcode.h"
 #include "xe_pm.h"
 #include "xe_query.h"
@@ -275,6 +276,8 @@ int xe_device_probe(struct xe_device *xe)
 	struct xe_gt *gt;
 	int err;
 	u8 id;
+
+	xe_pat_init_early(xe);
 
 	xe->info.mem_region_mask = 1;
 	err = xe_display_init_nommio(xe);
