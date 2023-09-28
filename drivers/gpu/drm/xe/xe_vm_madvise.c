@@ -223,7 +223,7 @@ get_vmas(struct xe_vm *vm, int *num_vmas, u64 addr, u64 range)
 	if (!vmas)
 		return NULL;
 
-	drm_gpuva_for_each_va_range(gpuva, &vm->mgr, addr, addr + range) {
+	drm_gpuvm_for_each_va_range(gpuva, &vm->gpuvm, addr, addr + range) {
 		struct xe_vma *vma = gpuva_to_vma(gpuva);
 
 		if (xe_vma_is_userptr(vma))

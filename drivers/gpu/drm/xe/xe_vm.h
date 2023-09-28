@@ -66,7 +66,7 @@ xe_vm_find_overlapping_vma(struct xe_vm *vm, u64 start, u64 range);
 
 static inline struct xe_vm *gpuva_to_vm(struct drm_gpuva *gpuva)
 {
-	return container_of(gpuva->mgr, struct xe_vm, mgr);
+	return container_of(gpuva->vm, struct xe_vm, gpuvm);
 }
 
 static inline struct xe_vma *gpuva_to_vma(struct drm_gpuva *gpuva)
@@ -111,7 +111,7 @@ static inline struct xe_bo *xe_vma_bo(struct xe_vma *vma)
 
 static inline struct xe_vm *xe_vma_vm(struct xe_vma *vma)
 {
-	return container_of(vma->gpuva.mgr, struct xe_vm, mgr);
+	return container_of(vma->gpuva.vm, struct xe_vm, gpuvm);
 }
 
 static inline bool xe_vma_read_only(struct xe_vma *vma)
