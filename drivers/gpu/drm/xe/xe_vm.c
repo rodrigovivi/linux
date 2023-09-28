@@ -3061,7 +3061,7 @@ static void vm_bind_ioctl_ops_unwind(struct xe_vm *vm,
 					 op->flags & XE_VMA_OP_NEXT_COMMITTED);
 		}
 
-		drm_gpuva_ops_free(&vm->mgr, __ops);
+		drm_gpuva_ops_free(&vm->gpuvm, __ops);
 	}
 }
 
