@@ -1939,6 +1939,7 @@ struct frontbuffer_fence_cb {
 	struct intel_frontbuffer *front;
 };
 
+#ifdef I915
 static void intel_user_framebuffer_fence_wake(struct dma_fence *dma,
 					      struct dma_fence_cb *data)
 {
@@ -1949,7 +1950,6 @@ static void intel_user_framebuffer_fence_wake(struct dma_fence *dma,
 	dma_fence_put(dma);
 }
 
-#ifdef I915
 static int intel_user_framebuffer_dirty(struct drm_framebuffer *fb,
 					struct drm_file *file,
 					unsigned int flags, unsigned int color,
