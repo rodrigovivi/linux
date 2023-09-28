@@ -891,7 +891,7 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 	INIT_LIST_HEAD(&vma->extobj.link);
 
 	INIT_LIST_HEAD(&vma->gpuva.gem.entry);
-	vma->gpuva.mgr = &vm->mgr;
+	vma->gpuva.vm = &vm->gpuvm;
 	vma->gpuva.va.addr = start;
 	vma->gpuva.va.range = end - start + 1;
 	if (read_only)
@@ -1142,7 +1142,7 @@ xe_vm_find_overlapping_vma(struct xe_vm *vm, u64 start, u64 range)
 
 	XE_BUG_ON(start + range > vm->size);
 
-	gpuva = drm_gpuva_find_first(&vm->mgr, start, range);
+	gpuva = drm_gpuva_find_first(&vm->gpuvm, start, range);
 
 	return gpuva ? gpuva_to_vma(gpuva) : NULL;
 }
@@ -1154,7 +1154,7 @@ static int xe_vm_insert_vma(struct xe_vm *vm, struct xe_vma *vma)
 	XE_BUG_ON(xe_vma_vm(vma) != vm);
 	lockdep_assert_held(&vm->lock);
 
-	err = drm_gpuva_insert(&vm->mgr, &vma->gpuva);
+	err = drm_gpuva_insert(&vm->gpuvm, &vma->gpuva);
 	XE_WARN_ON(err);	/* Shouldn't be possible */
 
 	return err;
@@ -1182,7 +1182,7 @@ static struct drm_gpuva_op *xe_vm_op_alloc(void)
 	return &op->base;
 }
 
-static struct drm_gpuva_fn_ops gpuva_ops = {
+static struct drm_gpuvm_ops gpuvm_ops = {
 	.op_alloc = xe_vm_op_alloc,
 };
 
@@ -1241,8 +1241,8 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 	if (err)
 		goto err_put;
 
-	drm_gpuva_manager_init(&vm->mgr, "Xe VM", 0, vm->size, 0, 0,
-			       &gpuva_ops);
+	drm_gpuvm_init(&vm->gpuvm, "Xe VM", 0, vm->size, 0, 0,
+		       &gpuvm_ops);
 	if (IS_DGFX(xe) && xe->info.vram_flags & XE_VRAM_FLAGS_NEED64K)
 		vm->flags |= XE_VM_FLAGS_64K;
 
@@ -1348,7 +1348,7 @@ err_destroy_root:
 			xe_pt_destroy(vm->pt_root[id], vm->flags, NULL);
 	}
 	dma_resv_unlock(&vm->resv);
-	drm_gpuva_manager_destroy(&vm->mgr);
+	drm_gpuvm_destroy(&vm->gpuvm);
 err_put:
 	dma_resv_fini(&vm->resv);
 	kfree(vm);
@@ -1430,7 +1430,7 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 
 	down_write(&vm->lock);
 	xe_vm_lock(vm, &ww, 0, false);
-	drm_gpuva_for_each_va_safe(gpuva, next, &vm->mgr) {
+	drm_gpuvm_for_each_va_safe(gpuva, next, &vm->gpuvm) {
 		vma = gpuva_to_vma(gpuva);
 
 		if (xe_vma_has_no_bo(vma)) {
@@ -1486,7 +1486,7 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 	XE_WARN_ON(!list_empty(&vm->extobj.list));
 	up_write(&vm->lock);
 
-	drm_gpuva_manager_destroy(&vm->mgr);
+	drm_gpuvm_destroy(&vm->gpuvm);
 
 	mutex_lock(&xe->usm.lock);
 	if (vm->flags & XE_VM_FLAG_FAULT_MODE)
@@ -2266,7 +2266,7 @@ vm_bind_ioctl_ops_create(struct xe_vm *vm, struct xe_bo *bo,
 	switch (VM_BIND_OP(operation)) {
 	case XE_VM_BIND_OP_MAP:
 	case XE_VM_BIND_OP_MAP_USERPTR:
-		ops = drm_gpuva_sm_map_ops_create(&vm->mgr, addr, range,
+		ops = drm_gpuvm_sm_map_ops_create(&vm->gpuvm, addr, range,
 						  obj, bo_offset_or_userptr);
 		if (IS_ERR(ops))
 			return ops;
@@ -2283,7 +2283,7 @@ vm_bind_ioctl_ops_create(struct xe_vm *vm, struct xe_bo *bo,
 		}
 		break;
 	case XE_VM_BIND_OP_UNMAP:
-		ops = drm_gpuva_sm_unmap_ops_create(&vm->mgr, addr, range);
+		ops = drm_gpuvm_sm_unmap_ops_create(&vm->gpuvm, addr, range);
 		if (IS_ERR(ops))
 			return ops;
 
@@ -2294,7 +2294,7 @@ vm_bind_ioctl_ops_create(struct xe_vm *vm, struct xe_bo *bo,
 		}
 		break;
 	case XE_VM_BIND_OP_PREFETCH:
-		ops = drm_gpuva_prefetch_ops_create(&vm->mgr, addr, range);
+		ops = drm_gpuvm_prefetch_ops_create(&vm->gpuvm, addr, range);
 		if (IS_ERR(ops))
 			return ops;
 
@@ -2311,7 +2311,7 @@ vm_bind_ioctl_ops_create(struct xe_vm *vm, struct xe_bo *bo,
 		err = xe_bo_lock(bo, &ww, 0, true);
 		if (err)
 			return ERR_PTR(err);
-		ops = drm_gpuva_gem_unmap_ops_create(&vm->mgr, obj);
+		ops = drm_gpuvm_gem_unmap_ops_create(&vm->gpuvm, obj);
 		xe_bo_unlock(bo, &ww);
 		if (IS_ERR(ops))
 			return ops;
@@ -2768,7 +2768,7 @@ static void xe_vma_op_cleanup(struct xe_vm *vm, struct xe_vma_op *op)
 		spin_unlock_irq(&vm->async_ops.lock);
 	}
 	if (op->ops)
-		drm_gpuva_ops_free(&vm->mgr, op->ops);
+		drm_gpuva_ops_free(&vm->gpuvm, op->ops);
 	if (last)
 		xe_vm_put(vm);
 }
@@ -3444,7 +3444,7 @@ int xe_analyze_vm(struct drm_printer *p, struct xe_vm *vm, int gt_id)
 		drm_printf(p, " VM root: A:0x%llx %s\n", addr, is_vram ? "VRAM" : "SYS");
 	}
 
-	drm_gpuva_for_each_va(gpuva, &vm->mgr) {
+	drm_gpuvm_for_each_va(gpuva, &vm->gpuvm) {
 		struct xe_vma *vma = gpuva_to_vma(gpuva);
 		bool is_userptr = xe_vma_is_userptr(vma);
 		bool is_null = xe_vma_is_null(vma);
