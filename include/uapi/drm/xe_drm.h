@@ -466,7 +466,7 @@ struct drm_xe_query_topology_mask {
  * of the micro-controller firmware.
  */
 struct drm_xe_query_uc_fw_version {
-	/** @uc: The micro-controller type to query firmware version */
+	/** @uc_type: The micro-controller type to query firmware version */
 #define DRM_XE_QUERY_UC_TYPE_GUC	0
 #define DRM_XE_QUERY_UC_TYPE_HUC	1
 	__u16 uc_type;
@@ -474,13 +474,13 @@ struct drm_xe_query_uc_fw_version {
 	/** @pad: MBZ */
 	__u16 pad;
 
-	/* @major_ver: major uc fw version */
+	/** @major_ver: major uc fw version */
 	__u32 major_ver;
-	/* @minor_ver: minor uc fw version */
+	/** @minor_ver: minor uc fw version */
 	__u32 minor_ver;
-	/* @patch_ver: patch uc fw version */
+	/** @patch_ver: patch uc fw version */
 	__u32 patch_ver;
-	/* @branch_ver: branch uc fw version */
+	/** @branch_ver: branch uc fw version */
 	__u32 branch_ver;
 
 	/** @pad2: MBZ */
