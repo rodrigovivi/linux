@@ -105,7 +105,7 @@ __read_timestamps(struct xe_gt *gt,
 
 static int
 query_engine_cycles(struct xe_device *xe,
-		struct drm_xe_device_query *query)
+		    struct drm_xe_device_query *query)
 {
 	struct drm_xe_query_engine_cycles __user *query_ptr;
 	struct drm_xe_engine_class_instance *eci;
