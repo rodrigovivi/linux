@@ -417,36 +417,15 @@ void xe_display_pm_resume(struct xe_device *xe)
 __diag_push();
 __diag_ignore_all("-Woverride-init", "Allow field overrides in table");
 
-void xe_display_info_init(struct xe_device *xe)
+void xe_display_probe(struct xe_device *xe)
 {
-	u16 gmdid_ver, gmdid_rel, gmdid_step;
-	bool has_gmdid = GRAPHICS_VERx100(xe) >= 1270;
-
-	if (!xe->info.enable_display)
-		goto no_display;
-
-	xe->info.display = intel_display_device_probe(xe, has_gmdid, &gmdid_ver,
-						      &gmdid_rel, &gmdid_step);
-	memcpy(&xe->info.display_runtime,
-	       &xe->info.display->__runtime_defaults,
-	       sizeof(xe->info.display->__runtime_defaults));
-
-	if (!xe->info.display_runtime.pipe_mask)
-		goto no_display;
-
-	if (has_gmdid) {
-		xe->info.display_runtime.ip.ver = gmdid_ver;
-		xe->info.display_runtime.ip.rel = gmdid_rel;
-		xe->info.display_runtime.ip.step = gmdid_step;
+	if (xe->info.enable_display) {
+		xe->info.enable_display = false;
+		unset_display_features(xe);
+	} else {
+		intel_display_device_probe(xe);
 	}
-
-	return;
-
-no_display:
-	xe->info.enable_display = false;
-	unset_display_features(xe);
 }
-
 __diag_pop();
 
 #endif
