@@ -419,12 +419,17 @@ __diag_ignore_all("-Woverride-init", "Allow field overrides in table");
 
 void xe_display_probe(struct xe_device *xe)
 {
-	if (xe->info.enable_display) {
-		xe->info.enable_display = false;
-		unset_display_features(xe);
-	} else {
-		intel_display_device_probe(xe);
-	}
+	if (!xe->info.enable_display)
+		goto no_display;
+
+	intel_display_device_probe(xe);
+
+	if (xe->info.display_runtime.pipe_mask)
+		return;
+
+no_display:
+	xe->info.enable_display = false;
+	unset_display_features(xe);
 }
 __diag_pop();
 
