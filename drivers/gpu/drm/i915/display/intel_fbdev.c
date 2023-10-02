@@ -366,14 +366,12 @@ static int intelfb_create(struct drm_fb_helper *helper,
 
 #else
 	if (!(obj->flags & XE_BO_CREATE_SYSTEM_BIT)) {
-		bool lmem;
-
 		if (obj->flags & XE_BO_CREATE_STOLEN_BIT)
 			info->fix.smem_start = xe_ttm_stolen_io_offset(obj, 0);
 		else
 			info->fix.smem_start =
 				pci_resource_start(pdev, 2) +
-				xe_bo_addr(obj, 0, XE_PAGE_SIZE, &lmem);
+				xe_bo_addr(obj, 0, XE_PAGE_SIZE);
 
 		info->fix.smem_len = obj->ttm.base.size;
 	} else {
