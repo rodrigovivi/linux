@@ -123,7 +123,8 @@ static int xe_hwmon_process_reg(struct xe_hwmon *hwmon, enum xe_hwmon_reg hwmon_
 	}
 }
 
-int xe_hwmon_process_reg_read64(struct xe_hwmon *hwmon, enum xe_hwmon_reg hwmon_reg, u64 *value)
+static int xe_hwmon_process_reg_read64(struct xe_hwmon *hwmon,
+				       enum xe_hwmon_reg hwmon_reg, u64 *value)
 {
 	struct xe_reg reg;
 
