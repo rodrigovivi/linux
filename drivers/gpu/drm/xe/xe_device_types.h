@@ -378,6 +378,7 @@ struct xe_device {
 	/** @pmu: performance monitoring unit */
 	struct xe_pmu pmu;
 
+	/** @hwmon: hwmon subsystem integration */
 	struct xe_hwmon *hwmon;
 
 	/* private: */
