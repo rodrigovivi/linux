@@ -206,6 +206,8 @@ struct xe_device {
 		const char *graphics_name;
 		/** @media_name: media IP name */
 		const char *media_name;
+		/** @tile_mmio_ext_size: size of MMIO extension space, per-tile */
+		u32 tile_mmio_ext_size;
 		/** @graphics_verx100: graphics IP version */
 		u32 graphics_verx100;
 		/** @media_verx100: media IP version */
@@ -253,6 +255,8 @@ struct xe_device {
 		u8 enable_display:1;
 		/** @bypass_mtcfg: Bypass Multi-Tile configuration from MTCFG register */
 		u8 bypass_mtcfg:1;
+		/** @supports_mmio_ext: supports MMIO extension/s */
+		u8 supports_mmio_ext:1;
 
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 		const struct intel_display_device_info *display;
