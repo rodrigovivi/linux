@@ -251,6 +251,8 @@ struct xe_device {
 		u8 has_range_tlb_invalidation:1;
 		/** @enable_display: display enabled */
 		u8 enable_display:1;
+		/** @bypass_mtcfg: Bypass Multi-Tile configuration from MTCFG register */
+		u8 bypass_mtcfg:1;
 
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
 		const struct intel_display_device_info *display;
