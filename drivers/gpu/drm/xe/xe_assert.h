@@ -112,7 +112,6 @@
 			"platform: %d subplatform: %d\n"					\
 			"graphics: %s %u.%02u step %s\n"					\
 			"media: %s %u.%02u step %s\n"						\
-			"display: %s step %s\n"							\
 			msg,									\
 			__xe->info.platform, __xe->info.subplatform,				\
 			__xe->info.graphics_name,						\
@@ -123,8 +122,6 @@
 			__xe->info.media_verx100 / 100,						\
 			__xe->info.media_verx100 % 100,						\
 			xe_step_name(__xe->info.step.media),					\
-			str_enabled_disabled(__xe->info.enable_display),			\
-			xe_step_name(__xe->info.step.display),					\
 			## arg);								\
 })
 
