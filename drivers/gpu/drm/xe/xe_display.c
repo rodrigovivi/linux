@@ -417,10 +417,6 @@ void xe_display_pm_resume(struct xe_device *xe)
 	intel_power_domains_enable(xe);
 }
 
-/* Display info initialization */
-__diag_push();
-__diag_ignore_all("-Woverride-init", "Allow field overrides in table");
-
 void xe_display_probe(struct xe_device *xe)
 {
 	if (!xe->info.enable_display)
@@ -435,4 +431,3 @@ no_display:
 	xe->info.enable_display = false;
 	unset_display_features(xe);
 }
-__diag_pop();
