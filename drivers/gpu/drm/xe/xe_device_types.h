@@ -259,8 +259,6 @@ struct xe_device {
 		u8 supports_mmio_ext:1;
 
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
-		const struct intel_display_device_info *display;
-		struct intel_display_runtime_info display_runtime;
 		struct {
 			u32 rawclk_freq;
 		} i915_runtime;

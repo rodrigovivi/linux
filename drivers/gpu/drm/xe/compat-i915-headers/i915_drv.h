@@ -206,9 +206,10 @@ static inline void intel_runtime_pm_put(struct xe_runtime_pm *pm, bool wakeref)
 
 #define intel_step_name xe_step_name
 #define pdev_to_i915 pdev_to_xe_device
-#define DISPLAY_INFO(xe)		((xe)->info.display)
 #define RUNTIME_INFO(xe)		(&(xe)->info.i915_runtime)
-#define DISPLAY_RUNTIME_INFO(xe)	(&(xe)->info.display_runtime)
+
+#define DISPLAY_INFO(xe)		((xe)->display.info.__device_info)
+#define DISPLAY_RUNTIME_INFO(xe)	(&(xe)->display.info.__runtime_info)
 
 #define FORCEWAKE_ALL XE_FORCEWAKE_ALL
 #define HPD_STORM_DEFAULT_THRESHOLD 50
