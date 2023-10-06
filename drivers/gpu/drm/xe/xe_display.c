@@ -15,6 +15,7 @@
 #include <drm/xe_drm.h>
 
 #include "soc/intel_dram.h"
+#include "i915_drv.h"		/* FIXME: HAS_DISPLAY() depends on this */
 #include "intel_acpi.h"
 #include "intel_audio.h"
 #include "intel_bw.h"
@@ -31,6 +32,11 @@
 #include "xe_module.h"
 
 /* Xe device functions */
+
+static bool has_display(struct xe_device *xe)
+{
+	return HAS_DISPLAY(xe);
+}
 
 /**
  * xe_display_driver_probe_defer - Detect if we need to wait for other drivers
@@ -316,7 +322,7 @@ static void intel_suspend_encoders(struct xe_device *xe)
 	struct drm_device *dev = &xe->drm;
 	struct intel_encoder *encoder;
 
-	if (xe->info.display_runtime.pipe_mask)
+	if (has_display(xe))
 		return;
 
 	drm_modeset_lock_all(dev);
@@ -346,7 +352,7 @@ void xe_display_pm_suspend(struct xe_device *xe)
 	 * properly.
 	 */
 	intel_power_domains_disable(xe);
-	if (xe->info.display_runtime.pipe_mask)
+	if (has_display(xe))
 		drm_kms_helper_poll_disable(&xe->drm);
 
 	intel_display_driver_suspend(xe);
@@ -392,7 +398,7 @@ void xe_display_pm_resume(struct xe_device *xe)
 
 	intel_dmc_resume(xe);
 
-	if (xe->info.display_runtime.pipe_mask)
+	if (has_display(xe))
 		drm_mode_config_reset(&xe->drm);
 
 	intel_display_driver_init_hw(xe);
@@ -403,7 +409,7 @@ void xe_display_pm_resume(struct xe_device *xe)
 	intel_display_driver_resume(xe);
 
 	intel_hpd_poll_disable(xe);
-	if (xe->info.display_runtime.pipe_mask)
+	if (has_display(xe))
 		drm_kms_helper_poll_enable(&xe->drm);
 
 	intel_opregion_resume(xe);
@@ -424,7 +430,7 @@ void xe_display_probe(struct xe_device *xe)
 
 	intel_display_device_probe(xe);
 
-	if (xe->info.display_runtime.pipe_mask)
+	if (has_display(xe))
 		return;
 
 no_display:
