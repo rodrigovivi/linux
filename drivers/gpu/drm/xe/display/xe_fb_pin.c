@@ -30,7 +30,7 @@ write_dpt_rotated(struct xe_bo *bo, struct iosys_map *map, u32 *dpt_ofs, u32 bo_
 
 		for (row = 0; row < height; row++) {
 			u64 pte = ggtt->pt_ops->pte_encode_bo(bo, src_idx * XE_PAGE_SIZE,
-							      XE_CACHE_WB);
+							      xe->pat.idx[XE_CACHE_WB]);
 
 			iosys_map_wr(map, *dpt_ofs, u64, pte);
 			*dpt_ofs += 8;
@@ -84,7 +84,7 @@ static int __xe_pin_fb_vma_dpt(struct intel_framebuffer *fb,
 
 		for (x = 0; x < size / XE_PAGE_SIZE; x++) {
 			u64 pte = ggtt->pt_ops->pte_encode_bo(bo, x * XE_PAGE_SIZE,
-							      XE_CACHE_WB);
+							      xe->pat.idx[XE_CACHE_WB]);
 
 			iosys_map_wr(&dpt->vmap, x * 8, u64, pte);
 		}
@@ -110,6 +110,7 @@ static void
 write_ggtt_rotated(struct xe_bo *bo, struct xe_ggtt *ggtt, u32 *ggtt_ofs, u32 bo_ofs,
 		   u32 width, u32 height, u32 src_stride, u32 dst_stride)
 {
+	struct xe_device *xe = xe_bo_device(bo);
 	u32 column, row;
 
 	for (column = 0; column < width; column++) {
@@ -117,7 +118,7 @@ write_ggtt_rotated(struct xe_bo *bo, struct xe_ggtt *ggtt, u32 *ggtt_ofs, u32 bo
 
 		for (row = 0; row < height; row++) {
 			u64 pte = ggtt->pt_ops->pte_encode_bo(bo, src_idx * XE_PAGE_SIZE,
-							      XE_CACHE_WB);
+							      xe->pat.idx[XE_CACHE_WB]);
 
 			xe_ggtt_set_pte(ggtt, *ggtt_ofs, pte);
 			*ggtt_ofs += XE_PAGE_SIZE;
@@ -162,7 +163,8 @@ static int __xe_pin_fb_vma_ggtt(struct intel_framebuffer *fb,
 			goto out_unlock;
 
 		for (x = 0; x < size; x += XE_PAGE_SIZE) {
-			u64 pte = ggtt->pt_ops->pte_encode_bo(bo, x, XE_CACHE_WB);
+			u64 pte = ggtt->pt_ops->pte_encode_bo(bo, x,
+							      xe->pat.idx[XE_CACHE_WB]);
 
 			xe_ggtt_set_pte(ggtt, vma->node.start + x, pte);
 		}
