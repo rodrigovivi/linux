@@ -3,8 +3,6 @@
  * Copyright © 2023 Intel Corporation
  */
 
-#if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
-
 #include "xe_display.h"
 #include "regs/xe_regs.h"
 
@@ -438,5 +436,3 @@ no_display:
 	unset_display_features(xe);
 }
 __diag_pop();
-
-#endif
