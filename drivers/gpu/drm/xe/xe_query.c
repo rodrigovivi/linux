@@ -520,7 +520,7 @@ query_uc_fw_version(struct xe_device *xe, struct drm_xe_device_query *query)
 		return -EINVAL;
 
 	switch (resp.uc_type) {
-	case DRM_XE_QUERY_UC_TYPE_GUC: {
+	case DRM_XE_QUERY_UC_TYPE_GUC_SUBMISSION: {
 		struct xe_guc *guc = &xe->tiles[0].primary_gt->uc.guc;
 
 		resp.major_ver = guc->submission_state.version.major;
