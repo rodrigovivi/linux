@@ -162,6 +162,18 @@ struct drm_xe_engine_class_instance {
 };
 
 /**
+ * struct drm_xe_query_engine_info - describe hardware engine
+ *
+ * If a query is made with a struct drm_xe_device_query where .query
+ * is equal to DRM_XE_DEVICE_QUERY_ENGINES, then the reply uses an array of
+ * struct drm_xe_query_engine_info in .data.
+ */
+struct drm_xe_query_engine_info {
+	struct drm_xe_engine_class_instance instance;
+	__u64 rsvd[3];
+};
+
+/**
  * enum drm_xe_memory_class - Supported memory classes.
  */
 enum drm_xe_memory_class {
