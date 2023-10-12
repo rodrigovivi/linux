@@ -4988,7 +4988,6 @@ pipe_config_mismatch(bool fastset, const struct intel_crtc *crtc,
 
 static bool fastboot_enabled(struct drm_i915_private *dev_priv)
 {
-#ifdef I915
 	if (dev_priv->params.fastboot != -1)
 		return dev_priv->params.fastboot;
 
@@ -5002,9 +5001,6 @@ static bool fastboot_enabled(struct drm_i915_private *dev_priv)
 
 	/* Disabled by default on all others */
 	return false;
-#else
-	return true;
-#endif
 }
 
 bool
