@@ -213,7 +213,6 @@ MODULE_DESCRIPTION("Intel HDA driver");
 #endif
 #endif
 
-static DECLARE_BITMAP(probed_devs, SNDRV_CARDS);
 
 /*
  */
@@ -1840,34 +1839,6 @@ static int azx_create(struct snd_card *card, struct pci_dev *pci,
 	/* continue probing in work context as may trigger request module */
 	INIT_DELAYED_WORK(&hda->probe_work, azx_probe_work);
 
-
-
-
-	/* bind with i915 if needed */
-	if (chip->driver_caps & AZX_DCAPS_I915_COMPONENT) {
-		err = snd_hdac_i915_init(azx_bus(chip));
-		if (err < 0) {
-			/* if the controller is bound only with HDMI/DP
-			 * (for HSW and BDW), we need to abort the probe;
-			 * for other chips, still continue probing as other
-			 * codecs can be on the same link.
-			 */
-			if (HDA_CONTROLLER_IN_GPU(pci)) {
-				clear_bit(chip->dev_index, probed_devs);
-				pci_set_drvdata(pci, NULL);
-				snd_device_free(card, chip);
-				return err;
-			} else {
-				/* don't bother any longer */
-				chip->driver_caps &= ~AZX_DCAPS_I915_COMPONENT;
-			}
-		}
-
-		/* HSW/BDW controllers need this power */
-		if (HDA_CONTROLLER_IN_GPU(pci))
-			hda->need_i915_power = true;
-	}
-
 	*rchip = chip;
 
 	return 0;
@@ -2111,6 +2082,8 @@ static const struct hda_controller_ops pci_hda_ops = {
 	.position_check = azx_position_check,
 };
 
+static DECLARE_BITMAP(probed_devs, SNDRV_CARDS);
+
 static int azx_probe(struct pci_dev *pci,
 		     const struct pci_device_id *pci_id)
 {
@@ -2289,6 +2262,28 @@ static int azx_probe_continue(struct azx *chip)
 
 	to_hda_bus(bus)->bus_probing = 1;
 	hda->probe_continued = 1;
+
+	/* bind with i915 if needed */
+	if (chip->driver_caps & AZX_DCAPS_I915_COMPONENT) {
+		err = snd_hdac_i915_init(bus);
+		if (err < 0) {
+			/* if the controller is bound only with HDMI/DP
+			 * (for HSW and BDW), we need to abort the probe;
+			 * for other chips, still continue probing as other
+			 * codecs can be on the same link.
+			 */
+			if (HDA_CONTROLLER_IN_GPU(pci)) {
+				goto out_free;
+			} else {
+				/* don't bother any longer */
+				chip->driver_caps &= ~AZX_DCAPS_I915_COMPONENT;
+			}
+		}
+
+		/* HSW/BDW controllers need this power */
+		if (HDA_CONTROLLER_IN_GPU(pci))
+			hda->need_i915_power = true;
+	}
 
 	/* Request display power well for the HDA controller or codec. For
 	 * Haswell/Broadwell, both the display HDA controller and codec need
