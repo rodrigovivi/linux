@@ -17,6 +17,7 @@
 #include "xe_step.h"
 #include "i915_gem.h"
 #include "i915_gem_stolen.h"
+#include "i915_gpu_error.h"
 #include "i915_reg_defs.h"
 #include "i915_utils.h"
 #include "intel_gt_types.h"
