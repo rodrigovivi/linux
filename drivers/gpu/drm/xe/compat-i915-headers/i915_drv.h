@@ -22,6 +22,7 @@
 #include "i915_utils.h"
 #include "intel_gt_types.h"
 #include "intel_step.h"
+#include "intel_uc_fw.h"
 #include "intel_uncore.h"
 #include "intel_runtime_pm.h"
 #include <linux/pm_runtime.h>
