@@ -100,10 +100,11 @@ static struct xe_vma *lookup_vma(struct xe_vm *vm, u64 page_addr)
 }
 
 static int xe_pf_begin(struct drm_exec *exec, struct xe_vma *vma,
-		       unsigned int num_shared, bool atomic, unsigned int id)
+		       bool atomic, unsigned int id)
 {
 	struct xe_bo *bo = xe_vma_bo(vma);
 	struct xe_vm *vm = xe_vma_vm(vma);
+	unsigned int num_shared = 2; /* slots for bind + move */
 	int err;
 
 	err = xe_vm_prepare_vma(exec, vma, num_shared);
@@ -195,7 +196,7 @@ retry_userptr:
 	/* Lock VM and BOs dma-resv */
 	drm_exec_init(&exec, 0);
 	drm_exec_until_all_locked(&exec) {
-		ret = xe_pf_begin(&exec, vma, xe->info.tile_count, atomic, tile->id);
+		ret = xe_pf_begin(&exec, vma, atomic, tile->id);
 		drm_exec_retry_on_contention(&exec);
 		if (ret)
 			goto unlock_dma_resv;
@@ -525,7 +526,7 @@ static int handle_acc(struct xe_gt *gt, struct acc *acc)
 	/* Lock VM and BOs dma-resv */
 	drm_exec_init(&exec, 0);
 	drm_exec_until_all_locked(&exec) {
-		ret = xe_pf_begin(&exec, vma, xe->info.tile_count, true, tile->id);
+		ret = xe_pf_begin(&exec, vma, true, tile->id);
 		drm_exec_retry_on_contention(&exec);
 		if (ret)
 			break;
