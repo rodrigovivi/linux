@@ -142,7 +142,7 @@ void xe_irq_enable_hwe(struct xe_gt *gt)
 	struct xe_device *xe = gt_to_xe(gt);
 	u32 ccs_mask, bcs_mask;
 	u32 irqs, dmask, smask;
-	u32 gsc_mask;
+	u32 gsc_mask = 0;
 
 	if (xe_device_uc_enabled(xe)) {
 		irqs = GT_RENDER_USER_INTERRUPT |
@@ -303,11 +303,6 @@ static void gt_irq_handler(struct xe_tile *tile,
 			instance = INTR_ENGINE_INSTANCE(identity[bit]);
 			intr_vec = INTR_ENGINE_INTR(identity[bit]);
 
-			if (class == XE_ENGINE_CLASS_OTHER && instance == OTHER_GSC_INSTANCE) {
-				xe_heci_gsc_irq_handler(xe, intr_vec);
-				continue;
-			}
-
 			engine_gt = pick_engine_gt(tile, class, instance);
 
 			hwe = xe_gt_hw_engine(engine_gt, class, instance, false);
@@ -317,7 +312,11 @@ static void gt_irq_handler(struct xe_tile *tile,
 			}
 
 			if (class == XE_ENGINE_CLASS_OTHER) {
-				gt_other_irq_handler(engine_gt, instance, intr_vec);
+				/* HECI GSCFI interrupts come from outside of GT */
+				if (HAS_HECI_GSCFI(xe) && instance == OTHER_GSC_INSTANCE)
+					xe_heci_gsc_irq_handler(xe, intr_vec);
+				else
+					gt_other_irq_handler(engine_gt, instance, intr_vec);
 				continue;
 			}
 		}
