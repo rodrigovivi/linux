@@ -12,8 +12,32 @@
 extern "C" {
 #endif
 
-/* Please note that modifications to all structs defined here are
+/*
+ * Please note that modifications to all structs defined here are
  * subject to backwards-compatibility constraints.
+ */
+
+/**
+ * DOC: Xe uAPI Overview
+ *
+ * This section aims to describe the Xe's IOCTL entries, its structs, and other
+ * Xe related uAPI such as uevents and PMU (Platform Monitoring Unit) related
+ * entries and usage.
+ *
+ * List of supported IOCTLs:
+ *  - &DRM_IOCTL_XE_DEVICE_QUERY
+ *  - &DRM_IOCTL_XE_GEM_CREATE
+ *  - &DRM_IOCTL_XE_GEM_MMAP_OFFSET
+ *  - &DRM_IOCTL_XE_VM_CREATE
+ *  - &DRM_IOCTL_XE_VM_DESTROY
+ *  - &DRM_IOCTL_XE_VM_BIND
+ *  - &DRM_IOCTL_XE_EXEC
+ *  - &DRM_IOCTL_XE_EXEC_QUEUE_CREATE
+ *  - &DRM_IOCTL_XE_EXEC_QUEUE_DESTROY
+ *  - &DRM_IOCTL_XE_EXEC_QUEUE_SET_PROPERTY
+ *  - &DRM_IOCTL_XE_EXEC_QUEUE_GET_PROPERTY
+ *  - &DRM_IOCTL_XE_WAIT_USER_FENCE
+ *
  */
 
 /*
@@ -51,7 +75,10 @@ extern "C" {
 #define DRM_IOCTL_XE_WAIT_USER_FENCE		DRM_IOWR(DRM_COMMAND_BASE + DRM_XE_WAIT_USER_FENCE, struct drm_xe_wait_user_fence)
 
 /**
- * struct xe_user_extension - Base class for defining a chain of extensions
+ * DOC: Xe IOCT Extensions
+ *
+ * Before detailing the IOCTLs and its structs, it is important to highlight
+ * that every IOCTL in Xe is extensible.
  *
  * Many interfaces need to grow over time. In most cases we can simply
  * extend the struct and have userspace pass in more data. Another option,
@@ -85,7 +112,10 @@ extern "C" {
  * Typically the struct xe_user_extension would be embedded in some uAPI
  * struct, and in this case we would feed it the head of the chain(i.e ext1),
  * which would then apply all of the above extensions.
- *
+*/
+
+/**
+ * struct xe_user_extension - Base class for defining a chain of extensions
  */
 struct xe_user_extension {
 	/**
@@ -114,7 +144,12 @@ struct xe_user_extension {
 	__u32 pad;
 };
 
-/** struct drm_xe_ext_set_property - XE set property extension */
+/**
+ * struct drm_xe_ext_set_property - Generic set property extension
+ *
+ * A generic struct that could allow any of the Xe's IOCLT to be extended
+ * with a set_property operation.
+ */
 struct drm_xe_ext_set_property {
 	/** @base: base user extension */
 	struct xe_user_extension base;
@@ -277,7 +312,7 @@ struct drm_xe_query_mem_region {
 	 * here will always be zero).
 	 */
 	__u64 cpu_visible_used;
-	/** @reserved: MBZ */
+	/** @reserved: Reserved */
 	__u64 reserved[6];
 };
 
@@ -347,7 +382,6 @@ struct drm_xe_query_config {
  * existing GT individual descriptions.
  * Graphics Technology (GT) is a subset of a GPU/tile that is responsible for
  * implementing graphics and/or media operations.
- *
  */
 struct drm_xe_query_gt {
 #define DRM_XE_QUERY_GT_TYPE_MAIN		0
@@ -535,7 +569,8 @@ struct drm_xe_query_uc_fw_version {
 };
 
 /**
- * struct drm_xe_device_query - main structure to query device information
+ * struct drm_xe_device_query - Input of &DRM_IOCLT_XE_DEVICE_QUERY - The
+ * main structure to query device information
  *
  * The user selects the type of data to query among DRM_XE_DEVICE_QUERY_*
  * and sets the value in the query member. This determines the type of
@@ -614,7 +649,8 @@ struct drm_xe_device_query {
 };
 
 /**
- * struct drm_xe_gem_create - structure for gem creation
+ * struct drm_xe_gem_create - Input of &DRM_IOCLT_XE_GEM_CREATE - A structure for
+ * gem creation
  *
  * The @flags can be:
  *  - %DRM_XE_GEM_CREATE_FLAG_DEFER_BACKING
@@ -679,6 +715,9 @@ struct drm_xe_gem_create {
 	__u64 reserved[2];
 };
 
+/**
+ * struct drm_xe_gem_mmap_offset - Input of &DRM_IOCTL_XE_GEM_MMAP_OFFSET
+ */
 struct drm_xe_gem_mmap_offset {
 	/** @extensions: Pointer to the first extension struct, if any */
 	__u64 extensions;
@@ -696,6 +735,9 @@ struct drm_xe_gem_mmap_offset {
 	__u64 reserved[2];
 };
 
+/**
+ * struct drm_xe_vm_create - Input of &DRM_IOCTL_XE_VM_CREATE
+ */
 struct drm_xe_vm_create {
 #define DRM_XE_VM_EXTENSION_SET_PROPERTY	0
 	/** @extensions: Pointer to the first extension struct, if any */
@@ -715,6 +757,9 @@ struct drm_xe_vm_create {
 	__u64 reserved[2];
 };
 
+/**
+ * struct drm_xe_vm_destroy - Input of &DRM_IOCTL_XE_VM_DESTROY
+ */
 struct drm_xe_vm_destroy {
 	/** @vm_id: VM ID */
 	__u32 vm_id;
@@ -809,6 +854,9 @@ struct drm_xe_vm_bind_op {
 	__u64 reserved[2];
 };
 
+/**
+ * struct drm_xe_vm_bind - Input of &DRM_IOCTL_XE_VM_BIND
+ */
 struct drm_xe_vm_bind {
 	/** @extensions: Pointer to the first extension struct, if any */
 	__u64 extensions;
@@ -853,6 +901,19 @@ struct drm_xe_vm_bind {
 	__u64 reserved[2];
 };
 
+/**
+ * struct drm_xe_sync - Main structure for sync objects and user fences
+ *
+ * This can be used with both @drm_xe_exec or with @drm_xe_vm_bind
+ *
+ * The @flags can be:
+ *  - %DRM_XE_SYNC_FLAG_SYNCOBJ
+ *  - %DRM_XE_SYNC_FLAG_TIMELINE_SYNCOBJ
+ *  - %DRM_XE_SYNC_FLAG_DMA_BUF
+ *  - %DRM_XE_SYNC_FLAG_USER_FENCE
+ *  - %DRM_XE_SYNC_FLAG_SIGNAL
+ *
+ */
 struct drm_xe_sync {
 	/** @extensions: Pointer to the first extension struct, if any */
 	__u64 extensions;
@@ -862,17 +923,19 @@ struct drm_xe_sync {
 #define DRM_XE_SYNC_FLAG_DMA_BUF		0x2
 #define DRM_XE_SYNC_FLAG_USER_FENCE		0x3
 #define DRM_XE_SYNC_FLAG_SIGNAL		0x10
+	/** @flags: Sync Flags */
 	__u32 flags;
 
 	/** @pad: MBZ */
 	__u32 pad;
 
 	union {
+		/** @handle: Handle to the sync object */
 		__u32 handle;
 
 		/**
-		 * @addr: Address of user fence. When sync passed in via exec
-		 * IOCTL this a GPU address in the VM. When sync passed in via
+		 * @addr: Address of user fence. When sync is passed in via exec
+		 * IOCTL this is a GPU address in the VM. When sync passed in via
 		 * VM bind IOCTL this is a user pointer. In either case, it is
 		 * the users responsibility that this address is present and
 		 * mapped when the user fence is signalled. Must be qword
@@ -881,12 +944,19 @@ struct drm_xe_sync {
 		__u64 addr;
 	};
 
+	/**
+	 * @timeline_value: Input for the timeline sync object. Needs to be
+	 * different than 0 when used with %DRM_XE_SYNC_FLAG_TIMELINE_SYNCOBJ.
+	 */
 	__u64 timeline_value;
 
 	/** @reserved: Reserved */
 	__u64 reserved[2];
 };
 
+/**
+ * struct drm_xe_exec - Input of &DRM_IOCTL_XE_EXEC
+ */
 struct drm_xe_exec {
 	/** @extensions: Pointer to the first extension struct, if any */
 	__u64 extensions;
@@ -919,6 +989,9 @@ struct drm_xe_exec {
 	__u64 reserved[2];
 };
 
+/**
+ * struct drm_xe_exec_queue_create - Input of &DRM_IOCTL_XE_EXEC_QUEUE_CREATE
+ */
 struct drm_xe_exec_queue_create {
 #define DRM_XE_EXEC_QUEUE_EXTENSION_SET_PROPERTY               0
 	/** @extensions: Pointer to the first extension struct, if any */
@@ -952,6 +1025,9 @@ struct drm_xe_exec_queue_create {
 	__u64 reserved[2];
 };
 
+/**
+ * struct drm_xe_exec_queue_destroy - Input of &DRM_IOCTL_XE_EXEC_QUEUE_DESTROY
+ */
 struct drm_xe_exec_queue_destroy {
 	/** @exec_queue_id: Exec queue ID */
 	__u32 exec_queue_id;
@@ -964,9 +1040,18 @@ struct drm_xe_exec_queue_destroy {
 };
 
 /**
- * struct drm_xe_exec_queue_set_property - exec queue set property
+ * struct drm_xe_exec_queue_set_property - Input of &DRM_IOCTL_XE_EXEC_QUEUE_SET_PROPERTY
  *
- * Same namespace for extensions as drm_xe_exec_queue_create
+ * The @property can be:
+ *  - %DRM_XE_EXEC_QUEUE_SET_PROPERTY_PRIORITY
+ *  - %DRM_XE_EXEC_QUEUE_SET_PROPERTY_TIMESLICE
+ *  - %DRM_XE_EXEC_QUEUE_SET_PROPERTY_PREEMPTION_TIMEOUT
+ *  - %DRM_XE_EXEC_QUEUE_SET_PROPERTY_PERSISTENCE
+ *  - %DRM_XE_EXEC_QUEUE_SET_PROPERTY_JOB_TIMEOUT
+ *  - %DRM_XE_EXEC_QUEUE_SET_PROPERTY_ACC_TRIGGER
+ *  - %DRM_XE_EXEC_QUEUE_SET_PROPERTY_ACC_NOTIFY
+ *  - %DRM_XE_EXEC_QUEUE_SET_PROPERTY_ACC_GRANULARITY
+ *
  */
 struct drm_xe_exec_queue_set_property {
 	/** @extensions: Pointer to the first extension struct, if any */
@@ -993,6 +1078,13 @@ struct drm_xe_exec_queue_set_property {
 	__u64 reserved[2];
 };
 
+/**
+ * struct drm_xe_exec_queue_get_property - Input of &DRM_IOCTL_XE_EXEC_QUEUE_GET_PROPERTY
+ *
+ * The @property can be:
+ *  - %DRM_XE_EXEC_QUEUE_GET_PROPERTY_BAN
+ *
+ */
 struct drm_xe_exec_queue_get_property {
 	/** @extensions: Pointer to the first extension struct, if any */
 	__u64 extensions;
@@ -1012,7 +1104,7 @@ struct drm_xe_exec_queue_get_property {
 };
 
 /**
- * struct drm_xe_wait_user_fence - wait user fence
+ * struct drm_xe_wait_user_fence - Input of &DRM_IOCTL_XE_WAIT_USER_FENCE
  *
  * Wait on user fence, XE will wake-up on every HW engine interrupt in the
  * instances list and check if user fence is complete::
@@ -1020,6 +1112,25 @@ struct drm_xe_exec_queue_get_property {
  *	(*addr & MASK) OP (VALUE & MASK)
  *
  * Returns to user on user fence completion or timeout.
+ *
+ * The wait @op can be:
+ *  - %DRM_XE_UFENCE_WAIT_EQ
+ *  - %DRM_XE_UFENCE_WAIT_NEQ
+ *  - %DRM_XE_UFENCE_WAIT_GT
+ *  - %DRM_XE_UFENCE_WAIT_GTE
+ *  - %DRM_XE_UFENCE_WAIT_LT
+ *  - %DRM_XE_UFENCE_WAIT_LTE
+ *
+ * The wait @flags can be:
+ *  - %DRM_XE_UFENCE_WAIT_FLAG_SOFT_OP
+ *  - %DRM_XE_UFENCE_WAIT_FLAG_ABSTIME
+ *
+ * The wait @mask can be:
+ *  - %DRM_XE_UFENCE_WAIT_U8
+ *  - %DRM_XE_UFENCE_WAIT_U16
+ *  - %DRM_XE_UFENCE_WAIT_U32
+ *  - %DRM_XE_UFENCE_WAIT_U64
+ *
  */
 struct drm_xe_wait_user_fence {
 	/** @extensions: Pointer to the first extension struct, if any */
