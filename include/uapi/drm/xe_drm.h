@@ -490,15 +490,16 @@ struct drm_xe_query_topology_mask {
  *
  * The @uc_type can be:
  *  - %DRM_XE_QUERY_UC_TYPE_GUC_SUBMISSION - This is the GuC Submission Version,
- * a.k.a 'VF version'. It is not the actual GuC blob version. A running GuC can
- * support multiple VF APIs with different Submission Versions. This version is
- * negotiated by the VF KMD with GuC during VF initialization. In most of the
- * current available GuC blobs, this is a 1-1 relationship where the Submission
- * version could be inferred from the running version and vice-versa. However,
- * the submission version is the most useful information for the user space
- * perspective and needs.
+ *    a.k.a 'VF version'. It is not the actual GuC blob version. A running GuC can
+ *    support multiple VF APIs with different Submission Versions. This version is
+ *    negotiated by the VF KMD with GuC during VF initialization. In most of the
+ *    current available GuC blobs, this is a 1-1 relationship where the Submission
+ *    version could be inferred from the running version and vice-versa. However,
+ *    the submission version is the most useful information for the user space
+ *    perspective and needs.
  *  - %DRM_XE_QUERY_TYPE_HUC - The actual HuC blob that is currently running
- * in the platform. It returns 0 when HuC is not currently loaded.
+ *    in the platform. It returns 0 when HuC is not currently loaded.
+ *
  */
 struct drm_xe_query_uc_fw_version {
 	/** @uc_type: The micro-controller type to query firmware version */
