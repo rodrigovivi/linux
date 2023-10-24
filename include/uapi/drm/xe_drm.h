@@ -584,7 +584,6 @@ struct drm_xe_query_uc_fw_version {
  *    configuration of the device such as information on slices, memory,
  *    caches, and so on. It is provided as a table of key / value
  *    attributes.
- *  - %DRM_XE_DEVICE_QUERY_HWCONFIG
  *  - %DRM_XE_DEVICE_QUERY_GT_TOPOLOGY
  *  - %DRM_XE_DEVICE_QUERY_ENGINE_CYCLES
  *  - %DRM_XE_DEVICE_QUERY_UC_FW_VERSION
@@ -631,10 +630,9 @@ struct drm_xe_device_query {
 #define DRM_XE_DEVICE_QUERY_MEM_REGIONS		1
 #define DRM_XE_DEVICE_QUERY_CONFIG		2
 #define DRM_XE_DEVICE_QUERY_GT_LIST		3
-#define DRM_XE_DEVICE_QUERY_HWCONFIG		4
-#define DRM_XE_DEVICE_QUERY_GT_TOPOLOGY		5
-#define DRM_XE_DEVICE_QUERY_ENGINE_CYCLES	6
-#define DRM_XE_DEVICE_QUERY_UC_FW_VERSION	7
+#define DRM_XE_DEVICE_QUERY_GT_TOPOLOGY		4
+#define DRM_XE_DEVICE_QUERY_ENGINE_CYCLES	5
+#define DRM_XE_DEVICE_QUERY_UC_FW_VERSION	6
 	/** @query: The type of data to query */
 	__u32 query;
 
