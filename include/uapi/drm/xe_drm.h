@@ -127,6 +127,10 @@ struct xe_user_extension {
 /**
  * struct drm_xe_engine_class_instance - instance of an engine class
  *
+ * It is returned as part of the @drm_xe_query_engine_info, but it also is
+ * used as the input of engine selection for both @drm_xe_exec_queue_create
+ * and @drm_xe_query_engine_cycles
+ *
  * The @engine_class can be:
  *  - %DRM_XE_ENGINE_CLASS_RENDER
  *  - %DRM_XE_ENGINE_CLASS_COPY
@@ -164,13 +168,16 @@ struct drm_xe_engine_class_instance {
 /**
  * struct drm_xe_query_engine_info - describe hardware engine
  *
- * If a query is made with a struct drm_xe_device_query where .query
- * is equal to DRM_XE_DEVICE_QUERY_ENGINES, then the reply uses an array of
- * struct drm_xe_query_engine_info in .data.
+ * If a query is made with a struct @drm_xe_device_query where .query
+ * is equal to %DRM_XE_DEVICE_QUERY_ENGINES, then the reply uses an array of
+ * struct @drm_xe_query_engine_info in .data.
  */
 struct drm_xe_query_engine_info {
+	/** @instance: The @drm_xe_engine_class_instance */
 	struct drm_xe_engine_class_instance instance;
-	__u64 rsvd[3];
+
+	/** @reserved: Reserved */
+	__u64 reserved[3];
 };
 
 /**
