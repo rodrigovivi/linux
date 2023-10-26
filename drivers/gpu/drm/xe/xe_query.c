@@ -217,6 +217,20 @@ static int query_engines(struct xe_device *xe,
 				hwe->logical_instance;
 			hw_engine_info[i].instance.gt_id = gt->info.id;
 			hw_engine_info[i].instance.pad = 0;
+			/*
+			 * The mem_regions indexes in the mask below need to
+			 * directly identify the struct
+			 * drm_xe_query_mem_regions' instance constructed at
+			 * query_mem_regions()
+			 *
+			 * For our current platforms:
+			 * Bit 0 -> System Memory
+			 * Bit 1 -> VRAM0 on Tile0
+			 * Bit 2 -> VRAM1 on Tile1
+			 * However the uAPI is generic and it's userspace's
+			 * responsibility to check the mem_class, without any
+			 * assumption.
+			 */
 			if (!IS_DGFX(xe))
 				hw_engine_info[i].near_mem_regions = 0x1;
 			else
@@ -273,6 +287,11 @@ static int query_mem_regions(struct xe_device *xe,
 
 	man = ttm_manager_type(&xe->ttm, XE_PL_TT);
 	usage->regions[0].mem_class = DRM_XE_MEM_REGION_CLASS_SYSMEM;
+	/*
+	 * The instance needs to be a unique number that represents the index
+	 * in the placement mask used at xe_gem_create_ioctl() for the
+	 * xe_bo_create() placement.
+	 */
 	usage->regions[0].instance = 0;
 	usage->regions[0].min_page_size = PAGE_SIZE;
 	usage->regions[0].total_size = man->size << PAGE_SHIFT;
