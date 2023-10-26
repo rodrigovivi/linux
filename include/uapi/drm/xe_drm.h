@@ -228,6 +228,20 @@ struct drm_xe_query_engine_info {
 	/** @instance: The @drm_xe_engine_class_instance */
 	struct drm_xe_engine_class_instance instance;
 
+	/**
+	 * @near_mem_regions: Bit mask of instances from
+	 * drm_xe_query_mem_regions that is near this engine.
+	 */
+	__u64 near_mem_regions;
+	/**
+	 * @far_mem_regions: Bit mask of instances from
+	 * drm_xe_query_mem_regions that is far from this engine.
+	 * In general, it has extra indirections when compared to the
+	 * @near_mem_regions. For a discrete device this could mean system
+	 * memory and memory living in a different Tile.
+	 */
+	__u64 far_mem_regions;
+
 	/** @reserved: Reserved */
 	__u64 reserved[3];
 };
@@ -401,19 +415,6 @@ struct drm_xe_query_gt {
 	__u16 gt_id;
 	/** @clock_freq: A clock frequency for timestamp */
 	__u32 clock_freq;
-	/**
-	 * @near_mem_regions: Bit mask of instances from
-	 * drm_xe_query_mem_regions that is near the current engines of this GT.
-	 */
-	__u64 near_mem_regions;
-	/**
-	 * @far_mem_regions: Bit mask of instances from
-	 * drm_xe_query_mem_regions that is far from the engines of this GT.
-	 * In general, it has extra indirections when compared to the
-	 * @near_mem_regions. For a discrete device this could mean system
-	 * memory and memory living in a different Tile.
-	 */
-	__u64 far_mem_regions;
 	/** @reserved: Reserved */
 	__u64 reserved[8];
 };

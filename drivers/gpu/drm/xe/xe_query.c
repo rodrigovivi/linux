@@ -217,6 +217,13 @@ static int query_engines(struct xe_device *xe,
 				hwe->logical_instance;
 			hw_engine_info[i].instance.gt_id = gt->info.id;
 			hw_engine_info[i].instance.pad = 0;
+			if (!IS_DGFX(xe))
+				hw_engine_info[i].near_mem_regions = 0x1;
+			else
+				hw_engine_info[i].near_mem_regions =
+					BIT(gt_to_tile(gt)->id) << 1;
+			hw_engine_info[i].far_mem_regions = xe->info.mem_region_mask ^
+				hw_engine_info[i].near_mem_regions;
 			memset(hw_engine_info->reserved, 0, sizeof(hw_engine_info->reserved));
 
 			i++;
@@ -377,13 +384,6 @@ static int query_gt_list(struct xe_device *xe, struct drm_xe_device_query *query
 			gt_list->gt_list[id].type = DRM_XE_QUERY_GT_TYPE_MAIN;
 		gt_list->gt_list[id].gt_id = gt->info.id;
 		gt_list->gt_list[id].clock_freq = gt->info.clock_freq;
-		if (!IS_DGFX(xe))
-			gt_list->gt_list[id].near_mem_regions = 0x1;
-		else
-			gt_list->gt_list[id].near_mem_regions =
-				BIT(gt_to_tile(gt)->id) << 1;
-		gt_list->gt_list[id].far_mem_regions = xe->info.mem_region_mask ^
-			gt_list->gt_list[id].near_mem_regions;
 	}
 
 	if (copy_to_user(query_ptr, gt_list, size)) {
