@@ -474,30 +474,8 @@ struct xe_device {
 		unsigned int fsb_freq, mem_freq, is_ddr3;
 		u8 vblank_enabled;
 	};
-
 	struct {
-		/* Backlight: XXX: needs to be set to -1 */
-		s32 invert_brightness;
-		s32 vbt_sdvo_panel_type;
-		u32 edp_vswing;
-
-		/* PM support, needs to be -1 as well */
-		s32 disable_power_well;
-		s32 enable_dc;
-
 		const char *dmc_firmware_path;
-		s32 enable_dpcd_backlight;
-		s32 enable_dp_mst;
-		bool enable_dpt;
-		s32 enable_fbc;
-		s32 enable_psr;
-		bool enable_sagv;
-		bool psr_safest_params;
-		s32 enable_psr2_sel_fetch;
-
-		s32 panel_use_ssc;
-		const char *vbt_firmware;
-		u32 lvds_channel_mode;
 	} params;
 #endif
 };
