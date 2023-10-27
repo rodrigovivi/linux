@@ -211,8 +211,8 @@ struct drm_xe_engine_class_instance {
 	__u16 engine_class;
 	/** @engine_instance: Engine instance */
 	__u16 engine_instance;
-	/** @gt_id: GT ID the instance is associated with */
-	__u16 gt_id;
+	/** @sched_group_id: Scheduling Group ID for this engine instance */
+	__u16 sched_group_id;
 	/** @pad: MBZ */
 	__u16 pad;
 };
@@ -227,6 +227,12 @@ struct drm_xe_engine_class_instance {
 struct drm_xe_query_engine_info {
 	/** @instance: The @drm_xe_engine_class_instance */
 	struct drm_xe_engine_class_instance instance;
+
+	/** @tile_id: Tile ID where this Engine lives */
+	__u16 tile_id;
+
+	/** @gt_id: GT ID where this Engine lives */
+	__u16 gt_id;
 
 	/**
 	 * @near_mem_regions: Bit mask of instances from
@@ -1037,6 +1043,8 @@ struct drm_xe_exec_queue_create {
 	/**
 	 * @instances: user pointer to a 2-d array of struct
 	 * drm_xe_engine_class_instance
+	 *
+	 * Every engine in the array needs to have the same @sched_group_id
 	 *
 	 * length = num_bb_per_exec (i) * num_dispositions (j)
 	 * index = j + i * num_bb_per_exec

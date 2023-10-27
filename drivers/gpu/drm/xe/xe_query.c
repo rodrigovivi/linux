@@ -131,10 +131,10 @@ query_engine_cycles(struct xe_device *xe,
 		return -EINVAL;
 
 	eci = &resp.eci;
-	if (eci->gt_id > XE_MAX_GT_PER_TILE)
+	if (eci->sched_group_id > XE_MAX_GT_PER_TILE)
 		return -EINVAL;
 
-	gt = xe_device_get_gt(xe, eci->gt_id);
+	gt = xe_device_get_gt(xe, eci->sched_group_id);
 	if (!gt)
 		return -EINVAL;
 
@@ -215,8 +215,15 @@ static int query_engines(struct xe_device *xe,
 				xe_to_user_engine_class[hwe->class];
 			hw_engine_info[i].instance.engine_instance =
 				hwe->logical_instance;
-			hw_engine_info[i].instance.gt_id = gt->info.id;
+			/*
+			 * Scheduling Group ID is the global GT ID for the
+			 * current hardware, although the API is flexible
+			 */
+			hw_engine_info[i].instance.sched_group_id = gt->info.id;
 			hw_engine_info[i].instance.pad = 0;
+			hw_engine_info[i].tile_id = gt_to_tile(gt)->id;
+			hw_engine_info[i].gt_id = gt->info.id;
+
 			/*
 			 * The mem_regions indexes in the mask below need to
 			 * directly identify the struct

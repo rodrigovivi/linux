@@ -500,13 +500,13 @@ find_hw_engine(struct xe_device *xe,
 	if (eci.engine_class > ARRAY_SIZE(user_to_xe_engine_class))
 		return NULL;
 
-	if (eci.gt_id >= xe->info.gt_count)
+	if (eci.sched_group_id >= xe->info.gt_count)
 		return NULL;
 
 	idx = array_index_nospec(eci.engine_class,
 				 ARRAY_SIZE(user_to_xe_engine_class));
 
-	return xe_gt_hw_engine(xe_device_get_gt(xe, eci.gt_id),
+	return xe_gt_hw_engine(xe_device_get_gt(xe, eci.sched_group_id),
 			       user_to_xe_engine_class[idx],
 			       eci.engine_instance, true);
 }
@@ -547,7 +547,7 @@ static u32 calc_validate_logical_mask(struct xe_device *xe, struct xe_gt *gt,
 	int len = num_bb_per_exec * num_dispositions;
 	int i, j, n;
 	u16 class;
-	u16 gt_id;
+	u16 sched_group_id;
 	u32 return_mask = 0, prev_mask;
 
 	if (XE_IOCTL_DBG(xe, !xe_device_uc_enabled(xe) &&
@@ -569,12 +569,13 @@ static u32 calc_validate_logical_mask(struct xe_device *xe, struct xe_gt *gt,
 			if (XE_IOCTL_DBG(xe, xe_hw_engine_is_reserved(hwe)))
 				return 0;
 
-			if (XE_IOCTL_DBG(xe, n && eci[n].gt_id != gt_id) ||
+			if (XE_IOCTL_DBG(xe, n &&
+					 eci[n].sched_group_id != sched_group_id) ||
 			    XE_IOCTL_DBG(xe, n && eci[n].engine_class != class))
 				return 0;
 
 			class = eci[n].engine_class;
-			gt_id = eci[n].gt_id;
+			sched_group_id = eci[n].sched_group_id;
 
 			if (num_bb_per_exec == 1 || !i)
 				return_mask |= BIT(eci[n].engine_instance);
@@ -623,7 +624,7 @@ int xe_exec_queue_create_ioctl(struct drm_device *dev, void *data,
 	if (XE_IOCTL_DBG(xe, err))
 		return -EFAULT;
 
-	if (XE_IOCTL_DBG(xe, eci[0].gt_id >= xe->info.gt_count))
+	if (XE_IOCTL_DBG(xe, eci[0].sched_group_id >= xe->info.gt_count))
 		return -EINVAL;
 
 	if (eci[0].engine_class >= DRM_XE_ENGINE_CLASS_VM_BIND_ASYNC) {
@@ -636,7 +637,7 @@ int xe_exec_queue_create_ioctl(struct drm_device *dev, void *data,
 			if (xe_gt_is_media_type(gt))
 				continue;
 
-			eci[0].gt_id = gt->info.id;
+			eci[0].sched_group_id = gt->info.id;
 			logical_mask = bind_exec_queue_logical_mask(xe, gt, eci,
 								    args->num_bb_per_exec,
 								    args->num_dispositions);
@@ -677,7 +678,7 @@ int xe_exec_queue_create_ioctl(struct drm_device *dev, void *data,
 					      &q->multi_gt_link);
 		}
 	} else {
-		gt = xe_device_get_gt(xe, eci[0].gt_id);
+		gt = xe_device_get_gt(xe, eci[0].sched_group_id);
 		logical_mask = calc_validate_logical_mask(xe, gt, eci,
 							  args->num_bb_per_exec,
 							  args->num_dispositions);
