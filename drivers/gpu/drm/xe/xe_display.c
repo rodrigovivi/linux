@@ -276,6 +276,8 @@ void xe_display_driver_remove(struct xe_device *xe)
 		return;
 
 	intel_display_driver_remove(xe);
+
+	intel_display_device_remove(xe);
 }
 
 /* IRQ-related functions */
