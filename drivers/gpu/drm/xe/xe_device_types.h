@@ -405,6 +405,9 @@ struct xe_device {
 	/** @heci_gsc: graphics security controller */
 	struct xe_heci_gsc heci_gsc;
 
+	/** @needs_flr_on_fini: requests function-reset on fini */
+	bool needs_flr_on_fini;
+
 	/* private: */
 
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
