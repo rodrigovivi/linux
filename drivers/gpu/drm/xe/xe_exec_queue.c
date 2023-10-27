@@ -33,7 +33,8 @@ enum xe_exec_queue_sched_prop {
 static struct xe_exec_queue *__xe_exec_queue_create(struct xe_device *xe,
 						    struct xe_vm *vm,
 						    u32 logical_mask,
-						    u16 width, struct xe_hw_engine *hwe,
+						    u16 num_bb_per_exec,
+						    struct xe_hw_engine *hwe,
 						    u32 flags)
 {
 	struct xe_exec_queue *q;
@@ -44,7 +45,7 @@ static struct xe_exec_queue *__xe_exec_queue_create(struct xe_device *xe,
 	/* only kernel queues can be permanent */
 	XE_WARN_ON((flags & EXEC_QUEUE_FLAG_PERMANENT) && !(flags & EXEC_QUEUE_FLAG_KERNEL));
 
-	q = kzalloc(sizeof(*q) + sizeof(struct xe_lrc) * width, GFP_KERNEL);
+	q = kzalloc(sizeof(*q) + sizeof(struct xe_lrc) * num_bb_per_exec, GFP_KERNEL);
 	if (!q)
 		return ERR_PTR(-ENOMEM);
 
@@ -55,7 +56,7 @@ static struct xe_exec_queue *__xe_exec_queue_create(struct xe_device *xe,
 	if (vm)
 		q->vm = xe_vm_get(vm);
 	q->class = hwe->class;
-	q->width = width;
+	q->num_bb_per_exec = num_bb_per_exec;
 	q->logical_mask = logical_mask;
 	q->fence_irq = &gt->fence_irq[hwe->class];
 	q->ring_ops = gt->ring_ops[hwe->class];
@@ -77,7 +78,7 @@ static struct xe_exec_queue *__xe_exec_queue_create(struct xe_device *xe,
 		q->bind.fence_seqno = XE_FENCE_INITIAL_SEQNO;
 	}
 
-	for (i = 0; i < width; ++i) {
+	for (i = 0; i < num_bb_per_exec; ++i) {
 		err = xe_lrc_init(q->lrc + i, hwe, q, vm, SZ_16K);
 		if (err)
 			goto err_lrc;
@@ -108,7 +109,7 @@ err_lrc:
 }
 
 struct xe_exec_queue *xe_exec_queue_create(struct xe_device *xe, struct xe_vm *vm,
-					   u32 logical_mask, u16 width,
+					   u32 logical_mask, u16 num_bb_per_exec,
 					   struct xe_hw_engine *hwe, u32 flags)
 {
 	struct xe_exec_queue *q;
@@ -119,7 +120,7 @@ struct xe_exec_queue *xe_exec_queue_create(struct xe_device *xe, struct xe_vm *v
 		if (err)
 			return ERR_PTR(err);
 	}
-	q = __xe_exec_queue_create(xe, vm, logical_mask, width, hwe, flags);
+	q = __xe_exec_queue_create(xe, vm, logical_mask, num_bb_per_exec, hwe, flags);
 	if (vm)
 		xe_vm_unlock(vm);
 
@@ -170,7 +171,7 @@ void xe_exec_queue_fini(struct xe_exec_queue *q)
 {
 	int i;
 
-	for (i = 0; i < q->width; ++i)
+	for (i = 0; i < q->num_bb_per_exec; ++i)
 		xe_lrc_finish(q->lrc + i);
 	if (q->vm)
 		xe_vm_put(q->vm);
@@ -512,15 +513,15 @@ find_hw_engine(struct xe_device *xe,
 
 static u32 bind_exec_queue_logical_mask(struct xe_device *xe, struct xe_gt *gt,
 					struct drm_xe_engine_class_instance *eci,
-					u16 width, u16 num_placements)
+					u16 num_bb_per_exec, u16 num_dispositions)
 {
 	struct xe_hw_engine *hwe;
 	enum xe_hw_engine_id id;
 	u32 logical_mask = 0;
 
-	if (XE_IOCTL_DBG(xe, width != 1))
+	if (XE_IOCTL_DBG(xe, num_bb_per_exec != 1))
 		return 0;
-	if (XE_IOCTL_DBG(xe, num_placements != 1))
+	if (XE_IOCTL_DBG(xe, num_dispositions != 1))
 		return 0;
 	if (XE_IOCTL_DBG(xe, eci[0].engine_instance != 0))
 		return 0;
@@ -541,9 +542,9 @@ static u32 bind_exec_queue_logical_mask(struct xe_device *xe, struct xe_gt *gt,
 
 static u32 calc_validate_logical_mask(struct xe_device *xe, struct xe_gt *gt,
 				      struct drm_xe_engine_class_instance *eci,
-				      u16 width, u16 num_placements)
+				      u16 num_bb_per_exec, u16 num_dispositions)
 {
-	int len = width * num_placements;
+	int len = num_bb_per_exec * num_dispositions;
 	int i, j, n;
 	u16 class;
 	u16 gt_id;
@@ -553,13 +554,13 @@ static u32 calc_validate_logical_mask(struct xe_device *xe, struct xe_gt *gt,
 			 len > 1))
 		return 0;
 
-	for (i = 0; i < width; ++i) {
+	for (i = 0; i < num_bb_per_exec; ++i) {
 		u32 current_mask = 0;
 
-		for (j = 0; j < num_placements; ++j) {
+		for (j = 0; j < num_dispositions; ++j) {
 			struct xe_hw_engine *hwe;
 
-			n = j * width + i;
+			n = j * num_bb_per_exec + i;
 
 			hwe = find_hw_engine(xe, eci[n]);
 			if (XE_IOCTL_DBG(xe, !hwe))
@@ -575,7 +576,7 @@ static u32 calc_validate_logical_mask(struct xe_device *xe, struct xe_gt *gt,
 			class = eci[n].engine_class;
 			gt_id = eci[n].gt_id;
 
-			if (width == 1 || !i)
+			if (num_bb_per_exec == 1 || !i)
 				return_mask |= BIT(eci[n].engine_instance);
 			current_mask |= BIT(eci[n].engine_instance);
 		}
@@ -612,7 +613,7 @@ int xe_exec_queue_create_ioctl(struct drm_device *dev, void *data,
 	    XE_IOCTL_DBG(xe, args->reserved[0] || args->reserved[1]))
 		return -EINVAL;
 
-	len = args->width * args->num_placements;
+	len = args->num_bb_per_exec * args->num_dispositions;
 	if (XE_IOCTL_DBG(xe, !len || len > XE_HW_ENGINE_MAX_INSTANCE))
 		return -EINVAL;
 
@@ -637,8 +638,8 @@ int xe_exec_queue_create_ioctl(struct drm_device *dev, void *data,
 
 			eci[0].gt_id = gt->info.id;
 			logical_mask = bind_exec_queue_logical_mask(xe, gt, eci,
-								    args->width,
-								    args->num_placements);
+								    args->num_bb_per_exec,
+								    args->num_dispositions);
 			if (XE_IOCTL_DBG(xe, !logical_mask))
 				return -EINVAL;
 
@@ -651,7 +652,7 @@ int xe_exec_queue_create_ioctl(struct drm_device *dev, void *data,
 
 			migrate_vm = xe_migrate_get_vm(gt_to_tile(gt)->migrate);
 			new = xe_exec_queue_create(xe, migrate_vm, logical_mask,
-						   args->width, hwe,
+						   args->num_bb_per_exec, hwe,
 						   EXEC_QUEUE_FLAG_PERSISTENT |
 						   EXEC_QUEUE_FLAG_VM |
 						   (sync ? 0 :
@@ -678,8 +679,8 @@ int xe_exec_queue_create_ioctl(struct drm_device *dev, void *data,
 	} else {
 		gt = xe_device_get_gt(xe, eci[0].gt_id);
 		logical_mask = calc_validate_logical_mask(xe, gt, eci,
-							  args->width,
-							  args->num_placements);
+							  args->num_bb_per_exec,
+							  args->num_dispositions);
 		if (XE_IOCTL_DBG(xe, !logical_mask))
 			return -EINVAL;
 
@@ -704,7 +705,7 @@ int xe_exec_queue_create_ioctl(struct drm_device *dev, void *data,
 		}
 
 		q = xe_exec_queue_create(xe, vm, logical_mask,
-					 args->width, hwe,
+					 args->num_bb_per_exec, hwe,
 					 xe_vm_no_dma_fences(vm) ? 0 :
 					 EXEC_QUEUE_FLAG_PERSISTENT);
 		up_read(&vm->lock);
@@ -827,7 +828,7 @@ bool xe_exec_queue_is_idle(struct xe_exec_queue *q)
 	if (xe_exec_queue_is_parallel(q)) {
 		int i;
 
-		for (i = 0; i < q->width; ++i) {
+		for (i = 0; i < q->num_bb_per_exec; ++i) {
 			if (xe_lrc_seqno(&q->lrc[i]) !=
 			    q->lrc[i].fence_ctx.next_seqno - 1)
 				return false;

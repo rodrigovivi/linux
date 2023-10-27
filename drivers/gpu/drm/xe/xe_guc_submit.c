@@ -259,7 +259,7 @@ static void __release_guc_id(struct xe_guc *guc, struct xe_exec_queue *q, u32 xa
 	if (xe_exec_queue_is_parallel(q))
 		bitmap_release_region(guc->submission_state.guc_ids_bitmap,
 				      q->guc->id - GUC_ID_START_MLRC,
-				      order_base_2(q->width));
+				      order_base_2(q->num_bb_per_exec));
 	else
 		ida_simple_remove(&guc->submission_state.guc_ids, q->guc->id);
 }
@@ -283,7 +283,7 @@ static int alloc_guc_id(struct xe_guc *guc, struct xe_exec_queue *q)
 		void *bitmap = guc->submission_state.guc_ids_bitmap;
 
 		ret = bitmap_find_free_region(bitmap, GUC_ID_NUMBER_MLRC,
-					      order_base_2(q->width));
+					      order_base_2(q->num_bb_per_exec));
 	} else {
 		ret = ida_simple_get(&guc->submission_state.guc_ids, 0,
 				     GUC_ID_NUMBER_SLRC, GFP_NOWAIT);
@@ -295,7 +295,7 @@ static int alloc_guc_id(struct xe_guc *guc, struct xe_exec_queue *q)
 	if (xe_exec_queue_is_parallel(q))
 		q->guc->id += GUC_ID_START_MLRC;
 
-	for (i = 0; i < q->width; ++i) {
+	for (i = 0; i < q->num_bb_per_exec; ++i) {
 		ptr = xa_store(&guc->submission_state.exec_queue_lookup,
 			       q->guc->id + i, q, GFP_NOWAIT);
 		if (IS_ERR(ptr)) {
@@ -315,7 +315,7 @@ err_release:
 static void release_guc_id(struct xe_guc *guc, struct xe_exec_queue *q)
 {
 	mutex_lock(&guc->submission_state.lock);
-	__release_guc_id(guc, q, q->width);
+	__release_guc_id(guc, q, q->num_bb_per_exec);
 	mutex_unlock(&guc->submission_state.lock);
 }
 
@@ -426,11 +426,11 @@ static void __register_mlrc_engine(struct xe_guc *guc,
 	action[len++] = info->wq_base_lo;
 	action[len++] = info->wq_base_hi;
 	action[len++] = info->wq_size;
-	action[len++] = q->width;
+	action[len++] = q->num_bb_per_exec;
 	action[len++] = info->hwlrca_lo;
 	action[len++] = info->hwlrca_hi;
 
-	for (i = 1; i < q->width; ++i) {
+	for (i = 1; i < q->num_bb_per_exec; ++i) {
 		struct xe_lrc *lrc = q->lrc + i;
 
 		action[len++] = lower_32_bits(xe_lrc_descriptor(lrc));
@@ -578,7 +578,7 @@ static void wq_item_append(struct xe_exec_queue *q)
 	struct iosys_map map = xe_lrc_parallel_map(q->lrc);
 #define WQ_HEADER_SIZE	4	/* Includes 1 LRC address too */
 	u32 wqi[XE_HW_ENGINE_MAX_INSTANCE + (WQ_HEADER_SIZE - 1)];
-	u32 wqi_size = (q->width + (WQ_HEADER_SIZE - 1)) * sizeof(u32);
+	u32 wqi_size = (q->num_bb_per_exec + (WQ_HEADER_SIZE - 1)) * sizeof(u32);
 	u32 len_dw = (wqi_size / sizeof(u32)) - 1;
 	int i = 0, j;
 
@@ -595,7 +595,7 @@ static void wq_item_append(struct xe_exec_queue *q)
 	wqi[i++] = FIELD_PREP(WQ_GUC_ID_MASK, q->guc->id) |
 		FIELD_PREP(WQ_RING_TAIL_MASK, q->lrc->ring.tail / sizeof(u64));
 	wqi[i++] = 0;
-	for (j = 1; j < q->width; ++j) {
+	for (j = 1; j < q->num_bb_per_exec; ++j) {
 		struct xe_lrc *lrc = q->lrc + j;
 
 		wqi[i++] = lrc->ring.tail / sizeof(u64);
@@ -766,17 +766,17 @@ static void simple_error_capture(struct xe_exec_queue *q)
 	struct xe_hw_engine *hwe;
 	enum xe_hw_engine_id id;
 	u32 adj_logical_mask = q->logical_mask;
-	u32 width_mask = (0x1 << q->width) - 1;
+	u32 width_mask = (0x1 << q->num_bb_per_exec) - 1;
 	int i;
 	bool cookie;
 
 	if (q->vm && !q->vm->error_capture.capture_once) {
 		q->vm->error_capture.capture_once = true;
 		cookie = dma_fence_begin_signalling();
-		for (i = 0; q->width > 1 && i < XE_HW_ENGINE_MAX_INSTANCE;) {
+		for (i = 0; q->num_bb_per_exec > 1 && i < XE_HW_ENGINE_MAX_INSTANCE;) {
 			if (adj_logical_mask & BIT(i)) {
 				adj_logical_mask |= width_mask << i;
-				i += q->width;
+				i += q->num_bb_per_exec;
 			} else {
 				++i;
 			}
@@ -1462,7 +1462,7 @@ static void guc_exec_queue_start(struct xe_exec_queue *q)
 		int i;
 
 		trace_xe_exec_queue_resubmit(q);
-		for (i = 0; i < q->width; ++i)
+		for (i = 0; i < q->num_bb_per_exec; ++i)
 			xe_lrc_set_ring_head(q->lrc + i, q->lrc[i].ring.tail);
 		drm_sched_resubmit_jobs(sched);
 	}
@@ -1508,7 +1508,7 @@ g2h_exec_queue_lookup(struct xe_guc *guc, u32 guc_id)
 	}
 
 	xe_assert(xe, guc_id >= q->guc->id);
-	xe_assert(xe, guc_id < (q->guc->id + q->width));
+	xe_assert(xe, guc_id < (q->guc->id + q->num_bb_per_exec));
 
 	return q;
 }
@@ -1768,20 +1768,20 @@ xe_guc_exec_queue_snapshot_capture(struct xe_exec_queue *q)
 	memcpy(&snapshot->name, &q->name, sizeof(snapshot->name));
 	snapshot->class = q->class;
 	snapshot->logical_mask = q->logical_mask;
-	snapshot->width = q->width;
+	snapshot->width = q->num_bb_per_exec;
 	snapshot->refcount = kref_read(&q->refcount);
 	snapshot->sched_timeout = sched->timeout;
 	snapshot->sched_props.timeslice_us = q->sched_props.timeslice_us;
 	snapshot->sched_props.preempt_timeout_us =
 		q->sched_props.preempt_timeout_us;
 
-	snapshot->lrc = kmalloc_array(q->width, sizeof(struct lrc_snapshot),
+	snapshot->lrc = kmalloc_array(q->num_bb_per_exec, sizeof(struct lrc_snapshot),
 				      GFP_ATOMIC);
 
 	if (!snapshot->lrc) {
 		drm_err(&xe->drm, "Skipping GuC Engine LRC snapshot.\n");
 	} else {
-		for (i = 0; i < q->width; ++i) {
+		for (i = 0; i < q->num_bb_per_exec; ++i) {
 			struct xe_lrc *lrc = q->lrc + i;
 
 			snapshot->lrc[i].context_desc =

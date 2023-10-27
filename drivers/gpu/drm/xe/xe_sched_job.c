@@ -117,13 +117,13 @@ struct xe_sched_job *xe_sched_job_create(struct xe_exec_queue *q,
 	} else {
 		struct dma_fence_array *cf;
 
-		fences = kmalloc_array(q->width, sizeof(*fences), GFP_KERNEL);
+		fences = kmalloc_array(q->num_bb_per_exec, sizeof(*fences), GFP_KERNEL);
 		if (!fences) {
 			err = -ENOMEM;
 			goto err_sched_job;
 		}
 
-		for (j = 0; j < q->width; ++j) {
+		for (j = 0; j < q->num_bb_per_exec; ++j) {
 			fences[j] = xe_lrc_create_seqno_fence(q->lrc + j);
 			if (IS_ERR(fences[j])) {
 				err = PTR_ERR(fences[j]);
@@ -131,7 +131,7 @@ struct xe_sched_job *xe_sched_job_create(struct xe_exec_queue *q,
 			}
 		}
 
-		cf = dma_fence_array_create(q->width, fences,
+		cf = dma_fence_array_create(q->num_bb_per_exec, fences,
 					    q->parallel.composite_fence_ctx,
 					    q->parallel.composite_fence_seqno++,
 					    false);
@@ -142,13 +142,13 @@ struct xe_sched_job *xe_sched_job_create(struct xe_exec_queue *q,
 		}
 
 		/* Sanity check */
-		for (j = 0; j < q->width; ++j)
+		for (j = 0; j < q->num_bb_per_exec; ++j)
 			xe_assert(job_to_xe(job), cf->base.seqno == fences[j]->seqno);
 
 		job->fence = &cf->base;
 	}
 
-	width = q->width;
+	width = q->num_bb_per_exec;
 	if (is_migration)
 		width = 2;
 

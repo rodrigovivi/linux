@@ -383,7 +383,7 @@ static void emit_job_gen12_gsc(struct xe_sched_job *job)
 {
 	struct xe_gt *gt = job->q->gt;
 
-	xe_gt_assert(gt, job->q->width <= 1); /* no parallel submission for GSCCS */
+	xe_gt_assert(gt, job->q->num_bb_per_exec <= 1); /* no parallel submission for GSCCS */
 
 	__emit_job_gen12_simple(job, job->q->lrc,
 				job->batch_addr[0],
@@ -400,7 +400,7 @@ static void emit_job_gen12_copy(struct xe_sched_job *job)
 		return;
 	}
 
-	for (i = 0; i < job->q->width; ++i)
+	for (i = 0; i < job->q->num_bb_per_exec; ++i)
 		__emit_job_gen12_simple(job, job->q->lrc + i,
 				        job->batch_addr[i],
 				        xe_sched_job_seqno(job));
@@ -411,7 +411,7 @@ static void emit_job_gen12_video(struct xe_sched_job *job)
 	int i;
 
 	/* FIXME: Not doing parallel handshake for now */
-	for (i = 0; i < job->q->width; ++i)
+	for (i = 0; i < job->q->num_bb_per_exec; ++i)
 		__emit_job_gen12_video(job, job->q->lrc + i,
 				       job->batch_addr[i],
 				       xe_sched_job_seqno(job));
@@ -421,7 +421,7 @@ static void emit_job_gen12_render_compute(struct xe_sched_job *job)
 {
 	int i;
 
-	for (i = 0; i < job->q->width; ++i)
+	for (i = 0; i < job->q->num_bb_per_exec; ++i)
 		__emit_job_gen12_render_compute(job, job->q->lrc + i,
 						job->batch_addr[i],
 						xe_sched_job_seqno(job));

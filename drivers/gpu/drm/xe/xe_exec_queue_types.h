@@ -47,8 +47,8 @@ struct xe_exec_queue {
 	u32 logical_mask;
 	/** @name: name of this exec queue */
 	char name[MAX_FENCE_NAME_LEN];
-	/** @width: width (number BB submitted per exec) of this exec queue */
-	u16 width;
+	/** @num_bb_per_exec: the width of this exec queue */
+	u16 num_bb_per_exec;
 	/** @fence_irq: fence IRQ used to signal job completion */
 	struct xe_hw_fence_irq *fence_irq;
 

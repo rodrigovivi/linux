@@ -112,7 +112,7 @@ DECLARE_EVENT_CLASS(xe_exec_queue,
 			     __field(enum xe_engine_class, class)
 			     __field(u32, logical_mask)
 			     __field(u8, gt_id)
-			     __field(u16, width)
+			     __field(u16, num_bb_per_exec)
 			     __field(u16, guc_id)
 			     __field(u32, guc_state)
 			     __field(u32, flags)
@@ -122,15 +122,15 @@ DECLARE_EVENT_CLASS(xe_exec_queue,
 			   __entry->class = q->class;
 			   __entry->logical_mask = q->logical_mask;
 			   __entry->gt_id = q->gt->info.id;
-			   __entry->width = q->width;
+			   __entry->num_bb_per_exec = q->num_bb_per_exec;
 			   __entry->guc_id = q->guc->id;
 			   __entry->guc_state = atomic_read(&q->guc->state);
 			   __entry->flags = q->flags;
 			   ),
 
-		    TP_printk("%d:0x%x, gt=%d, width=%d, guc_id=%d, guc_state=0x%x, flags=0x%x",
+		    TP_printk("%d:0x%x, gt=%d, num_bb_per_exec=%d, guc_id=%d, guc_state=0x%x, flags=0x%x",
 			      __entry->class, __entry->logical_mask,
-			      __entry->gt_id, __entry->width, __entry->guc_id,
+			      __entry->gt_id, __entry->num_bb_per_exec, __entry->guc_id,
 			      __entry->guc_state, __entry->flags)
 );
 

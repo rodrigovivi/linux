@@ -15,7 +15,7 @@ struct xe_device;
 struct xe_file;
 
 struct xe_exec_queue *xe_exec_queue_create(struct xe_device *xe, struct xe_vm *vm,
-					   u32 logical_mask, u16 width,
+					   u32 logical_mask, u16 num_bb_per_exec,
 					   struct xe_hw_engine *hw_engine, u32 flags);
 struct xe_exec_queue *xe_exec_queue_create_class(struct xe_device *xe, struct xe_gt *gt,
 						 struct xe_vm *vm,
@@ -40,7 +40,7 @@ static inline void xe_exec_queue_put(struct xe_exec_queue *q)
 
 static inline bool xe_exec_queue_is_parallel(struct xe_exec_queue *q)
 {
-	return q->width > 1;
+	return q->num_bb_per_exec > 1;
 }
 
 bool xe_exec_queue_is_lr(struct xe_exec_queue *q);

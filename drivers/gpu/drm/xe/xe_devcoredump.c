@@ -130,7 +130,7 @@ static void devcoredump_snapshot(struct xe_devcoredump *coredump,
 	struct xe_hw_engine *hwe;
 	enum xe_hw_engine_id id;
 	u32 adj_logical_mask = q->logical_mask;
-	u32 width_mask = (0x1 << q->width) - 1;
+	u32 num_bb_per_exec_mask = (0x1 << q->num_bb_per_exec) - 1;
 	int i;
 	bool cookie;
 
@@ -138,10 +138,10 @@ static void devcoredump_snapshot(struct xe_devcoredump *coredump,
 	ss->boot_time = ktime_get_boottime();
 
 	cookie = dma_fence_begin_signalling();
-	for (i = 0; q->width > 1 && i < XE_HW_ENGINE_MAX_INSTANCE;) {
+	for (i = 0; q->num_bb_per_exec > 1 && i < XE_HW_ENGINE_MAX_INSTANCE;) {
 		if (adj_logical_mask & BIT(i)) {
-			adj_logical_mask |= width_mask << i;
-			i += q->width;
+			adj_logical_mask |= num_bb_per_exec_mask << i;
+			i += q->num_bb_per_exec;
 		} else {
 			++i;
 		}

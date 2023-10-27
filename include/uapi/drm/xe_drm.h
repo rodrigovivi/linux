@@ -1013,11 +1013,17 @@ struct drm_xe_exec_queue_create {
 	/** @extensions: Pointer to the first extension struct, if any */
 	__u64 extensions;
 
-	/** @width: submission width (number BB per exec) for this exec queue */
-	__u16 width;
+	/**
+	 * @num_bb_per_exec: Indicates a submission width for this exec queue,
+	 * for how many batch buffers can be submitted in parallel.
+	 */
+	__u16 num_bb_per_exec;
 
-	/** @num_placements: number of valid placements for this exec queue */
-	__u16 num_placements;
+	/**
+	 * @num_dispositions: Indicates how the batch buffers will be
+	 * distributed to the hardware engines listed on @instance.
+	 */
+	__u16 num_dispositions;
 
 	/** @vm_id: VM to use for this exec queue */
 	__u32 vm_id;
@@ -1032,8 +1038,8 @@ struct drm_xe_exec_queue_create {
 	 * @instances: user pointer to a 2-d array of struct
 	 * drm_xe_engine_class_instance
 	 *
-	 * length = width (i) * num_placements (j)
-	 * index = j + i * width
+	 * length = num_bb_per_exec (i) * num_dispositions (j)
+	 * index = j + i * num_bb_per_exec
 	 */
 	__u64 instances;
 
@@ -1143,7 +1149,7 @@ struct drm_xe_exec {
 
 	/**
 	 * @num_batch_buffer: number of batch buffer in this exec, must match
-	 * the width of the engine
+	 * the @num_bb_per_exec of the struct drm_xe_exec_queue_create
 	 */
 	__u16 num_batch_buffer;
 
