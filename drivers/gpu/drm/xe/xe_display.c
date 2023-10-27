@@ -115,19 +115,6 @@ int xe_display_create(struct xe_device *xe)
 	drmm_mutex_init(&xe->drm, &xe->display.hdcp.hdcp_mutex);
 	xe->enabled_irq_mask = ~0;
 
-	xe->params.invert_brightness = -1;
-	xe->params.vbt_sdvo_panel_type = -1;
-	xe->params.disable_power_well = -1;
-	xe->params.enable_dc = -1;
-	xe->params.enable_dpcd_backlight = -1;
-	xe->params.enable_dp_mst = -1;
-	xe->params.enable_dpt = true;
-	xe->params.enable_fbc = -1;
-	xe->params.enable_psr = -1;
-	xe->params.enable_psr2_sel_fetch = -1;
-	xe->params.enable_sagv = true;
-	xe->params.panel_use_ssc = -1;
-
 	err = drmm_add_action_or_reset(&xe->drm, display_destroy, NULL);
 	if (err)
 		return err;
