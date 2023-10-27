@@ -3007,11 +3007,16 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 			goto release_vm_lock;
 		}
 
-		if (bind_ops[i].tile_mask) {
+		if (bind_ops[i].pt_placement_hint) {
 			u64 valid_tiles = BIT(xe->info.tile_count) - 1;
+			/*
+			 * System memory is currently ignored from this hint,
+			 * which gets entirely converted to a tile_mask
+			 */
+			u8 system_memory = 0x1;
 
-			if (XE_IOCTL_DBG(xe, bind_ops[i].tile_mask &
-					 ~valid_tiles)) {
+			if (XE_IOCTL_DBG(xe, bind_ops[i].pt_placement_hint &
+					 ~valid_tiles & ~system_memory)) {
 				err = -EINVAL;
 				goto release_vm_lock;
 			}
@@ -3088,7 +3093,8 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		u32 op = bind_ops[i].op;
 		u32 flags = bind_ops[i].flags;
 		u64 obj_offset = bind_ops[i].obj_offset;
-		u8 tile_mask = bind_ops[i].tile_mask;
+		/* Remove the system memory bit when converting to tiles */
+		u8 tile_mask = bind_ops[i].pt_placement_hint & ~0x1;
 		u32 prefetch_region = bind_ops[i].prefetch_mem_region_instance;
 
 		ops[i] = vm_bind_ioctl_ops_create(vm, bos[i], obj_offset,

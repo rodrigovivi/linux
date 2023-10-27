@@ -850,10 +850,20 @@ struct drm_xe_vm_bind_op {
 	__u64 addr;
 
 	/**
-	 * @tile_mask: Mask for which tiles to create binds for, 0 == All tiles,
-	 * only applies to creating new VMAs
+	 * @pt_placement_hint: An optional memory_region bit-mask hint, which
+	 * only applies when creating new VMAs. Default value '0' is the
+	 * recommended value.
+	 *
+	 * It hints the optimal placement for the page-table tree for this VMA.
+	 * For instance, when userspace is using engines living in a secondary
+	 * tile with allocated BOs near those engines, that same
+	 * @near_mem_region could be used in this hint field.
+	 *
+	 * Since it is a hint, the Xe kernel driver is free to ignore this mask
+	 * and choose the best location for the page-table, taking into
+	 * consideration the running hardware and runtime constrains.
 	 */
-	__u64 tile_mask;
+	__u64 pt_placement_hint;
 
 #define DRM_XE_VM_BIND_OP_MAP		0x0
 #define DRM_XE_VM_BIND_OP_UNMAP		0x1
