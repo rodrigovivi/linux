@@ -10,6 +10,8 @@
  * TODO: refactor i915 and xe so this can cease to exist
  */
 
+#include <drm/drm_drv.h>
+
 #include "soc/intel_pch.h"
 #include "xe_device.h"
 #include "xe_bo.h"
