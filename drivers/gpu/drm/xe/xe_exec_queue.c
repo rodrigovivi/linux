@@ -513,7 +513,7 @@ find_hw_engine(struct xe_device *xe,
 
 static u32 bind_exec_queue_logical_mask(struct xe_device *xe, struct xe_gt *gt,
 					struct drm_xe_engine_class_instance *eci,
-					u16 num_bb_per_exec, u16 num_dispositions)
+					u16 num_bb_per_exec, u16 num_eng_per_bb)
 {
 	struct xe_hw_engine *hwe;
 	enum xe_hw_engine_id id;
@@ -521,7 +521,7 @@ static u32 bind_exec_queue_logical_mask(struct xe_device *xe, struct xe_gt *gt,
 
 	if (XE_IOCTL_DBG(xe, num_bb_per_exec != 1))
 		return 0;
-	if (XE_IOCTL_DBG(xe, num_dispositions != 1))
+	if (XE_IOCTL_DBG(xe, num_eng_per_bb != 1))
 		return 0;
 	if (XE_IOCTL_DBG(xe, eci[0].engine_instance != 0))
 		return 0;
@@ -542,9 +542,9 @@ static u32 bind_exec_queue_logical_mask(struct xe_device *xe, struct xe_gt *gt,
 
 static u32 calc_validate_logical_mask(struct xe_device *xe, struct xe_gt *gt,
 				      struct drm_xe_engine_class_instance *eci,
-				      u16 num_bb_per_exec, u16 num_dispositions)
+				      u16 num_bb_per_exec, u16 num_eng_per_bb)
 {
-	int len = num_bb_per_exec * num_dispositions;
+	int len = num_bb_per_exec * num_eng_per_bb;
 	int i, j, n;
 	u16 class;
 	u16 sched_group_id;
@@ -557,7 +557,7 @@ static u32 calc_validate_logical_mask(struct xe_device *xe, struct xe_gt *gt,
 	for (i = 0; i < num_bb_per_exec; ++i) {
 		u32 current_mask = 0;
 
-		for (j = 0; j < num_dispositions; ++j) {
+		for (j = 0; j < num_eng_per_bb; ++j) {
 			struct xe_hw_engine *hwe;
 
 			n = j * num_bb_per_exec + i;
@@ -614,7 +614,7 @@ int xe_exec_queue_create_ioctl(struct drm_device *dev, void *data,
 	    XE_IOCTL_DBG(xe, args->reserved[0] || args->reserved[1]))
 		return -EINVAL;
 
-	len = args->num_bb_per_exec * args->num_dispositions;
+	len = args->num_bb_per_exec * args->num_eng_per_bb;
 	if (XE_IOCTL_DBG(xe, !len || len > XE_HW_ENGINE_MAX_INSTANCE))
 		return -EINVAL;
 
@@ -640,7 +640,7 @@ int xe_exec_queue_create_ioctl(struct drm_device *dev, void *data,
 			eci[0].sched_group_id = gt->info.id;
 			logical_mask = bind_exec_queue_logical_mask(xe, gt, eci,
 								    args->num_bb_per_exec,
-								    args->num_dispositions);
+								    args->num_eng_per_bb);
 			if (XE_IOCTL_DBG(xe, !logical_mask))
 				return -EINVAL;
 
@@ -681,7 +681,7 @@ int xe_exec_queue_create_ioctl(struct drm_device *dev, void *data,
 		gt = xe_device_get_gt(xe, eci[0].sched_group_id);
 		logical_mask = calc_validate_logical_mask(xe, gt, eci,
 							  args->num_bb_per_exec,
-							  args->num_dispositions);
+							  args->num_eng_per_bb);
 		if (XE_IOCTL_DBG(xe, !logical_mask))
 			return -EINVAL;
 

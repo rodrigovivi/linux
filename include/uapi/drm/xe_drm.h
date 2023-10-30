@@ -1013,6 +1013,68 @@ struct drm_xe_sync {
 };
 
 /**
+ * DOC: Execution Queue
+ *
+ * The Execution Queue abstracts the Hardware Engine that is going to be used
+ * with the execution of the Batch Buffers in &DRM_IOCTL_XE_EXEC
+ *
+ * In a regular usage of this execution queue, only one hardware engine pointer
+ * would be given as input of the @instances below and both @num_bb_per_exec and
+ * @num_eng_per_bb would be set to '1'.
+ *
+ * Regular execution example::
+ *
+ *                    ┌─────┐
+ *                    │ BB0 │
+ *                    └──┬──┘
+ *                       │     @num_bb_per_exec = 1
+ *                       │     @num_eng_per_bb = 1
+ *                       │     @instances = {Engine0}
+ *                       ▼
+ *                   ┌───────┐
+ *                   │Engine0│
+ *                   └───────┘
+ *
+ * However this execution queue is flexible to be used for parallel submission or
+ * for load balancing submission (a.k.a virtual load balancing).
+ *
+ * In a parallel submission, different batch buffers will be simultaneously
+ * dispatched to different engines listed in @instances, in a 1-1 relationship.
+ *
+ * Parallel execution example::
+ *
+ *               ┌─────┐   ┌─────┐
+ *               │ BB0 │   │ BB1 │
+ *               └──┬──┘   └──┬──┘
+ *                  │         │     @num_bb_per_exec = 2
+ *                  │         │     @num_eng_per_bb = 1
+ *                  │         │     @instances = {Engine0, Engine1}
+ *                  ▼         ▼
+ *              ┌───────┐ ┌───────┐
+ *              │Engine0│ │Engine1│
+ *              └───────┘ └───────┘
+ *
+ * On a load balancing submission, each batch buffer is virtually dispatched
+ * to all of the listed engine @instances. Then, underneath driver, firmware, or
+ * hardware can select the best available engine to actually run the job.
+ *
+ * Virtual Load Balancing example::
+ *
+ *                    ┌─────┐
+ *                    │ BB0 │
+ *                    └──┬──┘
+ *                       │      @num_bb_per_exec = 1
+ *                       │      @num_eng_per_bb = 2
+ *                       │      @instances = {Engine0, Engine1}
+ *                  ┌────┴────┐
+ *                  │         │
+ *                  ▼         ▼
+ *              ┌───────┐ ┌───────┐
+ *              │Engine0│ │Engine1│
+ *              └───────┘ └───────┘
+ */
+
+/**
  * struct drm_xe_exec_queue_create - Input of &DRM_IOCTL_XE_EXEC_QUEUE_CREATE
  */
 struct drm_xe_exec_queue_create {
@@ -1027,10 +1089,10 @@ struct drm_xe_exec_queue_create {
 	__u16 num_bb_per_exec;
 
 	/**
-	 * @num_dispositions: Indicates how the batch buffers will be
-	 * distributed to the hardware engines listed on @instance.
+	 * @num_eng_per_bb: Indicates how many possible engines are available
+	 * at @instances for the Xe to distribute the load.
 	 */
-	__u16 num_dispositions;
+	__u16 num_eng_per_bb;
 
 	/** @vm_id: VM to use for this exec queue */
 	__u32 vm_id;
@@ -1047,7 +1109,7 @@ struct drm_xe_exec_queue_create {
 	 *
 	 * Every engine in the array needs to have the same @sched_group_id
 	 *
-	 * length = num_bb_per_exec (i) * num_dispositions (j)
+	 * length = num_bb_per_exec (i) * num_eng_per_bb (j)
 	 * index = j + i * num_bb_per_exec
 	 */
 	__u64 instances;
