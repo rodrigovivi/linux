@@ -24,6 +24,8 @@ extern "C" {
  *   5. uEvents
  *   6. PMU
  *
+ * Some concepts used here are explained in Documentation/gpu/rfc/xe.rst.
+ *
  */
 
 /**
