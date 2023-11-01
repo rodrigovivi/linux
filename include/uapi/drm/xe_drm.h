@@ -259,7 +259,7 @@ struct drm_xe_query_engine_info {
 	__u64 far_mem_regions;
 
 	/** @reserved: Reserved */
-	__u64 reserved[3];
+	__u64 reserved[5];
 };
 
 /**
