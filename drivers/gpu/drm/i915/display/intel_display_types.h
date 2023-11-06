@@ -672,9 +672,7 @@ struct intel_atomic_state {
 
 	bool rps_interactive;
 
-#ifdef I915
 	struct i915_sw_fence commit_ready;
-#endif
 
 	struct llist_node freed;
 };
