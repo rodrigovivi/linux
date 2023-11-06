@@ -1661,7 +1661,7 @@ static int amdgpu_debugfs_test_ib_show(struct seq_file *m, void *unused)
 
 		if (!ring || !ring->sched.ready)
 			continue;
-		drm_sched_run_wq_stop(&ring->sched);
+		drm_sched_wqueue_stop(&ring->sched);
 	}
 
 	seq_puts(m, "run ib test:\n");
@@ -1677,7 +1677,7 @@ static int amdgpu_debugfs_test_ib_show(struct seq_file *m, void *unused)
 
 		if (!ring || !ring->sched.ready)
 			continue;
-		drm_sched_run_wq_start(&ring->sched);
+		drm_sched_wqueue_start(&ring->sched);
 	}
 
 	up_write(&adev->reset_domain->sem);
@@ -1915,7 +1915,7 @@ static int amdgpu_debugfs_ib_preempt(void *data, u64 val)
 		goto pro_end;
 
 	/* stop the scheduler */
-	drm_sched_run_wq_stop(&ring->sched);
+	drm_sched_wqueue_stop(&ring->sched);
 
 	/* preempt the IB */
 	r = amdgpu_ring_preempt_ib(ring);
@@ -1949,7 +1949,7 @@ static int amdgpu_debugfs_ib_preempt(void *data, u64 val)
 
 failure:
 	/* restart the scheduler */
-	drm_sched_run_wq_start(&ring->sched);
+	drm_sched_wqueue_start(&ring->sched);
 
 	up_read(&adev->reset_domain->sem);
 

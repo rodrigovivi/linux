@@ -395,7 +395,7 @@ struct xe_migrate *xe_migrate_init(struct xe_tile *tile)
 		return ERR_CAST(m->q);
 	}
 	if (xe->info.supports_usm)
-		m->q->entity->priority = DRM_SCHED_PRIORITY_KERNEL;
+		m->q->priority = DRM_SCHED_PRIORITY_KERNEL;
 
 	mutex_init(&m->job_mutex);
 
