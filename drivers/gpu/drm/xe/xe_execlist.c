@@ -33,6 +33,8 @@
 #define XEHP_SW_CTX_ID_SHIFT  39
 #define XEHP_SW_CTX_ID_WIDTH  16
 
+#define XE_SCHED_PRIORITY_UNSET -2
+
 #define GEN11_SW_CTX_ID \
 	GENMASK_ULL(GEN11_SW_CTX_ID_WIDTH + GEN11_SW_CTX_ID_SHIFT - 1, \
 		    GEN11_SW_CTX_ID_SHIFT)
@@ -152,7 +154,7 @@ static void __xe_execlist_port_start_next_active(struct xe_execlist_port *port)
 			list_del(&exl->active_link);
 
 			if (xe_execlist_is_idle(exl)) {
-				exl->active_priority = DRM_SCHED_PRIORITY_UNSET;
+				exl->active_priority = XE_SCHED_PRIORITY_UNSET;
 				continue;
 			}
 
@@ -215,20 +217,20 @@ static void xe_execlist_make_active(struct xe_execlist_exec_queue *exl)
 	struct xe_execlist_port *port = exl->port;
 	enum drm_sched_priority priority = exl->entity.priority;
 
-	XE_WARN_ON(priority == DRM_SCHED_PRIORITY_UNSET);
+	XE_WARN_ON(priority == XE_SCHED_PRIORITY_UNSET);
 	XE_WARN_ON(priority < 0);
 	XE_WARN_ON(priority >= ARRAY_SIZE(exl->port->active));
 
 	spin_lock_irq(&port->lock);
 
 	if (exl->active_priority != priority &&
-	    exl->active_priority != DRM_SCHED_PRIORITY_UNSET) {
+	    exl->active_priority != XE_SCHED_PRIORITY_UNSET) {
 		/* Priority changed, move it to the right list */
 		list_del(&exl->active_link);
-		exl->active_priority = DRM_SCHED_PRIORITY_UNSET;
+		exl->active_priority = XE_SCHED_PRIORITY_UNSET;
 	}
 
-	if (exl->active_priority == DRM_SCHED_PRIORITY_UNSET) {
+	if (exl->active_priority == XE_SCHED_PRIORITY_UNSET) {
 		exl->active_priority = priority;
 		list_add_tail(&exl->active_link, &port->active[priority]);
 	}
@@ -333,7 +335,7 @@ static int execlist_exec_queue_init(struct xe_exec_queue *q)
 
 	exl->q = q;
 
-	err = drm_sched_init(&exl->sched, &drm_sched_ops, NULL,
+	err = drm_sched_init(&exl->sched, &drm_sched_ops, NULL, 1,
 			     q->lrc[0].ring.size / MAX_JOB_SIZE_BYTES,
 			     XE_SCHED_HANG_LIMIT, XE_SCHED_JOB_TIMEOUT,
 			     NULL, NULL, q->hwe->name,
@@ -342,14 +344,14 @@ static int execlist_exec_queue_init(struct xe_exec_queue *q)
 		goto err_free;
 
 	sched = &exl->sched;
-	err = drm_sched_entity_init(&exl->entity, DRM_SCHED_PRIORITY_NORMAL,
+	err = drm_sched_entity_init(&exl->entity, DRM_SCHED_PRIORITY_MIN,
 				    &sched, 1, NULL);
 	if (err)
 		goto err_sched;
 
 	exl->port = q->hwe->exl_port;
 	exl->has_run = false;
-	exl->active_priority = DRM_SCHED_PRIORITY_UNSET;
+	exl->active_priority = XE_SCHED_PRIORITY_UNSET;
 	q->execlist = exl;
 	q->entity = &exl->entity;
 
@@ -376,7 +378,7 @@ static void execlist_exec_queue_fini_async(struct work_struct *w)
 	xe_assert(xe, !xe_device_uc_enabled(xe));
 
 	spin_lock_irqsave(&exl->port->lock, flags);
-	if (WARN_ON(exl->active_priority != DRM_SCHED_PRIORITY_UNSET))
+	if (WARN_ON(exl->active_priority != XE_SCHED_PRIORITY_UNSET))
 		list_del(&exl->active_link);
 	spin_unlock_irqrestore(&exl->port->lock, flags);
 
