@@ -34,7 +34,6 @@
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_blend.h>
 #include <drm/drm_fourcc.h>
-#include <drm/drm_gem_atomic_helper.h>
 
 #include "i915_config.h"
 #include "i915_reg.h"
@@ -1134,20 +1133,10 @@ unpin_fb:
 
 	return ret;
 #else
-	int ret;
-
 	if (!intel_fb_obj(new_plane_state->hw.fb))
 		return 0;
 
-	ret = intel_plane_pin_fb(new_plane_state);
-	if (ret)
-		return ret;
-
-	ret = drm_gem_plane_helper_prepare_fb(_plane, _new_plane_state);
-	if (ret)
-		intel_plane_unpin_fb(new_plane_state);
-
-	return ret;
+	return intel_plane_pin_fb(new_plane_state);
 #endif
 }
 
