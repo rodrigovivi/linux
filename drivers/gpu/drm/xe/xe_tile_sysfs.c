@@ -9,6 +9,7 @@
 
 #include "xe_tile.h"
 #include "xe_tile_sysfs.h"
+#include "xe_pm.h"
 
 static void xe_tile_sysfs_kobj_release(struct kobject *kobj)
 {
@@ -25,8 +26,14 @@ physical_vram_size_bytes_show(struct device *kdev, struct device_attribute *attr
 			      char *buf)
 {
 	struct xe_tile *tile = kobj_to_tile(&kdev->kobj);
+	ssize_t ret;
 
-	return sysfs_emit(buf, "%llu\n", tile->mem.vram.actual_physical_size);
+		xe_pm_runtime_get(tile->xe);
+		ret = sysfs_emit(buf, "%llu\n",
+				 tile->mem.vram.actual_physical_size);
+		xe_pm_runtime_put(tile->xe);
+
+		return ret;
 }
 
 static DEVICE_ATTR_RO(physical_vram_size_bytes);

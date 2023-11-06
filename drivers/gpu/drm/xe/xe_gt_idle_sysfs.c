@@ -10,6 +10,7 @@
 #include "xe_gt_idle_sysfs.h"
 #include "xe_gt_sysfs.h"
 #include "xe_guc_pc.h"
+#include "xe_pm.h"
 
 /**
  * DOC: Xe GT Idle
@@ -36,6 +37,15 @@ static struct xe_gt *gtidle_to_gt(struct xe_gt_idle *gtidle)
 static struct xe_guc_pc *gtidle_to_pc(struct xe_gt_idle *gtidle)
 {
 	return &gtidle_to_gt(gtidle)->uc.guc.pc;
+}
+
+static struct xe_device *
+pc_to_xe(struct xe_guc_pc *pc)
+{
+	struct xe_guc *guc = container_of(pc, struct xe_guc, pc);
+	struct xe_gt *gt = container_of(guc, struct xe_gt, uc.guc);
+
+	return gt_to_xe(gt);
 }
 
 static const char *gt_idle_state_to_string(enum xe_gt_idle_state state)
@@ -84,8 +94,14 @@ static ssize_t name_show(struct device *dev,
 			 struct device_attribute *attr, char *buff)
 {
 	struct xe_gt_idle *gtidle = dev_to_gtidle(dev);
+	struct xe_guc_pc *pc = gtidle_to_pc(gtidle);
+	ssize_t ret;
 
+	xe_pm_runtime_get(pc_to_xe(pc));
 	return sysfs_emit(buff, gtidle->name);
+	xe_pm_runtime_put(pc_to_xe(pc));
+
+	return ret;
 }
 static DEVICE_ATTR_RO(name);
 
@@ -96,7 +112,9 @@ static ssize_t idle_status_show(struct device *dev,
 	struct xe_guc_pc *pc = gtidle_to_pc(gtidle);
 	enum xe_gt_idle_state state;
 
+	xe_pm_runtime_get(pc_to_xe(pc));
 	state = gtidle->idle_status(pc);
+	xe_pm_runtime_put(pc_to_xe(pc));
 
 	return sysfs_emit(buff, "%s\n", gt_idle_state_to_string(state));
 }
@@ -109,7 +127,10 @@ static ssize_t idle_residency_ms_show(struct device *dev,
 	struct xe_guc_pc *pc = gtidle_to_pc(gtidle);
 	u64 residency;
 
+	xe_pm_runtime_get(pc_to_xe(pc));
 	residency = gtidle->idle_residency(pc);
+	xe_pm_runtime_put(pc_to_xe(pc));
+
 	return sysfs_emit(buff, "%llu\n", get_residency_ms(gtidle, residency));
 }
 static DEVICE_ATTR_RO(idle_residency_ms);
