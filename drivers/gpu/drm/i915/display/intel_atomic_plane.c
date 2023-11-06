@@ -1072,7 +1072,6 @@ intel_prepare_plane_fb(struct drm_plane *_plane,
 {
 	struct intel_plane_state *new_plane_state =
 		to_intel_plane_state(_new_plane_state);
-#ifdef I915
 	struct i915_sched_attr attr = { .priority = I915_PRIORITY_DISPLAY };
 	struct intel_plane *plane = to_intel_plane(_plane);
 	struct intel_atomic_state *state =
@@ -1143,12 +1142,6 @@ unpin_fb:
 	intel_plane_unpin_fb(new_plane_state);
 
 	return ret;
-#else
-	if (!intel_fb_obj(new_plane_state->hw.fb))
-		return 0;
-
-	return intel_plane_pin_fb(new_plane_state);
-#endif
 }
 
 /**
