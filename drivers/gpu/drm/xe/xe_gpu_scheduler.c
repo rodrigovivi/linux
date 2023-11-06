@@ -4,6 +4,7 @@
  */
 
 #include "xe_gpu_scheduler.h"
+#include "xe_pm.h"
 
 static void xe_sched_process_msg_queue(struct xe_gpu_scheduler *sched)
 {
@@ -48,13 +49,15 @@ static void xe_sched_process_msg_work(struct work_struct *w)
 
 	msg = xe_sched_get_msg(sched);
 	if (msg) {
+		xe_pm_runtime_get(sched->xe);
 		sched->ops->process_msg(msg);
-
 		xe_sched_process_msg_queue_if_ready(sched);
+		xe_pm_runtime_put(sched->xe);
 	}
 }
 
-int xe_sched_init(struct xe_gpu_scheduler *sched,
+int xe_sched_init(struct xe_device *xe,
+		  struct xe_gpu_scheduler *sched,
 		  const struct drm_sched_backend_ops *ops,
 		  const struct xe_sched_backend_ops *xe_ops,
 		  struct workqueue_struct *submit_wq,
@@ -63,6 +66,7 @@ int xe_sched_init(struct xe_gpu_scheduler *sched,
 		  atomic_t *score, const char *name,
 		  struct device *dev)
 {
+	sched->xe = xe;
 	sched->ops = xe_ops;
 	INIT_LIST_HEAD(&sched->msgs);
 	INIT_WORK(&sched->work_process_msg, xe_sched_process_msg_work);
