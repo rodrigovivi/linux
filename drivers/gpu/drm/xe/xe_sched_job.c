@@ -15,6 +15,7 @@
 #include "xe_hw_fence.h"
 #include "xe_lrc.h"
 #include "xe_macros.h"
+#include "xe_pm.h"
 #include "xe_trace.h"
 #include "xe_vm.h"
 
@@ -67,6 +68,8 @@ static void job_free(struct xe_sched_job *job)
 	struct xe_exec_queue *q = job->q;
 	bool is_migration = xe_sched_job_is_migration(q);
 
+	xe_pm_runtime_put(gt_to_xe(q->gt));
+
 	kmem_cache_free(xe_exec_queue_is_parallel(job->q) || is_migration ?
 			xe_sched_job_parallel_slab : xe_sched_job_slab, job);
 }
@@ -85,6 +88,8 @@ struct xe_sched_job *xe_sched_job_create(struct xe_exec_queue *q,
 	int err;
 	int i, j;
 	u32 width;
+
+	xe_pm_runtime_get(gt_to_xe(q->gt));
 
 	/* only a kernel context can submit a vm-less job */
 	XE_WARN_ON(!q->vm && !(q->flags & EXEC_QUEUE_FLAG_KERNEL));
