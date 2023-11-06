@@ -9,7 +9,8 @@
 #include "xe_gpu_scheduler_types.h"
 #include "xe_sched_job_types.h"
 
-int xe_sched_init(struct xe_gpu_scheduler *sched,
+int xe_sched_init(struct xe_device *xe,
+		  struct xe_gpu_scheduler *sched,
 		  const struct drm_sched_backend_ops *ops,
 		  const struct xe_sched_backend_ops *xe_ops,
 		  struct workqueue_struct *submit_wq,

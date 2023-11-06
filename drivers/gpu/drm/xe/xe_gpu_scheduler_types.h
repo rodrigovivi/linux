@@ -43,6 +43,8 @@ struct xe_sched_backend_ops {
 struct xe_gpu_scheduler {
 	/** @base: DRM GPU scheduler */
 	struct drm_gpu_scheduler		base;
+	/** @xe: back pointer to Xe Device */
+	struct xe_device			*xe;
 	/** @ops: Xe scheduler ops */
 	const struct xe_sched_backend_ops	*ops;
 	/** @msgs: list of messages to be processed in @work_process_msg */
