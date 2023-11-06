@@ -19,6 +19,7 @@
 #include "xe_guc_submit.h"
 #include "xe_gt.h"
 #include "xe_force_wake.h"
+#include "xe_gpu_scheduler.h"
 #include "xe_hw_engine.h"
 #include "xe_hw_fence.h"
 #include "xe_lrc.h"
@@ -341,7 +342,7 @@ MAKE_ENGINE_POLICY_ADD(preemption_timeout, PREEMPTION_TIMEOUT)
 MAKE_ENGINE_POLICY_ADD(priority, SCHEDULING_PRIORITY)
 #undef MAKE_ENGINE_POLICY_ADD
 
-static const int drm_sched_prio_to_guc[] = {
+static const int xe_sched_prio_to_guc[] = {
 	[DRM_SCHED_PRIORITY_MIN] = GUC_CLIENT_PRIORITY_NORMAL,
 	[DRM_SCHED_PRIORITY_NORMAL] = GUC_CLIENT_PRIORITY_KMD_NORMAL,
 	[DRM_SCHED_PRIORITY_HIGH] = GUC_CLIENT_PRIORITY_HIGH,
@@ -351,14 +352,14 @@ static const int drm_sched_prio_to_guc[] = {
 static void init_policies(struct xe_guc *guc, struct xe_engine *e)
 {
         struct engine_policy policy;
-	enum drm_sched_priority prio = e->entity->priority;
+	enum xe_sched_priority prio = e->priority;
 	u32 timeslice_us = e->sched_props.timeslice_us;
 	u32 preempt_timeout_us = e->sched_props.preempt_timeout_us;
 
 	XE_BUG_ON(!engine_registered(e));
 
         __guc_engine_policy_start_klv(&policy, e->guc->id);
-        __guc_engine_policy_add_priority(&policy, drm_sched_prio_to_guc[prio]);
+        __guc_engine_policy_add_priority(&policy, xe_sched_prio_to_guc[prio]);
         __guc_engine_policy_add_execution_quantum(&policy, timeslice_us);
         __guc_engine_policy_add_preemption_timeout(&policy, preempt_timeout_us);
 
@@ -700,7 +701,6 @@ static int guc_read_stopped(struct xe_guc *guc)
 		e->guc->id,						\
 		GUC_CONTEXT_##enable_disable,				\
 	}
-#define MIN_SCHED_TIMEOUT	1
 
 static void disable_scheduling_deregister(struct xe_guc *guc,
 					  struct xe_engine *e)
@@ -713,12 +713,12 @@ static void disable_scheduling_deregister(struct xe_guc *guc,
 	ret = wait_event_timeout(guc->ct.wq, !engine_pending_enable(e) ||
 				 guc_read_stopped(guc), HZ * 5);
 	if (!ret) {
-		struct drm_gpu_scheduler *sched = &e->guc->sched;
+		struct xe_gpu_scheduler *sched = &e->guc->sched;
 
 		XE_WARN_ON("Pending enable failed to respond");
-		sched->timeout = MIN_SCHED_TIMEOUT;
-		drm_sched_run_wq_start(sched);
+		xe_sched_submission_start(sched);
 		xe_gt_reset_async(e->gt);
+		xe_sched_tdr_queue_imm(sched);
 		return;
 	}
 
@@ -788,7 +788,7 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 	struct xe_sched_job *job = to_xe_sched_job(drm_job);
 	struct xe_sched_job *tmp_job;
 	struct xe_engine *e = job->engine;
-	struct drm_gpu_scheduler *sched = &e->guc->sched;
+	struct xe_gpu_scheduler *sched = &e->guc->sched;
 	struct xe_device *xe = guc_to_xe(engine_to_guc(e));
 	int err = -ETIME;
 	int i = 0;
@@ -807,7 +807,7 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 	trace_xe_sched_job_timedout(job);
 
 	/* Kill the run_job entry point */
-	drm_sched_run_wq_stop(sched);
+	xe_sched_submission_stop(sched);
 
 	/*
 	 * Kernel jobs should never fail, nor should VM jobs if they do
@@ -815,9 +815,9 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 	 */
 	if (e->flags & ENGINE_FLAG_KERNEL ||
 	    (e->flags & ENGINE_FLAG_VM && !engine_killed(e))) {
-		if (!drm_sched_invalidate_job(drm_job, 2)) {
-			list_add(&drm_job->list, &sched->pending_list);
-			drm_sched_run_wq_start(sched);
+		if (!xe_sched_invalidate_job(job, 2)) {
+			xe_sched_add_pending_job(sched, job);
+			xe_sched_submission_start(sched);
 			xe_gt_reset_async(e->gt);
 			goto out;
 		}
@@ -848,10 +848,10 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 					 guc_read_stopped(guc), HZ * 5);
 		if (!ret) {
 			XE_WARN_ON("Schedule disable failed to respond");
-			sched->timeout = MIN_SCHED_TIMEOUT;
-			list_add(&drm_job->list, &sched->pending_list);
-			drm_sched_run_wq_start(sched);
+			xe_sched_add_pending_job(sched, job);
+			xe_sched_submission_start(sched);
 			xe_gt_reset_async(e->gt);
+			xe_sched_tdr_queue_imm(sched);
 			goto out;
 		}
 	}
@@ -863,15 +863,15 @@ guc_engine_timedout_job(struct drm_sched_job *drm_job)
 	 * Fence state now stable, stop / start scheduler which cleans up any
 	 * fences that are complete
 	 */
-	list_add(&drm_job->list, &sched->pending_list);
-	drm_sched_run_wq_start(sched);
-	drm_sched_set_timeout(&e->guc->sched, MIN_SCHED_TIMEOUT);
+	xe_sched_add_pending_job(sched, job);
+	xe_sched_submission_start(sched);
+	xe_sched_tdr_queue_imm(&e->guc->sched);
 
 	/* Mark all outstanding jobs as bad, thus completing them */
-	spin_lock(&sched->job_list_lock);
-	list_for_each_entry(tmp_job, &sched->pending_list, drm.list)
+	spin_lock(&sched->base.job_list_lock);
+	list_for_each_entry(tmp_job, &sched->base.pending_list, drm.list)
 		xe_sched_job_set_error(tmp_job, !i++ ? err : -ECANCELED);
-	spin_unlock(&sched->job_list_lock);
+	spin_unlock(&sched->base.job_list_lock);
 
 	/* Start fence signaling */
 	xe_hw_fence_irq_start(e->fence_irq);
@@ -892,8 +892,8 @@ static void __guc_engine_fini_async(struct work_struct *w)
 	if (e->flags & ENGINE_FLAG_PERSISTENT)
 		xe_device_remove_persitent_engines(gt_to_xe(e->gt), e);
 	release_guc_id(guc, e);
-	drm_sched_entity_fini(&ge->entity);
-	drm_sched_fini(&ge->sched);
+	xe_sched_entity_fini(&ge->entity);
+	xe_sched_fini(&ge->sched);
 
 	if (!(e->flags & ENGINE_FLAG_KERNEL)) {
 		kfree(ge);
@@ -930,7 +930,7 @@ static void __guc_engine_fini(struct xe_guc *guc, struct xe_engine *e)
 	guc_engine_fini_async(e);
 }
 
-static void __guc_engine_process_msg_cleanup(struct drm_sched_msg *msg)
+static void __guc_engine_process_msg_cleanup(struct xe_sched_msg *msg)
 {
 	struct xe_engine *e = msg->private_data;
 	struct xe_guc *guc = engine_to_guc(e);
@@ -949,7 +949,7 @@ static bool guc_engine_allowed_to_change_state(struct xe_engine *e)
 	return !engine_killed_or_banned(e) && engine_registered(e);
 }
 
-static void __guc_engine_process_msg_set_sched_props(struct drm_sched_msg *msg)
+static void __guc_engine_process_msg_set_sched_props(struct xe_sched_msg *msg)
 {
 	struct xe_engine *e = msg->private_data;
 	struct xe_guc *guc = engine_to_guc(e);
@@ -972,7 +972,7 @@ static void suspend_fence_signal(struct xe_engine *e)
 	wake_up(&e->guc->suspend_wait);
 }
 
-static void __guc_engine_process_msg_suspend(struct drm_sched_msg *msg)
+static void __guc_engine_process_msg_suspend(struct xe_sched_msg *msg)
 {
 	struct xe_engine *e = msg->private_data;
 	struct xe_guc *guc = engine_to_guc(e);
@@ -1007,7 +1007,7 @@ static void __guc_engine_process_msg_suspend(struct drm_sched_msg *msg)
 	}
 }
 
-static void __guc_engine_process_msg_resume(struct drm_sched_msg *msg)
+static void __guc_engine_process_msg_resume(struct xe_sched_msg *msg)
 {
 	struct xe_engine *e = msg->private_data;
 	struct xe_guc *guc = engine_to_guc(e);
@@ -1033,9 +1033,9 @@ static void __guc_engine_process_msg_resume(struct drm_sched_msg *msg)
 #define SUSPEND		3
 #define RESUME		4
 
-static void guc_engine_process_msg(struct drm_sched_msg *msg)
+static void guc_engine_process_msg(struct xe_sched_msg *msg)
 {
-	trace_drm_sched_msg_recv(msg);
+	trace_xe_sched_msg_recv(msg);
 
 	switch (msg->opcode) {
 	case CLEANUP:
@@ -1059,12 +1059,15 @@ static const struct drm_sched_backend_ops drm_sched_ops = {
 	.run_job = guc_engine_run_job,
 	.free_job = guc_engine_free_job,
 	.timedout_job = guc_engine_timedout_job,
+};
+
+static const struct xe_sched_backend_ops xe_sched_ops = {
 	.process_msg = guc_engine_process_msg,
 };
 
 static int guc_engine_init(struct xe_engine *e)
 {
-	struct drm_gpu_scheduler *sched;
+	struct xe_gpu_scheduler *sched;
 	struct xe_guc *guc = engine_to_guc(e);
 	struct xe_guc_engine *ge;
 	long timeout;
@@ -1081,7 +1084,7 @@ static int guc_engine_init(struct xe_engine *e)
 	init_waitqueue_head(&ge->suspend_wait);
 
 	timeout = xe_vm_no_dma_fences(e->vm) ? MAX_SCHEDULE_TIMEOUT : HZ * 5;
-	err = drm_sched_init(&ge->sched, &drm_sched_ops, NULL,
+	err = xe_sched_init(&ge->sched, &drm_sched_ops, &xe_sched_ops, NULL,
 			     e->lrc[0].ring.size / MAX_JOB_SIZE_BYTES,
 			     64, timeout, guc_to_gt(guc)->ordered_wq, NULL,
 			     e->name, gt_to_xe(e->gt)->drm.dev);
@@ -1089,10 +1092,10 @@ static int guc_engine_init(struct xe_engine *e)
 		goto err_free;
 
 	sched = &ge->sched;
-	err = drm_sched_entity_init(&ge->entity, DRM_SCHED_PRIORITY_NORMAL,
-				    &sched, 1, NULL);
+	err = xe_sched_entity_init(&ge->entity, sched);
 	if (err)
 		goto err_sched;
+	e->priority = DRM_SCHED_PRIORITY_NORMAL;
 
 	mutex_lock(&guc->submission_state.lock);
 
@@ -1103,7 +1106,7 @@ static int guc_engine_init(struct xe_engine *e)
 	e->entity = &ge->entity;
 
 	if (guc_read_stopped(guc))
-		drm_sched_stop(sched, NULL);
+		xe_sched_stop(sched);
 
 	mutex_unlock(&guc->submission_state.lock);
 
@@ -1132,9 +1135,9 @@ static int guc_engine_init(struct xe_engine *e)
 	return 0;
 
 err_entity:
-	drm_sched_entity_fini(&ge->entity);
+	xe_sched_entity_fini(&ge->entity);
 err_sched:
-	drm_sched_fini(&ge->sched);
+	xe_sched_fini(&ge->sched);
 err_free:
 	kfree(ge);
 
@@ -1145,18 +1148,18 @@ static void guc_engine_kill(struct xe_engine *e)
 {
 	trace_xe_engine_kill(e);
 	set_engine_killed(e);
-	drm_sched_set_timeout(&e->guc->sched, MIN_SCHED_TIMEOUT);
+	xe_sched_tdr_queue_imm(&e->guc->sched);
 }
 
-static void guc_engine_add_msg(struct xe_engine *e, struct drm_sched_msg *msg,
+static void guc_engine_add_msg(struct xe_engine *e, struct xe_sched_msg *msg,
 			       u32 opcode)
 {
 	INIT_LIST_HEAD(&msg->link);
 	msg->opcode = opcode;
 	msg->private_data = e;
 
-	trace_drm_sched_msg_add(msg);
-	drm_sched_add_msg(&e->guc->sched, msg);
+	trace_xe_sched_msg_add(msg);
+	xe_sched_add_msg(&e->guc->sched, msg);
 }
 
 #define STATIC_MSG_CLEANUP	0
@@ -1164,7 +1167,7 @@ static void guc_engine_add_msg(struct xe_engine *e, struct drm_sched_msg *msg,
 #define STATIC_MSG_RESUME	2
 static void guc_engine_fini(struct xe_engine *e)
 {
-	struct drm_sched_msg *msg = e->guc->static_msgs + STATIC_MSG_CLEANUP;
+	struct xe_sched_msg *msg = e->guc->static_msgs + STATIC_MSG_CLEANUP;
 
 	if (!(e->flags & ENGINE_FLAG_KERNEL))
 		guc_engine_add_msg(e, msg, CLEANUP);
@@ -1173,26 +1176,26 @@ static void guc_engine_fini(struct xe_engine *e)
 }
 
 static int guc_engine_set_priority(struct xe_engine *e,
-				   enum drm_sched_priority priority)
+				   enum xe_sched_priority priority)
 {
-	struct drm_sched_msg *msg;
+	struct xe_sched_msg *msg;
 
-	if (e->entity->priority == priority || engine_killed_or_banned(e))
+	if (e->priority == priority || engine_killed_or_banned(e))
 		return 0;
 
 	msg = kmalloc(sizeof(*msg), GFP_KERNEL);
 	if (!msg)
 		return -ENOMEM;
 
-	drm_sched_entity_set_priority(e->entity, priority);
 	guc_engine_add_msg(e, msg, SET_SCHED_PROPS);
+	e->priority = priority;
 
 	return 0;
 }
 
 static int guc_engine_set_timeslice(struct xe_engine *e, u32 timeslice_us)
 {
-	struct drm_sched_msg *msg;
+	struct xe_sched_msg *msg;
 
 	if (e->sched_props.timeslice_us == timeslice_us ||
 	    engine_killed_or_banned(e))
@@ -1211,7 +1214,7 @@ static int guc_engine_set_timeslice(struct xe_engine *e, u32 timeslice_us)
 static int guc_engine_set_preempt_timeout(struct xe_engine *e,
 					  u32 preempt_timeout_us)
 {
-	struct drm_sched_msg *msg;
+	struct xe_sched_msg *msg;
 
 	if (e->sched_props.preempt_timeout_us == preempt_timeout_us ||
 	    engine_killed_or_banned(e))
@@ -1229,20 +1232,20 @@ static int guc_engine_set_preempt_timeout(struct xe_engine *e,
 
 static int guc_engine_set_job_timeout(struct xe_engine *e, u32 job_timeout_ms)
 {
-	struct drm_gpu_scheduler *sched = &e->guc->sched;
+	struct xe_gpu_scheduler *sched = &e->guc->sched;
 
 	XE_BUG_ON(engine_registered(e));
 	XE_BUG_ON(engine_banned(e));
 	XE_BUG_ON(engine_killed(e));
 
-	sched->timeout = job_timeout_ms;
+	sched->base.timeout = job_timeout_ms;
 
 	return 0;
 }
 
 static int guc_engine_suspend(struct xe_engine *e)
 {
-	struct drm_sched_msg *msg = e->guc->static_msgs + STATIC_MSG_SUSPEND;
+	struct xe_sched_msg *msg = e->guc->static_msgs + STATIC_MSG_SUSPEND;
 
 	if (engine_killed_or_banned(e) || e->guc->suspend_pending)
 		return -EINVAL;
@@ -1263,7 +1266,7 @@ static void guc_engine_suspend_wait(struct xe_engine *e)
 
 static void guc_engine_resume(struct xe_engine *e)
 {
-	struct drm_sched_msg *msg = e->guc->static_msgs + STATIC_MSG_RESUME;
+	struct xe_sched_msg *msg = e->guc->static_msgs + STATIC_MSG_RESUME;
 
 	XE_BUG_ON(e->guc->suspend_pending);
 
@@ -1292,10 +1295,10 @@ static const struct xe_engine_ops guc_engine_ops = {
 
 static void guc_engine_stop(struct xe_guc *guc, struct xe_engine *e)
 {
-	struct drm_gpu_scheduler *sched = &e->guc->sched;
+	struct xe_gpu_scheduler *sched = &e->guc->sched;
 
 	/* Stop scheduling + flush any DRM scheduler operations */
-	drm_sched_run_wq_stop(sched);
+	xe_sched_submission_stop(sched);
 
 	/* Clean up lost G2H + reset engine state */
 	if (engine_destroyed(e) && engine_registered(e)) {
@@ -1319,18 +1322,14 @@ static void guc_engine_stop(struct xe_guc *guc, struct xe_engine *e)
 	 * more than twice.
 	 */
 	if (!(e->flags & (ENGINE_FLAG_KERNEL | ENGINE_FLAG_VM))) {
-		struct drm_sched_job *drm_job =
-			list_first_entry_or_null(&sched->pending_list,
-						 struct drm_sched_job, list);
+		struct xe_sched_job *job = xe_sched_first_pending_job(sched);
 
-		if (drm_job) {
-			struct xe_sched_job *job = to_xe_sched_job(drm_job);
-
+		if (job) {
 			if ((xe_sched_job_started(job) &&
 			    !xe_sched_job_completed(job)) ||
-			    drm_sched_invalidate_job(drm_job, 2)) {
+			    xe_sched_invalidate_job(job, 2)) {
 				trace_xe_sched_job_ban(job);
-				sched->timeout = MIN_SCHED_TIMEOUT;
+				xe_sched_tdr_queue_imm(&e->guc->sched);
 				set_engine_banned(e);
 			}
 		}
@@ -1384,7 +1383,7 @@ int xe_guc_submit_stop(struct xe_guc *guc)
 
 static void guc_engine_start(struct xe_engine *e)
 {
-	struct drm_gpu_scheduler *sched = &e->guc->sched;
+	struct xe_gpu_scheduler *sched = &e->guc->sched;
 
 	if (!engine_killed_or_banned(e)) {
 		int i;
@@ -1392,11 +1391,10 @@ static void guc_engine_start(struct xe_engine *e)
 		trace_xe_engine_resubmit(e);
 		for (i = 0; i < e->width; ++i)
 			xe_lrc_set_ring_head(e->lrc + i, e->lrc[i].ring.tail);
-		drm_sched_resubmit_jobs(sched);
+		xe_sched_resubmit_jobs(sched);
 	}
 
-	drm_sched_run_wq_start(sched);
-	drm_sched_set_timeout(sched, sched->timeout);
+	xe_sched_submission_start(sched);
 }
 
 int xe_guc_submit_start(struct xe_guc *guc)
@@ -1558,7 +1556,7 @@ int xe_guc_engine_reset_handler(struct xe_guc *guc, u32 *msg, u32 len)
 	 */
 	set_engine_reset(e);
 	if (!engine_banned(e))
-		drm_sched_set_timeout(&e->guc->sched, MIN_SCHED_TIMEOUT);
+		xe_sched_tdr_queue_imm(&e->guc->sched);
 
 	return 0;
 }
@@ -1585,7 +1583,7 @@ int xe_guc_engine_memory_cat_error_handler(struct xe_guc *guc, u32 *msg,
 	/* Treat the same as engine reset */
 	set_engine_reset(e);
 	if (!engine_banned(e))
-		drm_sched_set_timeout(&e->guc->sched, MIN_SCHED_TIMEOUT);
+		xe_sched_tdr_queue_imm(&e->guc->sched);
 
 	return 0;
 }
@@ -1639,7 +1637,7 @@ static void guc_engine_wq_print(struct xe_engine *e, struct drm_printer *p)
 
 static void guc_engine_print(struct xe_engine *e, struct drm_printer *p)
 {
-	struct drm_gpu_scheduler *sched = &e->guc->sched;
+	struct xe_gpu_scheduler *sched = &e->guc->sched;
 	struct xe_sched_job *job;
 	int i;
 
@@ -1649,7 +1647,7 @@ static void guc_engine_print(struct xe_engine *e, struct drm_printer *p)
 	drm_printf(p, "\tLogical mask: 0x%x\n", e->logical_mask);
 	drm_printf(p, "\tWidth: %d\n", e->width);
 	drm_printf(p, "\tRef: %d\n", kref_read(&e->refcount));
-	drm_printf(p, "\tTimeout: %ld (ms)\n", sched->timeout);
+	drm_printf(p, "\tTimeout: %ld (ms)\n", sched->base.timeout);
 	drm_printf(p, "\tTimeslice: %u (us)\n", e->sched_props.timeslice_us);
 	drm_printf(p, "\tPreempt timeout: %u (us)\n",
 		   e->sched_props.preempt_timeout_us);
@@ -1672,14 +1670,14 @@ static void guc_engine_print(struct xe_engine *e, struct drm_printer *p)
 	if (xe_engine_is_parallel(e))
 		guc_engine_wq_print(e, p);
 
-	spin_lock(&sched->job_list_lock);
-	list_for_each_entry(job, &sched->pending_list, drm.list)
+	spin_lock(&sched->base.job_list_lock);
+	list_for_each_entry(job, &sched->base.pending_list, drm.list)
 		drm_printf(p, "\tJob: seqno=%d, fence=%d, finished=%d\n",
 			   xe_sched_job_seqno(job),
 			   dma_fence_is_signaled(job->fence) ? 1 : 0,
 			   dma_fence_is_signaled(&job->drm.s_fence->finished) ?
 			   1 : 0);
-	spin_unlock(&sched->job_list_lock);
+	spin_unlock(&sched->base.job_list_lock);
 }
 
 void xe_guc_submit_print(struct xe_guc *guc, struct drm_printer *p)

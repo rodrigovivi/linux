@@ -14,6 +14,7 @@
 
 #include "xe_bo_types.h"
 #include "xe_engine_types.h"
+#include "xe_gpu_scheduler_types.h"
 #include "xe_gt_types.h"
 #include "xe_guc_engine_types.h"
 #include "xe_sched_job.h"
@@ -230,8 +231,8 @@ DEFINE_EVENT(xe_sched_job, xe_sched_job_ban,
 	     TP_ARGS(job)
 );
 
-DECLARE_EVENT_CLASS(drm_sched_msg,
-		    TP_PROTO(struct drm_sched_msg *msg),
+DECLARE_EVENT_CLASS(xe_sched_msg,
+		    TP_PROTO(struct xe_sched_msg *msg),
 		    TP_ARGS(msg),
 
 		    TP_STRUCT__entry(
@@ -249,13 +250,13 @@ DECLARE_EVENT_CLASS(drm_sched_msg,
 			      __entry->opcode)
 );
 
-DEFINE_EVENT(drm_sched_msg, drm_sched_msg_add,
-	     TP_PROTO(struct drm_sched_msg *msg),
+DEFINE_EVENT(xe_sched_msg, xe_sched_msg_add,
+	     TP_PROTO(struct xe_sched_msg *msg),
 	     TP_ARGS(msg)
 );
 
-DEFINE_EVENT(drm_sched_msg, drm_sched_msg_recv,
-	     TP_PROTO(struct drm_sched_msg *msg),
+DEFINE_EVENT(xe_sched_msg, xe_sched_msg_recv,
+	     TP_PROTO(struct xe_sched_msg *msg),
 	     TP_ARGS(msg)
 );
 

@@ -9,7 +9,7 @@
 #include <linux/spinlock.h>
 #include <linux/workqueue.h>
 
-#include <drm/gpu_scheduler.h>
+#include "xe_gpu_scheduler_types.h"
 
 struct dma_fence;
 struct xe_engine;
@@ -21,16 +21,16 @@ struct xe_guc_engine {
 	/** @engine: Backpointer to parent xe_engine */
 	struct xe_engine *engine;
 	/** @sched: GPU scheduler for this xe_engine */
-	struct drm_gpu_scheduler sched;
+	struct xe_gpu_scheduler sched;
 	/** @entity: Scheduler entity for this xe_engine */
-	struct drm_sched_entity entity;
+	struct xe_sched_entity entity;
 	/**
 	 * @static_msgs: Static messages for this xe_engine, used when a message
 	 * needs to sent through the GPU scheduler but memory allocations are
 	 * not allowed.
 	 */
 #define MAX_STATIC_MSG_TYPE	3
-	struct drm_sched_msg static_msgs[MAX_STATIC_MSG_TYPE];
+	struct xe_sched_msg static_msgs[MAX_STATIC_MSG_TYPE];
 	/** @fini_async: do final fini async from this worker */
 	struct work_struct fini_async;
 	/** @resume_time: time of last resume */
