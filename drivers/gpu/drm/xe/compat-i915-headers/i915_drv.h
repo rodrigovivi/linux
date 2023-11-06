@@ -204,7 +204,6 @@ static inline void intel_runtime_pm_put(struct xe_runtime_pm *pm, bool wakeref)
 #define intel_uncore_forcewake_put(x, y) do { } while (0)
 
 #define intel_uncore_arm_unclaimed_mmio_detection(x) do { } while (0)
-#define i915_sw_fence_commit(x) do { } while (0)
 
 #define I915_PRIORITY_DISPLAY 0
 struct i915_sched_attr {
