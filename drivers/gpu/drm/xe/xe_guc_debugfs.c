@@ -14,6 +14,7 @@
 #include "xe_guc_ct.h"
 #include "xe_guc_log.h"
 #include "xe_macros.h"
+#include "xe_pm.h"
 
 static struct xe_gt *
 guc_to_gt(struct xe_guc *guc)
@@ -38,9 +39,11 @@ static int guc_info(struct seq_file *m, void *data)
 	struct xe_device *xe = guc_to_xe(guc);
 	struct drm_printer p = drm_seq_file_printer(m);
 
+	xe_pm_runtime_get(xe);
 	xe_device_mem_access_get(xe);
 	xe_guc_print_info(guc, &p);
 	xe_device_mem_access_put(xe);
+	xe_pm_runtime_put(xe);
 
 	return 0;
 }
@@ -51,9 +54,11 @@ static int guc_log(struct seq_file *m, void *data)
 	struct xe_device *xe = guc_to_xe(guc);
 	struct drm_printer p = drm_seq_file_printer(m);
 
+	xe_pm_runtime_get(xe);
 	xe_device_mem_access_get(xe);
 	xe_guc_log_print(&guc->log, &p);
 	xe_device_mem_access_put(xe);
+	xe_pm_runtime_put(xe);
 
 	return 0;
 }
