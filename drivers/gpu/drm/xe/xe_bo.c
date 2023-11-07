@@ -21,6 +21,7 @@
 #include "xe_gt.h"
 #include "xe_map.h"
 #include "xe_migrate.h"
+#include "xe_pm.h"
 #include "xe_preempt_fence.h"
 #include "xe_res_cursor.h"
 #include "xe_trace.h"
@@ -1042,6 +1043,7 @@ static void xe_ttm_bo_destroy(struct ttm_buffer_object *ttm_bo)
 {
 	struct xe_bo *bo = ttm_to_xe_bo(ttm_bo);
 	struct xe_device *xe = ttm_to_xe_device(ttm_bo->bdev);
+	bool rpm_ref = bo->rpm_ref;
 
 	if (bo->ttm.base.import_attach)
 		drm_prime_gem_destroy(&bo->ttm.base, NULL);
@@ -1059,6 +1061,9 @@ static void xe_ttm_bo_destroy(struct ttm_buffer_object *ttm_bo)
 
 	if (bo->vm && xe_bo_is_user(bo))
 		xe_vm_put(bo->vm);
+
+	if (rpm_ref)
+		xe_pm_runtime_put(xe);
 
 	kfree(bo);
 }
@@ -1141,6 +1146,28 @@ static vm_fault_t xe_gem_fault(struct vm_fault *vmf)
 	return ret;
 }
 
+static int xe_gem_ttm_mmap(struct drm_gem_object *obj,
+			   struct vm_area_struct *vma)
+{
+	struct xe_bo *bo = gem_to_xe_bo(obj);
+	struct xe_device *xe = ttm_to_xe_device(bo->ttm.bdev);
+	struct ttm_place *place = bo->placements;
+
+	if (mem_type_is_vram(place->mem_type)) {
+		/*
+		 * XXX: In real world case this is already protected by
+		 * display. But IGT is not ready to deal with this, so, let's
+		 * overprotect and don't allow runtime_pm when there's any
+		 * change of CPU trying to write to a device memory while the
+		 * device is in D3hot.
+		 */
+		xe_pm_runtime_get(xe);
+		bo->rpm_ref = true;
+	}
+
+	return drm_gem_ttm_mmap(obj, vma);
+}
+
 static const struct vm_operations_struct xe_gem_vm_ops = {
 	.fault = xe_gem_fault,
 	.open = ttm_bo_vm_open,
@@ -1151,7 +1178,7 @@ static const struct vm_operations_struct xe_gem_vm_ops = {
 static const struct drm_gem_object_funcs xe_gem_object_funcs = {
 	.free = xe_gem_object_free,
 	.close = xe_gem_object_close,
-	.mmap = drm_gem_ttm_mmap,
+	.mmap = xe_gem_ttm_mmap,
 	.export = xe_gem_prime_export,
 	.vm_ops = &xe_gem_vm_ops,
 };

@@ -918,6 +918,17 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 			u64 size = end - start + 1;
 			int err;
 
+			/*
+			 * XXX: Block runtime_pm on dgfx while we have userptr.
+			 * In real world this might not be needed, since the
+			 * display is likely in use or we could use the compute
+			 * mode to do a selective blockage. However, IGT is not
+			 * prepared for this just yet. So let's be over
+			 * protective for now.
+			 */
+			if (IS_DGFX(vm->xe))
+				xe_pm_runtime_get(vm->xe);
+
 			INIT_LIST_HEAD(&vma->userptr.invalidate_link);
 			vma->gpuva.gem.offset = bo_offset_or_userptr;
 
@@ -973,6 +984,8 @@ static void xe_vma_destroy_late(struct xe_vma *vma)
 		 */
 		mmu_interval_notifier_remove(&vma->userptr.notifier);
 		xe_vm_put(vm);
+		if (IS_DGFX(xe))
+			xe_pm_runtime_put(xe);
 	} else if (xe_vma_is_null(vma)) {
 		xe_vm_put(vm);
 	} else {

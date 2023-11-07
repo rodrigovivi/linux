@@ -76,6 +76,8 @@ struct xe_bo {
 	struct llist_node freed;
 	/** @created: Whether the bo has passed initial creation */
 	bool created;
+	/** @rpm_ref: Whether the bo was holding a pm_runtime reference */
+	bool rpm_ref ;
 };
 
 #define intel_bo_to_drm_bo(bo) (&(bo)->ttm.base)
