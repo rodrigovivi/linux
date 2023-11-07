@@ -657,8 +657,8 @@ static void xe_pci_remove(struct pci_dev *pdev)
 	if (!xe) /* driver load aborted, nothing to cleanup */
 		return;
 
-	xe_device_remove(xe);
 	xe_pm_runtime_fini(xe);
+	xe_device_remove(xe);
 	pci_set_drvdata(pdev, NULL);
 }
 
