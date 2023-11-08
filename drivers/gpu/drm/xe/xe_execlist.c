@@ -337,7 +337,7 @@ static int execlist_exec_queue_init(struct xe_exec_queue *q)
 			     q->lrc[0].ring.size / MAX_JOB_SIZE_BYTES,
 			     XE_SCHED_HANG_LIMIT, XE_SCHED_JOB_TIMEOUT,
 			     NULL, NULL, q->hwe->name,
-			     DRM_SCHED_POLICY_SINGLE_ENTITY,
+			     DRM_SCHED_POLICY_DEFAULT,
 			     gt_to_xe(q->gt)->drm.dev);
 	if (err)
 		goto err_free;

@@ -1166,7 +1166,7 @@ static int guc_exec_queue_init(struct xe_exec_queue *q)
 	err = drm_sched_init(&ge->sched, &drm_sched_ops, NULL,
 			     q->lrc[0].ring.size / MAX_JOB_SIZE_BYTES,
 			     64, timeout, guc_to_gt(guc)->ordered_wq, NULL,
-			     q->name, DRM_SCHED_POLICY_SINGLE_ENTITY,
+			     q->name, DRM_SCHED_POLICY_DEFAULT,
 			     gt_to_xe(q->gt)->drm.dev);
 	if (err)
 		goto err_free;
@@ -1252,6 +1252,8 @@ static int guc_exec_queue_set_priority(struct xe_exec_queue *q,
 	if (!msg)
 		return -ENOMEM;
 
+
+	drm_sched_entity_set_priority(q->entity, priority);
 	guc_exec_queue_add_msg(q, msg, SET_SCHED_PROPS);
 
 	return 0;
