@@ -11,6 +11,7 @@
 #include "xe_device.h"
 #include "xe_gt_clock.h"
 #include "xe_mmio.h"
+#include "xe_pm.h"
 
 static cpumask_t xe_pmu_cpumask;
 static unsigned int xe_pmu_target_cpu = -1;
@@ -66,25 +67,21 @@ static u64 engine_group_busyness_read(struct xe_gt *gt, u64 config)
 	struct xe_device *xe = gt->tile->xe;
 	struct xe_pmu *pmu = &xe->pmu;
 	unsigned long flags;
-	bool device_awake;
 	u64 val;
 
-	device_awake = xe_device_mem_access_get_if_ongoing(xe);
-	if (device_awake) {
-		XE_WARN_ON(xe_force_wake_get(gt_to_fw(gt), XE_FW_GT));
-		val = __engine_group_busyness_read(gt, sample_type);
-		XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FW_GT));
-		xe_device_mem_access_put(xe);
-	}
+	xe_pm_runtime_get(xe);
+
+	XE_WARN_ON(xe_force_wake_get(gt_to_fw(gt), XE_FW_GT));
+	val = __engine_group_busyness_read(gt, sample_type);
+	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FW_GT));
 
 	spin_lock_irqsave(&pmu->lock, flags);
 
-	if (device_awake)
-		pmu->sample[gt_id][sample_type] = val;
-	else
-		val = pmu->sample[gt_id][sample_type];
+	pmu->sample[gt_id][sample_type] = val;
 
 	spin_unlock_irqrestore(&pmu->lock, flags);
+
+	xe_pm_runtime_put(xe);
 
 	return val;
 }

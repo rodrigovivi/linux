@@ -713,7 +713,6 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 	xe_tile_assert(tile, tile->migrate);
 
 	trace_xe_bo_move(bo);
-	xe_device_mem_access_get(xe);
 
 	if (xe_bo_is_pinned(bo) && !xe_bo_is_user(bo)) {
 		/*
@@ -736,7 +735,6 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 
 				if (XE_WARN_ON(new_mem->start == XE_BO_INVALID_OFFSET)) {
 					ret = -EINVAL;
-					xe_device_mem_access_put(xe);
 					goto out;
 				}
 
@@ -754,7 +752,6 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 						bo, bo, old_mem, new_mem);
 		if (IS_ERR(fence)) {
 			ret = PTR_ERR(fence);
-			xe_device_mem_access_put(xe);
 			goto out;
 		}
 		if (!move_lacks_source) {
@@ -779,7 +776,6 @@ static int xe_bo_move(struct ttm_buffer_object *ttm_bo, bool evict,
 		dma_fence_put(fence);
 	}
 
-	xe_device_mem_access_put(xe);
 	trace_printk("new_mem->mem_type=%d\n", new_mem->mem_type);
 
 out:
@@ -1043,7 +1039,7 @@ static void xe_ttm_bo_destroy(struct ttm_buffer_object *ttm_bo)
 {
 	struct xe_bo *bo = ttm_to_xe_bo(ttm_bo);
 	struct xe_device *xe = ttm_to_xe_device(ttm_bo->bdev);
-	bool rpm_ref = bo->rpm_ref;
+//	bool rpm_ref = bo->rpm_ref;
 
 	if (bo->ttm.base.import_attach)
 		drm_prime_gem_destroy(&bo->ttm.base, NULL);
@@ -1062,8 +1058,8 @@ static void xe_ttm_bo_destroy(struct ttm_buffer_object *ttm_bo)
 	if (bo->vm && xe_bo_is_user(bo))
 		xe_vm_put(bo->vm);
 
-	if (rpm_ref)
-		xe_pm_runtime_put(xe);
+//	if (rpm_ref)
+//		xe_pm_runtime_put(xe);
 
 	kfree(bo);
 }
@@ -1150,10 +1146,10 @@ static int xe_gem_ttm_mmap(struct drm_gem_object *obj,
 			   struct vm_area_struct *vma)
 {
 	struct xe_bo *bo = gem_to_xe_bo(obj);
-	struct xe_device *xe = ttm_to_xe_device(bo->ttm.bdev);
+//	struct xe_device *xe = ttm_to_xe_device(bo->ttm.bdev);
 	struct ttm_place *place = bo->placements;
 
-	if (mem_type_is_vram(place->mem_type)) {
+	if (mem_type_is_vram(place->mem_type) && !bo->rpm_ref) {
 		/*
 		 * XXX: In real world case this is already protected by
 		 * display. But IGT is not ready to deal with this, so, let's
@@ -1161,7 +1157,7 @@ static int xe_gem_ttm_mmap(struct drm_gem_object *obj,
 		 * change of CPU trying to write to a device memory while the
 		 * device is in D3hot.
 		 */
-		xe_pm_runtime_get(xe);
+//		xe_pm_runtime_get(xe);
 		bo->rpm_ref = true;
 	}
 

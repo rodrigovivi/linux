@@ -189,6 +189,9 @@ void xe_pm_runtime_fini(struct xe_device *xe)
 
 	pm_runtime_get_sync(dev);
 	pm_runtime_forbid(dev);
+
+	while (atomic_read(&dev->power.usage_count) > 1)
+		atomic_dec(&dev->power.usage_count);
 }
 
 static void xe_pm_write_callback_task(struct xe_device *xe,
@@ -218,34 +221,8 @@ int xe_pm_runtime_suspend(struct xe_device *xe)
 	u8 id;
 	int err = 0;
 
-	if (xe->d3cold.allowed && xe_device_mem_access_ongoing(xe))
-		return -EBUSY;
-
 	/* Disable access_ongoing asserts and prevent recursive pm calls */
 	xe_pm_write_callback_task(xe, current);
-
-	/*
-	 * The actual xe_device_mem_access_put() is always async underneath, so
-	 * exactly where that is called should makes no difference to us. However
-	 * we still need to be very careful with the locks that this callback
-	 * acquires and the locks that are acquired and held by any callers of
-	 * xe_device_mem_access_get(). We already have the matching annotation
-	 * on that side, but we also need it here. For example lockdep should be
-	 * able to tell us if the following scenario is in theory possible:
-	 *
-	 * CPU0                          | CPU1 (kworker)
-	 * lock(A)                       |
-	 *                               | xe_pm_runtime_suspend()
-	 *                               |      lock(A)
-	 * xe_device_mem_access_get()    |
-	 *
-	 * This will clearly deadlock since rpm core needs to wait for
-	 * xe_pm_runtime_suspend() to complete, but here we are holding lock(A)
-	 * on CPU0 which prevents CPU1 making forward progress.  With the
-	 * annotation here and in xe_device_mem_access_get() lockdep will see
-	 * the potential lock inversion and give us a nice splat.
-	 */
-	lock_map_acquire(&xe_device_mem_access_lockdep_map);
 
 	if (xe->d3cold.allowed) {
 		err = xe_bo_evict_all(xe);
@@ -261,7 +238,6 @@ int xe_pm_runtime_suspend(struct xe_device *xe)
 
 	xe_irq_suspend(xe);
 out:
-	lock_map_release(&xe_device_mem_access_lockdep_map);
 	xe_pm_write_callback_task(xe, NULL);
 	return err;
 }
@@ -274,8 +250,6 @@ int xe_pm_runtime_resume(struct xe_device *xe)
 
 	/* Disable access_ongoing asserts and prevent recursive pm calls */
 	xe_pm_write_callback_task(xe, current);
-
-	lock_map_acquire(&xe_device_mem_access_lockdep_map);
 
 	/*
 	 * It can be possible that xe has allowed d3cold but other pcie devices
@@ -312,7 +286,6 @@ int xe_pm_runtime_resume(struct xe_device *xe)
 			goto out;
 	}
 out:
-	lock_map_release(&xe_device_mem_access_lockdep_map);
 	xe_pm_write_callback_task(xe, NULL);
 	return err;
 }
@@ -331,6 +304,19 @@ int xe_pm_runtime_put(struct xe_device *xe)
 int xe_pm_runtime_get_if_active(struct xe_device *xe)
 {
 	return pm_runtime_get_if_active(xe->drm.dev, true);
+}
+
+/**
+ * xe_pm_runtime_suspended - Check if runtime PM status is "suspended".
+ * @xe: Xe device
+ *
+ * Returns true if runtime PM status is "suspended". But should only be used
+ * if (xe_pm_read_callback_task(xe) == NULL) to ensure that we are out of the
+ * runtime transitions.
+ **/
+bool xe_pm_runtime_suspended(struct xe_device *xe)
+{
+	return pm_runtime_suspended(xe->drm.dev);
 }
 
 void xe_pm_assert_unbounded_bridge(struct xe_device *xe)

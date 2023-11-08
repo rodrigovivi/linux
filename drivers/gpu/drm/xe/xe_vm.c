@@ -926,7 +926,7 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 			 * prepared for this just yet. So let's be over
 			 * protective for now.
 			 */
-			if (IS_DGFX(vm->xe))
+			if (false)
 				xe_pm_runtime_get(vm->xe);
 
 			INIT_LIST_HEAD(&vma->userptr.invalidate_link);
@@ -984,7 +984,7 @@ static void xe_vma_destroy_late(struct xe_vma *vma)
 		 */
 		mmu_interval_notifier_remove(&vma->userptr.notifier);
 		xe_vm_put(vm);
-		if (IS_DGFX(xe))
+		if (false)
 			xe_pm_runtime_put(xe);
 	} else if (xe_vma_is_null(vma)) {
 		xe_vm_put(vm);
@@ -1385,9 +1385,6 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 
 	vm->pt_ops = &xelp_pt_ops;
 
-	if (!(flags & XE_VM_FLAG_MIGRATION))
-		xe_device_mem_access_get(xe);
-
 	err = dma_resv_lock_interruptible(&vm->resv, NULL);
 	if (err)
 		goto err_put;
@@ -1503,8 +1500,6 @@ err_put:
 	for_each_tile(tile, xe, id)
 		xe_range_fence_tree_fini(&vm->rftree[id]);
 	kfree(vm);
-	if (!(flags & XE_VM_FLAG_MIGRATION))
-		xe_device_mem_access_put(xe);
 	return ERR_PTR(err);
 }
 
@@ -1631,8 +1626,6 @@ static void vm_destroy_work_func(struct work_struct *w)
 	xe_assert(xe, !vm->size);
 
 	if (!(vm->flags & XE_VM_FLAG_MIGRATION)) {
-		xe_device_mem_access_put(xe);
-
 		if (xe->info.has_asid) {
 			mutex_lock(&xe->usm.lock);
 			lookup = xa_erase(&xe->usm.asid_to_vm, vm->usm.asid);

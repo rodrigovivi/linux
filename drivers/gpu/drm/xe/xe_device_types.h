@@ -344,15 +344,6 @@ struct xe_device {
 	struct xe_tile tiles[XE_MAX_TILES_PER_DEVICE];
 
 	/**
-	 * @mem_access: keep track of memory access in the device, possibly
-	 * triggering additional actions when they occur.
-	 */
-	struct {
-		/** @ref: ref count of memory accesses */
-		atomic_t ref;
-	} mem_access;
-
-	/**
 	 * @pat: Encapsulate PAT related stuff
 	 */
 	struct {

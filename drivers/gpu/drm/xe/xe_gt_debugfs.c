@@ -39,10 +39,8 @@ static int hw_engines(struct seq_file *m, void *data)
 	int err;
 
 	xe_pm_runtime_get(xe);
-	xe_device_mem_access_get(xe);
 	err = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 	if (err) {
-		xe_device_mem_access_put(xe);
 		xe_pm_runtime_put(xe);
 		return err;
 	}
@@ -51,7 +49,6 @@ static int hw_engines(struct seq_file *m, void *data)
 		xe_hw_engine_print(hwe, &p);
 
 	err = xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL);
-	xe_device_mem_access_put(xe);
 	xe_pm_runtime_put(xe);
 	if (err)
 		return err;

@@ -87,17 +87,6 @@ static struct xe_exec_queue *__xe_exec_queue_create(struct xe_device *xe,
 	if (err)
 		goto err_lrc;
 
-	/*
-	 * Normally the user vm holds an rpm ref to keep the device
-	 * awake, and the context holds a ref for the vm, however for
-	 * some engines we use the kernels migrate vm underneath which
-	 * offers no such rpm ref. Make sure we keep a ref here, so we
-	 * can perform GuC CT actions when needed. Caller is expected to
-	 * have already grabbed the rpm ref outside any sensitive locks.
-	 */
-	if (q->flags & EXEC_QUEUE_FLAG_VM)
-		drm_WARN_ON(&xe->drm, !xe_device_mem_access_get_if_ongoing(xe));
-
 	return q;
 
 err_lrc:
@@ -174,8 +163,6 @@ void xe_exec_queue_fini(struct xe_exec_queue *q)
 		xe_lrc_finish(q->lrc + i);
 	if (q->vm)
 		xe_vm_put(q->vm);
-	if (q->flags & EXEC_QUEUE_FLAG_VM)
-		xe_device_mem_access_put(gt_to_xe(q->gt));
 
 	kfree(q);
 }
@@ -646,9 +633,6 @@ int xe_exec_queue_create_ioctl(struct drm_device *dev, void *data,
 			if (XE_IOCTL_DBG(xe, !hwe))
 				return -EINVAL;
 
-			/* The migration vm doesn't hold rpm ref */
-			xe_device_mem_access_get(xe);
-
 			migrate_vm = xe_migrate_get_vm(gt_to_tile(gt)->migrate);
 			new = xe_exec_queue_create(xe, migrate_vm, logical_mask,
 						   args->width, hwe,
@@ -659,8 +643,6 @@ int xe_exec_queue_create_ioctl(struct drm_device *dev, void *data,
 						   (id ?
 						    EXEC_QUEUE_FLAG_BIND_ENGINE_CHILD :
 						    0));
-
-			xe_device_mem_access_put(xe); /* now held by engine */
 
 			xe_vm_put(migrate_vm);
 			if (IS_ERR(new)) {

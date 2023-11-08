@@ -362,8 +362,6 @@ static ssize_t freq_act_show(struct device *dev,
 	u32 freq;
 	ssize_t ret;
 
-	xe_device_mem_access_get(gt_to_xe(gt));
-
 	/* When in RC6, actual frequency reported will be 0. */
 	if (GRAPHICS_VERx100(xe) >= 1270) {
 		freq = xe_mmio_read32(gt, MTL_MIRROR_TARGET_WP1);
@@ -375,7 +373,6 @@ static ssize_t freq_act_show(struct device *dev,
 
 	ret = sysfs_emit(buf, "%d\n", decode_freq(freq));
 
-	xe_device_mem_access_put(gt_to_xe(gt));
 	return ret;
 }
 static DEVICE_ATTR_RO(freq_act);
@@ -388,14 +385,13 @@ static ssize_t freq_cur_show(struct device *dev,
 	u32 freq;
 	ssize_t ret;
 
-	xe_device_mem_access_get(gt_to_xe(gt));
 	/*
 	 * GuC SLPC plays with cur freq request when GuCRC is enabled
 	 * Block RC6 for a more reliable read.
 	 */
 	ret = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 	if (ret)
-		goto out;
+		return ret;
 
 	freq = xe_mmio_read32(gt, RPNSWREQ);
 
@@ -403,8 +399,6 @@ static ssize_t freq_cur_show(struct device *dev,
 	ret = sysfs_emit(buf, "%d\n", decode_freq(freq));
 
 	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
-out:
-	xe_device_mem_access_put(gt_to_xe(gt));
 	return ret;
 }
 static DEVICE_ATTR_RO(freq_cur);
@@ -422,12 +416,8 @@ static ssize_t freq_rpe_show(struct device *dev,
 			     struct device_attribute *attr, char *buf)
 {
 	struct xe_guc_pc *pc = dev_to_pc(dev);
-	struct xe_gt *gt = pc_to_gt(pc);
-	struct xe_device *xe = gt_to_xe(gt);
 
-	xe_device_mem_access_get(xe);
 	pc_update_rp_values(pc);
-	xe_device_mem_access_put(xe);
 	return sysfs_emit(buf, "%d\n", pc->rpe_freq);
 }
 static DEVICE_ATTR_RO(freq_rpe);
@@ -448,7 +438,6 @@ static ssize_t freq_min_show(struct device *dev,
 	struct xe_gt *gt = pc_to_gt(pc);
 	ssize_t ret;
 
-	xe_device_mem_access_get(pc_to_xe(pc));
 	mutex_lock(&pc->freq_lock);
 	if (!pc->freq_ready) {
 		/* Might be in the middle of a gt reset */
@@ -474,7 +463,6 @@ fw:
 	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
 out:
 	mutex_unlock(&pc->freq_lock);
-	xe_device_mem_access_put(pc_to_xe(pc));
 	return ret;
 }
 
@@ -489,7 +477,6 @@ static ssize_t freq_min_store(struct device *dev, struct device_attribute *attr,
 	if (ret)
 		return ret;
 
-	xe_device_mem_access_get(pc_to_xe(pc));
 	mutex_lock(&pc->freq_lock);
 	if (!pc->freq_ready) {
 		/* Might be in the middle of a gt reset */
@@ -505,7 +492,6 @@ static ssize_t freq_min_store(struct device *dev, struct device_attribute *attr,
 
 out:
 	mutex_unlock(&pc->freq_lock);
-	xe_device_mem_access_put(pc_to_xe(pc));
 	return ret ?: count;
 }
 static DEVICE_ATTR_RW(freq_min);
@@ -516,7 +502,6 @@ static ssize_t freq_max_show(struct device *dev,
 	struct xe_guc_pc *pc = dev_to_pc(dev);
 	ssize_t ret;
 
-	xe_device_mem_access_get(pc_to_xe(pc));
 	mutex_lock(&pc->freq_lock);
 	if (!pc->freq_ready) {
 		/* Might be in the middle of a gt reset */
@@ -532,7 +517,6 @@ static ssize_t freq_max_show(struct device *dev,
 
 out:
 	mutex_unlock(&pc->freq_lock);
-	xe_device_mem_access_put(pc_to_xe(pc));
 	return ret;
 }
 
@@ -547,7 +531,6 @@ static ssize_t freq_max_store(struct device *dev, struct device_attribute *attr,
 	if (ret)
 		return ret;
 
-	xe_device_mem_access_get(pc_to_xe(pc));
 	mutex_lock(&pc->freq_lock);
 	if (!pc->freq_ready) {
 		/* Might be in the middle of a gt reset */
@@ -563,7 +546,6 @@ static ssize_t freq_max_store(struct device *dev, struct device_attribute *attr,
 
 out:
 	mutex_unlock(&pc->freq_lock);
-	xe_device_mem_access_put(pc_to_xe(pc));
 	return ret ?: count;
 }
 static DEVICE_ATTR_RW(freq_max);
@@ -577,8 +559,6 @@ enum xe_gt_idle_state xe_guc_pc_c_status(struct xe_guc_pc *pc)
 	struct xe_gt *gt = pc_to_gt(pc);
 	u32 reg, gt_c_state;
 
-	xe_device_mem_access_get(gt_to_xe(gt));
-
 	if (GRAPHICS_VERx100(gt_to_xe(gt)) >= 1270) {
 		reg = xe_mmio_read32(gt, MTL_MIRROR_TARGET_WP1);
 		gt_c_state = REG_FIELD_GET(MTL_CC_MASK, reg);
@@ -586,8 +566,6 @@ enum xe_gt_idle_state xe_guc_pc_c_status(struct xe_guc_pc *pc)
 		reg = xe_mmio_read32(gt, GT_CORE_STATUS);
 		gt_c_state = REG_FIELD_GET(RCN_MASK, reg);
 	}
-
-	xe_device_mem_access_put(gt_to_xe(gt));
 
 	switch (gt_c_state) {
 	case GT_C6:
@@ -606,13 +584,8 @@ enum xe_gt_idle_state xe_guc_pc_c_status(struct xe_guc_pc *pc)
 u64 xe_guc_pc_rc6_residency(struct xe_guc_pc *pc)
 {
 	struct xe_gt *gt = pc_to_gt(pc);
-	u32 reg;
 
-	xe_device_mem_access_get(gt_to_xe(gt));
-	reg = xe_mmio_read32(gt, GT_GFX_RC6);
-	xe_device_mem_access_put(gt_to_xe(gt));
-
-	return reg;
+	return xe_mmio_read32(gt, GT_GFX_RC6);
 }
 
 /**
@@ -622,13 +595,8 @@ u64 xe_guc_pc_rc6_residency(struct xe_guc_pc *pc)
 u64 xe_guc_pc_mc6_residency(struct xe_guc_pc *pc)
 {
 	struct xe_gt *gt = pc_to_gt(pc);
-	u64 reg;
 
-	xe_device_mem_access_get(gt_to_xe(gt));
-	reg = xe_mmio_read32(gt, MTL_MEDIA_MC6);
-	xe_device_mem_access_put(gt_to_xe(gt));
-
-	return reg;
+	return xe_mmio_read32(gt, MTL_MEDIA_MC6);
 }
 
 static const struct attribute *pc_attrs[] = {
@@ -745,27 +713,22 @@ static int pc_adjust_requested_freq(struct xe_guc_pc *pc)
 int xe_guc_pc_gucrc_disable(struct xe_guc_pc *pc)
 {
 	struct xe_gt *gt = pc_to_gt(pc);
-	int ret = 0;
-
-	xe_device_mem_access_get(pc_to_xe(pc));
+	int ret;
 
 	ret = pc_action_setup_gucrc(pc, XE_GUCRC_HOST_CONTROL);
 	if (ret)
-		goto out;
+		return ret;
 
 	ret = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 	if (ret)
-		goto out;
+		return ret;
 
 	xe_mmio_write32(gt, PG_ENABLE, 0);
 	xe_mmio_write32(gt, RC_CONTROL, 0);
 	xe_mmio_write32(gt, RC_STATE, 0);
 
 	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
-
-out:
-	xe_device_mem_access_put(pc_to_xe(pc));
-	return ret;
+	return 0;
 }
 
 static void pc_init_pcode_freq(struct xe_guc_pc *pc)
@@ -818,14 +781,12 @@ int xe_guc_pc_start(struct xe_guc_pc *pc)
 
 	xe_gt_assert(gt, xe_device_uc_enabled(xe));
 
-	xe_device_mem_access_get(pc_to_xe(pc));
-
 	memset(pc->bo->vmap.vaddr, 0, size);
 	slpc_shared_data_write(pc, header.size, size);
 
 	ret = xe_force_wake_get(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 	if (ret)
-		goto out_fail_force_wake;
+		return ret;
 
 	ret = pc_action_reset(pc);
 	if (ret)
@@ -851,8 +812,6 @@ int xe_guc_pc_start(struct xe_guc_pc *pc)
 
 out:
 	XE_WARN_ON(xe_force_wake_put(gt_to_fw(gt), XE_FORCEWAKE_ALL));
-out_fail_force_wake:
-	xe_device_mem_access_put(pc_to_xe(pc));
 	return ret;
 }
 
@@ -864,24 +823,20 @@ int xe_guc_pc_stop(struct xe_guc_pc *pc)
 {
 	int ret;
 
-	xe_device_mem_access_get(pc_to_xe(pc));
-
 	mutex_lock(&pc->freq_lock);
 	pc->freq_ready = false;
 	mutex_unlock(&pc->freq_lock);
 
 	ret = pc_action_shutdown(pc);
 	if (ret)
-		goto out;
+		return ret;
 
 	if (wait_for_pc_state(pc, SLPC_GLOBAL_STATE_NOT_RUNNING)) {
 		drm_err(&pc_to_xe(pc)->drm, "GuC PC Shutdown failed\n");
-		ret = -EIO;
+		return -EIO;
 	}
 
-out:
-	xe_device_mem_access_put(pc_to_xe(pc));
-	return ret;
+	return 0;
 }
 
 void xe_guc_pc_fini(struct xe_guc_pc *pc)
