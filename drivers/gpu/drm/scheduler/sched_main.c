@@ -32,8 +32,7 @@
  * backend operations to the scheduler like submitting a job to hardware run queue,
  * returning the dependencies of a job etc.
  *
- * The organisation of the scheduler is the following for scheduling policies
- * DRM_SCHED_POLICY_RR and DRM_SCHED_POLICY_FIFO:
+ * The organisation of the scheduler is the following:
  *
  * 1. Each hw run queue has one scheduler
  * 2. Each scheduler has multiple run queues with different priorities
@@ -42,22 +41,7 @@
  * 4. Entities themselves maintain a queue of jobs that will be scheduled on
  *    the hardware.
  *
- * The organisation of the scheduler is the following for scheduling policy
- * DRM_SCHED_POLICY_SINGLE_ENTITY:
- *
- * 1. One to one relationship between scheduler and entity
- * 2. No priorities implemented per scheduler (single job queue)
- * 3. No run queues in scheduler rather jobs are directly dequeued from entity
- * 4. The entity maintains a queue of jobs that will be scheduled on the
- * hardware
- *
- * The jobs in a entity are always scheduled in the order that they were pushed
- * regardless of scheduling policy.
- *
- * A policy of DRM_SCHED_POLICY_RR or DRM_SCHED_POLICY_FIFO is expected to used
- * when the KMD is scheduling directly on the hardware while a scheduling policy
- * of DRM_SCHED_POLICY_SINGLE_ENTITY is expected to be used when there is a
- * firmware scheduler.
+ * The jobs in a entity are always scheduled in the order that they were pushed.
  *
  * Note that once a job was taken from the entities queue and pushed to the
  * hardware, i.e. the pending queue, the entity must not be referenced anymore
@@ -112,8 +96,6 @@ static inline void drm_sched_rq_remove_fifo_locked(struct drm_sched_entity *enti
 
 void drm_sched_rq_update_fifo(struct drm_sched_entity *entity, ktime_t ts)
 {
-	WARN_ON(!!entity->single_sched);
-
 	/*
 	 * Both locks need to be grabbed, one to protect from entity->rq change
 	 * for entity from within concurrent drm_sched_entity_select_rq and the
@@ -144,8 +126,6 @@ void drm_sched_rq_update_fifo(struct drm_sched_entity *entity, ktime_t ts)
 static void drm_sched_rq_init(struct drm_gpu_scheduler *sched,
 			      struct drm_sched_rq *rq)
 {
-	WARN_ON(sched->sched_policy == DRM_SCHED_POLICY_SINGLE_ENTITY);
-
 	spin_lock_init(&rq->lock);
 	INIT_LIST_HEAD(&rq->entities);
 	rq->rb_tree_root = RB_ROOT_CACHED;
@@ -164,8 +144,6 @@ static void drm_sched_rq_init(struct drm_gpu_scheduler *sched,
 void drm_sched_rq_add_entity(struct drm_sched_rq *rq,
 			     struct drm_sched_entity *entity)
 {
-	WARN_ON(!!entity->single_sched);
-
 	if (!list_empty(&entity->list))
 		return;
 
@@ -188,8 +166,6 @@ void drm_sched_rq_add_entity(struct drm_sched_rq *rq,
 void drm_sched_rq_remove_entity(struct drm_sched_rq *rq,
 				struct drm_sched_entity *entity)
 {
-	WARN_ON(!!entity->single_sched);
-
 	if (list_empty(&entity->list))
 		return;
 
@@ -720,7 +696,7 @@ int drm_sched_job_init(struct drm_sched_job *job,
 		       struct drm_sched_entity *entity,
 		       void *owner)
 {
-	if (!entity->rq && !entity->single_sched)
+	if (!entity->rq)
 		return -ENOENT;
 
 	job->entity = entity;
@@ -753,16 +729,13 @@ void drm_sched_job_arm(struct drm_sched_job *job)
 {
 	struct drm_gpu_scheduler *sched;
 	struct drm_sched_entity *entity = job->entity;
-	bool single_entity = !!entity->single_sched;
 
 	BUG_ON(!entity);
-	if (!single_entity)
-		drm_sched_entity_select_rq(entity);
-	sched = drm_sched_entity_to_scheduler(entity);
+	drm_sched_entity_select_rq(entity);
+	sched = entity->rq->sched;
 
 	job->sched = sched;
-	if (!single_entity)
-		job->s_priority = entity->rq - sched->sched_rq;
+	job->s_priority = entity->rq - sched->sched_rq;
 	job->id = atomic64_inc_return(&sched->job_id_count);
 
 	drm_sched_fence_init(job->s_fence, job->entity);
@@ -984,13 +957,6 @@ drm_sched_select_entity(struct drm_gpu_scheduler *sched)
 
 	if (!drm_sched_can_queue(sched))
 		return NULL;
-
-	if (sched->single_entity) {
-		if (drm_sched_entity_is_ready(sched->single_entity))
-			return sched->single_entity;
-
-		return NULL;
-	}
 
 	/* Kernel run queue has higher priority than normal run queue*/
 	for (i = DRM_SCHED_PRIORITY_COUNT - 1; i >= DRM_SCHED_PRIORITY_MIN; i--) {
@@ -1238,7 +1204,6 @@ int drm_sched_init(struct drm_gpu_scheduler *sched,
 		return -EINVAL;
 
 	sched->ops = ops;
-	sched->single_entity = NULL;
 	sched->hw_submission_limit = hw_submission;
 	sched->name = name;
 	sched->run_wq = run_wq ? : system_wq;
@@ -1251,9 +1216,7 @@ int drm_sched_init(struct drm_gpu_scheduler *sched,
 		sched->sched_policy = default_drm_sched_policy;
 	else
 		sched->sched_policy = sched_policy;
-	for (i = DRM_SCHED_PRIORITY_MIN; sched_policy !=
-	     DRM_SCHED_POLICY_SINGLE_ENTITY && i < DRM_SCHED_PRIORITY_COUNT;
-	     i++)
+	for (i = DRM_SCHED_PRIORITY_MIN; i < DRM_SCHED_PRIORITY_COUNT; i++)
 		drm_sched_rq_init(sched, &sched->sched_rq[i]);
 
 	init_waitqueue_head(&sched->job_scheduled);
@@ -1286,15 +1249,7 @@ void drm_sched_fini(struct drm_gpu_scheduler *sched)
 
 	drm_sched_run_wq_stop(sched);
 
-	if (sched->single_entity) {
-		spin_lock(&sched->single_entity->rq_lock);
-		sched->single_entity->stopped = true;
-		spin_unlock(&sched->single_entity->rq_lock);
-	}
-
-	for (i = DRM_SCHED_PRIORITY_COUNT - 1; sched->sched_policy !=
-	     DRM_SCHED_POLICY_SINGLE_ENTITY && i >= DRM_SCHED_PRIORITY_MIN;
-	     i--) {
+	for (i = DRM_SCHED_PRIORITY_COUNT - 1; i >= DRM_SCHED_PRIORITY_MIN; i--) {
 		struct drm_sched_rq *rq = &sched->sched_rq[i];
 
 		spin_lock(&rq->lock);
@@ -1334,8 +1289,6 @@ void drm_sched_increase_karma(struct drm_sched_job *bad)
 	struct drm_sched_entity *tmp;
 	struct drm_sched_entity *entity;
 	struct drm_gpu_scheduler *sched = bad->sched;
-
-	WARN_ON(sched->sched_policy == DRM_SCHED_POLICY_SINGLE_ENTITY);
 
 	/* don't change @bad's karma if it's from KERNEL RQ,
 	 * because sometimes GPU hang would cause kernel jobs (like VM updating jobs)
