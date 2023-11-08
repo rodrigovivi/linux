@@ -1032,54 +1032,6 @@ drm_sched_pick_best(struct drm_gpu_scheduler **sched_list,
 EXPORT_SYMBOL(drm_sched_pick_best);
 
 /**
- * drm_sched_add_msg - add scheduler message
- *
- * @sched: scheduler instance
- * @msg: message to be added
- *
- * Can and will pass an jobs waiting on dependencies or in a runnable queue.
- * Messages processing will stop if schedule run wq is stopped and resume when
- * run wq is started.
- */
-void drm_sched_add_msg(struct drm_gpu_scheduler *sched,
-		       struct drm_sched_msg *msg)
-{
-	spin_lock(&sched->job_list_lock);
-	list_add_tail(&msg->link, &sched->msgs);
-	spin_unlock(&sched->job_list_lock);
-
-	/*
-	 * Same as above in drm_sched_run_wq_queue, try to kick worker if
-	 * paused, harmless if this races
-	 */
-	if (!sched->pause_run_wq)
-		queue_work(sched->run_wq, &sched->work_run);
-}
-EXPORT_SYMBOL(drm_sched_add_msg);
-
-/**
- * drm_sched_get_msg - get scheduler message
- *
- * @sched: scheduler instance
- *
- * Returns NULL or message
- */
-static struct drm_sched_msg *
-drm_sched_get_msg(struct drm_gpu_scheduler *sched)
-{
-	struct drm_sched_msg *msg;
-
-	spin_lock(&sched->job_list_lock);
-	msg = list_first_entry_or_null(&sched->msgs,
-				       struct drm_sched_msg, link);
-	if (msg)
-		list_del(&msg->link);
-	spin_unlock(&sched->job_list_lock);
-
-	return msg;
-}
-
-/**
  * drm_sched_main - main scheduler thread
  *
  * @param: scheduler instance
@@ -1092,7 +1044,6 @@ static void drm_sched_main(struct work_struct *w)
 
 	while (!READ_ONCE(sched->pause_run_wq)) {
 		struct drm_sched_entity *entity;
-		struct drm_sched_msg *msg;
 		struct drm_sched_fence *s_fence;
 		struct drm_sched_job *sched_job;
 		struct dma_fence *fence;
@@ -1100,16 +1051,12 @@ static void drm_sched_main(struct work_struct *w)
 
 		cleanup_job = drm_sched_get_cleanup_job(sched);
 		entity = drm_sched_select_entity(sched);
-		msg = drm_sched_get_msg(sched);
 
 		if (cleanup_job)
 			sched->ops->free_job(cleanup_job);
 
-		if (msg)
-			sched->ops->process_msg(msg);
-
 		if (!entity) {
-			if (!cleanup_job && !msg)
+			if (!cleanup_job)
 				break;
 			continue;
 		}
@@ -1118,7 +1065,7 @@ static void drm_sched_main(struct work_struct *w)
 
 		if (!sched_job) {
 			complete_all(&entity->entity_idle);
-			if (!cleanup_job && !msg)
+			if (!cleanup_job)
 				break;
 			continue;
 		}
@@ -1192,7 +1139,6 @@ int drm_sched_init(struct drm_gpu_scheduler *sched,
 
 	init_waitqueue_head(&sched->job_scheduled);
 	INIT_LIST_HEAD(&sched->pending_list);
-	INIT_LIST_HEAD(&sched->msgs);
 	spin_lock_init(&sched->job_list_lock);
 	atomic_set(&sched->hw_rq_count, 0);
 	INIT_DELAYED_WORK(&sched->work_tdr, drm_sched_job_timedout);
