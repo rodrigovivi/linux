@@ -353,11 +353,11 @@ static int query_config(struct xe_device *xe, struct drm_xe_device_query *query)
 static int query_gt_list(struct xe_device *xe, struct drm_xe_device_query *query)
 {
 	struct xe_gt *gt;
-	size_t size = sizeof(struct drm_xe_query_gt_list) +
-		xe->info.gt_count * sizeof(struct drm_xe_query_gt);
-	struct drm_xe_query_gt_list __user *query_ptr =
+	size_t size = sizeof(struct drm_xe_query_gt) +
+		xe->info.gt_count * sizeof(struct drm_xe_gt);
+	struct drm_xe_query_gt __user *query_ptr =
 		u64_to_user_ptr(query->data);
-	struct drm_xe_query_gt_list *gt_list;
+	struct drm_xe_query_gt *gt_list;
 	u8 id;
 
 	if (query->size == 0) {
