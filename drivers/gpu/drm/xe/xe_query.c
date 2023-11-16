@@ -277,6 +277,7 @@ static int query_mem_region(struct xe_device *xe,
 	if (perfmon_capable())
 		usage->mem_regions[0].used = ttm_resource_manager_usage(man);
 	usage->num_mem_regions = 1;
+	usage->pad = 0;
 
 	for (i = XE_PL_VRAM0; i <= XE_PL_VRAM1; ++i) {
 		man = ttm_manager_type(&xe->ttm, i);
@@ -335,6 +336,7 @@ static int query_config(struct xe_device *xe, struct drm_xe_device_query *query)
 		return -ENOMEM;
 
 	config->num_params = num_params;
+	config->pad = 0;
 	config->info[DRM_XE_QUERY_CONFIG_REV_AND_DEVICE_ID] =
 		xe->info.devid | (xe->info.revid << 16);
 	if (xe_device_get_root_tile(xe)->mem.vram.usable_size)
@@ -377,6 +379,8 @@ static int query_gt_list(struct xe_device *xe, struct drm_xe_device_query *query
 		return -ENOMEM;
 
 	gt_list->num_gt = xe->info.gt_count;
+	gt_list->pad = 0;
+
 	for_each_gt(gt, xe, id) {
 		if (xe_gt_is_media_type(gt))
 			gt_list->gt_list[id].type = DRM_XE_QUERY_GT_TYPE_MEDIA;
@@ -392,6 +396,8 @@ static int query_gt_list(struct xe_device *xe, struct drm_xe_device_query *query
 				BIT(gt_to_tile(gt)->id) << 1;
 		gt_list->gt_list[id].far_mem_regions = xe->info.mem_region_mask ^
 			gt_list->gt_list[id].near_mem_regions;
+		memset(gt_list->gt_list[id].reserved, 0,
+		       sizeof(gt_list->gt_list[id].reserved));
 	}
 
 	if (copy_to_user(query_ptr, gt_list, size)) {

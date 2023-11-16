@@ -384,6 +384,8 @@ struct drm_xe_gt {
 	__u16 tile_id;
 	/** @gt_id: Unique ID of this GT within the PCI Device */
 	__u16 gt_id;
+	/** @pad: MBZ */
+	__u16 pad[3];
 	/** @clock_freq: A clock frequency for timestamp */
 	__u32 clock_freq;
 	/**
@@ -662,9 +664,6 @@ struct drm_xe_vm_bind_op {
 	 */
 	__u32 obj;
 
-	/** @pad: MBZ */
-	__u32 pad;
-
 	union {
 		/**
 		 * @obj_offset: Offset into the object, MBZ for CLEAR_RANGE,
@@ -744,9 +743,6 @@ struct drm_xe_vm_bind {
 	/** @num_binds: number of binds in this IOCTL */
 	__u32 num_binds;
 
-	/** @pad: MBZ */
-	__u32 pad;
-
 	union {
 		/** @bind: used if num_binds == 1 */
 		struct drm_xe_vm_bind_op bind;
@@ -761,11 +757,11 @@ struct drm_xe_vm_bind {
 	/** @num_syncs: amount of syncs to wait on */
 	__u32 num_syncs;
 
-	/** @pad2: MBZ */
-	__u32 pad2;
-
 	/** @syncs: pointer to struct drm_xe_sync array */
 	__u64 syncs;
+
+	/** @pad: MBZ */
+	__u64 pad;
 
 	/** @reserved: Reserved */
 	__u64 reserved[2];
