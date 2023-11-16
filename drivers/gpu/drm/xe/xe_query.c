@@ -240,15 +240,15 @@ static size_t calc_mem_regions_size(struct xe_device *xe)
 		if (ttm_manager_type(&xe->ttm, i))
 			num_managers++;
 
-	return offsetof(struct drm_xe_query_mem_regions, regions[num_managers]);
+	return offsetof(struct drm_xe_query_mem_region, mem_regions[num_managers]);
 }
 
-static int query_mem_regions(struct xe_device *xe,
-			     struct drm_xe_device_query *query)
+static int query_mem_region(struct xe_device *xe,
+			    struct drm_xe_device_query *query)
 {
 	size_t size = calc_mem_regions_size(xe);
-	struct drm_xe_query_mem_regions *usage;
-	struct drm_xe_query_mem_regions __user *query_ptr =
+	struct drm_xe_query_mem_region *usage;
+	struct drm_xe_query_mem_region __user *query_ptr =
 		u64_to_user_ptr(query->data);
 	struct ttm_resource_manager *man;
 	int ret, i;
@@ -265,36 +265,38 @@ static int query_mem_regions(struct xe_device *xe,
 		return -ENOMEM;
 
 	man = ttm_manager_type(&xe->ttm, XE_PL_TT);
-	usage->regions[0].mem_class = DRM_XE_MEM_REGION_CLASS_SYSMEM;
-	usage->regions[0].instance = 0;
-	usage->regions[0].min_page_size = PAGE_SIZE;
-	usage->regions[0].total_size = man->size << PAGE_SHIFT;
+	usage->mem_regions[0].mem_class = DRM_XE_MEM_REGION_CLASS_SYSMEM;
+	usage->mem_regions[0].instance = 0;
+	usage->mem_regions[0].min_page_size = PAGE_SIZE;
+	usage->mem_regions[0].total_size = man->size << PAGE_SHIFT;
 	if (perfmon_capable())
-		usage->regions[0].used = ttm_resource_manager_usage(man);
-	usage->num_regions = 1;
+		usage->mem_regions[0].used = ttm_resource_manager_usage(man);
+	usage->num_mem_regions = 1;
 
 	for (i = XE_PL_VRAM0; i <= XE_PL_VRAM1; ++i) {
 		man = ttm_manager_type(&xe->ttm, i);
 		if (man) {
-			usage->regions[usage->num_regions].mem_class =
+			usage->mem_regions[usage->num_mem_regions].mem_class =
 				DRM_XE_MEM_REGION_CLASS_VRAM;
-			usage->regions[usage->num_regions].instance =
-				usage->num_regions;
-			usage->regions[usage->num_regions].min_page_size =
+			usage->mem_regions[usage->num_mem_regions].instance =
+				usage->num_mem_regions;
+			usage->mem_regions[usage->num_mem_regions].min_page_size =
 				xe->info.vram_flags & XE_VRAM_FLAGS_NEED64K ?
 				SZ_64K : PAGE_SIZE;
-			usage->regions[usage->num_regions].total_size =
+			usage->mem_regions[usage->num_mem_regions].total_size =
 				man->size;
 
 			if (perfmon_capable()) {
 				xe_ttm_vram_get_used(man,
-						     &usage->regions[usage->num_regions].used,
-						     &usage->regions[usage->num_regions].cpu_visible_used);
+						     &usage->mem_regions
+						     [usage->num_mem_regions].used,
+						     &usage->mem_regions
+						     [usage->num_mem_regions].cpu_visible_used);
 			}
 
-			usage->regions[usage->num_regions].cpu_visible_size =
+			usage->mem_regions[usage->num_mem_regions].cpu_visible_size =
 				xe_ttm_vram_get_cpu_visible_size(man);
-			usage->num_regions++;
+			usage->num_mem_regions++;
 		}
 	}
 
@@ -500,7 +502,7 @@ static int query_gt_topology(struct xe_device *xe,
 static int (* const xe_query_funcs[])(struct xe_device *xe,
 				      struct drm_xe_device_query *query) = {
 	query_engines,
-	query_mem_regions,
+	query_mem_region,
 	query_config,
 	query_gt_list,
 	query_hwconfig,
