@@ -1202,6 +1202,7 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
 	};
 	struct ttm_placement *placement;
 	uint32_t alignment;
+	size_t aligned_size;
 	int err;
 
 	/* Only kernel objects should set GT */
@@ -1212,21 +1213,28 @@ struct xe_bo *__xe_bo_create_locked(struct xe_device *xe, struct xe_bo *bo,
 		return ERR_PTR(-EINVAL);
 	}
 
+	if (flags & (XE_BO_CREATE_VRAM_MASK | XE_BO_CREATE_STOLEN_BIT) &&
+	    !(flags & XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT) &&
+	    xe->info.vram_flags & XE_VRAM_FLAGS_NEED64K) {
+		aligned_size = ALIGN(size, SZ_64K);
+		if (type != ttm_bo_type_device)
+			size = ALIGN(size, SZ_64K);
+		flags |= XE_BO_INTERNAL_64K;
+		alignment = SZ_64K >> PAGE_SHIFT;
+
+	} else {
+		aligned_size = ALIGN(size, SZ_4K);
+		flags &= ~XE_BO_INTERNAL_64K;
+		alignment = SZ_4K >> PAGE_SHIFT;
+	}
+
+	if (type == ttm_bo_type_device && aligned_size != size)
+		return ERR_PTR(-EINVAL);
+
 	if (!bo) {
 		bo = xe_bo_alloc();
 		if (IS_ERR(bo))
 			return bo;
-	}
-
-	if (flags & (XE_BO_CREATE_VRAM_MASK | XE_BO_CREATE_STOLEN_BIT) &&
-	    !(flags & XE_BO_CREATE_IGNORE_MIN_PAGE_SIZE_BIT) &&
-	    xe->info.vram_flags & XE_VRAM_FLAGS_NEED64K) {
-		size = ALIGN(size, SZ_64K);
-		flags |= XE_BO_INTERNAL_64K;
-		alignment = SZ_64K >> PAGE_SHIFT;
-	} else {
-		size = ALIGN(size, PAGE_SIZE);
-		alignment = SZ_4K >> PAGE_SHIFT;
 	}
 
 	bo->tile = tile;
