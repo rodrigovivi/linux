@@ -3,6 +3,8 @@
  * Copyright © 2023 Intel Corporation
  */
 
+#include "intel_fbdev_fb.h"
+
 #include <drm/drm_fb_helper.h>
 
 #include "xe_gt.h"
