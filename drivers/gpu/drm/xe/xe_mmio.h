@@ -87,9 +87,6 @@ static inline int xe_mmio_write32_and_verify(struct xe_gt *gt,
 	return (reg_val & mask) != eval ? -EINVAL : 0;
 }
 
-int xe_mmio_ioctl(struct drm_device *dev, void *data,
-		  struct drm_file *file);
-
 static inline bool xe_mmio_in_range(const struct xe_gt *gt,
 				    const struct xe_mmio_range *range,
 				    struct xe_reg reg)
