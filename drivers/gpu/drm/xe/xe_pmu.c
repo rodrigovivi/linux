@@ -353,10 +353,10 @@ create_event_attributes(struct xe_pmu *pmu)
 		const char *unit;
 		bool global;
 	} events[] = {
-		__event(1, "render-group-busy", "ns"),
-		__event(2, "copy-group-busy", "ns"),
-		__event(3, "media-group-busy", "ns"),
-		__event(4, "any-engine-group-busy", "ns"),
+		__event(0, "render-group-busy", "ns"),
+		__event(1, "copy-group-busy", "ns"),
+		__event(2, "media-group-busy", "ns"),
+		__event(3, "any-engine-group-busy", "ns"),
 	};
 
 	struct perf_pmu_events_attr *pmu_attr = NULL, *pmu_iter;
