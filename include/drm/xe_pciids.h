@@ -173,6 +173,15 @@
 	XE_ATS_M150_IDS(MACRO__, ## __VA_ARGS__),\
 	XE_ATS_M75_IDS(MACRO__, ## __VA_ARGS__)
 
+/* MTL / ARL */
+#define XE_MTL_IDS(MACRO__, ...)		\
+	MACRO__(0x7D40, ## __VA_ARGS__),	\
+	MACRO__(0x7D45, ## __VA_ARGS__),	\
+	MACRO__(0x7D55, ## __VA_ARGS__),	\
+	MACRO__(0x7D60, ## __VA_ARGS__),	\
+	MACRO__(0x7D67, ## __VA_ARGS__),	\
+	MACRO__(0x7DD5, ## __VA_ARGS__)
+
 /* PVC */
 #define XE_PVC_IDS(MACRO__, ...)		\
 	MACRO__(0x0B69, ## __VA_ARGS__),	\
@@ -187,34 +196,6 @@
 	MACRO__(0x0BE0, ## __VA_ARGS__),	\
 	MACRO__(0x0BE1, ## __VA_ARGS__),	\
 	MACRO__(0x0BE5, ## __VA_ARGS__)
-
-/* MTL */
-#define XE_MTL_M_IDS(MACRO__, ...)		\
-	MACRO__(0x7D40, ## __VA_ARGS__),	\
-	MACRO__(0x7D43, ## __VA_ARGS__),	\
-	MACRO__(0x7DC0, ## __VA_ARGS__)
-
-#define XE_MTL_P_IDS(MACRO__, ...)		\
-	MACRO__(0x7D45, ## __VA_ARGS__),	\
-	MACRO__(0x7D47, ## __VA_ARGS__),	\
-	MACRO__(0x7D50, ## __VA_ARGS__),	\
-	MACRO__(0x7D55, ## __VA_ARGS__),	\
-	MACRO__(0x7DC5, ## __VA_ARGS__),	\
-	MACRO__(0x7DD0, ## __VA_ARGS__),	\
-	MACRO__(0x7DD5, ## __VA_ARGS__)
-
-#define XE_MTL_S_IDS(MACRO__, ...)		\
-	MACRO__(0x7D60, ## __VA_ARGS__),	\
-	MACRO__(0x7DE0, ## __VA_ARGS__)
-
-#define XE_ARL_IDS(MACRO__, ...)		\
-	MACRO__(0x7D67, ## __VA_ARGS__)
-
-#define XE_MTL_IDS(MACRO__, ...)		\
-	XE_MTL_M_IDS(MACRO__, ## __VA_ARGS__),	\
-	XE_MTL_P_IDS(MACRO__, ## __VA_ARGS__),	\
-	XE_MTL_S_IDS(MACRO__, ## __VA_ARGS__),	\
-	XE_ARL_IDS(MACRO__, ## __VA_ARGS__)
 
 #define XE_LNL_IDS(MACRO__, ...) \
 	MACRO__(0x6420, ## __VA_ARGS__), \
