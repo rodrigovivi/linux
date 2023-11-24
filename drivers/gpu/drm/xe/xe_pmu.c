@@ -61,7 +61,7 @@ static u64 __engine_group_busyness_read(struct xe_gt *gt, int sample_type)
 
 static u64 engine_group_busyness_read(struct xe_gt *gt, u64 config)
 {
-	int sample_type = config_counter(config) - 1;
+	int sample_type = config_counter(config);
 	const unsigned int gt_id = gt->info.id;
 	struct xe_device *xe = gt->tile->xe;
 	struct xe_pmu *pmu = &xe->pmu;
