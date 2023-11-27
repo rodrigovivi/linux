@@ -64,10 +64,10 @@ static bool access_is_atomic(enum access_type access_type)
 	return access_type == ACCESS_TYPE_ATOMIC;
 }
 
-static bool vma_is_valid(struct xe_gt *gt, struct xe_vma *vma)
+static bool vma_is_valid(struct xe_tile *tile, struct xe_vma *vma)
 {
-	return BIT(gt_to_tile(gt)->id) & vma->tile_present &&
-		!(BIT(gt->info.id) & vma->usm.tile_invalidated);
+	return BIT(tile->id) & vma->tile_present &&
+		!(BIT(tile->id) & vma->usm.tile_invalidated);
 }
 
 static bool vma_matches(struct xe_vma *vma, u64 page_addr)
@@ -169,7 +169,7 @@ retry_userptr:
 	atomic = access_is_atomic(pf->access_type);
 
 	/* Check if VMA is valid */
-	if (vma_is_valid(gt, vma) && !atomic)
+	if (vma_is_valid(tile, vma) && !atomic)
 		goto unlock_vm;
 
 	/* TODO: Validate fault */
@@ -215,7 +215,7 @@ retry_userptr:
 
 	if (xe_vma_is_userptr(vma))
 		ret = xe_vma_userptr_check_repin(vma);
-	vma->usm.tile_invalidated &= ~BIT(gt_to_tile(gt)->id);
+	vma->usm.tile_invalidated &= ~BIT(tile->id);
 
 unlock_dma_resv:
 	drm_exec_fini(&exec);
