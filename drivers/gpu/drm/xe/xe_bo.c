@@ -1816,7 +1816,8 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 		return -EINVAL;
 
 	/* at least one valid memory placement must be specified */
-	if (XE_IOCTL_DBG(xe, !(args->placement & xe->info.mem_region_mask)))
+	if (XE_IOCTL_DBG(xe, (args->placement & ~xe->info.mem_region_mask) ||
+			 !args->placement))
 		return -EINVAL;
 
 	if (XE_IOCTL_DBG(xe, args->flags &
