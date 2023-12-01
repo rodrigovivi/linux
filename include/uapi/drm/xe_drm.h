@@ -673,6 +673,12 @@ struct drm_xe_vm_bind_op {
 	 *
 	 * Note: For userptr and externally imported dma-buf the kernel expects
 	 * either 1WAY or 2WAY for the @pat_index.
+	 *
+	 * For DRM_XE_VM_BIND_FLAG_NULL bindings there are no KMD restrictions
+	 * on the @pat_index. For such mappings there is no actual memory being
+	 * mapped (the address in the PTE is invalid), so the various PAT memory
+	 * attributes likely do not apply.  Simply leaving as zero is one
+	 * option (still a valid pat_index).
 	 */
 	__u16 pat_index;
 
