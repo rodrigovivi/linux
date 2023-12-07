@@ -136,8 +136,6 @@ struct xe_vma {
 
 struct xe_device;
 
-#define xe_vm_assert_held(vm) dma_resv_assert_held(&(vm)->resv)
-
 struct xe_vm {
 	/** @gpuvm: base GPUVM used to track VMAs */
 	struct drm_gpuvm gpuvm;
@@ -148,9 +146,6 @@ struct xe_vm {
 
 	/* exec queue used for (un)binding vma's */
 	struct xe_exec_queue *q[XE_MAX_TILES_PER_DEVICE];
-
-	/** Protects @rebind_list and the page-table structures */
-	struct dma_resv resv;
 
 	/** @lru_bulk_move: Bulk LRU move list for this VM's BOs */
 	struct ttm_lru_bulk_move lru_bulk_move;
@@ -424,5 +419,4 @@ struct xe_vma_op {
 		struct xe_vma_op_prefetch prefetch;
 	};
 };
-
 #endif
