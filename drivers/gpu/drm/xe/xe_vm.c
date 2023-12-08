@@ -452,8 +452,7 @@ int xe_vm_lock_dma_resv(struct xe_vm *vm, struct drm_exec *exec,
 	lockdep_assert_held(&vm->lock);
 
 	if (lock_vm) {
-		err = drm_exec_prepare_obj(exec, xe_vm_obj(vm),
-					   num_shared);
+		err = drm_exec_prepare_obj(exec, xe_vm_obj(vm), num_shared);
 		if (err)
 			return err;
 	}
