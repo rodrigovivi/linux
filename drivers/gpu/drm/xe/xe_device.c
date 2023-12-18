@@ -664,7 +664,7 @@ bool xe_device_mem_access_get_if_ongoing(struct xe_device *xe)
 	if (xe_pm_read_callback_task(xe) == current)
 		return true;
 
-	active = xe_pm_runtime_get_if_active(xe);
+	active = true;// xe_pm_runtime_get_if_active(xe);
 	if (active) {
 		int ref = atomic_inc_return(&xe->mem_access.ref);
 
@@ -707,7 +707,7 @@ void xe_device_mem_access_get(struct xe_device *xe)
 	lock_map_acquire(&xe_device_mem_access_lockdep_map);
 	lock_map_release(&xe_device_mem_access_lockdep_map);
 
-	xe_pm_runtime_get(xe);
+//	xe_pm_runtime_get(xe);
 	ref = atomic_inc_return(&xe->mem_access.ref);
 
 	xe_assert(xe, ref != S32_MAX);
@@ -722,7 +722,7 @@ void xe_device_mem_access_put(struct xe_device *xe)
 		return;
 
 	ref = atomic_dec_return(&xe->mem_access.ref);
-	xe_pm_runtime_put(xe);
+	//xe_pm_runtime_put(xe);
 
 	xe_assert(xe, ref >= 0);
 }
