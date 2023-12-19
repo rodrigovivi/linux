@@ -192,7 +192,6 @@ void xe_gt_idle_sysfs_init(struct xe_gt_idle *gtidle)
 
 void xe_gt_idle_enable_c6(struct xe_gt *gt)
 {
-	xe_device_assert_mem_access(gt_to_xe(gt));
 	xe_force_wake_assert_held(gt_to_fw(gt), XE_FW_GT);
 
 	/* Units of 1280 ns for a total of 5s */
@@ -204,7 +203,6 @@ void xe_gt_idle_enable_c6(struct xe_gt *gt)
 
 void xe_gt_idle_disable_c6(struct xe_gt *gt)
 {
-	xe_device_assert_mem_access(gt_to_xe(gt));
 	xe_force_wake_assert_held(gt_to_fw(gt), XE_FORCEWAKE_ALL);
 
 	xe_mmio_write32(gt, PG_ENABLE, 0);

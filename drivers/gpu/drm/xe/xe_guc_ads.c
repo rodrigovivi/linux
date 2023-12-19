@@ -323,8 +323,6 @@ static void guc_policies_init(struct xe_guc_ads *ads)
 static void fill_engine_enable_masks(struct xe_gt *gt,
 				     struct iosys_map *info_map)
 {
-	struct xe_device *xe = gt_to_xe(gt);
-
 	info_map_write(xe, info_map, engine_enabled_masks[GUC_RENDER_CLASS],
 		       engine_enable_mask(gt, XE_ENGINE_CLASS_RENDER));
 	info_map_write(xe, info_map, engine_enabled_masks[GUC_BLITTER_CLASS],
@@ -364,7 +362,6 @@ static void guc_prep_golden_lrc_null(struct xe_guc_ads *ads)
 static void guc_mapping_table_init_invalid(struct xe_gt *gt,
 					   struct iosys_map *info_map)
 {
-	struct xe_device *xe = gt_to_xe(gt);
 	unsigned int i, j;
 
 	/* Table must be set to invalid values for entries not used */
@@ -377,7 +374,6 @@ static void guc_mapping_table_init_invalid(struct xe_gt *gt,
 static void guc_mapping_table_init(struct xe_gt *gt,
 				   struct iosys_map *info_map)
 {
-	struct xe_device *xe = gt_to_xe(gt);
 	struct xe_hw_engine *hwe;
 	enum xe_hw_engine_id id;
 

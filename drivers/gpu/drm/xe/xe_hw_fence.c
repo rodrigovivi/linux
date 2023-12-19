@@ -161,7 +161,6 @@ static const char *xe_hw_fence_get_timeline_name(struct dma_fence *dma_fence)
 static bool xe_hw_fence_signaled(struct dma_fence *dma_fence)
 {
 	struct xe_hw_fence *fence = to_xe_hw_fence(dma_fence);
-	struct xe_device *xe = gt_to_xe(fence->ctx->gt);
 	u32 seqno = xe_map_rd(xe, &fence->seqno_map, 0, u32);
 
 	return dma_fence->error ||

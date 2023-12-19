@@ -575,8 +575,6 @@ static u32 wq_space_until_wrap(struct xe_exec_queue *q)
 
 static int wq_wait_for_space(struct xe_exec_queue *q, u32 wqi_size)
 {
-	struct xe_guc *guc = exec_queue_to_guc(q);
-	struct xe_device *xe = guc_to_xe(guc);
 	struct iosys_map map = xe_lrc_parallel_map(q->lrc);
 	unsigned int sleep_period_ms = 1;
 
@@ -1751,8 +1749,6 @@ static void
 guc_exec_queue_wq_snapshot_capture(struct xe_exec_queue *q,
 				   struct xe_guc_submit_exec_queue_snapshot *snapshot)
 {
-	struct xe_guc *guc = exec_queue_to_guc(q);
-	struct xe_device *xe = guc_to_xe(guc);
 	struct iosys_map map = xe_lrc_parallel_map(q->lrc);
 	int i;
 

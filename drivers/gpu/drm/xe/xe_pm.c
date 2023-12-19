@@ -171,8 +171,6 @@ void xe_pm_init(struct xe_device *xe)
 	if (!xe_device_uc_enabled(xe))
 		return;
 
-	drmm_mutex_init(&xe->drm, &xe->d3cold.lock);
-
 	xe->d3cold.capable = xe_pm_pci_d3cold_capable(pdev);
 
 	if (xe->d3cold.capable) {
@@ -218,34 +216,8 @@ int xe_pm_runtime_suspend(struct xe_device *xe)
 	u8 id;
 	int err = 0;
 
-	if (xe->d3cold.allowed && xe_device_mem_access_ongoing(xe))
-		return -EBUSY;
-
 	/* Disable access_ongoing asserts and prevent recursive pm calls */
 	xe_pm_write_callback_task(xe, current);
-
-	/*
-	 * The actual xe_device_mem_access_put() is always async underneath, so
-	 * exactly where that is called should makes no difference to us. However
-	 * we still need to be very careful with the locks that this callback
-	 * acquires and the locks that are acquired and held by any callers of
-	 * xe_device_mem_access_get(). We already have the matching annotation
-	 * on that side, but we also need it here. For example lockdep should be
-	 * able to tell us if the following scenario is in theory possible:
-	 *
-	 * CPU0                          | CPU1 (kworker)
-	 * lock(A)                       |
-	 *                               | xe_pm_runtime_suspend()
-	 *                               |      lock(A)
-	 * xe_device_mem_access_get()    |
-	 *
-	 * This will clearly deadlock since rpm core needs to wait for
-	 * xe_pm_runtime_suspend() to complete, but here we are holding lock(A)
-	 * on CPU0 which prevents CPU1 making forward progress.  With the
-	 * annotation here and in xe_device_mem_access_get() lockdep will see
-	 * the potential lock inversion and give us a nice splat.
-	 */
-	lock_map_acquire(&xe_device_mem_access_lockdep_map);
 
 	if (xe->d3cold.allowed) {
 		err = xe_bo_evict_all(xe);
@@ -261,7 +233,6 @@ int xe_pm_runtime_suspend(struct xe_device *xe)
 
 	xe_irq_suspend(xe);
 out:
-	lock_map_release(&xe_device_mem_access_lockdep_map);
 	xe_pm_write_callback_task(xe, NULL);
 	return err;
 }
@@ -275,8 +246,6 @@ int xe_pm_runtime_resume(struct xe_device *xe)
 	/* Disable access_ongoing asserts and prevent recursive pm calls */
 	xe_pm_write_callback_task(xe, current);
 
-	lock_map_acquire(&xe_device_mem_access_lockdep_map);
-
 	/*
 	 * It can be possible that xe has allowed d3cold but other pcie devices
 	 * in gfx card soc would have blocked d3cold, therefore card has not
@@ -285,7 +254,11 @@ int xe_pm_runtime_resume(struct xe_device *xe)
 	gt = xe_device_get_gt(xe, 0);
 	xe->d3cold.power_lost = xe_guc_in_reset(&gt->uc.guc);
 
+printk(KERN_ERR "KERNEL-DEBUG: %s %d\n", __FUNCTION__, __LINE__);
+
 	if (xe->d3cold.allowed && xe->d3cold.power_lost) {
+printk(KERN_ERR "KERNEL-DEBUG: %s %d\n", __FUNCTION__, __LINE__);
+
 		for_each_gt(gt, xe, id) {
 			err = xe_pcode_init(gt);
 			if (err)
@@ -302,7 +275,6 @@ int xe_pm_runtime_resume(struct xe_device *xe)
 	}
 
 	xe_irq_resume(xe);
-
 	for_each_gt(gt, xe, id)
 		xe_gt_resume(gt);
 
@@ -312,18 +284,23 @@ int xe_pm_runtime_resume(struct xe_device *xe)
 			goto out;
 	}
 out:
-	lock_map_release(&xe_device_mem_access_lockdep_map);
 	xe_pm_write_callback_task(xe, NULL);
 	return err;
 }
 
 int xe_pm_runtime_get(struct xe_device *xe)
 {
+	if (xe_pm_read_callback_task(xe) == current)
+		return 0;
+
 	return pm_runtime_get_sync(xe->drm.dev);
 }
 
 int xe_pm_runtime_put(struct xe_device *xe)
 {
+	if (xe_pm_read_callback_task(xe) == current)
+		return 0;
+
 	pm_runtime_mark_last_busy(xe->drm.dev);
 	return pm_runtime_put(xe->drm.dev);
 }
@@ -364,9 +341,7 @@ int xe_pm_set_vram_threshold(struct xe_device *xe, u32 threshold)
 	if (threshold > vram_total_mb)
 		return -EINVAL;
 
-	mutex_lock(&xe->d3cold.lock);
 	xe->d3cold.vram_threshold = threshold;
-	mutex_unlock(&xe->d3cold.lock);
 
 	return 0;
 }
@@ -391,14 +366,10 @@ void xe_pm_d3cold_allowed_toggle(struct xe_device *xe)
 		}
 	}
 
-	mutex_lock(&xe->d3cold.lock);
-
 	if (total_vram_used_mb < xe->d3cold.vram_threshold)
 		xe->d3cold.allowed = true;
 	else
 		xe->d3cold.allowed = false;
-
-	mutex_unlock(&xe->d3cold.lock);
 
 	drm_dbg(&xe->drm,
 		"d3cold: allowed=%s\n", str_yes_no(xe->d3cold.allowed));

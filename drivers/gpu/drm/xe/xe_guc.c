@@ -426,6 +426,7 @@ static int guc_wait_ucode(struct xe_guc *guc)
 		struct drm_device *drm = &xe->drm;
 		struct drm_printer p = drm_info_printer(drm->dev);
 
+		WARN_ON(1);
 		drm_info(drm, "GuC load failed: status = 0x%08X\n", status);
 		drm_info(drm, "GuC load failed: status: Reset = %d, BootROM = 0x%02X, UKernel = 0x%02X, MIA = 0x%02X, Auth = 0x%02X\n",
 			 REG_FIELD_GET(GS_MIA_IN_RESET, status),

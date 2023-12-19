@@ -558,7 +558,6 @@ static int guc_ct_send_locked(struct xe_guc_ct *ct, const u32 *action, u32 len,
 
 	xe_assert(ct_to_xe(ct), !g2h_len || !g2h_fence);
 	lockdep_assert_held(&ct->lock);
-	xe_device_assert_mem_access(ct_to_xe(ct));
 
 try_again:
 	ret = __guc_ct_send_locked(ct, action, len, g2h_len, num_g2h,
@@ -587,7 +586,6 @@ try_again:
 
 		goto try_again;
 	} else if (unlikely(ret == -EBUSY)) {
-		struct xe_device *xe = ct_to_xe(ct);
 		struct guc_ctb *g2h = &ct->ctbs.g2h;
 
 		trace_xe_guc_ct_g2h_flow_control(g2h->info.head,
@@ -1050,13 +1048,10 @@ static void g2h_fast_path(struct xe_guc_ct *ct, u32 *msg, u32 len)
  */
 void xe_guc_ct_fast_path(struct xe_guc_ct *ct)
 {
-	struct xe_device *xe = ct_to_xe(ct);
-	bool ongoing;
 	int len;
 
-	ongoing = xe_device_mem_access_get_if_ongoing(ct_to_xe(ct));
-	if (!ongoing && xe_pm_read_callback_task(ct_to_xe(ct)) == NULL)
-		return;
+	//if (!ongoing && xe_pm_read_callback_task(ct_to_xe(ct)) == NULL)
+	//	return;
 
 	spin_lock(&ct->fast_lock);
 	do {
@@ -1065,9 +1060,6 @@ void xe_guc_ct_fast_path(struct xe_guc_ct *ct)
 			g2h_fast_path(ct, ct->fast_msg, len);
 	} while (len > 0);
 	spin_unlock(&ct->fast_lock);
-
-	if (ongoing)
-		xe_device_mem_access_put(xe);
 }
 
 /* Returns less than zero on error, 0 on done, 1 on more available */
@@ -1098,7 +1090,6 @@ static int dequeue_one_g2h(struct xe_guc_ct *ct)
 static void g2h_worker_func(struct work_struct *w)
 {
 	struct xe_guc_ct *ct = container_of(w, struct xe_guc_ct, g2h_worker);
-	bool ongoing;
 	int ret;
 
 	/*
@@ -1124,9 +1115,9 @@ static void g2h_worker_func(struct work_struct *w)
 	 * responses, if the worker here is blocked on those callbacks
 	 * completing, creating a deadlock.
 	 */
-	ongoing = xe_device_mem_access_get_if_ongoing(ct_to_xe(ct));
-	if (!ongoing && xe_pm_read_callback_task(ct_to_xe(ct)) == NULL)
-		return;
+//	ongoing = xe_device_mem_access_get_if_ongoing(ct_to_xe(ct));
+//	if (!ongoing && xe_pm_read_callback_task(ct_to_xe(ct)) == NULL)
+//		return;
 
 	do {
 		mutex_lock(&ct->lock);
@@ -1141,9 +1132,6 @@ static void g2h_worker_func(struct work_struct *w)
 			kick_reset(ct);
 		}
 	} while (ret == 1);
-
-	if (ongoing)
-		xe_device_mem_access_put(ct_to_xe(ct));
 }
 
 static void guc_ctb_snapshot_capture(struct xe_device *xe, struct guc_ctb *ctb,
