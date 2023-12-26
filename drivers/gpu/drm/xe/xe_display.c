@@ -368,6 +368,28 @@ void xe_display_pm_suspend_late(struct xe_device *xe)
 	intel_display_power_suspend_late(xe);
 }
 
+void xe_display_pm_runtime_suspend(struct xe_device *xe)
+{
+	if (!xe->info.enable_display)
+		return;
+
+	intel_power_domains_disable(xe);
+	intel_opregion_suspend(xe, PCI_D3cold);
+	intel_dmc_suspend(xe);
+	intel_power_domains_suspend(xe, PCI_D3cold);
+}
+
+void xe_display_pm_runtime_resume(struct xe_device *xe)
+{
+	if (!xe->info.enable_display)
+		return;
+
+	intel_power_domains_resume(xe);
+	intel_dmc_resume(xe);
+	intel_opregion_resume(xe);
+	intel_power_domains_enable(xe);
+}
+
 void xe_display_pm_resume_early(struct xe_device *xe)
 {
 	if (!xe->info.enable_display)

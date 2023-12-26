@@ -317,6 +317,9 @@ int xe_pm_runtime_suspend(struct xe_device *xe)
 	}
 
 	xe_irq_suspend(xe);
+
+	if (xe->d3cold.allowed)
+		xe_display_pm_runtime_suspend(xe);
 out:
 	lock_map_release(&xe_device_mem_access_lockdep_map);
 	xe_pm_write_callback_task(xe, NULL);
@@ -354,6 +357,8 @@ int xe_pm_runtime_resume(struct xe_device *xe)
 			if (err)
 				goto out;
 		}
+
+		xe_display_pm_runtime_resume(xe);
 
 		/*
 		 * This only restores pinned memory which is the memory
