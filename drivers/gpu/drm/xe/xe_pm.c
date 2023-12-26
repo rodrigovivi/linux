@@ -301,7 +301,7 @@ int xe_pm_runtime_get(struct xe_device *xe)
 	if (xe_pm_read_callback_task(xe) == current)
 		return 0;
 
-	return pm_runtime_get_sync(xe->drm.dev);
+	return pm_runtime_resume_and_get(xe->drm.dev);
 }
 
 int xe_pm_runtime_put(struct xe_device *xe)

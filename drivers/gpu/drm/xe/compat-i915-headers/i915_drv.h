@@ -166,11 +166,10 @@ static inline bool intel_runtime_pm_get(struct xe_runtime_pm *pm)
 {
 	struct xe_device *xe = container_of(pm, struct xe_device, runtime_pm);
 
-	if (xe_pm_runtime_get(xe) < 0) {
-		xe_pm_runtime_put(xe);
-		return false;
-	}
-	return true;
+	if (xe_pm_runtime_get(xe) == 0)
+		return true;
+
+	return false;
 }
 
 static inline bool intel_runtime_pm_get_if_in_use(struct xe_runtime_pm *pm)
