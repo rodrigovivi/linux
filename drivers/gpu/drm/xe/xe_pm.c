@@ -291,6 +291,8 @@ int xe_pm_runtime_suspend(struct xe_device *xe)
 		err = xe_bo_evict_all(xe);
 		if (err)
 			goto out;
+
+		xe_display_pm_suspend(xe);
 	}
 
 	for_each_gt(gt, xe, id) {
@@ -300,6 +302,9 @@ int xe_pm_runtime_suspend(struct xe_device *xe)
 	}
 
 	xe_irq_suspend(xe);
+
+	if (xe->d3cold.allowed)
+		xe_display_pm_suspend_late(xe);
 out:
 	lock_map_release(&xe_device_mem_access_lockdep_map);
 	xe_pm_write_callback_task(xe, NULL);
@@ -338,6 +343,8 @@ int xe_pm_runtime_resume(struct xe_device *xe)
 				goto out;
 		}
 
+		xe_display_pm_resume_early(xe);
+
 		/*
 		 * This only restores pinned memory which is the memory
 		 * required for the GT(s) to resume.
@@ -353,6 +360,7 @@ int xe_pm_runtime_resume(struct xe_device *xe)
 		xe_gt_resume(gt);
 
 	if (xe->d3cold.allowed && xe->d3cold.power_lost) {
+		xe_display_pm_resume(xe);
 		err = xe_bo_restore_user(xe);
 		if (err)
 			goto out;
