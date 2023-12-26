@@ -177,7 +177,11 @@ static inline bool intel_runtime_pm_get_if_in_use(struct xe_runtime_pm *pm)
 {
 	struct xe_device *xe = container_of(pm, struct xe_device, runtime_pm);
 
-	return xe_pm_runtime_get_if_active(xe);
+	/* When RPM is disabled this call can return -EINVAL */
+	if (xe_pm_runtime_get_if_in_use(xe) <= 0)
+		return false;
+
+	return true;
 }
 
 static inline void intel_runtime_pm_put_unchecked(struct xe_runtime_pm *pm)

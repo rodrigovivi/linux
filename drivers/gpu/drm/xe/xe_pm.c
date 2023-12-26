@@ -313,9 +313,9 @@ int xe_pm_runtime_put(struct xe_device *xe)
 	return pm_runtime_put(xe->drm.dev);
 }
 
-int xe_pm_runtime_get_if_active(struct xe_device *xe)
+int xe_pm_runtime_get_if_in_use(struct xe_device *xe)
 {
-	return pm_runtime_get_if_active(xe->drm.dev, true);
+	return pm_runtime_get_if_in_use(xe->drm.dev);
 }
 
 void xe_pm_assert_unbounded_bridge(struct xe_device *xe)
