@@ -138,7 +138,7 @@ static long xe_drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	struct xe_device *xe = to_xe_device(file_priv->minor->dev);
 	long ret;
 
-	ret = xe_pm_runtime_get(xe);
+	ret = xe_pm_runtime_get_sync(xe);
 	if (ret >= 0)
 		ret = drm_ioctl(file, cmd, arg);
 	xe_pm_runtime_put(xe);
@@ -152,7 +152,7 @@ static long xe_drm_compat_ioctl(struct file *file, unsigned int cmd, unsigned lo
 	struct xe_device *xe = to_xe_device(file_priv->minor->dev);
 	long ret;
 
-	ret = xe_pm_runtime_get(xe);
+	ret = xe_pm_runtime_get_sync(xe);
 	if (ret >= 0)
 		ret = drm_compat_ioctl(file, cmd, arg);
 	xe_pm_runtime_put(xe);

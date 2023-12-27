@@ -259,11 +259,7 @@ int xe_pm_runtime_resume(struct xe_device *xe)
 	gt = xe_device_get_gt(xe, 0);
 	xe->d3cold.power_lost = xe_guc_in_reset(&gt->uc.guc);
 
-printk(KERN_ERR "KERNEL-DEBUG: %s %d\n", __FUNCTION__, __LINE__);
-
 	if (xe->d3cold.allowed && xe->d3cold.power_lost) {
-printk(KERN_ERR "KERNEL-DEBUG: %s %d\n", __FUNCTION__, __LINE__);
-
 		for_each_gt(gt, xe, id) {
 			err = xe_pcode_init(gt);
 			if (err)
@@ -296,26 +292,50 @@ out:
 	return err;
 }
 
-int xe_pm_runtime_get(struct xe_device *xe)
+void xe_pm_runtime_get(struct xe_device *xe)
 {
-	if (xe_pm_read_callback_task(xe) == current)
-		return 0;
+	pm_runtime_get_noresume(xe->drm.dev);
 
-	return pm_runtime_resume_and_get(xe->drm.dev);
+	if (xe_pm_read_callback_task(xe) == current)
+		return;
+
+	pm_runtime_resume(xe->drm.dev);
 }
 
-int xe_pm_runtime_put(struct xe_device *xe)
+int xe_pm_runtime_get_sync(struct xe_device *xe)
 {
-	if (xe_pm_read_callback_task(xe) == current)
-		return 0;
+	if (WARN_ON(xe_pm_read_callback_task(xe) == current))
+		return -ELOOP;
 
+	return pm_runtime_get_sync(xe->drm.dev);
+}
+
+bool xe_pm_runtime_get_if_in_use(struct xe_device *xe)
+{
+	if (xe_pm_read_callback_task(xe) == current) {
+		/* The device is awake, grab the ref and move on */
+		pm_runtime_get_noresume(xe->drm.dev);
+		return true;
+	}
+
+	return pm_runtime_get_if_in_use(xe->drm.dev) >= 0;
+}
+
+bool xe_pm_runtime_resume_and_get(struct xe_device *xe)
+{
+	if (xe_pm_read_callback_task(xe) == current) {
+		/* The device is awake, grab the ref and move on */
+		pm_runtime_get_noresume(xe->drm.dev);
+		return true;
+	}
+
+	return pm_runtime_resume_and_get(xe->drm.dev) >= 0;
+}
+
+void xe_pm_runtime_put(struct xe_device *xe)
+{
 	pm_runtime_mark_last_busy(xe->drm.dev);
-	return pm_runtime_put(xe->drm.dev);
-}
-
-int xe_pm_runtime_get_if_in_use(struct xe_device *xe)
-{
-	return pm_runtime_get_if_in_use(xe->drm.dev);
+	pm_runtime_put(xe->drm.dev);
 }
 
 void xe_pm_assert_unbounded_bridge(struct xe_device *xe)

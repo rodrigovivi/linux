@@ -29,7 +29,6 @@
 #include "intel_uc_fw.h"
 #include "intel_uncore.h"
 #include "intel_runtime_pm.h"
-#include <linux/pm_runtime.h>
 
 static inline struct drm_i915_private *to_i915(const struct drm_device *dev)
 {
@@ -166,21 +165,14 @@ static inline bool intel_runtime_pm_get(struct xe_runtime_pm *pm)
 {
 	struct xe_device *xe = container_of(pm, struct xe_device, runtime_pm);
 
-	if (xe_pm_runtime_get(xe) == 0)
-		return true;
-
-	return false;
+	return xe_pm_runtime_resume_and_get(xe);
 }
 
 static inline bool intel_runtime_pm_get_if_in_use(struct xe_runtime_pm *pm)
 {
 	struct xe_device *xe = container_of(pm, struct xe_device, runtime_pm);
 
-	/* When RPM is disabled this call can return -EINVAL */
-	if (xe_pm_runtime_get_if_in_use(xe) <= 0)
-		return false;
-
-	return true;
+	return xe_pm_runtime_get_if_in_use(xe);
 }
 
 static inline void intel_runtime_pm_put_unchecked(struct xe_runtime_pm *pm)
