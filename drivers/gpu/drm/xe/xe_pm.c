@@ -405,6 +405,23 @@ out:
 }
 
 /**
+ * xe_pm_runtime_resume_and_get - Resume, then get a runtime_pm ref if awake.
+ * @xe: xe device instance
+ *
+ * Returns: True if device is awake and the the reference was taken, false otherwise.
+ */
+bool xe_pm_runtime_resume_and_get(struct xe_device *xe)
+{
+	if (xe_pm_read_callback_task(xe) == current) {
+		/* The device is awake, grab the ref and move on */
+		pm_runtime_get_noresume(xe->drm.dev);
+		return true;
+	}
+
+	return pm_runtime_resume_and_get(xe->drm.dev) >= 0;
+}
+
+/**
  * xe_pm_runtime_get - Get a runtime_pm reference and resume synchronously
  * @xe: xe device instance
  */
@@ -416,20 +433,6 @@ void xe_pm_runtime_get(struct xe_device *xe)
 		return;
 
 	pm_runtime_resume(xe->drm.dev);
-}
-
-/**
- * xe_pm_runtime_put - Put the runtime_pm reference back and mark as idle
- * @xe: xe device instance
- */
-void xe_pm_runtime_put(struct xe_device *xe)
-{
-	if (xe_pm_read_callback_task(xe) == current) {
-		pm_runtime_put_noidle(xe->drm.dev);
-	} else {
-		pm_runtime_mark_last_busy(xe->drm.dev);
-		pm_runtime_put(xe->drm.dev);
-	}
 }
 
 /**
@@ -477,20 +480,17 @@ bool xe_pm_runtime_get_if_in_use(struct xe_device *xe)
 }
 
 /**
- * xe_pm_runtime_resume_and_get - Resume, then get a runtime_pm ref if awake.
+ * xe_pm_runtime_put - Put the runtime_pm reference back and mark as idle
  * @xe: xe device instance
- *
- * Returns: True if device is awake and the the reference was taken, false otherwise.
  */
-bool xe_pm_runtime_resume_and_get(struct xe_device *xe)
+void xe_pm_runtime_put(struct xe_device *xe)
 {
 	if (xe_pm_read_callback_task(xe) == current) {
-		/* The device is awake, grab the ref and move on */
-		pm_runtime_get_noresume(xe->drm.dev);
-		return true;
+		pm_runtime_put_noidle(xe->drm.dev);
+	} else {
+		pm_runtime_mark_last_busy(xe->drm.dev);
+		pm_runtime_put(xe->drm.dev);
 	}
-
-	return pm_runtime_resume_and_get(xe->drm.dev) >= 0;
 }
 
 /**
