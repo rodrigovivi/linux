@@ -64,6 +64,9 @@ static int info(struct seq_file *m, void *data)
 			   xe_force_wake_ref(gt_to_fw(gt), XE_FW_GT));
 		drm_printf(&p, "gt%d engine_mask 0x%llx\n", id,
 			   gt->info.engine_mask);
+		drm_printf(&p, "gt%d g2h_outstanding %d g2h_pm_refs %d\n", id,
+			   gt->uc.guc.ct.g2h_outstanding,
+			   gt->uc.guc.ct.g2h_pm_refs);
 	}
 
 	xe_pm_runtime_put(xe);

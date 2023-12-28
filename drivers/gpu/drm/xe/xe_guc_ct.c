@@ -285,6 +285,38 @@ static int guc_ct_control_toggle(struct xe_guc_ct *ct, bool enable)
 	return ret > 0 ? -EPROTO : ret;
 }
 
+static void guc_ct_g2h_outstanding_clear(struct xe_guc_ct *ct)
+{
+	int i;
+
+	for (i = 0; i < ct->g2h_pm_refs; i++)
+		xe_pm_runtime_put(ct_to_xe(ct));
+	ct->g2h_outstanding = 0;
+	ct->g2h_pm_refs = 0;
+}
+
+static void guc_ct_g2h_outstanding_dec(struct xe_guc_ct *ct)
+{
+	if (ct->g2h_pm_refs > 0)
+		xe_pm_runtime_put(ct_to_xe(ct));
+	ct->g2h_pm_refs--;
+	ct->g2h_outstanding--;
+}
+
+static void guc_ct_g2h_outstanding_add(struct xe_guc_ct *ct, int num_g2h)
+{
+	struct xe_device *xe = ct_to_xe(ct);
+	int i;
+
+	for (i = 0; i < num_g2h; i++) {
+		if (xe_pm_runtime_get_if_in_use(xe))
+			ct->g2h_pm_refs++;
+		else
+			drm_err(&xe->drm, "Failed to grab RPM ref for outstanding g2h\n");
+	}
+	ct->g2h_outstanding += num_g2h;
+}
+
 int xe_guc_ct_enable(struct xe_guc_ct *ct)
 {
 	struct xe_device *xe = ct_to_xe(ct);
@@ -309,7 +341,8 @@ int xe_guc_ct_enable(struct xe_guc_ct *ct)
 
 	mutex_lock(&ct->lock);
 	spin_lock_irq(&ct->fast_lock);
-	ct->g2h_outstanding = 0;
+
+	guc_ct_g2h_outstanding_clear(ct);
 	ct->enabled = true;
 	spin_unlock_irq(&ct->fast_lock);
 	mutex_unlock(&ct->lock);
@@ -389,7 +422,7 @@ static void __g2h_reserve_space(struct xe_guc_ct *ct, u32 g2h_len, u32 num_g2h)
 		lockdep_assert_held(&ct->fast_lock);
 
 		ct->ctbs.g2h.info.space -= g2h_len;
-		ct->g2h_outstanding += num_g2h;
+		guc_ct_g2h_outstanding_add(ct, num_g2h);
 	}
 }
 
@@ -400,7 +433,7 @@ static void __g2h_release_space(struct xe_guc_ct *ct, u32 g2h_len)
 		  ct->ctbs.g2h.info.size - ct->ctbs.g2h.info.resv_space);
 
 	ct->ctbs.g2h.info.space += g2h_len;
-	--ct->g2h_outstanding;
+	guc_ct_g2h_outstanding_dec(ct);
 }
 
 static void g2h_release_space(struct xe_guc_ct *ct, u32 g2h_len)
@@ -1145,13 +1178,7 @@ static void g2h_fast_path(struct xe_guc_ct *ct, u32 *msg, u32 len)
  */
 void xe_guc_ct_fast_path(struct xe_guc_ct *ct)
 {
-	struct xe_device *xe = ct_to_xe(ct);
-	bool ongoing;
 	int len;
-
-	ongoing = xe_device_mem_access_get_if_ongoing(ct_to_xe(ct));
-	if (!ongoing && xe_pm_read_callback_task(ct_to_xe(ct)) == NULL)
-		return;
 
 	spin_lock(&ct->fast_lock);
 	do {
@@ -1160,9 +1187,6 @@ void xe_guc_ct_fast_path(struct xe_guc_ct *ct)
 			g2h_fast_path(ct, ct->fast_msg, len);
 	} while (len > 0);
 	spin_unlock(&ct->fast_lock);
-
-	if (ongoing)
-		xe_device_mem_access_put(xe);
 }
 
 /* Returns less than zero on error, 0 on done, 1 on more available */
@@ -1193,35 +1217,7 @@ static int dequeue_one_g2h(struct xe_guc_ct *ct)
 static void g2h_worker_func(struct work_struct *w)
 {
 	struct xe_guc_ct *ct = container_of(w, struct xe_guc_ct, g2h_worker);
-	bool ongoing;
 	int ret;
-
-	/*
-	 * Normal users must always hold mem_access.ref around CT calls. However
-	 * during the runtime pm callbacks we rely on CT to talk to the GuC, but
-	 * at this stage we can't rely on mem_access.ref and even the
-	 * callback_task will be different than current.  For such cases we just
-	 * need to ensure we always process the responses from any blocking
-	 * ct_send requests or where we otherwise expect some response when
-	 * initiated from those callbacks (which will need to wait for the below
-	 * dequeue_one_g2h()).  The dequeue_one_g2h() will gracefully fail if
-	 * the device has suspended to the point that the CT communication has
-	 * been disabled.
-	 *
-	 * If we are inside the runtime pm callback, we can be the only task
-	 * still issuing CT requests (since that requires having the
-	 * mem_access.ref).  It seems like it might in theory be possible to
-	 * receive unsolicited events from the GuC just as we are
-	 * suspending-resuming, but those will currently anyway be lost when
-	 * eventually exiting from suspend, hence no need to wake up the device
-	 * here. If we ever need something stronger than get_if_ongoing() then
-	 * we need to be careful with blocking the pm callbacks from getting CT
-	 * responses, if the worker here is blocked on those callbacks
-	 * completing, creating a deadlock.
-	 */
-	ongoing = xe_device_mem_access_get_if_ongoing(ct_to_xe(ct));
-	if (!ongoing && xe_pm_read_callback_task(ct_to_xe(ct)) == NULL)
-		return;
 
 	do {
 		mutex_lock(&ct->lock);
@@ -1236,9 +1232,6 @@ static void g2h_worker_func(struct work_struct *w)
 			kick_reset(ct);
 		}
 	} while (ret == 1);
-
-	if (ongoing)
-		xe_device_mem_access_put(ct_to_xe(ct));
 }
 
 static void guc_ctb_snapshot_capture(struct xe_device *xe, struct guc_ctb *ctb,
