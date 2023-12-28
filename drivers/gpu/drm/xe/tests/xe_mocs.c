@@ -45,7 +45,6 @@ static void read_l3cc_table(struct xe_gt *gt,
 
 	struct kunit *test = xe_cur_kunit();
 
-	xe_device_mem_access_get(gt_to_xe(gt));
 	ret = xe_force_wake_get(gt_to_fw(gt), XE_FW_GT);
 	KUNIT_ASSERT_EQ_MSG(test, ret, 0, "Forcewake Failed.\n");
 	mocs_dbg(&gt_to_xe(gt)->drm, "L3CC entries:%d\n", info->n_entries);
@@ -65,7 +64,6 @@ static void read_l3cc_table(struct xe_gt *gt,
 				   XELP_LNCFCMOCS(i).addr);
 	}
 	xe_force_wake_put(gt_to_fw(gt), XE_FW_GT);
-	xe_device_mem_access_put(gt_to_xe(gt));
 }
 
 static void read_mocs_table(struct xe_gt *gt,
@@ -80,7 +78,6 @@ static void read_mocs_table(struct xe_gt *gt,
 
 	struct kunit *test = xe_cur_kunit();
 
-	xe_device_mem_access_get(gt_to_xe(gt));
 	ret = xe_force_wake_get(gt_to_fw(gt), XE_FW_GT);
 	KUNIT_ASSERT_EQ_MSG(test, ret, 0, "Forcewake Failed.\n");
 	mocs_dbg(&gt_to_xe(gt)->drm, "Global MOCS entries:%d\n", info->n_entries);
@@ -100,7 +97,6 @@ static void read_mocs_table(struct xe_gt *gt,
 				   XELP_GLOBAL_MOCS(i).addr);
 	}
 	xe_force_wake_put(gt_to_fw(gt), XE_FW_GT);
-	xe_device_mem_access_put(gt_to_xe(gt));
 }
 
 static int mocs_kernel_test_run_device(struct xe_device *xe)
