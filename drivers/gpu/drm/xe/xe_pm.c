@@ -408,18 +408,6 @@ int xe_pm_runtime_get_sync(struct xe_device *xe)
 }
 
 /**
- * xe_pm_runtime_get_if_active - Get a runtime_pm reference if device active
- * @xe: xe device instance
- *
- * Returns: Any number grater than or equal to 0 for success, negative error
- * code otherwise.
- */
-int xe_pm_runtime_get_if_active(struct xe_device *xe)
-{
-	return pm_runtime_get_if_active(xe->drm.dev, true);
-}
-
-/**
  * xe_pm_runtime_get_if_in_use - Get a runtime_pm reference and resume if needed
  * @xe: xe device instance
  *
