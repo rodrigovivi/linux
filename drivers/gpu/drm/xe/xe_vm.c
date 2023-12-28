@@ -1280,9 +1280,6 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 
 	vm->pt_ops = &xelp_pt_ops;
 
-	if (!(flags & XE_VM_FLAG_MIGRATION))
-		xe_device_mem_access_get(xe);
-
 	vm_resv_obj = drm_gpuvm_resv_object_alloc(&xe->drm);
 	if (!vm_resv_obj) {
 		err = -ENOMEM;
@@ -1330,6 +1327,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 		INIT_WORK(&vm->preempt.rebind_work, preempt_rebind_work_func);
 		vm->flags |= XE_VM_FLAG_LR_MODE;
 		vm->batch_invalidate_tlb = false;
+		xe_pm_runtime_get(xe);
 	}
 
 	/* Fill pt_root after allocating scratch tables */
@@ -1390,8 +1388,6 @@ err_no_resv:
 	for_each_tile(tile, xe, id)
 		xe_range_fence_tree_fini(&vm->rftree[id]);
 	kfree(vm);
-	if (!(flags & XE_VM_FLAG_MIGRATION))
-		xe_device_mem_access_put(xe);
 	return ERR_PTR(err);
 }
 
@@ -1496,6 +1492,8 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 	for_each_tile(tile, xe, id)
 		xe_range_fence_tree_fini(&vm->rftree[id]);
 
+	if (vm->flags & XE_VM_FLAG_LR_MODE)
+		xe_pm_runtime_put(xe);
 	xe_vm_put(vm);
 }
 
@@ -1512,8 +1510,6 @@ static void vm_destroy_work_func(struct work_struct *w)
 	xe_assert(xe, !vm->size);
 
 	if (!(vm->flags & XE_VM_FLAG_MIGRATION)) {
-		xe_device_mem_access_put(xe);
-
 		if (xe->info.has_asid && vm->usm.asid) {
 			mutex_lock(&xe->usm.lock);
 			lookup = xa_erase(&xe->usm.asid_to_vm, vm->usm.asid);

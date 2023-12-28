@@ -283,6 +283,38 @@ static int guc_ct_control_toggle(struct xe_guc_ct *ct, bool enable)
 	return ret > 0 ? -EPROTO : ret;
 }
 
+static void guc_ct_g2h_outstanding_clear(struct xe_guc_ct *ct)
+{
+	int i;
+
+	for (i = 0; i < ct->g2h_pm_refs; i++)
+		xe_pm_runtime_put(ct_to_xe(ct));
+	ct->g2h_outstanding = 0;
+	ct->g2h_pm_refs = 0;
+}
+
+static void guc_ct_g2h_outstanding_dec(struct xe_guc_ct *ct)
+{
+	if (ct->g2h_pm_refs > 0)
+		xe_pm_runtime_put(ct_to_xe(ct));
+	ct->g2h_pm_refs--;
+	ct->g2h_outstanding--;
+}
+
+static void guc_ct_g2h_outstanding_add(struct xe_guc_ct *ct, int num_g2h)
+{
+	struct xe_device *xe = ct_to_xe(ct);
+	int i;
+
+	for (i = 0; i < num_g2h; i++) {
+		if (xe_pm_runtime_get_if_in_use(xe))
+			ct->g2h_pm_refs++;
+		else
+			drm_err(&xe->drm, "Failed to grab RPM ref for outstanding g2h\n");
+	}
+	ct->g2h_outstanding += num_g2h;
+}
+
 int xe_guc_ct_enable(struct xe_guc_ct *ct)
 {
 	struct xe_device *xe = ct_to_xe(ct);
@@ -307,7 +339,8 @@ int xe_guc_ct_enable(struct xe_guc_ct *ct)
 
 	mutex_lock(&ct->lock);
 	spin_lock_irq(&ct->fast_lock);
-	ct->g2h_outstanding = 0;
+
+	guc_ct_g2h_outstanding_clear(ct);
 	ct->enabled = true;
 	spin_unlock_irq(&ct->fast_lock);
 	mutex_unlock(&ct->lock);
@@ -387,7 +420,7 @@ static void __g2h_reserve_space(struct xe_guc_ct *ct, u32 g2h_len, u32 num_g2h)
 		lockdep_assert_held(&ct->fast_lock);
 
 		ct->ctbs.g2h.info.space -= g2h_len;
-		ct->g2h_outstanding += num_g2h;
+		guc_ct_g2h_outstanding_add(ct, num_g2h);
 	}
 }
 
@@ -398,7 +431,7 @@ static void __g2h_release_space(struct xe_guc_ct *ct, u32 g2h_len)
 		  ct->ctbs.g2h.info.size - ct->ctbs.g2h.info.resv_space);
 
 	ct->ctbs.g2h.info.space += g2h_len;
-	--ct->g2h_outstanding;
+	guc_ct_g2h_outstanding_dec(ct);
 }
 
 static void g2h_release_space(struct xe_guc_ct *ct, u32 g2h_len)
