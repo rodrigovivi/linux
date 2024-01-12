@@ -94,6 +94,8 @@ struct xe_guc_ct {
 	} ctbs;
 	/** @g2h_outstanding: number of outstanding G2H */
 	u32 g2h_outstanding;
+	/** @g2h_pm_refs: number of pm_refs for pending G2H */
+	u32 g2h_pm_refs;
 	/** @g2h_worker: worker to process G2H messages */
 	struct work_struct g2h_worker;
 	/** @enabled: CT enabled */

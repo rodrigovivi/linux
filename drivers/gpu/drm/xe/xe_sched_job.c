@@ -82,6 +82,7 @@ static struct xe_device *job_to_xe(struct xe_sched_job *job)
 struct xe_sched_job *xe_sched_job_create(struct xe_exec_queue *q,
 					 u64 *batch_addr)
 {
+	struct xe_device *xe = gt_to_xe(q->gt);
 	struct xe_sched_job *job;
 	struct dma_fence **fences;
 	bool is_migration = xe_sched_job_is_migration(q);
@@ -89,7 +90,8 @@ struct xe_sched_job *xe_sched_job_create(struct xe_exec_queue *q,
 	int i, j;
 	u32 width;
 
-	xe_pm_runtime_get(gt_to_xe(q->gt));
+	if (!xe_pm_runtime_get_if_in_use(xe))
+		drm_err(&xe->drm, "Failed to grab RPM ref for sched_job\n");
 
 	/* only a kernel context can submit a vm-less job */
 	XE_WARN_ON(!q->vm && !(q->flags & EXEC_QUEUE_FLAG_KERNEL));
