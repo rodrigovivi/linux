@@ -118,6 +118,16 @@ static ssize_t devcd_data_read(struct file *filp, struct kobject *kobj,
 	return devcd->read(buffer, offset, count, devcd->data, devcd->datalen);
 }
 
+static void devcd_remove_now(struct devcd_entry *devcd)
+{
+	mutex_lock(&devcd->mutex);
+	if (!devcd->delete_work) {
+		devcd->delete_work = true;
+		mod_delayed_work(system_wq, &devcd->del_wk, 0);
+	}
+	mutex_unlock(&devcd->mutex);
+}
+
 static ssize_t devcd_data_write(struct file *filp, struct kobject *kobj,
 				struct bin_attribute *bin_attr,
 				char *buffer, loff_t offset, size_t count)
@@ -125,13 +135,7 @@ static ssize_t devcd_data_write(struct file *filp, struct kobject *kobj,
 	struct device *dev = kobj_to_dev(kobj);
 	struct devcd_entry *devcd = dev_to_devcd(dev);
 
-	mutex_lock(&devcd->mutex);
-	if (!devcd->delete_work) {
-		devcd->delete_work = true;
-		mod_delayed_work(system_wq, &devcd->del_wk, 0);
-	}
-	mutex_unlock(&devcd->mutex);
-
+	devcd_remove_now(devcd);
 	return count;
 }
 
@@ -304,6 +308,12 @@ static ssize_t devcd_read_from_sgtable(char *buffer, loff_t offset,
 				  offset);
 }
 
+static void devcd_remove(void *data)
+{
+	struct devcd_entry *devcd = data;
+	devcd_remove_now(devcd);
+}
+
 /**
  * dev_coredumpm - create device coredump with read/free methods
  * @dev: the struct device for the crashed device
@@ -381,6 +391,8 @@ void dev_coredumpm(struct device *dev, struct module *owner,
 	kobject_uevent(&devcd->devcd_dev.kobj, KOBJ_ADD);
 	INIT_DELAYED_WORK(&devcd->del_wk, devcd_del);
 	schedule_delayed_work(&devcd->del_wk, DEVCD_TIMEOUT);
+	if (devm_add_action(dev, devcd_remove, devcd))
+		dev_warn(dev, "devcoredump managed auto-removal registration failed\n");
 	mutex_unlock(&devcd->mutex);
 	return;
  put_device:
