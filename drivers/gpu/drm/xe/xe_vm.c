@@ -1330,6 +1330,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags)
 		INIT_WORK(&vm->preempt.rebind_work, preempt_rebind_work_func);
 		vm->flags |= XE_VM_FLAG_LR_MODE;
 		vm->batch_invalidate_tlb = false;
+		xe_pm_runtime_get(xe);
 	}
 
 	/* Fill pt_root after allocating scratch tables */
@@ -1496,6 +1497,8 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 	for_each_tile(tile, xe, id)
 		xe_range_fence_tree_fini(&vm->rftree[id]);
 
+	if (vm->flags & XE_VM_FLAG_LR_MODE)
+		xe_pm_runtime_put(xe);
 	xe_vm_put(vm);
 }
 
