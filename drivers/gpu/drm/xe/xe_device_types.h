@@ -385,9 +385,6 @@ struct xe_device {
 	 * triggering additional actions when they occur.
 	 */
 	struct {
-		/** @ref: ref count of memory accesses */
-		atomic_t ref;
-
 		/** @vram_userfault: Encapsulate vram_userfault related stuff */
 		struct {
 			/**
