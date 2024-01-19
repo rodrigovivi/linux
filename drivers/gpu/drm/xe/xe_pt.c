@@ -11,6 +11,7 @@
 #include "xe_gt.h"
 #include "xe_gt_tlb_invalidation.h"
 #include "xe_migrate.h"
+#include "xe_pm.h"
 #include "xe_pt_types.h"
 #include "xe_pt_walk.h"
 #include "xe_res_cursor.h"
@@ -1104,8 +1105,10 @@ static void invalidation_fence_work_func(struct work_struct *w)
 	struct invalidation_fence *ifence =
 		container_of(w, struct invalidation_fence, work);
 
+	xe_pm_runtime_get(gt_to_xe(ifence->gt));
 	trace_xe_gt_tlb_invalidation_fence_work_func(&ifence->base);
 	xe_gt_tlb_invalidation_vma(ifence->gt, &ifence->base, ifence->vma);
+	xe_pm_runtime_put(gt_to_xe(ifence->gt));
 }
 
 static int invalidation_fence_init(struct xe_gt *gt,
