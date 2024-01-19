@@ -19,6 +19,7 @@
 #include "xe_huc.h"
 #include "xe_map.h"
 #include "xe_mmio.h"
+#include "xe_pm.h"
 #include "xe_sched_job.h"
 #include "xe_uc_fw.h"
 #include "xe_wa.h"
@@ -254,7 +255,7 @@ static void gsc_work(struct work_struct *work)
 	struct xe_device *xe = gt_to_xe(gt);
 	int ret;
 
-	xe_device_mem_access_get(xe);
+	xe_pm_runtime_get(xe);
 	xe_force_wake_get(gt_to_fw(gt), XE_FW_GSC);
 
 	ret = gsc_upload(gsc);
@@ -271,7 +272,7 @@ static void gsc_work(struct work_struct *work)
 
 out:
 	xe_force_wake_put(gt_to_fw(gt), XE_FW_GSC);
-	xe_device_mem_access_put(xe);
+	xe_pm_runtime_put(xe);
 }
 
 int xe_gsc_init(struct xe_gsc *gsc)
