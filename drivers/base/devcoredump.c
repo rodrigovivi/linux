@@ -162,12 +162,7 @@ static int devcd_free(struct device *dev, void *data)
 {
 	struct devcd_entry *devcd = dev_to_devcd(dev);
 
-	mutex_lock(&devcd->mutex);
-	if (!devcd->delete_work)
-		devcd->delete_work = true;
-
-	flush_delayed_work(&devcd->del_wk);
-	mutex_unlock(&devcd->mutex);
+	devcd_remove_now(devcd);
 	return 0;
 }
 
