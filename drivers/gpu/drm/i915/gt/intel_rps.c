@@ -1010,6 +1010,15 @@ void intel_rps_boost(struct i915_request *rq)
 {
 	struct intel_guc_slpc *slpc;
 
+	/*
+	 * XXX: For now, skip the boost itself, but later the full machinery
+	 * of the waitboost including some variable handles and extra locks
+	 * could be avoided.
+	 */
+	if (rq->i915->params.enable_guc & ENABLE_GUC_SLPC_VBLANK ||
+	    rq->i915->params.enable_guc & ENABLE_GUC_SLPC_FLIP)
+		return;
+
 	if (i915_request_signaled(rq) || i915_request_has_waitboost(rq))
 		return;
 

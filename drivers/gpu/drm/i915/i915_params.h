@@ -32,7 +32,9 @@ struct drm_printer;
 
 #define ENABLE_GUC_SUBMISSION		BIT(0)
 #define ENABLE_GUC_LOAD_HUC		BIT(1)
-#define ENABLE_GUC_MASK			GENMASK(1, 0)
+#define ENABLE_GUC_SLPC_VBLANK		BIT(2)
+#define ENABLE_GUC_SLPC_FLIP		BIT(3)
+#define ENABLE_GUC_MASK			GENMASK(3, 0)
 
 /*
  * Invoke param, a function-like macro, for each i915 param, with arguments:

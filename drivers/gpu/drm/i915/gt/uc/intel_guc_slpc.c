@@ -8,6 +8,8 @@
 
 #include "i915_drv.h"
 #include "i915_reg.h"
+#include "display/intel_display_guc_metrics.h"
+#include "display/intel_display_guc_metrics_types.h"
 #include "intel_guc_slpc.h"
 #include "intel_guc_print.h"
 #include "intel_mchbar_regs.h"
@@ -241,17 +243,176 @@ static void slpc_boost_work(struct work_struct *work)
 	mutex_unlock(&slpc->lock);
 }
 
+static void slpc_display_data_init(struct slpc_display_data *data, int version,
+				   int num_pipes, int num_planes_per_pipe)
+{
+	data->global_info.version = version;
+	data->global_info.num_pipes = num_pipes;
+	data->global_info.num_planes_per_pipe = num_planes_per_pipe;
+}
+
+static void slpc_refresh_info(struct slpc_display_data *data, int pipe,
+			      u32 refresh_interval, bool vrr_enabled)
+{
+	data->refresh_info[pipe].refresh_interval = refresh_interval;
+	data->refresh_info[pipe].is_variable = vrr_enabled;
+	data->global_info.refresh_count += 1;
+}
+
+static void slpc_vblank(struct slpc_display_data *data, int pipe,
+			u32 timestamp)
+{
+	u32 vblank;
+
+	vblank = data->vblank_metrics[pipe];
+
+	vblank = REG_FIELD_GET(SLPC_VBLANK_COUNT, vblank);
+	vblank = REG_FIELD_PREP(SLPC_VBLANK_COUNT, vblank + 1);
+	vblank |= REG_FIELD_PREP(SLPC_VBLANK_LAST, timestamp);
+
+	data->vblank_metrics[pipe] = vblank;
+	data->global_info.vblank_count += 1;
+}
+
+static void slpc_flip(struct slpc_display_data *data, int pipe, int plane,
+		      bool async_flip, u32 timestamp)
+{
+	u32 part1, part2, count;
+
+	part1 = data->flip_metrics[pipe][plane].part1;
+	part2 = data->flip_metrics[pipe][plane].part2;
+
+	part1 = REG_FIELD_GET(SLPC_FLIP_P1_TOTAL_COUNT, part1);
+	part1 = REG_FIELD_PREP(SLPC_FLIP_P1_TOTAL_COUNT, part1 + 1);
+	part1 |= REG_FIELD_PREP(SLPC_FLIP_P1_LAST, timestamp);
+
+	if (async_flip) {
+		count = REG_FIELD_GET(SLPC_FLIP_P2_ASYNC_COUNT, part2);
+		part2 &= ~SLPC_FLIP_P2_ASYNC_COUNT;
+		part2 |= REG_FIELD_PREP(SLPC_FLIP_P2_ASYNC_COUNT, count + 1);
+	} else {
+		count = REG_FIELD_GET(SLPC_FLIP_P2_VSYNC_COUNT, part2);
+		part2 &= ~SLPC_FLIP_P2_VSYNC_COUNT;
+		part2 |= REG_FIELD_PREP(SLPC_FLIP_P2_VSYNC_COUNT, count + 1);
+	}
+
+	data->flip_metrics[pipe][plane].part1 = part1;
+	data->flip_metrics[pipe][plane].part2 = part2;
+
+	data->global_info.flip_count += 1;
+}
+
+static void intel_guc_slpc_refresh_info_update(void *gfx_device, int pipe,
+					       u32 refresh_interval,
+					       bool vrr_enabled)
+{
+	struct drm_i915_private *i915 = gfx_device;
+	struct intel_gt *gt;
+	int i;
+
+	if (pipe > SLPC_MAX_PIPES) {
+		drm_err(&i915->drm, "GuC PC Max display pipe exceeded\n");
+		return;
+	}
+
+	for_each_gt(gt, i915, i)
+		slpc_refresh_info(gt->uc.guc.slpc.display.vaddr, pipe,
+				  refresh_interval, vrr_enabled);
+}
+
+#define MCHBAR_BCLK_COUNT	_MMIO(MCHBAR_MIRROR_BASE_SNB + 0x5984)
+#define MTL_BCLK_COUNT		_MMIO(0xc28)
+#define   TIMESTAMP_MASK	REG_GENMASK(30, 6)
+
+static u32 bclk_read_timestamp(struct intel_gt *gt)
+{
+	u32 timestamp;
+
+	if (IS_METEORLAKE(gt->i915))
+		timestamp = intel_uncore_read_fw(gt->uncore, MTL_BCLK_COUNT);
+	else
+		timestamp = intel_uncore_read_fw(gt->uncore, MCHBAR_BCLK_COUNT);
+
+	return REG_FIELD_GET(TIMESTAMP_MASK, timestamp);
+}
+
+static void intel_guc_slpc_vblank_update(void *gfx_device, int pipe)
+{
+	struct drm_i915_private *i915 = gfx_device;
+	struct intel_gt *gt;
+	u32 timestamp;
+	int i;
+
+	if (!(i915->params.enable_guc & ENABLE_GUC_SLPC_VBLANK))
+		return;
+
+	if (pipe > SLPC_MAX_PIPES) {
+		drm_err(&i915->drm, "GuC PC Max display pipe exceeded\n");
+		return;
+	}
+
+	for_each_gt(gt, i915, i) {
+		timestamp = bclk_read_timestamp(gt);
+		slpc_vblank(gt->uc.guc.slpc.display.vaddr, pipe, timestamp);
+	}
+}
+
+static void intel_guc_slpc_flip_update(void *gfx_device, int pipe, int plane,
+				       bool async_flip)
+{
+	struct drm_i915_private *i915 = gfx_device;
+	struct intel_gt *gt;
+	u32 timestamp;
+	int i;
+
+	if (!(i915->params.enable_guc & ENABLE_GUC_SLPC_FLIP))
+		return;
+
+	if (pipe > SLPC_MAX_PIPES) {
+		drm_err(&i915->drm, "GuC PC Max display pipe exceeded\n");
+		return;
+	}
+
+	if (plane > SLPC_MAX_PLANES_PER_PIPE) {
+		drm_err(&i915->drm, "GuC PC Max display planes exceeded\n");
+		return;
+	}
+
+	for_each_gt(gt, i915, i) {
+		timestamp = bclk_read_timestamp(gt);
+		slpc_flip(gt->uc.guc.slpc.display.vaddr, pipe, plane,
+			  async_flip, timestamp);
+	}
+}
+
+static struct intel_display_guc_metrics guc_metrics = {
+	.refresh_info_update = intel_guc_slpc_refresh_info_update,
+	.vblank_update = intel_guc_slpc_vblank_update,
+	.flip_update = intel_guc_slpc_flip_update,
+};
+
 int intel_guc_slpc_init(struct intel_guc_slpc *slpc)
 {
 	struct intel_guc *guc = slpc_to_guc(slpc);
-	u32 size = PAGE_ALIGN(sizeof(struct slpc_shared_data));
+	struct drm_i915_private *i915 = guc_to_i915(guc);
+	u32 size;
 	int err;
 
 	GEM_BUG_ON(slpc->vma);
 
+	size = PAGE_ALIGN(sizeof(struct slpc_shared_data));
 	err = intel_guc_allocate_and_map_vma(guc, size, &slpc->vma, (void **)&slpc->vaddr);
 	if (unlikely(err)) {
 		guc_probe_error(guc, "Failed to allocate SLPC struct: %pe\n", ERR_PTR(err));
+		return err;
+	}
+
+	size = PAGE_ALIGN(sizeof(struct slpc_display_data));
+	err = intel_guc_allocate_and_map_vma(guc, size, &slpc->display.vma,
+					     (void **)&slpc->display.vaddr);
+	if (unlikely(err)) {
+		guc_probe_error(guc, "Failed to allocate SLPC's display struct: %pe\n",
+				ERR_PTR(err));
 		return err;
 	}
 
@@ -264,6 +425,10 @@ int intel_guc_slpc_init(struct intel_guc_slpc *slpc)
 	atomic_set(&slpc->num_waiters, 0);
 	slpc->num_boosts = 0;
 	slpc->media_ratio_mode = SLPC_MEDIA_RATIO_MODE_DYNAMIC_CONTROL;
+
+	if (i915->params.enable_guc & ENABLE_GUC_SLPC_VBLANK ||
+	    i915->params.enable_guc & ENABLE_GUC_SLPC_FLIP)
+		intel_display_guc_metrics_init(i915, &i915->display, &guc_metrics);
 
 	mutex_init(&slpc->lock);
 	INIT_WORK(&slpc->boost_work, slpc_boost_work);
@@ -357,11 +522,27 @@ static u32 slpc_decode_max_freq(struct intel_guc_slpc *slpc)
 				  GT_FREQUENCY_MULTIPLIER, GEN9_FREQ_SCALER);
 }
 
-static void slpc_shared_data_reset(struct slpc_shared_data *data)
+static void slpc_shared_display_data_reset(struct intel_guc_slpc *slpc)
 {
-	memset(data, 0, sizeof(struct slpc_shared_data));
+	struct slpc_shared_data *data = slpc->vaddr;
+	struct slpc_display_data *display_data = slpc->display.vaddr;
 
+	memset(display_data, 0, sizeof(struct slpc_display_data));
+
+	slpc_display_data_init(slpc->display.vaddr, 1, SLPC_MAX_PIPES,
+			       SLPC_MAX_PLANES_PER_PIPE);
+	data->header.display_data_addr = intel_guc_ggtt_offset(slpc_to_guc(slpc),
+							       slpc->display.vma);
+}
+
+static void slpc_shared_data_reset(struct intel_guc_slpc *slpc)
+{
+	struct slpc_shared_data *data = slpc->vaddr;
+
+	memset(data, 0, sizeof(struct slpc_shared_data));
 	data->header.size = sizeof(struct slpc_shared_data);
+
+	slpc_shared_display_data_reset(slpc);
 
 	/* Enable only GTPERF task, disable others */
 	slpc_mem_set_enabled(data, SLPC_PARAM_TASK_ENABLE_GTPERF,
@@ -686,7 +867,7 @@ int intel_guc_slpc_enable(struct intel_guc_slpc *slpc)
 
 	GEM_BUG_ON(!slpc->vma);
 
-	slpc_shared_data_reset(slpc->vaddr);
+	slpc_shared_data_reset(slpc);
 
 	ret = slpc_reset(slpc);
 	if (unlikely(ret < 0)) {
@@ -727,6 +908,10 @@ int intel_guc_slpc_enable(struct intel_guc_slpc *slpc)
 
 	/* Enable SLPC Optimized Strategy for compute */
 	intel_guc_slpc_set_strategy(slpc, SLPC_OPTIMIZED_STRATEGY_COMPUTE);
+
+	slpc_set_param_nb(slpc, SLPC_PARAM_STRATEGIES,
+			  SLPC_OPTIMIZED_STRATEGIES_VSYNC_FLIP |
+			  SLPC_OPTIMIZED_STRATEGIES_ASYNC_FLIP);
 
 	return 0;
 }
@@ -772,6 +957,67 @@ void intel_guc_slpc_dec_waiters(struct intel_guc_slpc *slpc)
 	mutex_unlock(&slpc->lock);
 }
 
+static void slpc_print_display_metrics(struct drm_printer *p,
+				       struct slpc_display_data *data)
+{
+	int pipe, plane;
+	u32 val;
+
+	drm_printf(p, "\nSLPC Display Data - Globals:\n");
+	drm_printf(p, "\tVersion: %d\n", data->global_info.version);
+	drm_printf(p, "\tNum Pipes: %d\n", data->global_info.num_pipes);
+	drm_printf(p, "\tNum Planes per Pipe: %d\n",
+		   data->global_info.num_planes_per_pipe);
+	drm_printf(p, "\tGlobal Refresh Info Count: %d\n",
+		   data->global_info.refresh_count);
+	drm_printf(p, "\tGlobal Vblank Count: %d\n",
+		   data->global_info.vblank_count);
+	drm_printf(p, "\tGlobal Flip Count: %d\n",
+		   data->global_info.flip_count);
+
+	for (pipe = 0; pipe < SLPC_MAX_PIPES; pipe++) {
+
+		if (!data->refresh_info[pipe].refresh_interval)
+			continue;
+
+		drm_printf(p, "\nSLPC Display Data - Refresh Info - Pipe[%d]:\n",
+			   pipe);
+		drm_printf(p, "\tRefresh Interval: %d\n",
+			   data->refresh_info[pipe].refresh_interval);
+		drm_printf(p, "\tIS VRR: %d\n",
+			   data->refresh_info[pipe].is_variable);
+
+		drm_printf(p, "SLPC Display Data - Vblank Info - Pipe[%d]:\n",
+			   pipe);
+		val = data->vblank_metrics[pipe];
+		drm_printf(p, "\tVBlank Last Timestamp: %x\n",
+			   REG_FIELD_GET(SLPC_VBLANK_LAST, val));
+		drm_printf(p, "\tVBlank Count: %d\n",
+			   REG_FIELD_GET(SLPC_VBLANK_COUNT, val));
+
+		drm_printf(p, "SLPC Display Data - Flip Info - Pipe[%d]:\n", pipe);
+		for (plane = 0; plane < SLPC_MAX_PLANES_PER_PIPE; plane++) {
+
+			val = data->flip_metrics[pipe][plane].part1;
+			if (!val)
+				continue;
+
+			drm_printf(p, "\tFlip Info - Plane[%d]:\n", plane);
+			drm_printf(p, "\t\tFlip Last Timestamp: %x\n",
+				   REG_FIELD_GET(SLPC_FLIP_P1_LAST, val));
+			drm_printf(p, "\t\tFlip Total Count: %d\n",
+				   REG_FIELD_GET(SLPC_FLIP_P1_TOTAL_COUNT, val));
+
+			val = data->flip_metrics[pipe][plane].part2;
+
+			drm_printf(p, "\t\tFlip Async Count: %d\n",
+				   REG_FIELD_GET(SLPC_FLIP_P2_ASYNC_COUNT, val));
+			drm_printf(p, "\t\tFlip Vsync Count: %d\n",
+				   REG_FIELD_GET(SLPC_FLIP_P2_VSYNC_COUNT, val));
+		}
+	}
+}
+
 int intel_guc_slpc_print_info(struct intel_guc_slpc *slpc, struct drm_printer *p)
 {
 	struct drm_i915_private *i915 = slpc_to_i915(slpc);
@@ -795,10 +1041,18 @@ int intel_guc_slpc_print_info(struct intel_guc_slpc *slpc, struct drm_printer *p
 				   slpc_decode_max_freq(slpc));
 			drm_printf(p, "\tMin freq: %u MHz\n",
 				   slpc_decode_min_freq(slpc));
-			drm_printf(p, "\twaitboosts: %u\n",
-				   slpc->num_boosts);
-			drm_printf(p, "\tBoosts outstanding: %u\n",
-				   atomic_read(&slpc->num_waiters));
+
+			if (i915->params.enable_guc & ENABLE_GUC_SLPC_VBLANK ||
+			    i915->params.enable_guc & ENABLE_GUC_SLPC_FLIP) {
+				if (data->header.display_data_addr)
+					slpc_print_display_metrics(p,
+								   slpc->display.vaddr);
+			} else {
+				drm_printf(p, "\twaitboosts: %u\n",
+					   slpc->num_boosts);
+				drm_printf(p, "\tBoosts outstanding: %u\n",
+					   atomic_read(&slpc->num_waiters));
+			}
 		}
 	}
 
@@ -810,5 +1064,6 @@ void intel_guc_slpc_fini(struct intel_guc_slpc *slpc)
 	if (!slpc->vma)
 		return;
 
+	i915_vma_unpin_and_release(&slpc->display.vma, I915_VMA_RELEASE_MAP);
 	i915_vma_unpin_and_release(&slpc->vma, I915_VMA_RELEASE_MAP);
 }

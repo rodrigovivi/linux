@@ -16,6 +16,10 @@
 struct intel_guc_slpc {
 	struct i915_vma *vma;
 	struct slpc_shared_data *vaddr;
+	struct {
+		struct i915_vma *vma;
+		struct slpc_display_data *vaddr;
+	} display;
 	bool supported;
 	bool selected;
 
