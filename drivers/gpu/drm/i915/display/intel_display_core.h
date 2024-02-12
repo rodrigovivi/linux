@@ -43,6 +43,7 @@ struct intel_color_funcs;
 struct intel_crtc;
 struct intel_crtc_state;
 struct intel_dmc;
+struct intel_display_guc_metrics;
 struct intel_dpll_funcs;
 struct intel_dpll_mgr;
 struct intel_fbdev;
@@ -530,6 +531,7 @@ struct intel_display {
 	struct intel_fbc *fbc[I915_MAX_FBCS];
 	struct intel_frontbuffer_tracking fb_tracking;
 	struct intel_hotplug hotplug;
+	struct intel_display_guc_metrics *guc_metrics;
 	struct intel_opregion *opregion;
 	struct intel_overlay *overlay;
 	struct intel_display_params params;

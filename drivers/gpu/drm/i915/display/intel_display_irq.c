@@ -10,6 +10,7 @@
 #include "icl_dsi_regs.h"
 #include "intel_crtc.h"
 #include "intel_de.h"
+#include "intel_display_guc_metrics.h"
 #include "intel_display_irq.h"
 #include "intel_display_trace.h"
 #include "intel_display_types.h"
@@ -25,8 +26,10 @@
 static void
 intel_handle_vblank(struct drm_i915_private *dev_priv, enum pipe pipe)
 {
+	struct intel_display *display = &dev_priv->display;
 	struct intel_crtc *crtc = intel_crtc_for_pipe(dev_priv, pipe);
 
+	intel_display_guc_metrics_vblank(display, crtc);
 	drm_crtc_handle_vblank(&crtc->base);
 }
 

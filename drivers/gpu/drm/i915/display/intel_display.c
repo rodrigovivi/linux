@@ -68,6 +68,7 @@
 #include "intel_ddi.h"
 #include "intel_de.h"
 #include "intel_display_driver.h"
+#include "intel_display_guc_metrics.h"
 #include "intel_display_power.h"
 #include "intel_display_types.h"
 #include "intel_dmc.h"
@@ -1022,11 +1023,15 @@ static void intel_post_plane_update(struct intel_atomic_state *state,
 				    struct intel_crtc *crtc)
 {
 	struct drm_i915_private *dev_priv = to_i915(state->base.dev);
+	struct intel_display *display = &dev_priv->display;
 	const struct intel_crtc_state *old_crtc_state =
 		intel_atomic_get_old_crtc_state(state, crtc);
 	const struct intel_crtc_state *new_crtc_state =
 		intel_atomic_get_new_crtc_state(state, crtc);
 	enum pipe pipe = crtc->pipe;
+	const struct intel_plane_state __maybe_unused *plane_state;
+	struct intel_plane *plane;
+	int i;
 
 	intel_psr_post_plane_update(state, crtc);
 
@@ -1058,6 +1063,10 @@ static void intel_post_plane_update(struct intel_atomic_state *state,
 
 	if (audio_enabling(old_crtc_state, new_crtc_state))
 		intel_encoders_audio_enable(state, crtc);
+
+	for_each_new_intel_plane_in_state(state, plane, plane_state, i)
+		intel_display_guc_metrics_flip(display, new_crtc_state,
+					       plane->id, false);
 }
 
 static void intel_crtc_enable_flip_done(struct intel_atomic_state *state,
@@ -7058,6 +7067,7 @@ static void intel_atomic_commit_tail(struct intel_atomic_state *state)
 {
 	struct drm_device *dev = state->base.dev;
 	struct drm_i915_private *dev_priv = to_i915(dev);
+	struct intel_display *display = &dev_priv->display;
 	struct intel_crtc_state *new_crtc_state, *old_crtc_state;
 	struct intel_crtc *crtc;
 	struct intel_power_domain_mask put_domains[I915_MAX_PIPES] = {};
@@ -7104,8 +7114,10 @@ static void intel_atomic_commit_tail(struct intel_atomic_state *state)
 	for_each_oldnew_intel_crtc_in_state(state, crtc, old_crtc_state,
 					    new_crtc_state, i) {
 		if (intel_crtc_needs_modeset(new_crtc_state) ||
-		    intel_crtc_needs_fastset(new_crtc_state))
+		    intel_crtc_needs_fastset(new_crtc_state)) {
 			intel_modeset_get_crtc_power_domains(new_crtc_state, &put_domains[crtc->pipe]);
+			intel_display_guc_metrics_refresh_info(display, new_crtc_state);
+		}
 	}
 
 	intel_commit_modeset_disables(state);

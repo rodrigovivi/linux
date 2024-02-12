@@ -262,6 +262,7 @@ i915-y += \
 	display/intel_display.o \
 	display/intel_display_driver.o \
 	display/intel_display_irq.o \
+	display/intel_display_guc_metrics.o \
 	display/intel_display_params.o \
 	display/intel_display_power.o \
 	display/intel_display_power_map.o \
