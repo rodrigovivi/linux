@@ -15,6 +15,8 @@
 struct xe_guc_pc {
 	/** @bo: GGTT buffer object that is shared with GuC PC */
 	struct xe_bo *bo;
+	/** @display_bo: GGTT buffer object that is shared with GuC PC for display metricts */
+	struct xe_bo *display_bo;
 	/** @rp0_freq: HW RP0 frequency - The Maximum one */
 	u32 rp0_freq;
 	/** @rpe_freq: HW RPe frequency - The Efficient one */

@@ -122,6 +122,11 @@ enum slpc_param_id {
 	SLPC_MAX_PARAM = 32,
 };
 
+#define SLPC_OPTIMIZED_STRATEGIES_COMPUTE	REG_BIT(0)
+#define SLPC_OPTIMIZED_STRATEGIES_ASYNC_FLIP	REG_BIT(1)
+#define SLPC_OPTIMIZED_STRATEGIES_MEDIA		REG_BIT(2)
+#define SLPC_OPTIMIZED_STRATEGIES_VSYNC_FLIP	REG_BIT(3)
+
 enum slpc_media_ratio_mode {
 	SLPC_MEDIA_RATIO_MODE_DYNAMIC_CONTROL = 0,
 	SLPC_MEDIA_RATIO_MODE_FIXED_ONE_TO_ONE = 1,
@@ -205,6 +210,60 @@ struct slpc_shared_data {
 
 	/* PAGE 2 (4096 bytes), mode based parameter will be removed soon */
 	u8 reserved_mode_definition[4096];
+} __packed;
+
+#define SLPC_MAX_PIPES			8
+#define SLPC_MAX_PLANES_PER_PIPE	8
+
+struct slpc_display_global_info {
+	u32 version:8;
+	u32 num_pipes:4;
+	u32 num_planes_per_pipe:4;
+	u32 reserved_1:16;
+	u32 refresh_count:16;
+	u32 vblank_count:16;
+	u32 flip_count:16;
+	u32 reserved_2:16;
+	u32 reserved_3[13];
+} __packed;
+
+struct slpc_display_refresh_info {
+	u32 refresh_interval:16;
+	u32 is_variable:1;
+	u32 reserved:15;
+} __packed;
+
+/*
+ * The host must update each 32-bit part with a single atomic write so
+ * that SLPC will read the contained bit fields together. The host must
+ * update the two parts in order - total flip count and timestamp first,
+ * vsync and async flip counts second.
+ * Hence, these items are not defined with individual bitfields.
+ */
+#define SLPC_FLIP_P1_LAST		REG_GENMASK(31, 7)
+#define SLPC_FLIP_P1_TOTAL_COUNT	REG_GENMASK(6, 0)
+#define SLPC_FLIP_P2_ASYNC_COUNT	REG_GENMASK(31, 16)
+#define SLPC_FLIP_P2_VSYNC_COUNT	REG_GENMASK(15, 0)
+
+struct slpc_display_flip_metrics {
+	u32 part1;
+	u32 part2;
+} __packed;
+
+/*
+ * The host must update this 32-bit structure with a single atomic write
+ * so that SLPC will read the count and timestamp together.
+ * Hence, this item is not defined with individual bitfields.
+ */
+#define SLPC_VBLANK_LAST	REG_GENMASK(31, 7)
+#define SLPC_VBLANK_COUNT	REG_GENMASK(6, 0)
+
+struct slpc_display_data {
+	struct slpc_display_global_info global_info;
+	struct slpc_display_refresh_info refresh_info[SLPC_MAX_PIPES];
+	u32 vblank_metrics[SLPC_MAX_PIPES];
+	struct slpc_display_flip_metrics
+	flip_metrics[SLPC_MAX_PIPES][SLPC_MAX_PLANES_PER_PIPE];
 } __packed;
 
 /**

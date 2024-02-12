@@ -11,6 +11,8 @@
 
 #include "abi/guc_actions_abi.h"
 #include "abi/guc_actions_slpc_abi.h"
+#include "intel_display_guc_metrics.h"
+#include "intel_display_guc_metrics_types.h"
 #include "regs/xe_gt_regs.h"
 #include "regs/xe_regs.h"
 #include "xe_bo.h"
@@ -39,6 +41,10 @@
 
 #define GT_FREQUENCY_MULTIPLIER	50
 #define GT_FREQUENCY_SCALER	3
+
+#define MCHBAR_BCLK_COUNT	XE_REG(MCHBAR_MIRROR_BASE_SNB + 0x5984)
+#define MTL_BCLK_COUNT		XE_REG(0xc28)
+#define   TIMESTAMP_MASK	REG_GENMASK(30, 6)
 
 /**
  * DOC: GuC Power Conservation (PC)
@@ -88,18 +94,35 @@ pc_to_gt(struct xe_guc_pc *pc)
 }
 
 static struct iosys_map *
-pc_to_maps(struct xe_guc_pc *pc)
+pc_to_maps(struct xe_guc_pc *pc, bool display)
 {
-	return &pc->bo->vmap;
+	if (display)
+		return &pc->display_bo->vmap;
+	else
+		return &pc->bo->vmap;
+}
+
+static struct slpc_display_data *
+pc_to_display_data(struct xe_guc_pc *pc)
+{
+	return pc->display_bo->vmap.vaddr;
 }
 
 #define slpc_shared_data_read(pc_, field_) \
-	xe_map_rd_field(pc_to_xe(pc_), pc_to_maps(pc_), 0, \
+	xe_map_rd_field(pc_to_xe(pc_), pc_to_maps(pc_, false), 0, \
 			struct slpc_shared_data, field_)
 
 #define slpc_shared_data_write(pc_, field_, val_) \
-	xe_map_wr_field(pc_to_xe(pc_), pc_to_maps(pc_), 0, \
+	xe_map_wr_field(pc_to_xe(pc_), pc_to_maps(pc_, false), 0, \
 			struct slpc_shared_data, field_, val_)
+
+#define slpc_display_data_read(pc_, field_) \
+	xe_map_rd_field(pc_to_xe(pc_), pc_to_maps(pc_, true), 0, \
+			struct slpc_display_data, field_)
+
+#define slpc_display_data_write(pc_, field_, val_) \
+	xe_map_wr_field(pc_to_xe(pc_), pc_to_maps(pc_, true), 0, \
+			struct slpc_display_data, field_, val_)
 
 #define SLPC_EVENT(id, count) \
 	(FIELD_PREP(HOST2GUC_PC_SLPC_REQUEST_MSG_1_EVENT_ID, id) | \
@@ -224,6 +247,144 @@ static int pc_action_setup_gucrc(struct xe_guc_pc *pc, u32 mode)
 			ERR_PTR(ret));
 	return ret;
 }
+
+static void slpc_display_data_init(struct slpc_display_data *data, int version,
+				   int num_pipes, int num_planes_per_pipe)
+{
+	data->global_info.version = version;
+	data->global_info.num_pipes = num_pipes;
+	data->global_info.num_planes_per_pipe = num_planes_per_pipe;
+}
+
+static void slpc_refresh_info(struct slpc_display_data *data, int pipe,
+			      u32 refresh_interval, bool vrr_enabled)
+{
+	data->refresh_info[pipe].refresh_interval = refresh_interval;
+	data->refresh_info[pipe].is_variable = vrr_enabled;
+	data->global_info.refresh_count += 1;
+}
+
+static void slpc_vblank(struct slpc_display_data *data, int pipe,
+			u32 timestamp)
+{
+	u32 vblank;
+
+	vblank = data->vblank_metrics[pipe];
+
+	vblank = REG_FIELD_GET(SLPC_VBLANK_COUNT, vblank);
+	vblank = REG_FIELD_PREP(SLPC_VBLANK_COUNT, vblank + 1);
+	vblank |= REG_FIELD_PREP(SLPC_VBLANK_LAST, timestamp);
+
+	data->vblank_metrics[pipe] = vblank;
+	data->global_info.vblank_count += 1;
+}
+
+static void slpc_flip(struct slpc_display_data *data, int pipe, int plane,
+		      bool async_flip, u32 timestamp)
+{
+	u32 part1, part2, count;
+
+	part1 = data->flip_metrics[pipe][plane].part1;
+	part2 = data->flip_metrics[pipe][plane].part2;
+
+	part1 = REG_FIELD_GET(SLPC_FLIP_P1_TOTAL_COUNT, part1);
+	part1 = REG_FIELD_PREP(SLPC_FLIP_P1_TOTAL_COUNT, part1 + 1);
+	part1 |= REG_FIELD_PREP(SLPC_FLIP_P1_LAST, timestamp);
+
+	if (async_flip) {
+		count = REG_FIELD_GET(SLPC_FLIP_P2_ASYNC_COUNT, part2);
+		part2 &= ~SLPC_FLIP_P2_ASYNC_COUNT;
+		part2 |= REG_FIELD_PREP(SLPC_FLIP_P2_ASYNC_COUNT, count + 1);
+	} else {
+		count = REG_FIELD_GET(SLPC_FLIP_P2_VSYNC_COUNT, part2);
+		part2 &= ~SLPC_FLIP_P2_VSYNC_COUNT;
+		part2 |= REG_FIELD_PREP(SLPC_FLIP_P2_VSYNC_COUNT, count + 1);
+	}
+
+	data->flip_metrics[pipe][plane].part1 = part1;
+	data->flip_metrics[pipe][plane].part2 = part2;
+
+	data->global_info.flip_count += 1;
+}
+
+static void xe_guc_pc_refresh_info_update(void *gfx_device, int pipe,
+					  u32 refresh_rate, bool vrr_enabled)
+{
+	struct xe_device *xe = gfx_device;
+	struct xe_gt *gt;
+	int i;
+
+	if (pipe > SLPC_MAX_PIPES) {
+		drm_err(&xe->drm, "GuC PC Max display pipe exceeded\n");
+		return;
+	}
+
+	for_each_gt(gt, xe, i)
+		slpc_refresh_info(pc_to_display_data(&gt->uc.guc.pc),
+				  pipe, refresh_rate, vrr_enabled);
+}
+
+static u32 bclk_read_timestamp(struct xe_gt *gt)
+{
+	u32 timestamp;
+
+	if (gt_to_xe(gt)->info.platform == XE_METEORLAKE)
+		timestamp = xe_mmio_read32(gt, MTL_BCLK_COUNT);
+	else
+		timestamp = xe_mmio_read32(gt, MCHBAR_BCLK_COUNT);
+
+	return REG_FIELD_GET(TIMESTAMP_MASK, timestamp);
+}
+
+static void xe_guc_pc_vblank_update(void *gfx_device, int pipe)
+{
+	struct xe_device *xe = gfx_device;
+	struct xe_gt *gt;
+	u32 timestamp;
+	int i;
+
+	if (pipe > SLPC_MAX_PIPES) {
+		drm_err(&xe->drm, "GuC PC Max display pipe exceeded\n");
+		return;
+	}
+
+	for_each_gt(gt, xe, i) {
+		timestamp = bclk_read_timestamp(gt);
+		slpc_vblank(pc_to_display_data(&gt->uc.guc.pc),
+			    pipe, timestamp);
+	}
+}
+
+static void xe_guc_pc_flip_update(void *gfx_device, int pipe, int plane,
+				  bool async_flip)
+{
+	struct xe_device *xe = gfx_device;
+	struct xe_gt *gt;
+	u32 timestamp;
+	int i;
+
+	if (pipe > SLPC_MAX_PIPES) {
+		drm_err(&xe->drm, "GuC PC Max display pipe exceeded\n");
+		return;
+	}
+
+	if (plane > SLPC_MAX_PLANES_PER_PIPE) {
+		drm_err(&xe->drm, "GuC PC Max display planes exceeded\n");
+		return;
+	}
+
+	for_each_gt(gt, xe, i) {
+		timestamp = bclk_read_timestamp(gt);
+		slpc_flip(pc_to_display_data(&gt->uc.guc.pc),
+			  pipe, plane, async_flip, timestamp);
+	}
+}
+
+static struct intel_display_guc_metrics guc_metrics = {
+	.refresh_info_update = xe_guc_pc_refresh_info_update,
+	.vblank_update = xe_guc_pc_vblank_update,
+	.flip_update = xe_guc_pc_flip_update,
+};
 
 static u32 decode_freq(u32 raw)
 {
@@ -824,6 +985,17 @@ out:
 	return ret;
 }
 
+static void slpc_display_metrics_start(struct xe_guc_pc *pc)
+{
+	struct xe_device *xe = pc_to_xe(pc);
+
+	slpc_display_data_init(pc_to_display_data(pc), 1, SLPC_MAX_PIPES,
+			       SLPC_MAX_PLANES_PER_PIPE);
+	slpc_shared_data_write(pc, header.display_data_addr,
+			       xe_bo_ggtt_addr(pc->display_bo));
+	intel_display_guc_metrics_init(xe, &xe->display, &guc_metrics);
+}
+
 /**
  * xe_guc_pc_start - Start GuC's Power Conservation component
  * @pc: Xe_GuC_PC instance
@@ -853,7 +1025,9 @@ int xe_guc_pc_start(struct xe_guc_pc *pc)
 	}
 
 	memset(pc->bo->vmap.vaddr, 0, size);
+	memset(pc->display_bo->vmap.vaddr, 0, size);
 	slpc_shared_data_write(pc, header.size, size);
+	slpc_display_metrics_start(pc);
 
 	ret = pc_action_reset(pc);
 	if (ret)
@@ -864,6 +1038,12 @@ int xe_guc_pc_start(struct xe_guc_pc *pc)
 		ret = -EIO;
 		goto out;
 	}
+
+	if (pc_action_set_param(pc, SLPC_PARAM_STRATEGIES,
+				SLPC_OPTIMIZED_STRATEGIES_VSYNC_FLIP |
+				SLPC_OPTIMIZED_STRATEGIES_ASYNC_FLIP))
+		drm_info(&pc_to_xe(pc)->drm, "GuC PC couldn't init Optimized strategies: %pe\n",
+			 ERR_PTR(ret));
 
 	ret = pc_init_freqs(pc);
 	if (ret)
@@ -932,7 +1112,7 @@ static void xe_guc_pc_fini(struct drm_device *drm, void *arg)
 	XE_WARN_ON(xe_guc_pc_stop(pc));
 	xe_force_wake_put(gt_to_fw(pc_to_gt(pc)), XE_FORCEWAKE_ALL);
 }
-
+#include <linux/iosys-map.h>
 /**
  * xe_guc_pc_init - Initialize GuC's Power Conservation component
  * @pc: Xe_GuC_PC instance
@@ -943,7 +1123,7 @@ int xe_guc_pc_init(struct xe_guc_pc *pc)
 	struct xe_tile *tile = gt_to_tile(gt);
 	struct xe_device *xe = gt_to_xe(gt);
 	struct xe_bo *bo;
-	u32 size = PAGE_ALIGN(sizeof(struct slpc_shared_data));
+	u32 size;
 	int err;
 
 	if (xe->info.skip_guc_pc)
@@ -953,6 +1133,7 @@ int xe_guc_pc_init(struct xe_guc_pc *pc)
 	if (err)
 		return err;
 
+	size = PAGE_ALIGN(sizeof(struct slpc_shared_data));
 	bo = xe_managed_bo_create_pin_map(xe, tile, size,
 					  XE_BO_CREATE_VRAM_IF_DGFX(tile) |
 					  XE_BO_CREATE_GGTT_BIT);
@@ -961,9 +1142,158 @@ int xe_guc_pc_init(struct xe_guc_pc *pc)
 
 	pc->bo = bo;
 
+	size = PAGE_ALIGN(sizeof(struct slpc_display_data));
+	bo = xe_managed_bo_create_pin_map(xe, tile, size,
+					  XE_BO_CREATE_VRAM_IF_DGFX(tile) |
+					  XE_BO_CREATE_GGTT_BIT);
+	if (IS_ERR(bo))
+		return PTR_ERR(bo);
+
+	pc->display_bo = bo;
+
 	err = drmm_add_action_or_reset(&xe->drm, xe_guc_pc_fini, pc);
 	if (err)
 		return err;
 
 	return 0;
+}
+
+static const char *slpc_global_state_to_string(enum slpc_global_state state)
+{
+	switch (state) {
+	case SLPC_GLOBAL_STATE_NOT_RUNNING:
+		return "not running";
+	case SLPC_GLOBAL_STATE_INITIALIZING:
+		return "initializing";
+	case SLPC_GLOBAL_STATE_RESETTING:
+		return "resetting";
+	case SLPC_GLOBAL_STATE_RUNNING:
+		return "running";
+	case SLPC_GLOBAL_STATE_SHUTTING_DOWN:
+		return "shutting down";
+	case SLPC_GLOBAL_STATE_ERROR:
+		return "error";
+	default:
+		return "unknown";
+	}
+}
+
+static const char *pc_get_state_string(struct xe_guc_pc *pc)
+{
+	enum slpc_global_state state;
+
+	state = slpc_shared_data_read(pc, header.global_state);
+	return slpc_global_state_to_string(state);
+}
+
+static void pc_print_display_metrics(struct drm_printer *p,
+				     struct slpc_display_data *data)
+{
+	int pipe, plane;
+	u32 val;
+
+	drm_printf(p, "\nSLPC Display Data - Globals:\n");
+	drm_printf(p, "\tVersion: %d\n", data->global_info.version);
+	drm_printf(p, "\tNum Pipes: %d\n", data->global_info.num_pipes);
+	drm_printf(p, "\tNum Planes per Pipe: %d\n",
+		   data->global_info.num_planes_per_pipe);
+	drm_printf(p, "\tGlobal Refresh Info Count: %d\n",
+		   data->global_info.refresh_count);
+	drm_printf(p, "\tGlobal Vblank Count: %d\n",
+		   data->global_info.vblank_count);
+	drm_printf(p, "\tGlobal Flip Count: %d\n",
+		   data->global_info.flip_count);
+
+	for (pipe = 0; pipe < SLPC_MAX_PIPES; pipe++) {
+
+		if (!data->refresh_info[pipe].refresh_interval)
+			continue;
+
+		drm_printf(p, "\nSLPC Display Data - Refresh Info - Pipe[%d]:\n",
+			   pipe);
+		drm_printf(p, "\tRefresh Interval: %d\n",
+			   data->refresh_info[pipe].refresh_interval);
+		drm_printf(p, "\tIS VRR: %d\n",
+			   data->refresh_info[pipe].is_variable);
+
+		drm_printf(p, "SLPC Display Data - Vblank Info - Pipe[%d]:\n",
+			   pipe);
+		val = data->vblank_metrics[pipe];
+		drm_printf(p, "\tVBlank Last Timestamp: %x\n",
+			   REG_FIELD_GET(SLPC_VBLANK_LAST, val));
+		drm_printf(p, "\tVBlank Count: %d\n",
+			   REG_FIELD_GET(SLPC_VBLANK_COUNT, val));
+
+		drm_printf(p, "SLPC Display Data - Flip Info - Pipe[%d]:\n", pipe);
+		for (plane = 0; plane < SLPC_MAX_PLANES_PER_PIPE; plane++) {
+
+			val = data->flip_metrics[pipe][plane].part1;
+			if (!val)
+				continue;
+
+			drm_printf(p, "\tFlip Info - Plane[%d]:\n", plane);
+			drm_printf(p, "\t\tFlip Last Timestamp: %x\n",
+				   REG_FIELD_GET(SLPC_FLIP_P1_LAST, val));
+			drm_printf(p, "\t\tFlip Total Count: %d\n",
+				   REG_FIELD_GET(SLPC_FLIP_P1_TOTAL_COUNT, val));
+
+			val = data->flip_metrics[pipe][plane].part2;
+
+			drm_printf(p, "\t\tFlip Async Count: %d\n",
+				   REG_FIELD_GET(SLPC_FLIP_P2_ASYNC_COUNT, val));
+			drm_printf(p, "\t\tFlip Vsync Count: %d\n",
+				   REG_FIELD_GET(SLPC_FLIP_P2_VSYNC_COUNT, val));
+		}
+	}
+}
+
+/**
+ * xe_guc_pc_print - Print GuC's Power Conservation information for debug
+ * @pc: Xe_GuC_PC instance
+ * @p: drm_printer
+ */
+void xe_guc_pc_print(struct xe_guc_pc *pc, struct drm_printer *p)
+{
+	struct slpc_display_data *data = pc_to_display_data(pc);
+	u32 display_addr;
+
+	xe_device_mem_access_get(pc_to_xe(pc));
+
+	drm_printf(p, "SLPC Shared Data Header:\n");
+	drm_printf(p, "\tSize: %x\n", slpc_shared_data_read(pc, header.size));
+	drm_printf(p, "\tGlobal State: %s\n", pc_get_state_string(pc));
+	display_addr = slpc_shared_data_read(pc, header.display_data_addr);
+	drm_printf(p, "\tDisplay Data Addr: %x\n", display_addr);
+
+	if(pc_action_query_task_state(pc))
+		goto out;
+
+	drm_printf(p, "\nSLPC Tasks Status:\n");
+	drm_printf(p, "\tGTPERF enabled: %s\n",
+		   str_yes_no(slpc_shared_data_read(pc, task_state_data.status) &
+			      SLPC_GTPERF_TASK_ENABLED));
+	drm_printf(p, "\tDCC enabled: %s\n",
+		   str_yes_no(slpc_shared_data_read(pc, task_state_data.status) &
+			      SLPC_DCC_TASK_ENABLED));
+	drm_printf(p, "\tDCC in: %s\n",
+		   str_yes_no(slpc_shared_data_read(pc, task_state_data.status) &
+			      SLPC_IN_DCC));
+	drm_printf(p, "\tBalancer enabled: %s\n",
+		   str_yes_no(slpc_shared_data_read(pc, task_state_data.status) &
+			      SLPC_BALANCER_ENABLED));
+	drm_printf(p, "\tIBC enabled: %s\n",
+		   str_yes_no(slpc_shared_data_read(pc, task_state_data.status) &
+			      SLPC_IBC_TASK_ENABLED));
+	drm_printf(p, "\tBalancer IA LMT enabled: %s\n",
+		   str_yes_no(slpc_shared_data_read(pc, task_state_data.status) &
+			      SLPC_BALANCER_IA_LMT_ENABLED));
+	drm_printf(p, "\tBalancer IA LMT active: %s\n",
+		   str_yes_no(slpc_shared_data_read(pc, task_state_data.status) &
+			      SLPC_BALANCER_IA_LMT_ACTIVE));
+
+	if (display_addr)
+		pc_print_display_metrics(p, data);
+
+out:
+	xe_device_mem_access_put(pc_to_xe(pc));
 }

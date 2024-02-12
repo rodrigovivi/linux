@@ -14,6 +14,7 @@
 #include "xe_gt.h"
 #include "xe_gt_mcr.h"
 #include "xe_gt_topology.h"
+#include "xe_guc_pc.h"
 #include "xe_hw_engine.h"
 #include "xe_lrc.h"
 #include "xe_macros.h"
@@ -116,6 +117,15 @@ static int ggtt(struct seq_file *m, void *data)
 	xe_pm_runtime_put(gt_to_xe(gt));
 
 	return ret;
+}
+
+static int guc_pc(struct seq_file *m, void *data)
+{
+	struct xe_gt *gt = node_to_gt(m->private);
+	struct drm_printer p = drm_seq_file_printer(m);
+
+	xe_guc_pc_print(&gt->uc.guc.pc, &p);
+	return 0;
 }
 
 static int register_save_restore(struct seq_file *m, void *data)
@@ -240,6 +250,7 @@ static const struct drm_info_list debugfs_list[] = {
 	{"topology", topology, 0},
 	{"steering", steering, 0},
 	{"ggtt", ggtt, 0},
+	{"guc_pc", guc_pc, 0},
 	{"register-save-restore", register_save_restore, 0},
 	{"workarounds", workarounds, 0},
 	{"pat", pat, 0},
