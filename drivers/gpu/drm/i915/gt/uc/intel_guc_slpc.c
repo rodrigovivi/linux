@@ -362,16 +362,6 @@ static void slpc_shared_data_reset(struct slpc_shared_data *data)
 	memset(data, 0, sizeof(struct slpc_shared_data));
 
 	data->header.size = sizeof(struct slpc_shared_data);
-
-	/* Enable only GTPERF task, disable others */
-	slpc_mem_set_enabled(data, SLPC_PARAM_TASK_ENABLE_GTPERF,
-			     SLPC_PARAM_TASK_DISABLE_GTPERF);
-
-	slpc_mem_set_disabled(data, SLPC_PARAM_TASK_ENABLE_BALANCER,
-			      SLPC_PARAM_TASK_DISABLE_BALANCER);
-
-	slpc_mem_set_disabled(data, SLPC_PARAM_TASK_ENABLE_DCC,
-			      SLPC_PARAM_TASK_DISABLE_DCC);
 }
 
 /**

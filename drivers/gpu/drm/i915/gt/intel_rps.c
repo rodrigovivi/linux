@@ -1010,6 +1010,8 @@ void intel_rps_boost(struct i915_request *rq)
 {
 	struct intel_guc_slpc *slpc;
 
+	return;
+
 	if (i915_request_signaled(rq) || i915_request_has_waitboost(rq))
 		return;
 
