@@ -67,6 +67,10 @@ void xe_eudebug_exec_queue_destroy(struct xe_file *xef, struct xe_exec_queue *q)
 
 void xe_eudebug_vm_bind_execute(struct xe_vm *vm, struct xe_vma_ops *ops);
 
+void xe_eudebug_ufence_init(struct xe_user_fence *ufence);
+void xe_eudebug_ufence_fini(struct xe_user_fence *ufence);
+bool xe_eudebug_ufence_track(struct xe_user_fence *ufence);
+
 #else
 
 static inline int xe_eudebug_connect_ioctl(struct drm_device *dev,
@@ -86,6 +90,11 @@ static inline void xe_eudebug_exec_queue_create(struct xe_file *xef, struct xe_e
 static inline void xe_eudebug_exec_queue_destroy(struct xe_file *xef, struct xe_exec_queue *q) { }
 
 static inline void xe_eudebug_vm_bind_execute(struct xe_vm *vm, struct xe_vma_ops *ops) { }
+
+static inline void xe_eudebug_ufence_init(struct xe_user_fence *ufence) { }
+static inline void xe_eudebug_ufence_fini(struct xe_user_fence *ufence) { }
+static inline bool xe_eudebug_ufence_track(struct xe_user_fence *ufence) { return false; }
+
 #endif /* CONFIG_DRM_XE_EUDEBUG */
 
 #endif /* _XE_EUDEBUG_H_ */

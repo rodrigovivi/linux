@@ -659,6 +659,9 @@ struct xe_device {
 
 		/** @eudebug.discovery_wq: used for client resource discovery */
 		struct workqueue_struct *discovery_wq;
+
+		/** @eudebug.ufence_wq: used for deferred ufence signalling */
+		struct workqueue_struct *ufence_wq;
 	} eudebug;
 #endif
 

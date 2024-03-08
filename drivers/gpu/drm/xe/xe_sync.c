@@ -15,6 +15,7 @@
 #include <uapi/drm/xe_drm.h>
 
 #include "xe_device.h"
+#include "xe_eudebug.h"
 #include "xe_exec_queue.h"
 #include "xe_macros.h"
 #include "xe_sched_job_types.h"
@@ -25,6 +26,9 @@ static void user_fence_destroy(struct kref *kref)
 						 refcount);
 
 	mmdrop(ufence->mm);
+
+	xe_eudebug_ufence_fini(ufence);
+
 	kfree(ufence);
 }
 
@@ -38,7 +42,8 @@ static void user_fence_put(struct xe_user_fence *ufence)
 	kref_put(&ufence->refcount, user_fence_destroy);
 }
 
-static struct xe_user_fence *user_fence_create(struct xe_device *xe, u64 addr,
+static struct xe_user_fence *user_fence_create(struct xe_device *xe,
+					       u64 addr,
 					       u64 value)
 {
 	struct xe_user_fence *ufence;
@@ -59,14 +64,19 @@ static struct xe_user_fence *user_fence_create(struct xe_device *xe, u64 addr,
 	ufence->mm = current->mm;
 	mmgrab(ufence->mm);
 
+	xe_eudebug_ufence_init(ufence);
+
 	return ufence;
 }
 
 void xe_sync_ufence_signal(struct xe_user_fence *ufence)
 {
 	/*
-	 * Signal only once. Waiters are woken only after the state update,
-	 * so the UMD can reuse the ufence without hitting -EBUSY.
+	 * Each ufence has one signaller: user_fence_worker() for one the
+	 * debugger does not track, and ufence_signal_worker() for one it
+	 * does, which handle_ack() queues only once. The xchg() makes
+	 * signalling idempotent regardless. Waiters are woken only after the
+	 * state update, so the UMD can reuse the ufence without hitting -EBUSY.
 	 */
 	if (xchg(&ufence->signalled, 1))
 		return;
@@ -88,7 +98,9 @@ static void user_fence_worker(struct work_struct *w)
 {
 	struct xe_user_fence *ufence = container_of(w, struct xe_user_fence, worker);
 
-	xe_sync_ufence_signal(ufence);
+	/* Lets see if debugger wants to track this */
+	if (!xe_eudebug_ufence_track(ufence))
+		xe_sync_ufence_signal(ufence);
 
 	user_fence_put(ufence);
 }

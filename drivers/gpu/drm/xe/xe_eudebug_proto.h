@@ -46,6 +46,7 @@ extern "C" {
  * assume it saw everything the target did.
  */
 #define DRM_XE_EUDEBUG_IOCTL_READ_EVENT		_IOWR('j', 0x40, struct drm_xe_eudebug_event)
+#define DRM_XE_EUDEBUG_IOCTL_ACK_EVENT		_IOW('j', 0x41, struct drm_xe_eudebug_ack)
 
 /**
  * struct drm_xe_eudebug_event - Base type of event delivered by xe_eudebug.
@@ -92,6 +93,7 @@ struct drm_xe_eudebug_event {
 #define DRM_XE_EUDEBUG_EVENT_EXEC_QUEUE		3
 #define DRM_XE_EUDEBUG_EVENT_VM_BIND		4
 #define DRM_XE_EUDEBUG_EVENT_VM_BIND_OP_DEBUG_DATA	5
+#define DRM_XE_EUDEBUG_EVENT_VM_BIND_UFENCE	6
 
 	/** @flags: Flags */
 	__u16 flags;
@@ -190,6 +192,27 @@ struct drm_xe_eudebug_event_exec_queue {
  *
  * All the events below VM_BIND will reference the VM_BIND
  * they associate with, by field .vm_bind_ref_seqno.
+ * EVENT_UFENCE will only be included if the client did
+ * attach sync of type UFENCE into its vm_bind_ioctl(). It is
+ * not sent, even with DRM_XE_EUDEBUG_EVENT_VM_BIND_FLAG_UFENCE
+ * set, if the vm_bind_ioctl() fails after the ops were executed
+ * and the fence is never signalled.
+ *
+ * When EVENT_UFENCE is sent by the driver, all the OPs of
+ * the original VM_BIND are completed and the [addr,range]
+ * contained in them are present and modifiable through the
+ * vm accessors. Accessing [addr, range] before related ufence
+ * event will lead to undefined results as the actual bind
+ * operations are async and the backing storage might not
+ * be there on a moment of receiving the event.
+ *
+ * Client's UFENCE sync will be held by the driver: client's
+ * drm_xe_wait_ufence will not complete and the value of the ufence
+ * won't appear until ufence is acked by the debugger process calling
+ * DRM_XE_EUDEBUG_IOCTL_ACK_EVENT with the event_ufence.base.seqno.
+ * This will signal the fence, .value will update and the wait will
+ * complete allowing the client to continue.
+ *
  */
 struct drm_xe_eudebug_event_vm_bind {
 	/** @base: Base event */
@@ -200,6 +223,7 @@ struct drm_xe_eudebug_event_vm_bind {
 
 	/** @flags: Bind specific flags */
 	__u32 flags;
+#define DRM_XE_EUDEBUG_EVENT_VM_BIND_FLAG_UFENCE (1 << 0)
 
 	/** @num_bind_ops: How many [ADD|REMOVE]_DEBUG_DATA operations this bind has */
 	__u32 num_bind_ops;
@@ -255,6 +279,48 @@ struct drm_xe_eudebug_event_vm_bind_op_debug_data {
 	 * event as the name.
 	 */
 	char pathname[];
+};
+
+/**
+ * struct drm_xe_eudebug_event_vm_bind_ufence - User Fence Event
+ *
+ * When target drm client does vm bind with associated user fence,
+ * this event will be delivered. This event will have
+ * DRM_XE_EUDEBUG_EVENT_NEED_ACK set in :c:member:`drm_xe_eudebug_event.flags`
+ * and upon receiving this event you need to ack it with
+ * DRM_XE_EUDEBUG_IOCTL_ACK_EVENT.
+ *
+ */
+struct drm_xe_eudebug_event_vm_bind_ufence {
+	/** @base: Base event */
+	struct drm_xe_eudebug_event base;
+
+	/** @vm_bind_ref_seqno: Parent :c:member:`drm_xe_eudebug_event_vm_bind.base.seqno` */
+	__u64 vm_bind_ref_seqno;
+};
+
+/**
+ * struct drm_xe_eudebug_ack - Deliver ack for an event
+ *
+ * If event base.flags has DRM_XE_EUDEBUG_EVENT_NEED_ACK set,
+ * then the associated resource processing is held for client and
+ * thus held for the debugger. In order to release the client,
+ * ack needs to be delivered with DRM_XE_EUDEBUG_IOCTL_ACK_EVENT.
+ *
+ * The ioctl returns -EBUSY while discovery is still in progress. Retry.
+ */
+struct drm_xe_eudebug_ack {
+	/** @type: Type, must be zero */
+	__u32 type;
+
+	/** @flags: Flags, must be zero */
+	__u32 flags;
+
+	/** @seqno: Seqno of event that is to be acked */
+	__u64 seqno;
+
+	/** @reserved: Reserved field, must be zero. */
+	__u64 reserved;
 };
 
 /*

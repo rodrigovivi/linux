@@ -8,6 +8,7 @@
 
 #include <linux/dma-fence-array.h>
 #include <linux/kref.h>
+#include <linux/spinlock.h>
 #include <linux/types.h>
 
 struct xe_user_fence {
@@ -20,6 +21,16 @@ struct xe_user_fence {
 	u64 value;
 	int signalled;
 
+#if IS_ENABLED(CONFIG_DRM_XE_EUDEBUG)
+	struct {
+		/** @lock: guards access to eudebug struct members */
+		spinlock_t lock;
+		struct xe_eudebug *debugger;
+		u64 bind_ref_seqno;
+		u64 signalled_seqno;
+		struct work_struct worker;
+	} eudebug;
+#endif
 };
 
 struct xe_sync_entry {
