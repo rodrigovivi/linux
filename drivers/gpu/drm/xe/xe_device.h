@@ -176,4 +176,15 @@ void xe_device_snapshot_print(struct xe_device *xe, struct drm_printer *p);
 u64 xe_device_canonicalize_addr(struct xe_device *xe, u64 address);
 u64 xe_device_uncanonicalize_addr(struct xe_device *xe, u64 address);
 
+static inline bool xe_device_wedged(struct xe_device *xe)
+{
+	return atomic_read(&xe->wedged);
+}
+
+static inline void xe_device_declare_wedged(struct xe_device *xe)
+{
+	atomic_set(&xe->wedged, 1);
+	drm_err(&xe->drm, "CRITICAL: Xe has been declared wedged. A module reload is required.\n");
+}
+
 #endif
