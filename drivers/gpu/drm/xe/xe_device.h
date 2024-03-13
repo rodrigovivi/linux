@@ -181,10 +181,6 @@ static inline bool xe_device_wedged(struct xe_device *xe)
 	return atomic_read(&xe->wedged);
 }
 
-static inline void xe_device_declare_wedged(struct xe_device *xe)
-{
-	atomic_set(&xe->wedged, 1);
-	drm_err(&xe->drm, "CRITICAL: Xe has been declared wedged. A module reload is required.\n");
-}
+void xe_device_declare_wedged(struct xe_device *xe);
 
 #endif
