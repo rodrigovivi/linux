@@ -34,6 +34,7 @@
 #include "xe_macros.h"
 #include "xe_map.h"
 #include "xe_mocs.h"
+#include "xe_module.h"
 #include "xe_ring_ops_types.h"
 #include "xe_sched_job.h"
 #include "xe_trace.h"
@@ -949,6 +950,9 @@ guc_exec_queue_timedout_job(struct drm_sched_job *drm_job)
 
 	simple_error_capture(q);
 	xe_devcoredump(job);
+
+	if (xe_modparam.busted_mode == 2)
+		xe_device_declare_busted(xe);
 
 	trace_xe_sched_job_timedout(job);
 
