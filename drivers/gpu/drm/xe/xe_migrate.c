@@ -713,6 +713,9 @@ struct dma_fence *xe_migrate_copy(struct xe_migrate *m,
 		xe_bo_needs_ccs_pages(src_bo) && xe_bo_needs_ccs_pages(dst_bo);
 	bool copy_system_ccs = copy_ccs && (!src_is_vram || !dst_is_vram);
 
+	if (xe_device_busted(xe))
+		return ERR_PTR(-ECANCELED);
+
 	/* Copying CCS between two different BOs is not supported yet. */
 	if (XE_WARN_ON(copy_ccs && src_bo != dst_bo))
 		return ERR_PTR(-EINVAL);
@@ -985,6 +988,9 @@ struct dma_fence *xe_migrate_clear(struct xe_migrate *m,
 	struct ttm_resource *src = dst;
 	int err;
 	int pass = 0;
+
+	if (xe_device_busted(xe))
+		return ERR_PTR(-ECANCELED);
 
 	if (!clear_vram)
 		xe_res_first_sg(xe_bo_sg(bo), 0, bo->size, &src_it);
