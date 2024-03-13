@@ -511,6 +511,8 @@ static int guc_wait_ucode(struct xe_guc *guc)
 						SOFT_SCRATCH(13)));
 			ret = -ENXIO;
 		}
+
+		xe_device_declare_wedged(xe);
 	} else {
 		drm_dbg(&xe->drm, "GuC successfully loaded");
 	}
@@ -554,7 +556,7 @@ static int __xe_guc_upload(struct xe_guc *guc)
 
 out:
 	xe_uc_fw_change_status(&guc->fw, XE_UC_FIRMWARE_LOAD_FAIL);
-	return 0	/* FIXME: ret, don't want to stop load currently */;
+	return ret;
 }
 
 /**
