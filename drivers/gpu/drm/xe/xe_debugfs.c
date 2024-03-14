@@ -106,6 +106,47 @@ static const struct file_operations forcewake_all_fops = {
 	.release = forcewake_release,
 };
 
+static ssize_t busted_mode_show(struct file *f, char __user *ubuf,
+				size_t size, loff_t *pos)
+{
+	struct xe_device *xe = file_inode(f)->i_private;
+	char buf[32];
+	int len = 0;
+
+	mutex_lock(&xe->busted.lock);
+	len = scnprintf(buf, sizeof(buf), "%d\n", xe->busted.mode);
+	mutex_unlock(&xe->busted.lock);
+
+	return simple_read_from_buffer(ubuf, size, pos, buf, len);
+}
+
+static ssize_t busted_mode_set(struct file *f, const char __user *ubuf,
+			       size_t size, loff_t *pos)
+{
+	struct xe_device *xe = file_inode(f)->i_private;
+	u32 busted_mode;
+	ssize_t ret;
+
+	ret = kstrtouint_from_user(ubuf, size, 0, &busted_mode);
+	if (ret)
+		return ret;
+
+	if (busted_mode > 2)
+		return -EINVAL;
+
+	mutex_lock(&xe->busted.lock);
+	xe->busted.mode = busted_mode;
+	mutex_unlock(&xe->busted.lock);
+
+	return size;
+}
+
+static const struct file_operations busted_mode_fops = {
+	.owner = THIS_MODULE,
+	.read = busted_mode_show,
+	.write = busted_mode_set,
+};
+
 void xe_debugfs_register(struct xe_device *xe)
 {
 	struct ttm_device *bdev = &xe->ttm;
@@ -122,6 +163,9 @@ void xe_debugfs_register(struct xe_device *xe)
 
 	debugfs_create_file("forcewake_all", 0400, root, xe,
 			    &forcewake_all_fops);
+
+	debugfs_create_file("busted_mode", 0400, root, xe,
+			    &busted_mode_fops);
 
 	for (mem_type = XE_PL_VRAM0; mem_type <= XE_PL_VRAM1; ++mem_type) {
 		man = ttm_manager_type(bdev, mem_type);

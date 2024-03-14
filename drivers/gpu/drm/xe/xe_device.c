@@ -434,6 +434,9 @@ int xe_device_probe_early(struct xe_device *xe)
 	if (err)
 		return err;
 
+	mutex_init(&xe->busted.lock);
+	xe->busted.mode = xe_modparam.busted_mode;
+
 	return 0;
 }
 
@@ -791,10 +794,15 @@ u64 xe_device_uncanonicalize_addr(struct xe_device *xe, u64 address)
  */
 void xe_device_declare_busted(struct xe_device *xe)
 {
-	if (xe_modparam.busted_mode == 0)
+	/*
+	 * It is okay to check unlocked.
+	 * busted disabled should be done at boot with parameter or with debugsfs
+	 * way before starting the workload.
+	 */
+	if (xe->busted.mode == 0)
 		return;
 
-	if (!atomic_xchg(&xe->busted, 1))
+	if (!atomic_xchg(&xe->busted.flag, 1))
 		drm_err(&xe->drm,
 			"CRITICAL: Xe has declared device %s as busted.\n"
 			"IOCTLs and executions are blocked until device is probed again with unbind and bind operations:\n"
