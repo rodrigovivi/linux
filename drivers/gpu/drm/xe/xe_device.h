@@ -178,7 +178,7 @@ u64 xe_device_uncanonicalize_addr(struct xe_device *xe, u64 address);
 
 static inline bool xe_device_busted(struct xe_device *xe)
 {
-	return atomic_read(&xe->busted);
+	return atomic_read(&xe->busted.flag);
 }
 
 void xe_device_declare_busted(struct xe_device *xe);

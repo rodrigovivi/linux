@@ -455,8 +455,15 @@ struct xe_device {
 	/** @needs_flr_on_fini: requests function-reset on fini */
 	bool needs_flr_on_fini;
 
-	/** @busted: Xe device faced a critical error and is now blocked. */
-	atomic_t busted;
+	/** @busted: Struct to control Busted States and mode */
+	struct {
+		/** @busted.flag: Xe device faced a critical error and is now blocked. */
+		atomic_t flag;
+		/** @busted.mode: Mode controlled by kernel parameter and debugfs */
+		int mode;
+		/** @busted.lock: To protect @busted.mode */
+		struct mutex lock;
+	} busted;
 
 	/* private: */
 
