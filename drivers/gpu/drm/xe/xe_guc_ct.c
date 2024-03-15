@@ -638,6 +638,9 @@ static int guc_ct_send_locked(struct xe_guc_ct *ct, const u32 *action, u32 len,
 	unsigned int sleep_period_ms = 1;
 	int ret;
 
+	if (xe_device_wedged(ct_to_xe(ct)))
+		return -ECANCELED;
+
 	xe_assert(ct_to_xe(ct), !g2h_len || !g2h_fence);
 	lockdep_assert_held(&ct->lock);
 	xe_device_assert_mem_access(ct_to_xe(ct));
@@ -1015,6 +1018,11 @@ static int process_g2h_msg(struct xe_guc_ct *ct, u32 *msg, u32 len)
 	u32 action, adj_len;
 	u32 *payload;
 	int ret = 0;
+
+	if (xe_device_wedged(xe)) {
+		ct->g2h_outstanding = 0;
+		return -ECANCELED;
+	}
 
 	if (FIELD_GET(GUC_HXG_MSG_0_TYPE, hxg[0]) != GUC_HXG_TYPE_EVENT)
 		return 0;
