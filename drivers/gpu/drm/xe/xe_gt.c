@@ -703,6 +703,9 @@ static void gt_reset_worker(struct work_struct *w)
 
 void xe_gt_reset_async(struct xe_gt *gt)
 {
+	if (xe_device_busted(gt_to_xe(gt)))
+		return;
+
 	xe_gt_info(gt, "trying reset\n");
 
 	/* Don't do a reset while one is already in flight */

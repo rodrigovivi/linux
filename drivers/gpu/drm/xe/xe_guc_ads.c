@@ -7,6 +7,7 @@
 
 #include <drm/drm_managed.h>
 
+#include "abi/guc_actions_abi.h"
 #include "regs/xe_engine_regs.h"
 #include "regs/xe_gt_regs.h"
 #include "regs/xe_guc_regs.h"
@@ -14,6 +15,7 @@
 #include "xe_gt.h"
 #include "xe_gt_ccs_mode.h"
 #include "xe_guc.h"
+#include "xe_guc_ct.h"
 #include "xe_hw_engine.h"
 #include "xe_lrc.h"
 #include "xe_map.h"
@@ -698,17 +700,28 @@ int xe_guc_ads_scheduler_policy_disable_reset(struct xe_guc_ads *ads)
 	struct xe_tile *tile = gt_to_tile(gt);
 	struct guc_policies *policies;
 	struct xe_bo *bo;
+	int ret = 0;
 
-	policies = ads_blob_read(ads, ads.policies);
+	policies = kmalloc(sizeof(struct guc_policies), GFP_KERNEL);
+	if (!policies)
+		return -ENOMEM;
 
+	policies->dpc_promote_time = ads_blob_read(ads, policies.dpc_promote_time);
+	policies->max_num_work_items = ads_blob_read(ads, policies.max_num_work_items);
+	policies->is_valid = 1;
 	if (xe->busted.mode == 2)
-		policies.global_flags |= GLOBAL_POLICY_DISABLE_ENGINE_RESET;
+		policies->global_flags |= GLOBAL_POLICY_DISABLE_ENGINE_RESET;
 
 	bo = xe_managed_bo_create_from_data(xe, tile, policies, sizeof(struct guc_policies),
 					    XE_BO_CREATE_VRAM_IF_DGFX(tile) |
 					    XE_BO_CREATE_GGTT_BIT);
-	if (IS_ERR(bo))
-		return PTR_ERR(bo);
+	if (IS_ERR(bo)) {
+		ret = PTR_ERR(bo);
+		goto out;
+	}
 
-	return guc_ads_action_update_policies(ads, xe_bo_ggtt_addr(bo));
+	ret = guc_ads_action_update_policies(ads, xe_bo_ggtt_addr(bo));
+out:
+	kfree(policies);
+	return ret;
 }

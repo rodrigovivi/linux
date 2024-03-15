@@ -965,7 +965,7 @@ guc_exec_queue_timedout_job(struct drm_sched_job *drm_job)
 	 */
 	if (q->flags & EXEC_QUEUE_FLAG_KERNEL ||
 	    (q->flags & EXEC_QUEUE_FLAG_VM && !exec_queue_killed(q))) {
-		if (!xe_sched_invalidate_job(job, 2)) {
+		if (!xe_sched_invalidate_job(job, 2) && !xe_device_busted(xe)) {
 			xe_sched_add_pending_job(sched, job);
 			xe_sched_submission_start(sched);
 			xe_gt_reset_async(q->gt);
@@ -974,7 +974,7 @@ guc_exec_queue_timedout_job(struct drm_sched_job *drm_job)
 	}
 
 	/* Engine state now stable, disable scheduling if needed */
-	if (exec_queue_registered(q)) {
+	if (exec_queue_registered(q) && !xe_device_busted(xe)) {
 		struct xe_guc *guc = exec_queue_to_guc(q);
 		int ret;
 
@@ -1015,9 +1015,11 @@ guc_exec_queue_timedout_job(struct drm_sched_job *drm_job)
 	 * Fence state now stable, stop / start scheduler which cleans up any
 	 * fences that are complete
 	 */
-	xe_sched_add_pending_job(sched, job);
-	xe_sched_submission_start(sched);
-	xe_guc_exec_queue_trigger_cleanup(q);
+	if (!xe_device_busted(xe)) {
+		xe_sched_add_pending_job(sched, job);
+		xe_sched_submission_start(sched);
+		xe_guc_exec_queue_trigger_cleanup(q);
+	}
 
 	/* Mark all outstanding jobs as bad, thus completing them */
 	spin_lock(&sched->base.job_list_lock);
@@ -1025,6 +1027,12 @@ guc_exec_queue_timedout_job(struct drm_sched_job *drm_job)
 		xe_sched_job_set_error(tmp_job, !i++ ? err : -ECANCELED);
 	spin_unlock(&sched->base.job_list_lock);
 
+
+	//XXX [  468.154521] ------------[ cut here ]------------
+// [  468.159210] WARNING: CPU: 9 PID: 3371 at drivers/gpu/drm/xe/xe_hw_fence.c:91 xe_hw_fence_irq_finish+0x51/0x310 [xe]
+// on unbind... which gets blocked ...
+//still need to do something...
+//perhaps the following line:
 	/* Start fence signaling */
 	xe_hw_fence_irq_start(q->fence_irq);
 

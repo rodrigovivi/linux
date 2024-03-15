@@ -139,8 +139,15 @@ static ssize_t busted_mode_set(struct file *f, const char __user *ubuf,
 
 	mutex_lock(&xe->busted.lock);
 	xe->busted.mode = busted_mode;
-	for_each_gt(gt, xe, id)
-		xe_guc_ads_scheduler_policy_disable_reset(&gt->uc.guc.ads);
+	if (busted_mode == 2) {
+		for_each_gt(gt, xe, id) {
+			ret = xe_guc_ads_scheduler_policy_disable_reset(&gt->uc.guc.ads);
+			if (ret) {
+				drm_err(&xe->drm, "Failed to update GuC ADS scheduler policy. GPU might still reset even on the busted_mode=2\n");
+				break;
+			}
+		}
+	}
 	mutex_unlock(&xe->busted.lock);
 
 	return size;
