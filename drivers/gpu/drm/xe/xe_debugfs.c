@@ -12,6 +12,7 @@
 #include "xe_bo.h"
 #include "xe_device.h"
 #include "xe_gt_debugfs.h"
+#include "xe_guc_ads.h"
 #include "xe_pm.h"
 #include "xe_step.h"
 
@@ -124,8 +125,10 @@ static ssize_t busted_mode_set(struct file *f, const char __user *ubuf,
 			       size_t size, loff_t *pos)
 {
 	struct xe_device *xe = file_inode(f)->i_private;
+	struct xe_gt *gt;
 	u32 busted_mode;
 	ssize_t ret;
+	u8 id;
 
 	ret = kstrtouint_from_user(ubuf, size, 0, &busted_mode);
 	if (ret)
@@ -136,6 +139,15 @@ static ssize_t busted_mode_set(struct file *f, const char __user *ubuf,
 
 	mutex_lock(&xe->busted.lock);
 	xe->busted.mode = busted_mode;
+	if (busted_mode == 2) {
+		for_each_gt(gt, xe, id) {
+			ret = xe_guc_ads_scheduler_policy_disable_reset(&gt->uc.guc.ads);
+			if (ret) {
+				drm_err(&xe->drm, "Failed to update GuC ADS scheduler policy. GPU might still reset even on the busted_mode=2\n");
+				break;
+			}
+		}
+	}
 	mutex_unlock(&xe->busted.lock);
 
 	return size;
