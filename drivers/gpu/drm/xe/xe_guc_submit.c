@@ -176,7 +176,8 @@ static void set_exec_queue_killed(struct xe_exec_queue *q)
 
 static bool exec_queue_killed_or_banned(struct xe_exec_queue *q)
 {
-	return exec_queue_killed(q) || exec_queue_banned(q);
+	return xe_device_busted(gt_to_xe(q->gt)) ||
+		exec_queue_killed(q) || exec_queue_banned(q);
 }
 
 #ifdef CONFIG_PROVE_LOCKING
@@ -960,7 +961,7 @@ guc_exec_queue_timedout_job(struct drm_sched_job *drm_job)
 	 */
 	if (q->flags & EXEC_QUEUE_FLAG_KERNEL ||
 	    (q->flags & EXEC_QUEUE_FLAG_VM && !exec_queue_killed(q))) {
-		if (!xe_sched_invalidate_job(job, 2)) {
+		if (!xe_sched_invalidate_job(job, 2) && !xe_device_busted(xe)) {
 			xe_sched_add_pending_job(sched, job);
 			xe_sched_submission_start(sched);
 			xe_gt_reset_async(q->gt);
@@ -969,7 +970,7 @@ guc_exec_queue_timedout_job(struct drm_sched_job *drm_job)
 	}
 
 	/* Engine state now stable, disable scheduling if needed */
-	if (exec_queue_registered(q)) {
+	if (exec_queue_registered(q) && !xe_device_busted(xe)) {
 		struct xe_guc *guc = exec_queue_to_guc(q);
 		int ret;
 
@@ -1010,8 +1011,11 @@ guc_exec_queue_timedout_job(struct drm_sched_job *drm_job)
 	 * Fence state now stable, stop / start scheduler which cleans up any
 	 * fences that are complete
 	 */
-	xe_sched_add_pending_job(sched, job);
-	xe_sched_submission_start(sched);
+	if (!xe_device_busted(xe)) {
+		xe_sched_add_pending_job(sched, job);
+		xe_sched_submission_start(sched);
+	}
+
 	xe_guc_exec_queue_trigger_cleanup(q);
 
 	/* Mark all outstanding jobs as bad, thus completing them */
@@ -1024,7 +1028,8 @@ guc_exec_queue_timedout_job(struct drm_sched_job *drm_job)
 	xe_hw_fence_irq_start(q->fence_irq);
 
 out:
-	return DRM_GPU_SCHED_STAT_NOMINAL;
+	return xe_device_busted(xe) ? DRM_GPU_SCHED_STAT_ENODEV :
+		DRM_GPU_SCHED_STAT_NOMINAL;
 }
 
 static void __guc_exec_queue_fini_async(struct work_struct *w)
