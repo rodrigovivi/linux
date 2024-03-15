@@ -35,7 +35,6 @@
 #include "xe_macros.h"
 #include "xe_map.h"
 #include "xe_mocs.h"
-#include "xe_module.h"
 #include "xe_ring_ops_types.h"
 #include "xe_sched_job.h"
 #include "xe_trace.h"
@@ -962,8 +961,7 @@ guc_exec_queue_timedout_job(struct drm_sched_job *drm_job)
 
 	trace_xe_sched_job_timedout(job);
 
-	if (xe_modparam.wedged_mode == 2) {
-		xe_device_declare_wedged(xe);
+	if (xe_device_hint_wedged(xe, true)) {
 		guc_submit_device_wedged(q);
 		return DRM_GPU_SCHED_STAT_ENODEV;
 	}

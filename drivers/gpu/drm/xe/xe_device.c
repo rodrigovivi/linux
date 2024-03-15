@@ -436,6 +436,9 @@ int xe_device_probe_early(struct xe_device *xe)
 	if (err)
 		return err;
 
+	mutex_init(&xe->wedged.lock);
+	xe->wedged.mode = xe_modparam.wedged_mode;
+
 	return 0;
 }
 
@@ -778,26 +781,37 @@ u64 xe_device_uncanonicalize_addr(struct xe_device *xe, u64 address)
 }
 
 /**
- * xe_device_declare_wedged - Declare device wedged
+ * xe_device_hint_wedged - Get a hint and possibly declare device as wedged
  * @xe: xe device instance
+ * @in_timeout_path: hint coming from a timeout path
  *
- * This is a final state that can only be cleared with a module
+ * The wedged state is a final on that can only be cleared with a module
  * re-probe (unbind + bind).
  * In this state every IOCTL will be blocked so the GT cannot be used.
- * In general it will be called upon any critical error such as gt reset
- * failure or guc loading failure.
- * If xe.wedged module parameter is set to 2, this function will be called
- * on every single execution timeout (a.k.a. GPU hang) right after devcoredump
- * snapshot capture. In this mode, GT reset won't be attempted so the state of
- * the issue is preserved for further debugging.
+ * In general device will be declared wedged only at critical
+ * error paths such as gt reset failure or guc loading failure.
+ * Hints are also expected from every single execution timeout (a.k.a. GPU hang)
+ * right after devcoredump snapshot capture. Then, device can be declared wedged
+ * if wedged_mode is set to 2. In this mode, GT reset won't be attempted so the
+ * state of the issue is preserved for further debugging.
+ *
+ * Return: True if device has been just declared wedged. False otherwise
  */
-void xe_device_declare_wedged(struct xe_device *xe)
+bool xe_device_hint_wedged(struct xe_device *xe, bool in_timeout_path)
 {
-	if (xe_modparam.wedged_mode == 0)
-		return;
+	bool ret = false;
 
-	if (!atomic_xchg(&xe->wedged, 1)) {
+	mutex_lock(&xe->wedged.lock);
+
+	if (xe->wedged.mode == 0)
+		goto out;
+
+	if (in_timeout_path && xe->wedged.mode != 2)
+		goto out;
+
+	if (!atomic_xchg(&xe->wedged.flag, 1)) {
 		xe->needs_flr_on_fini = true;
+		ret = true;
 		drm_err(&xe->drm,
 			"CRITICAL: Xe has declared device %s as wedged.\n"
 			"IOCTLs and executions are blocked until device is probed again with unbind and bind operations:\n"
@@ -807,4 +821,7 @@ void xe_device_declare_wedged(struct xe_device *xe)
 			dev_name(xe->drm.dev), dev_name(xe->drm.dev),
 			dev_name(xe->drm.dev));
 	}
+out:
+	mutex_unlock(&xe->wedged.lock);
+	return ret;
 }

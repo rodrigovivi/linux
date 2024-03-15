@@ -178,9 +178,9 @@ u64 xe_device_uncanonicalize_addr(struct xe_device *xe, u64 address);
 
 static inline bool xe_device_wedged(struct xe_device *xe)
 {
-	return atomic_read(&xe->wedged);
+	return atomic_read(&xe->wedged.flag);
 }
 
-void xe_device_declare_wedged(struct xe_device *xe);
+bool xe_device_hint_wedged(struct xe_device *xe, bool in_timeout_path);
 
 #endif

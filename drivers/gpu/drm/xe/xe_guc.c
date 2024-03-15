@@ -500,7 +500,7 @@ static void guc_wait_ucode(struct xe_guc *guc)
 					       SOFT_SCRATCH(13)));
 		}
 
-		xe_device_declare_wedged(xe);
+		xe_device_hint_wedged(xe, false);
 	} else {
 		drm_dbg(&xe->drm, "GuC successfully loaded");
 	}

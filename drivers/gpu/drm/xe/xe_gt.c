@@ -688,7 +688,7 @@ err_msg:
 err_fail:
 	xe_gt_err(gt, "reset failed (%pe)\n", ERR_PTR(err));
 
-	xe_device_declare_wedged(gt_to_xe(gt));
+	xe_device_hint_wedged(gt_to_xe(gt), false);
 
 	return err;
 }
