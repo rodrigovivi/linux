@@ -35,6 +35,7 @@
 #include "xe_macros.h"
 #include "xe_map.h"
 #include "xe_mocs.h"
+#include "xe_module.h"
 #include "xe_ring_ops_types.h"
 #include "xe_sched_job.h"
 #include "xe_trace.h"
@@ -900,16 +901,44 @@ static void xe_guc_exec_queue_lr_cleanup(struct work_struct *w)
 	xe_sched_submission_start(sched);
 }
 
+static void guc_submit_signal_pending_jobs(struct xe_gpu_scheduler *sched,
+					   int err)
+{
+	struct xe_sched_job *job;
+	int i = 0;
+
+	/* Mark all outstanding jobs as bad, thus completing them */
+	spin_lock(&sched->base.job_list_lock);
+	list_for_each_entry(job, &sched->base.pending_list, drm.list)
+		xe_sched_job_set_error(job, !i++ ? err : -ECANCELED);
+	spin_unlock(&sched->base.job_list_lock);
+}
+
+static void guc_submit_device_wedged(struct xe_exec_queue *q)
+{
+	struct xe_gpu_scheduler *sched = &q->guc->sched;
+	struct xe_guc *guc = exec_queue_to_guc(q);
+
+	xe_sched_submission_stop(sched);
+	xe_guc_exec_queue_trigger_cleanup(q);
+	guc_submit_signal_pending_jobs(sched, -ETIME);
+	xe_guc_submit_reset_prepare(guc);
+	xe_guc_submit_stop(guc);
+}
+
 static enum drm_gpu_sched_stat
 guc_exec_queue_timedout_job(struct drm_sched_job *drm_job)
 {
 	struct xe_sched_job *job = to_xe_sched_job(drm_job);
-	struct xe_sched_job *tmp_job;
 	struct xe_exec_queue *q = job->q;
 	struct xe_gpu_scheduler *sched = &q->guc->sched;
 	struct xe_device *xe = guc_to_xe(exec_queue_to_guc(q));
 	int err = -ETIME;
-	int i = 0;
+
+	if (xe_device_wedged(xe)) {
+		guc_submit_device_wedged(q);
+		return DRM_GPU_SCHED_STAT_ENODEV;
+	}
 
 	/*
 	 * TDR has fired before free job worker. Common if exec queue
@@ -932,6 +961,12 @@ guc_exec_queue_timedout_job(struct drm_sched_job *drm_job)
 	xe_devcoredump(job);
 
 	trace_xe_sched_job_timedout(job);
+
+	if (xe_modparam.wedged_mode == 2) {
+		xe_device_declare_wedged(xe);
+		guc_submit_device_wedged(q);
+		return DRM_GPU_SCHED_STAT_ENODEV;
+	}
 
 	/* Kill the run_job entry point */
 	xe_sched_submission_stop(sched);
@@ -994,13 +1029,10 @@ guc_exec_queue_timedout_job(struct drm_sched_job *drm_job)
 	 */
 	xe_sched_add_pending_job(sched, job);
 	xe_sched_submission_start(sched);
+
 	xe_guc_exec_queue_trigger_cleanup(q);
 
-	/* Mark all outstanding jobs as bad, thus completing them */
-	spin_lock(&sched->base.job_list_lock);
-	list_for_each_entry(tmp_job, &sched->base.pending_list, drm.list)
-		xe_sched_job_set_error(tmp_job, !i++ ? err : -ECANCELED);
-	spin_unlock(&sched->base.job_list_lock);
+	guc_submit_signal_pending_jobs(sched, err);
 
 	/* Start fence signaling */
 	xe_hw_fence_irq_start(q->fence_irq);

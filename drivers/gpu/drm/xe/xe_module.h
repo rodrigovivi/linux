@@ -18,6 +18,7 @@ struct xe_modparam {
 	char *huc_firmware_path;
 	char *gsc_firmware_path;
 	char *force_probe;
+	int wedged_mode;
 };
 
 extern struct xe_modparam xe_modparam;
