@@ -65,6 +65,15 @@
  * Info to alert SLPC to the change.
  */
 
+struct display_event {
+	struct work_struct work;
+	struct intel_display_guc_metrics *guc_metrics;
+	bool is_vblank;
+	int pipe;
+	int plane;
+	bool async_flip;
+};
+
 /**
  * intel_display_guc_metrics_init - For device driver registration (i915 or xe)
  * @gfx_device: Back pointer to whatever device is driving display (i915 or xe).
@@ -107,6 +116,25 @@ void intel_display_guc_metrics_refresh_info(struct intel_display *display,
 						 crtc_state->vrr.enable);
 }
 
+static void display_event_work(struct work_struct *work)
+{
+	struct display_event *event = container_of(work, struct display_event, work);
+	struct intel_display_guc_metrics *guc_metrics = event->guc_metrics;
+
+	if (event->is_vblank) {
+		if (guc_metrics->vblank_update)
+			guc_metrics->vblank_update(guc_metrics->gfx_device,
+						   event->pipe);
+	} else {
+		if (guc_metrics->flip_update)
+			guc_metrics->flip_update(guc_metrics->gfx_device,
+						 event->pipe, event->plane,
+						 event->async_flip);
+	}
+
+	kfree(event);
+}
+
 /**
  * intel_display_guc_metrics_vblank - Vblank information
  * @display: Pointer to the intel_display struct that is in use by the gfx device.
@@ -119,12 +147,20 @@ void intel_display_guc_metrics_vblank(struct intel_display *display,
 				      struct intel_crtc *crtc)
 {
 	struct intel_display_guc_metrics *guc_metrics = display->guc_metrics;
+	struct display_event *event;
 
 	if (!guc_metrics)
 		return;
 
-	if (guc_metrics->vblank_update)
-		guc_metrics->vblank_update(guc_metrics->gfx_device, crtc->pipe);
+	event = kmalloc(sizeof(*event), GFP_ATOMIC);
+	if (!event)
+		return;
+
+	INIT_WORK(&event->work, display_event_work);
+	event->guc_metrics = guc_metrics;
+	event->is_vblank = true;
+	event->pipe = crtc->pipe;
+	queue_work(system_highpri_wq, &event->work);
 }
 
 /**
@@ -143,11 +179,19 @@ void intel_display_guc_metrics_flip(struct intel_display *display,
 {
 	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
 	struct intel_display_guc_metrics *guc_metrics = display->guc_metrics;
+	struct display_event *event;
 
 	if (!guc_metrics)
 		return;
 
-	if (guc_metrics->flip_update)
-		guc_metrics->flip_update(guc_metrics->gfx_device,
-					 crtc->pipe, plane, async_flip);
+	event = kmalloc(sizeof(*event), GFP_ATOMIC);
+	if (!event)
+		return;
+
+	INIT_WORK(&event->work, display_event_work);
+	event->guc_metrics = guc_metrics;
+	event->pipe = crtc->pipe;
+	event->plane = plane;
+	event->async_flip = async_flip;
+	queue_work(system_highpri_wq, &event->work);
 }
