@@ -93,6 +93,7 @@
 #include "intel_link_bw.h"
 #include "intel_lvds.h"
 #include "intel_lvds_regs.h"
+#include "intel_metrics.h"
 #include "intel_modeset_setup.h"
 #include "intel_modeset_verify.h"
 #include "intel_overlay.h"
@@ -1052,11 +1053,15 @@ static void intel_post_plane_update(struct intel_atomic_state *state,
 				    struct intel_crtc *crtc)
 {
 	struct drm_i915_private *dev_priv = to_i915(state->base.dev);
+	struct intel_display *display = &dev_priv->display;
 	const struct intel_crtc_state *old_crtc_state =
 		intel_atomic_get_old_crtc_state(state, crtc);
 	const struct intel_crtc_state *new_crtc_state =
 		intel_atomic_get_new_crtc_state(state, crtc);
 	enum pipe pipe = crtc->pipe;
+	const struct intel_plane_state __maybe_unused *plane_state;
+	struct intel_plane *plane;
+	int i;
 
 	intel_psr_post_plane_update(state, crtc);
 
@@ -1088,6 +1093,12 @@ static void intel_post_plane_update(struct intel_atomic_state *state,
 
 	if (audio_enabling(old_crtc_state, new_crtc_state))
 		intel_encoders_audio_enable(state, crtc);
+
+	if (!new_crtc_state->do_async_flip) {
+		for_each_new_intel_plane_in_state(state, plane, plane_state, i)
+			intel_metrics_flip(display, new_crtc_state, plane->id,
+					   false);
+	}
 }
 
 static void intel_crtc_enable_flip_done(struct intel_atomic_state *state,
@@ -7218,6 +7229,7 @@ static void intel_atomic_commit_tail(struct intel_atomic_state *state)
 {
 	struct drm_device *dev = state->base.dev;
 	struct drm_i915_private *dev_priv = to_i915(dev);
+	struct intel_display *display = &dev_priv->display;
 	struct intel_crtc_state *new_crtc_state, *old_crtc_state;
 	struct intel_crtc *crtc;
 	struct intel_power_domain_mask put_domains[I915_MAX_PIPES] = {};
@@ -7340,7 +7352,6 @@ static void intel_atomic_commit_tail(struct intel_atomic_state *state)
 	for_each_new_intel_crtc_in_state(state, crtc, new_crtc_state, i) {
 		if (new_crtc_state->do_async_flip)
 			intel_crtc_disable_flip_done(state, crtc);
-
 		intel_color_wait_commit(new_crtc_state);
 	}
 
@@ -7393,6 +7404,8 @@ static void intel_atomic_commit_tail(struct intel_atomic_state *state)
 		 * FIXME get rid of this funny new->old swapping
 		 */
 		old_crtc_state->dsb = fetch_and_zero(&new_crtc_state->dsb);
+
+		intel_metrics_refresh_info(display, new_crtc_state);
 	}
 
 	/* Underruns don't always raise interrupts, so check manually */

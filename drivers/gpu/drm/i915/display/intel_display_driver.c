@@ -47,6 +47,7 @@
 #include "intel_hdcp.h"
 #include "intel_hotplug.h"
 #include "intel_hti.h"
+#include "intel_metrics.h"
 #include "intel_modeset_lock.h"
 #include "intel_modeset_setup.h"
 #include "intel_opregion.h"
@@ -516,6 +517,8 @@ int intel_display_driver_probe(struct drm_i915_private *i915)
 
 	intel_overlay_setup(i915);
 
+	intel_metrics_init(&i915->display);
+
 	/* Only enable hotplug handling once the fbdev is fully set up. */
 	intel_hpd_init(i915);
 
@@ -597,6 +600,8 @@ void intel_display_driver_remove_noirq(struct drm_i915_private *i915)
 	intel_mode_config_cleanup(i915);
 
 	intel_dp_tunnel_mgr_cleanup(i915);
+
+	intel_metrics_fini(&i915->display);
 
 	intel_overlay_cleanup(i915);
 
