@@ -163,6 +163,42 @@ static int xe_determine_lmem_bar_size(struct xe_device *xe)
 	return 0;
 }
 
+static inline u64 get_flat_ccs_offset(struct xe_gt *gt, u64 tile_size)
+{
+	struct xe_device *xe = gt_to_xe(gt);
+	u64 offset;
+	u32 reg;
+
+	if (GRAPHICS_VER(xe) >= 20) {
+		u64 ccs_size = tile_size / 512;
+		u64 offset_hi, offset_lo;
+		u32 nodes, num_enabled;
+
+		reg = xe_mmio_read32(gt, MIRROR_FUSE3);
+		nodes = REG_FIELD_GET(XE2_NODE_ENABLE_MASK, reg);
+		num_enabled = hweight32(nodes); /* Number of enabled l3 nodes */
+
+		reg = xe_gt_mcr_unicast_read_any(gt, XE2_FLAT_CCS_BASE_RANGE_LOWER);
+		offset_lo = REG_FIELD_GET(XE2_FLAT_CCS_BASE_LOWER_ADDR_MASK, reg);
+
+		reg = xe_gt_mcr_unicast_read_any(gt, XE2_FLAT_CCS_BASE_RANGE_UPPER);
+		offset_hi = REG_FIELD_GET(XE2_FLAT_CCS_BASE_UPPER_ADDR_MASK, reg);
+
+		offset = offset_hi << 32; /* HW view bits 39:32 */
+		offset |= offset_lo << 6; /* HW view bits 31:6 */
+		offset *= num_enabled; /* convert to SW view */
+
+		/* We don't expect any holes */
+		xe_assert_msg(xe, offset == (xe_mmio_read64_2x32(gt, GSMBASE) - ccs_size),
+			      "Hole between CCS and GSM.\n");
+	} else {
+		reg = xe_gt_mcr_unicast_read_any(gt, XEHP_FLAT_CCS_BASE_ADDR);
+		offset = (u64)REG_FIELD_GET(XEHP_FLAT_CCS_PTR, reg) * SZ_64K;
+	}
+
+	return offset;
+}
+
 /**
  * xe_mmio_tile_vram_size() - Collect vram size and offset information
  * @tile: tile to get info for
@@ -207,8 +243,7 @@ static int xe_mmio_tile_vram_size(struct xe_tile *tile, u64 *vram_size,
 
 	/* minus device usage */
 	if (xe->info.has_flat_ccs) {
-		reg = xe_gt_mcr_unicast_read_any(gt, XEHP_FLAT_CCS_BASE_ADDR);
-		offset = (u64)REG_FIELD_GET(GENMASK(31, 8), reg) * SZ_64K;
+		offset = get_flat_ccs_offset(gt, *tile_size);
 	} else {
 		offset = xe_mmio_read64_2x32(gt, GSMBASE);
 	}
@@ -360,7 +395,32 @@ static void mmio_fini(struct drm_device *drm, void *arg)
 		iounmap(xe->mem.vram.mapping);
 }
 
-static int xe_verify_lmem_ready(struct xe_device *xe)
+int xe_mmio_init(struct xe_device *xe)
+{
+	struct xe_tile *root_tile = xe_device_get_root_tile(xe);
+	struct pci_dev *pdev = to_pci_dev(xe->drm.dev);
+	const int mmio_bar = 0;
+
+	/*
+	 * Map the entire BAR.
+	 * The first 16MB of the BAR, belong to the root tile, and include:
+	 * registers (0-4MB), reserved space (4MB-8MB) and GGTT (8MB-16MB).
+	 */
+	xe->mmio.size = pci_resource_len(pdev, mmio_bar);
+	xe->mmio.regs = pci_iomap(pdev, mmio_bar, 0);
+	if (xe->mmio.regs == NULL) {
+		drm_err(&xe->drm, "failed to map registers\n");
+		return -EIO;
+	}
+
+	/* Setup first tile; other tiles (if present) will be setup later. */
+	root_tile->mmio.size = SZ_16M;
+	root_tile->mmio.regs = xe->mmio.regs;
+
+	return drmm_add_action_or_reset(&xe->drm, mmio_fini, xe);
+}
+
+int xe_mmio_verify_vram(struct xe_device *xe)
 {
 	struct xe_gt *gt = xe_root_mmio_gt(xe);
 
@@ -384,40 +444,76 @@ static int xe_verify_lmem_ready(struct xe_device *xe)
 	return 0;
 }
 
-int xe_mmio_init(struct xe_device *xe)
+u8 xe_mmio_read8(struct xe_gt *gt, struct xe_reg reg)
 {
-	struct pci_dev *pdev = to_pci_dev(xe->drm.dev);
-	const int mmio_bar = 0;
+	struct xe_tile *tile = gt_to_tile(gt);
 
-	/*
-	 * Map the entire BAR.
-	 * The first 16MB of the BAR, belong to the root tile, and include:
-	 * registers (0-4MB), reserved space (4MB-8MB) and GGTT (8MB-16MB).
-	 */
-	xe->mmio.size = pci_resource_len(pdev, mmio_bar);
-	xe->mmio.regs = pci_iomap(pdev, mmio_bar, 0);
-	if (xe->mmio.regs == NULL) {
-		drm_err(&xe->drm, "failed to map registers\n");
-		return -EIO;
-	}
+	if (reg.addr < gt->mmio.adj_limit)
+		reg.addr += gt->mmio.adj_offset;
 
-	return drmm_add_action_or_reset(&xe->drm, mmio_fini, xe);
+	return readb((reg.ext ? tile->mmio_ext.regs : tile->mmio.regs) + reg.addr);
 }
 
-int xe_mmio_root_tile_init(struct xe_device *xe)
+u16 xe_mmio_read16(struct xe_gt *gt, struct xe_reg reg)
 {
-	struct xe_tile *root_tile = xe_device_get_root_tile(xe);
-	int err;
+	struct xe_tile *tile = gt_to_tile(gt);
 
-	/* Setup first tile; other tiles (if present) will be setup later. */
-	root_tile->mmio.size = SZ_16M;
-	root_tile->mmio.regs = xe->mmio.regs;
+	if (reg.addr < gt->mmio.adj_limit)
+		reg.addr += gt->mmio.adj_offset;
 
-	err = xe_verify_lmem_ready(xe);
-	if (err)
-		return err;
+	return readw((reg.ext ? tile->mmio_ext.regs : tile->mmio.regs) + reg.addr);
+}
 
-	return 0;
+void xe_mmio_write32(struct xe_gt *gt, struct xe_reg reg, u32 val)
+{
+	struct xe_tile *tile = gt_to_tile(gt);
+
+	if (reg.addr < gt->mmio.adj_limit)
+		reg.addr += gt->mmio.adj_offset;
+
+	writel(val, (reg.ext ? tile->mmio_ext.regs : tile->mmio.regs) + reg.addr);
+}
+
+u32 xe_mmio_read32(struct xe_gt *gt, struct xe_reg reg)
+{
+	struct xe_tile *tile = gt_to_tile(gt);
+
+	if (reg.addr < gt->mmio.adj_limit)
+		reg.addr += gt->mmio.adj_offset;
+
+	return readl((reg.ext ? tile->mmio_ext.regs : tile->mmio.regs) + reg.addr);
+}
+
+u32 xe_mmio_rmw32(struct xe_gt *gt, struct xe_reg reg, u32 clr, u32 set)
+{
+	u32 old, reg_val;
+
+	old = xe_mmio_read32(gt, reg);
+	reg_val = (old & ~clr) | set;
+	xe_mmio_write32(gt, reg, reg_val);
+
+	return old;
+}
+
+int xe_mmio_write32_and_verify(struct xe_gt *gt,
+			       struct xe_reg reg, u32 val, u32 mask, u32 eval)
+{
+	u32 reg_val;
+
+	xe_mmio_write32(gt, reg, val);
+	reg_val = xe_mmio_read32(gt, reg);
+
+	return (reg_val & mask) != eval ? -EINVAL : 0;
+}
+
+bool xe_mmio_in_range(const struct xe_gt *gt,
+		      const struct xe_mmio_range *range,
+		      struct xe_reg reg)
+{
+	if (reg.addr < gt->mmio.adj_limit)
+		reg.addr += gt->mmio.adj_offset;
+
+	return range && reg.addr >= range->start && reg.addr <= range->end;
 }
 
 /**
