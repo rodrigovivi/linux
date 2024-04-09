@@ -1,0 +1,30 @@
+drm drm-fixes 718c4fb221dbeff9072810841b949413c5ffc345
+	nouveau: fix devinit paths to only handle display on GSP.
+drm-misc drm-misc-fixes 4c08f01934ab67d1d283d5cbaa52b923abcfe4cd
+	drm/vmwgfx: Enable DMA mappings with SEV
+drm-intel drm-intel-fixes dcd8992e47f13afb5c11a61e8d9c141c35e23751
+	drm/i915/vrr: Disable VRR when using bigjoiner
+drm-xe drm-xe-fixes 77a011012d7d8b98368a763bf74317c6d5ce00f1
+	drm/xe: Use ordered wq for preempt fence waiting
+drm drm-next 1f913730e7c7904595cd899659c9a46f27eda07c
+	Merge tag 'drm-misc-next-2024-04-05' of https://gitlab.freedesktop.org/drm/misc/kernel into drm-next
+drm-misc drm-misc-next-fixes 5d4e8ae6e57b025802aadf55a4775c55cceb75f1
+	nouveau/gsp: don't check devinit disable on GSP.
+drm-intel drm-intel-next-fixes 84b5ece64477df4394d362d494a2496bf0878985
+	drm/i915: Drop -Wstringop-overflow
+drm-xe drm-xe-next-fixes 4cece764965020c22cff7665b18a012006359095
+	Linux 6.9-rc1
+drm-misc drm-misc-next 935a92a1c400285545198ca2800a4c6c519c650a
+	drm: bridge: cdns-mhdp8546: Fix possible null pointer dereference
+drm-intel drm-intel-next 2b8ad19d3ed6e2cd0818c2bb34e067728bdc8511
+	drm/i915: Introduce intel_crtc_joined_pipe_mask()
+drm-intel drm-intel-gt-next 3563d855312acedcd445a3767f0cb07906f1c26f
+	drm/i915/guc: Fix the fix for reset lock confusion
+drm-xe drm-xe-next 7cd05ef89c9d1c63cbf2bb904c831073eb919228
+	drm/xe/xe2hpm: Add initial set of workarounds
+drm-intel topic/core-for-CI 44909e5ed2f8e95a9a8576f44d570c68c76c44d6
+	ASoC: SOF: Core: Add remove_late() to  sof_init_environment failure path
+drm-xe topic/xe-for-CI ddb9be6feae2523fd4069482e44729e211f34219
+	drm/xe/huc: Define LNL HuC
+drm-intel topic/thunderbolt-next b8a730836c6b1788ca2fbd6bcc2ac99e97ef7de9
+	thunderbolt: Constify the struct device_type usage
