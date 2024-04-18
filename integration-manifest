@@ -1,0 +1,30 @@
+drm drm-fixes 0bbac3facb5d6cc0171c45c9873a2dc96bea9680
+	Linux 6.9-rc4
+drm-misc drm-misc-fixes 6aff4c26ed677b1f464f721fbd3e7767f24a684d
+	drm/gma500: Remove lid code
+drm-intel drm-intel-fixes 0bbac3facb5d6cc0171c45c9873a2dc96bea9680
+	Linux 6.9-rc4
+drm-xe drm-xe-fixes ca7c52ac7ad384bcf299d89482c45fec7cd00da9
+	drm/xe/vm: prevent UAF with asid based lookup
+drm drm-next 34633158b8eb8fca145c9a73f8fe4f98c7275b06
+	Merge tag 'amd-drm-next-6.10-2024-04-13' of https://gitlab.freedesktop.org/agd5f/linux into drm-next
+drm-misc drm-misc-next-fixes 5d4e8ae6e57b025802aadf55a4775c55cceb75f1
+	nouveau/gsp: don't check devinit disable on GSP.
+drm-intel drm-intel-next-fixes 84b5ece64477df4394d362d494a2496bf0878985
+	drm/i915: Drop -Wstringop-overflow
+drm-xe drm-xe-next-fixes 4cece764965020c22cff7665b18a012006359095
+	Linux 6.9-rc1
+drm-misc drm-misc-next c2f471fd8dd801f3ff3c260517fafd8bc953e7b4
+	drm/vkms: Use drm_crtc_vblank_crtc()
+drm-intel drm-intel-next a3f610dd3202be41a22e798e75a832a30a4ad598
+	drm/i915: limit eDP MSO pipe only for display version 20 and below
+drm-intel drm-intel-gt-next 2af231e1b8f374895d5d6db2517804c4848d3161
+	drm/i915/guc: Remove usage of the deprecated ida_simple_xx() API
+drm-xe drm-xe-next f9116f658a6217b101e3b4e89f845775b6fb05d9
+	drm/xe: Add outer runtime_pm protection to xe_live_ktest@xe_dma_buf
+drm-intel topic/core-for-CI 44909e5ed2f8e95a9a8576f44d570c68c76c44d6
+	ASoC: SOF: Core: Add remove_late() to  sof_init_environment failure path
+drm-xe topic/xe-for-CI ddb9be6feae2523fd4069482e44729e211f34219
+	drm/xe/huc: Define LNL HuC
+drm-intel topic/thunderbolt-next b8a730836c6b1788ca2fbd6bcc2ac99e97ef7de9
+	thunderbolt: Constify the struct device_type usage
