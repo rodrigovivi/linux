@@ -1,0 +1,30 @@
+drm drm-fixes e67572cd2204894179d89bd7b984072f19313b03
+	Linux 6.9-rc6
+drm-misc drm-misc-fixes da85f0aaa9f21999753b01d45c0343f885a8f905
+	drm/panel: ili9341: Use predefined error codes
+drm-intel drm-intel-fixes e67572cd2204894179d89bd7b984072f19313b03
+	Linux 6.9-rc6
+drm-xe drm-xe-fixes df04b152fca2d46e75fbb74ed79299bc420bc9e6
+	drm/xe/display: Fix ADL-N detection
+drm drm-next 4a56c0ed5aa0bcbe1f5f7d755fb1fe1ebf48ae9c
+	Merge tag 'amd-drm-next-6.10-2024-04-26' of https://gitlab.freedesktop.org/agd5f/linux into drm-next
+drm-misc drm-misc-next-fixes 8bdbd8b5580b46c8cae365567f5bf6cc956e6512
+	drm/panthor: Make sure we handle 'unknown group state' case properly
+drm-intel drm-intel-next-fixes 84b5ece64477df4394d362d494a2496bf0878985
+	drm/i915: Drop -Wstringop-overflow
+drm-xe drm-xe-next-fixes 3bc8848bb7f7478e6806e4522b06b63f40a53e1e
+	drm/xe: Merge 16021540221 and 18034896535 WAs
+drm-misc drm-misc-next 18bc074c226bfecd205bf031678f5e35ee55c3da
+	drm/fbdev: Clean up fbdev documentation
+drm-intel drm-intel-next 8e056b50d92ae7f4d6895d1c97a69a2a953cf97b
+	drm/i915/audio: Fix audio time stamp programming for DP
+drm-intel drm-intel-gt-next 4cfca03f76413db115c3cc18f4370debb1b81b2b
+	drm/i915/gt: Automate CCS Mode setting during engine resets
+drm-xe drm-xe-next 8ad0e1810bf23f22cedb8a2664548b15646570c7
+	drm/xe/gt: Fix assert in L3 bank mask generation
+drm-intel topic/core-for-CI 44909e5ed2f8e95a9a8576f44d570c68c76c44d6
+	ASoC: SOF: Core: Add remove_late() to  sof_init_environment failure path
+drm-xe topic/xe-for-CI bf4d297181f6ce757299a6853620435de76b09d4
+	drm/xe/gsc: define GSC FW for LNL
+drm-intel topic/thunderbolt-next b8a730836c6b1788ca2fbd6bcc2ac99e97ef7de9
+	thunderbolt: Constify the struct device_type usage
