@@ -1,0 +1,31 @@
+drm drm-fixes dd5a440a31fae6e459c0d6271dddd62825505361
+	Linux 6.9-rc7
+drm-misc drm-misc-fixes 6897204ea3df808d342c8e4613135728bc538bcd
+	drm/connector: Add 
+ to message about demoting connector force-probes
+drm-intel drm-intel-fixes 43b26bdd2ee5cfca80939be910d5b23a50cd7f9d
+	drm/i915/bios: Fix parsing backlight BDB data
+drm-xe drm-xe-fixes c002bfe644a29ba600c571f2abba13a155a12dcd
+	drm/xe: Use ordered WQ for G2H handler
+drm drm-next f03eee5fc922158654405318a02db9982c0ddf07
+	Merge tag 'drm-xe-next-fixes-2024-05-02' of https://gitlab.freedesktop.org/drm/xe/kernel into drm-next
+drm-misc drm-misc-next-fixes 713a75079f37b92835db48b27699e540657e3c5a
+	drm: xlnx: zynqmp_dpsub: Fix compilation error
+drm-intel drm-intel-next-fixes 84b5ece64477df4394d362d494a2496bf0878985
+	drm/i915: Drop -Wstringop-overflow
+drm-xe drm-xe-next-fixes d69c3d4b53829097b8948d6791ea32c07de3faab
+	drm/xe/ads: Use flexible-array
+drm-misc drm-misc-next 6597efcfc53585d5fb177b901a41b4ac2f282b99
+	drm/stm: Allow build with COMPILE_TEST=y
+drm-intel drm-intel-next 0097ecd06d9dcf671da4bc643d215a4696f1c130
+	drm/i915: Use drm_crtc_vblank_crtc()
+drm-intel drm-intel-gt-next 3797783b1c966885e8bae4a7e6b99ca2f0fae4f0
+	drm/i915: Remove counter productive REGION_* wrappers
+drm-xe drm-xe-next 515f08972355e160f896f612347121fbb685e740
+	drm/xe/hwmon: Remove unwanted write permission for currN_label
+drm-intel topic/core-for-CI 44909e5ed2f8e95a9a8576f44d570c68c76c44d6
+	ASoC: SOF: Core: Add remove_late() to  sof_init_environment failure path
+drm-xe topic/xe-for-CI 684685f297175fb825771a33adfbb6a293d7b614
+	Revert "drm/xe/gsc: define GSC FW for LNL"
+drm-intel topic/thunderbolt-next b8a730836c6b1788ca2fbd6bcc2ac99e97ef7de9
+	thunderbolt: Constify the struct device_type usage
