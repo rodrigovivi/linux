@@ -1,0 +1,28 @@
+drm drm-fixes 3e049b6b8f32f25c6967f4cffd8eac6e1e5316f6
+	Merge tag 'drm-misc-fixes-2024-05-23' of https://gitlab.freedesktop.org/drm/misc/kernel into drm-fixes
+drm-misc drm-misc-fixes 8c318cb70c88aa02068db7518e852b909c9b400f
+	drm/panel/lg-sw43408: mark sw43408_backlight_ops as static
+drm-intel drm-intel-fixes 75800e2e4203ea83bbc9d4f63ad97ea582244a08
+	drm/i915: Fix audio component initialization
+drm-xe drm-xe-fixes 1613e604df0cd359cf2a7fbd9be7a0bcfacfabd0
+	Linux 6.10-rc1
+drm drm-next 1613e604df0cd359cf2a7fbd9be7a0bcfacfabd0
+	Linux 6.10-rc1
+drm-misc drm-misc-next-fixes 5a507b7d2be15fddb95bf8dee01110b723e2bcd9
+	drm/mst: Fix NULL pointer dereference at drm_dp_add_payload_part2
+drm-intel drm-intel-next-fixes 1613e604df0cd359cf2a7fbd9be7a0bcfacfabd0
+	Linux 6.10-rc1
+drm-xe drm-xe-next-fixes d69c3d4b53829097b8948d6791ea32c07de3faab
+	drm/xe/ads: Use flexible-array
+drm-misc drm-misc-next 0c02cebc7fe943f92dae0e61628a7723fe1739b7
+	drm/display: Fix HDMI state helper dependency
+drm-intel drm-intel-next f008baf08d3eb778c19890bff81869d6d3481bd1
+	drm/i915/hdcp: Fix IS_METEORLAKE usage for HDCP line rekeying
+drm-intel drm-intel-gt-next a09d2327a9ba8e3f5be238bc1b7ca2809255b464
+	drm/i915/gt: Fix CCS id's calculation for CCS mode setting
+drm-xe drm-xe-next 7e4333567db8f7d82929cb95458ceb6eb43bb4e4
+	drm/xe/hwmon: Expose card power and energy attributes of BMG
+drm-intel topic/core-for-CI 3e5fdd7886b71d1050015b2762a7984dfc97cafa
+	Revert "igc: fix a log entry using uninitialized netdev"
+drm-xe topic/xe-for-CI 684685f297175fb825771a33adfbb6a293d7b614
+	Revert "drm/xe/gsc: define GSC FW for LNL"
