@@ -312,7 +312,7 @@ static const struct xe_device_desc ats_m_desc = {
 static const struct xe_device_desc dg2_desc = {
 	.graphics = &graphics_xehpg,
 	.media = &media_xehpm,
-	.require_force_probe = true,
+	.require_force_probe = false,
 
 	DG2_FEATURES,
 	.has_display = true,
