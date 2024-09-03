@@ -1,0 +1,28 @@
+drm drm-fixes 431c1646e1f86b949fa3685efc50b660a364c2b6
+	Linux 6.11-rc6
+drm-misc drm-misc-fixes 9a71cf8b6fa433a8f243626ba9930a3870584e38
+	drm/bridge-connector: reset the HDMI connector state
+drm-intel drm-intel-fixes a13494de53258d8cf82ed3bcd69176bbf7f2640e
+	drm/i915/display: Increase Fast Wake Sync length as a quirk
+drm-xe drm-xe-fixes fe13fd68337512da4b7aee6326c397e817a943c7
+	drm/xe/pcode: Treat pcode as per-tile rather than per-GT
+drm drm-next b1aa0491fad27f030c94ed42c873c3f46f5e7364
+	drm/xe: Fix merge fails related to display runtime PM
+drm-misc drm-misc-next-fixes 291e4baf70019f17a81b7b47aeb186b27d222159
+	kselftests: dmabuf-heaps: Ensure the driver name is null-terminated
+drm-intel drm-intel-next-fixes 8400291e289ee6b2bf9779ff1c83a291501f017b
+	Linux 6.11-rc1
+drm-xe drm-xe-next-fixes a4172af3040cdc207f1b60efffcdd219156093c9
+	Merge tag 'drm-xe-next-2024-07-30' of https://gitlab.freedesktop.org/drm/xe/kernel into drm-next
+drm-misc drm-misc-next 8e514bad271723473d31fcc496f7143ba49c43c5
+	drm/tegra: fix potential uninitialized variable use
+drm-intel drm-intel-next 963ed4efe0c6416f5a2f61e107ee3a27f0bb757d
+	drm/i915/dp: hide dp_to_i915() inside intel_dp.c
+drm-intel drm-intel-gt-next 727eb1e3f014e66dcdec53afc6f5bfe0d8c0871d
+	drm/i915/hwmon: expose fan speed
+drm-xe drm-xe-next 8da19441d0a02b53e362df81843bb20db3a8006a
+	drm/xe/display: Avoid encoder_suspend at runtime suspend
+drm-intel topic/core-for-CI 5d4f308a0cd71418b7a8f9a09a24f230b4b217e6
+	thunderbolt: Add Kconfig option to disable PCIe tunneling
+drm-xe topic/xe-for-CI 1ec484590947f43be963899f7885d9b92bd26f07
+	drm/xe/guc: Pre-release GuC firmware v70.29.2 for PVC
