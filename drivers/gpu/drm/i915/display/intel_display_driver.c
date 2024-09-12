@@ -39,6 +39,7 @@
 #include "intel_dp_tunnel.h"
 #include "intel_dpll.h"
 #include "intel_dpll_mgr.h"
+#include "intel_encoder.h"
 #include "intel_fb.h"
 #include "intel_fbc.h"
 #include "intel_fbdev.h"
@@ -754,4 +755,43 @@ void intel_display_driver_resume(struct drm_i915_private *i915)
 			"Restoring old state failed with %i\n", ret);
 	if (state)
 		drm_atomic_state_put(state);
+}
+
+void intel_display_driver_shutdown(struct drm_i915_private *i915)
+{
+	intel_power_domains_disable(i915);
+
+	intel_fbdev_set_suspend(&i915->drm, FBINFO_STATE_SUSPENDED, true);
+	if (HAS_DISPLAY(i915)) {
+		drm_kms_helper_poll_disable(&i915->drm);
+		intel_display_driver_disable_user_access(i915);
+
+		drm_atomic_helper_shutdown(&i915->drm);
+	}
+
+	intel_dp_mst_suspend(i915);
+}
+
+void intel_display_driver_shutdown_noirq(struct drm_i915_private *i915)
+{
+	intel_hpd_cancel_work(i915);
+
+	if (HAS_DISPLAY(i915))
+		intel_display_driver_suspend_access(i915);
+
+	intel_encoder_suspend_all(&i915->display);
+	intel_encoder_shutdown_all(&i915->display);
+
+	intel_dmc_suspend(&i915->display);
+}
+
+void intel_display_driver_shutdown_nogem(struct drm_i915_private *i915)
+{
+	/*
+	 * The only requirement is to reboot with display DC states disabled,
+	 * for now leaving all display power wells in the INIT power domain
+	 * enabled.
+	 */
+
+	intel_power_domains_driver_remove(i915);
 }
