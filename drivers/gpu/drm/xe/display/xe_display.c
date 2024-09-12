@@ -10,7 +10,6 @@
 
 #include <drm/drm_drv.h>
 #include <drm/drm_managed.h>
-#include <drm/drm_atomic_helper.h>
 #include <drm/drm_probe_helper.h>
 #include <uapi/drm/xe_drm.h>
 
@@ -355,32 +354,26 @@ void xe_display_pm_suspend(struct xe_device *xe)
 
 void xe_display_pm_shutdown(struct xe_device *xe)
 {
-	struct intel_display *display = &xe->display;
-
 	if (!xe->info.probe_display)
 		return;
 
-	intel_power_domains_disable(xe);
-	intel_fbdev_set_suspend(&xe->drm, FBINFO_STATE_SUSPENDED, true);
-	if (has_display(xe)) {
-		drm_kms_helper_poll_disable(&xe->drm);
-		intel_display_driver_disable_user_access(xe);
+	intel_display_driver_shutdown(xe);
+}
 
-		drm_atomic_helper_shutdown(&xe->drm);
-	}
+void xe_display_pm_shutdown_noirq(struct xe_device *xe)
+{
+	if (!xe->info.probe_display)
+		return;
 
-	intel_dp_mst_suspend(xe);
-	intel_hpd_cancel_work(xe);
+	intel_display_driver_shutdown_noirq(xe);
+}
 
-	if (has_display(xe))
-		intel_display_driver_suspend_access(xe);
+void xe_display_pm_shutdown_noaccel(struct xe_device *xe)
+{
+	if (!xe->info.probe_display)
+		return;
 
-	intel_encoder_suspend_all(display);
-	intel_encoder_shutdown_all(display);
-
-	intel_opregion_suspend(display, PCI_D3cold);
-
-	intel_dmc_suspend(display);
+	intel_display_driver_shutdown_nogem(xe);
 }
 
 void xe_display_pm_runtime_suspend(struct xe_device *xe)
@@ -403,19 +396,6 @@ void xe_display_pm_suspend_late(struct xe_device *xe)
 	intel_power_domains_suspend(xe, s2idle);
 
 	intel_display_power_suspend_late(xe);
-}
-
-void xe_display_pm_shutdown_late(struct xe_device *xe)
-{
-	if (!xe->info.probe_display)
-		return;
-
-	/*
-	 * The only requirement is to reboot with display DC states disabled,
-	 * for now leaving all display power wells in the INIT power domain
-	 * enabled.
-	 */
-	intel_power_domains_driver_remove(xe);
 }
 
 void xe_display_pm_resume_early(struct xe_device *xe)
