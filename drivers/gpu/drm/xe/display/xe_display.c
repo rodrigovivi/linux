@@ -419,24 +419,8 @@ static void __xe_display_pm_resume(struct xe_device *xe, bool runtime)
 
 	intel_display_driver_init_hw(xe);
 
-	if (!runtime && has_display(xe))
-		intel_display_driver_resume_access(xe);
-
-	intel_hpd_init(xe);
-
-	if (!runtime && has_display(xe)) {
-		intel_display_driver_resume(xe);
-		drm_kms_helper_poll_enable(&xe->drm);
-		intel_display_driver_enable_user_access(xe);
-		intel_hpd_poll_disable(xe);
-	}
-
-	intel_opregion_resume(display);
-
 	if (!runtime)
-		intel_fbdev_set_suspend(&xe->drm, FBINFO_STATE_RUNNING, false);
-
-	intel_power_domains_enable(xe);
+		intel_display_driver_resume(xe);
 }
 
 void xe_display_pm_resume(struct xe_device *xe)

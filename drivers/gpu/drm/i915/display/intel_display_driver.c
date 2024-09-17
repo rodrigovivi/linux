@@ -752,6 +752,10 @@ void intel_display_driver_resume(struct drm_i915_private *i915)
 	if (!HAS_DISPLAY(i915))
 		return;
 
+	intel_display_driver_resume_access(i915);
+
+	intel_hpd_init(i915);
+
 	/* MST sideband requires HPD interrupts enabled */
 	intel_dp_mst_resume(i915);
 
@@ -781,6 +785,18 @@ void intel_display_driver_resume(struct drm_i915_private *i915)
 			"Restoring old state failed with %i\n", ret);
 	if (state)
 		drm_atomic_state_put(state);
+
+	intel_display_driver_enable_user_access(i915);
+
+	drm_kms_helper_poll_enable(&i915->drm);
+
+	intel_hpd_poll_disable(i915);
+
+	intel_opregion_resume(&i915->display);
+
+	intel_fbdev_set_suspend(&i915->drm, FBINFO_STATE_RUNNING, false);
+
+	intel_power_domains_enable(i915);
 }
 
 void intel_display_driver_shutdown(struct drm_i915_private *i915)
