@@ -43,7 +43,6 @@
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_ioctl.h>
 #include <drm/drm_managed.h>
-#include <drm/drm_probe_helper.h>
 
 #include "display/i9xx_display_sr.h"
 #include "display/intel_acpi.h"
@@ -55,7 +54,6 @@
 #include "display/intel_dp.h"
 #include "display/intel_dpt.h"
 #include "display/intel_encoder.h"
-#include "display/intel_fbdev.h"
 #include "display/intel_hotplug.h"
 #include "display/intel_overlay.h"
 #include "display/intel_pch_refclk.h"
@@ -995,18 +993,8 @@ static int i915_drm_suspend(struct drm_device *dev)
 {
 	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct intel_display *display = &dev_priv->display;
-	struct pci_dev *pdev = to_pci_dev(dev_priv->drm.dev);
 
 	disable_rpm_wakeref_asserts(&dev_priv->runtime_pm);
-
-	/* We do a lot of poking in a lot of registers, make sure they work
-	 * properly. */
-	intel_power_domains_disable(dev_priv);
-	intel_fbdev_set_suspend(dev, FBINFO_STATE_SUSPENDED, true);
-	if (HAS_DISPLAY(dev_priv)) {
-		drm_kms_helper_poll_disable(dev);
-		intel_display_driver_disable_user_access(dev_priv);
-	}
 
 	intel_display_driver_suspend(dev_priv);
 
