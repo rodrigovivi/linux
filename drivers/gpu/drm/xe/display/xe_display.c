@@ -404,12 +404,11 @@ void xe_display_pm_runtime_suspend(struct xe_device *xe)
 void xe_display_pm_suspend_late(struct xe_device *xe)
 {
 	bool s2idle = suspend_to_idle();
+
 	if (!xe->info.probe_display)
 		return;
 
-	intel_power_domains_suspend(xe, s2idle);
-
-	intel_display_power_suspend_late(xe);
+	intel_display_power_suspend_late(xe, s2idle);
 }
 
 void xe_display_pm_resume_early(struct xe_device *xe)
@@ -418,8 +417,6 @@ void xe_display_pm_resume_early(struct xe_device *xe)
 		return;
 
 	intel_display_power_resume_early(xe);
-
-	intel_power_domains_resume(xe);
 }
 
 void xe_display_pm_resume(struct xe_device *xe)
