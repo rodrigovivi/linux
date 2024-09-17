@@ -308,8 +308,40 @@ static void xe_display_flush_cleanup_work(struct xe_device *xe)
 	}
 }
 
-/* TODO: System and runtime suspend/resume sequences will be sanitized as a follow-up. */
-static void __xe_display_pm_suspend(struct xe_device *xe, bool runtime)
+static void xe_display_to_d3cold(struct xe_device *xe)
+{
+	struct intel_display *display = &xe->display;
+
+	if (!xe->info.probe_display)
+		return;
+
+	intel_display_driver_suspend(xe);
+
+	xe_display_flush_cleanup_work(xe);
+
+	intel_hpd_cancel_work(xe);
+
+	intel_opregion_suspend(display, PCI_D3cold);
+
+	intel_dmc_suspend(display);
+}
+
+static void xe_display_from_d3cold(struct xe_device *xe)
+{
+	struct intel_display *display = &xe->display;
+
+	if (!xe->info.probe_display)
+		return;
+
+	intel_dmc_resume(display);
+
+	if (has_display(xe))
+		drm_mode_config_reset(&xe->drm);
+
+	intel_display_driver_init_hw(xe);
+}
+
+void xe_display_pm_suspend(struct xe_device *xe)
 {
 	struct intel_display *display = &xe->display;
 	bool s2idle = suspend_to_idle();
@@ -323,7 +355,7 @@ static void __xe_display_pm_suspend(struct xe_device *xe, bool runtime)
 
 	intel_hpd_cancel_work(xe);
 
-	if (!runtime && has_display(xe)) {
+	if (has_display(xe)) {
 		intel_display_driver_suspend_access(xe);
 		intel_encoder_suspend_all(&xe->display);
 	}
@@ -331,11 +363,6 @@ static void __xe_display_pm_suspend(struct xe_device *xe, bool runtime)
 	intel_opregion_suspend(display, s2idle ? PCI_D1 : PCI_D3cold);
 
 	intel_dmc_suspend(display);
-}
-
-void xe_display_pm_suspend(struct xe_device *xe)
-{
-	__xe_display_pm_suspend(xe, false);
 }
 
 void xe_display_pm_shutdown(struct xe_device *xe)
@@ -368,7 +395,7 @@ void xe_display_pm_runtime_suspend(struct xe_device *xe)
 		return;
 
 	if (xe->d3cold.allowed)
-		__xe_display_pm_suspend(xe, true);
+		xe_display_to_d3cold(xe);
 
 	intel_hpd_poll_enable(xe);
 }
@@ -394,7 +421,7 @@ void xe_display_pm_resume_early(struct xe_device *xe)
 	intel_power_domains_resume(xe);
 }
 
-static void __xe_display_pm_resume(struct xe_device *xe, bool runtime)
+void xe_display_pm_resume(struct xe_device *xe)
 {
 	struct intel_display *display = &xe->display;
 
@@ -408,13 +435,7 @@ static void __xe_display_pm_resume(struct xe_device *xe, bool runtime)
 
 	intel_display_driver_init_hw(xe);
 
-	if (!runtime)
-		intel_display_driver_resume(xe);
-}
-
-void xe_display_pm_resume(struct xe_device *xe)
-{
-	__xe_display_pm_resume(xe, false);
+	intel_display_driver_resume(xe);
 }
 
 void xe_display_pm_runtime_resume(struct xe_device *xe)
@@ -425,7 +446,7 @@ void xe_display_pm_runtime_resume(struct xe_device *xe)
 	intel_hpd_poll_disable(xe);
 
 	if (xe->d3cold.allowed)
-		__xe_display_pm_resume(xe, true);
+		xe_display_from_d3cold(xe);
 }
 
 
