@@ -53,6 +53,7 @@
 #include "intel_modeset_setup.h"
 #include "intel_opregion.h"
 #include "intel_overlay.h"
+#include "intel_pch_refclk.h"
 #include "intel_plane_initial.h"
 #include "intel_pmdemand.h"
 #include "intel_pps.h"
@@ -710,6 +711,30 @@ void intel_display_driver_suspend_noggtt(struct intel_display *display, bool s2i
 {
 	intel_opregion_suspend(display, s2idle ? PCI_D1 : PCI_D3cold);
 	intel_dmc_suspend(display);
+}
+
+void intel_display_driver_resume_noirq(struct drm_i915_private *i915)
+{
+	struct intel_display *display = &i915->display;
+
+	/* Must be called after GGTT is resumed. */
+	intel_dpt_resume(i915);
+
+	intel_dmc_resume(display);
+
+	intel_vga_redisable(display);
+
+	intel_gmbus_reset(i915);
+
+	intel_pps_unlock_regs_wa(display);
+
+	intel_init_pch_refclk(i915);
+}
+
+void intel_display_driver_resume_nogem(struct intel_display *display)
+{
+	if (HAS_DISPLAY(display))
+		drm_mode_config_reset(display->drm);
 }
 
 int

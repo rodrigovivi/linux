@@ -56,7 +56,6 @@
 #include "display/intel_encoder.h"
 #include "display/intel_hotplug.h"
 #include "display/intel_overlay.h"
-#include "display/intel_pch_refclk.h"
 #include "display/intel_pps.h"
 #include "display/intel_sprite.h"
 #include "display/intel_vga.h"
@@ -1115,20 +1114,9 @@ static int i915_drm_resume(struct drm_device *dev)
 		if (GRAPHICS_VER(gt->i915) >= 8)
 			setup_private_pat(gt);
 
-	/* Must be called after GGTT is resumed. */
-	intel_dpt_resume(dev_priv);
-
-	intel_dmc_resume(display);
-
 	i9xx_display_sr_restore(dev_priv);
 
-	intel_vga_redisable(display);
-
-	intel_gmbus_reset(dev_priv);
-
-	intel_pps_unlock_regs_wa(display);
-
-	intel_init_pch_refclk(dev_priv);
+	intel_display_driver_resume_noirq(dev_priv);
 
 	/*
 	 * Interrupts have to be enabled before any batches are run. If not the
@@ -1142,8 +1130,7 @@ static int i915_drm_resume(struct drm_device *dev)
 	 */
 	intel_irq_resume(dev_priv);
 
-	if (HAS_DISPLAY(dev_priv))
-		drm_mode_config_reset(dev);
+	intel_display_driver_resume_nogem(display);
 
 	i915_gem_resume(dev_priv);
 
