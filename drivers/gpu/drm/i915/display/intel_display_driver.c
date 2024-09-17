@@ -670,6 +670,16 @@ int intel_display_driver_suspend(struct drm_i915_private *i915)
 	if (!HAS_DISPLAY(i915))
 		return 0;
 
+	/* We do a lot of poking in a lot of registers, make sure they work
+	 * properly. */
+	intel_power_domains_disable(i915);
+
+	intel_fbdev_set_suspend(&i915->drm, FBINFO_STATE_SUSPENDED, true);
+
+	drm_kms_helper_poll_disable(&i915->drm);
+
+	intel_display_driver_disable_user_access(i915);
+
 	state = drm_atomic_helper_suspend(&i915->drm);
 	ret = PTR_ERR_OR_ZERO(state);
 	if (ret)
