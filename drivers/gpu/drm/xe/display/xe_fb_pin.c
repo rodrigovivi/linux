@@ -412,3 +412,7 @@ u64 intel_dpt_offset(struct i915_vma *dpt_vma)
 void intel_dpt_suspend(struct xe_device *xe)
 {
 }
+
+void intel_dpt_resume(struct xe_device *xe)
+{
+}

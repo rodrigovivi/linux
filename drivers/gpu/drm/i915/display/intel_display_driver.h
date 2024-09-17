@@ -29,6 +29,8 @@ int intel_display_driver_suspend(struct drm_i915_private *i915);
 void intel_display_driver_suspend_noirq(struct drm_i915_private *i915);
 void intel_display_driver_suspend_noggtt(struct intel_display *display, bool s2idle);
 void intel_display_driver_resume(struct drm_i915_private *i915);
+void intel_display_driver_resume_noirq(struct drm_i915_private *i915);
+void intel_display_driver_resume_nogem(struct intel_display *display);
 void intel_display_driver_shutdown(struct drm_i915_private *i915);
 void intel_display_driver_shutdown_noirq(struct drm_i915_private *i915);
 void intel_display_driver_shutdown_nogem(struct drm_i915_private *i915);
