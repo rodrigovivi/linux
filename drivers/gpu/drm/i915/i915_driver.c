@@ -1008,8 +1008,6 @@ static int i915_drm_suspend(struct drm_device *dev)
 		intel_display_driver_disable_user_access(dev_priv);
 	}
 
-	pci_save_state(pdev);
-
 	intel_display_driver_suspend(dev_priv);
 
 	intel_irq_suspend(dev_priv);
