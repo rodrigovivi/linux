@@ -12,6 +12,7 @@ struct drm_atomic_state;
 struct drm_i915_private;
 struct drm_modeset_acquire_ctx;
 struct pci_dev;
+struct intel_display;
 
 bool intel_display_driver_probe_defer(struct pci_dev *pdev);
 void intel_display_driver_init_hw(struct drm_i915_private *i915);
@@ -25,6 +26,8 @@ void intel_display_driver_remove_noirq(struct drm_i915_private *i915);
 void intel_display_driver_remove_nogem(struct drm_i915_private *i915);
 void intel_display_driver_unregister(struct drm_i915_private *i915);
 int intel_display_driver_suspend(struct drm_i915_private *i915);
+void intel_display_driver_suspend_noirq(struct drm_i915_private *i915);
+void intel_display_driver_suspend_noggtt(struct intel_display *display, bool s2idle);
 void intel_display_driver_resume(struct drm_i915_private *i915);
 void intel_display_driver_shutdown(struct drm_i915_private *i915);
 void intel_display_driver_shutdown_noirq(struct drm_i915_private *i915);

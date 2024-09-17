@@ -36,6 +36,7 @@
 #include "intel_dkl_phy.h"
 #include "intel_dmc.h"
 #include "intel_dp.h"
+#include "intel_dpt.h"
 #include "intel_dp_tunnel.h"
 #include "intel_dpll.h"
 #include "intel_dpll_mgr.h"
@@ -680,6 +681,25 @@ int intel_display_driver_suspend(struct drm_i915_private *i915)
 	intel_dp_mst_suspend(i915);
 
 	return ret;
+}
+
+void intel_display_driver_suspend_noirq(struct drm_i915_private *i915)
+{
+	intel_hpd_cancel_work(i915);
+
+	if (HAS_DISPLAY(i915))
+		intel_display_driver_suspend_access(i915);
+
+	intel_encoder_suspend_all(&i915->display);
+
+	/* Must be called before GGTT is suspended. */
+	intel_dpt_suspend(i915);
+}
+
+void intel_display_driver_suspend_noggtt(struct intel_display *display, bool s2idle)
+{
+	intel_opregion_suspend(display, s2idle ? PCI_D1 : PCI_D3cold);
+	intel_dmc_suspend(display);
 }
 
 int

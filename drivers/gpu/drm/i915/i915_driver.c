@@ -996,7 +996,6 @@ static int i915_drm_suspend(struct drm_device *dev)
 	struct drm_i915_private *dev_priv = to_i915(dev);
 	struct intel_display *display = &dev_priv->display;
 	struct pci_dev *pdev = to_pci_dev(dev_priv->drm.dev);
-	pci_power_t opregion_target_state;
 
 	disable_rpm_wakeref_asserts(&dev_priv->runtime_pm);
 
@@ -1014,25 +1013,16 @@ static int i915_drm_suspend(struct drm_device *dev)
 	intel_display_driver_suspend(dev_priv);
 
 	intel_irq_suspend(dev_priv);
-	intel_hpd_cancel_work(dev_priv);
 
-	if (HAS_DISPLAY(dev_priv))
-		intel_display_driver_suspend_access(dev_priv);
+	intel_display_driver_suspend_noirq(dev_priv);
 
-	intel_encoder_suspend_all(&dev_priv->display);
-
-	/* Must be called before GGTT is suspended. */
-	intel_dpt_suspend(dev_priv);
 	i915_ggtt_suspend(to_gt(dev_priv)->ggtt);
 
 	i9xx_display_sr_save(dev_priv);
 
-	opregion_target_state = suspend_to_idle(dev_priv) ? PCI_D1 : PCI_D3cold;
-	intel_opregion_suspend(display, opregion_target_state);
+	intel_display_driver_suspend_noggtt(display, suspend_to_idle(dev_priv));
 
 	dev_priv->suspend_count++;
-
-	intel_dmc_suspend(display);
 
 	enable_rpm_wakeref_asserts(&dev_priv->runtime_pm);
 
