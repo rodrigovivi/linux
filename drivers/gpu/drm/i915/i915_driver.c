@@ -1113,6 +1113,7 @@ static int i915_drm_resume(struct drm_device *dev)
 	i9xx_display_sr_restore(dev_priv);
 
 	intel_display_driver_resume_noirq(dev_priv);
+	intel_display_driver_resume_noirq_legacy(dev_priv);
 
 	/*
 	 * Interrupts have to be enabled before any batches are run. If not the
