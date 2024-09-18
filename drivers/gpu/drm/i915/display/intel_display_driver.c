@@ -729,6 +729,16 @@ void intel_display_driver_resume_noirq(struct drm_i915_private *i915)
 	intel_dpt_resume(i915);
 
 	intel_dmc_resume(display);
+}
+
+/*
+ * TODO: Current sequences missing from Xe! Check and merge with above function.
+ *       DPT is also a missing case there, but the TODO is recorded as the
+ *       empty stub DPT functions inside Xe.
+ */
+void intel_display_driver_resume_noirq_legacy(struct drm_i915_private *i915)
+{
+	struct intel_display *display = &i915->display;
 
 	intel_vga_redisable(display);
 
