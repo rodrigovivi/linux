@@ -182,7 +182,11 @@ int xe_pm_resume(struct xe_device *xe)
 	if (err)
 		goto err;
 
+	xe_display_pm_resume_noirq(xe);
+
 	xe_irq_resume(xe);
+
+	xe_display_pm_resume_noaccel(xe);
 
 	for_each_gt(gt, xe, id)
 		xe_gt_resume(gt);
