@@ -14,7 +14,6 @@
 #include <uapi/drm/xe_drm.h>
 
 #include "soc/intel_dram.h"
-#include "intel_acpi.h"
 #include "intel_audio.h"
 #include "intel_bw.h"
 #include "intel_display.h"
@@ -217,7 +216,6 @@ void xe_display_register(struct xe_device *xe)
 		return;
 
 	intel_display_driver_register(xe);
-	intel_register_dsm_handler();
 }
 
 void xe_display_unregister(struct xe_device *xe)
@@ -225,7 +223,6 @@ void xe_display_unregister(struct xe_device *xe)
 	if (!xe->info.probe_display)
 		return;
 
-	intel_unregister_dsm_handler();
 	intel_display_driver_unregister(xe);
 }
 
