@@ -140,6 +140,8 @@ int xe_pm_suspend(struct xe_device *xe)
 
 	xe_irq_suspend(xe);
 
+	xe_display_pm_suspend_noirq(xe);
+	xe_display_pm_suspend_noggtt(xe);
 	xe_display_pm_suspend_late(xe);
 
 	drm_dbg(&xe->drm, "Device suspended\n");

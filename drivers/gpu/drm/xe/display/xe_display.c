@@ -342,26 +342,29 @@ static void xe_display_from_d3cold(struct xe_device *xe)
 
 void xe_display_pm_suspend(struct xe_device *xe)
 {
+	if (!xe->info.probe_display)
+		return;
+
+	intel_display_driver_suspend(xe);
+}
+
+void xe_display_pm_suspend_noirq(struct xe_device *xe)
+{
+	if (!xe->info.probe_display)
+		return;
+
+	intel_display_driver_suspend_noirq(xe);
+}
+
+void xe_display_pm_suspend_noggtt(struct xe_device *xe)
+{
 	struct intel_display *display = &xe->display;
 	bool s2idle = suspend_to_idle();
 
 	if (!xe->info.probe_display)
 		return;
 
-	intel_display_driver_suspend(xe);
-
-	xe_display_flush_cleanup_work(xe);
-
-	intel_hpd_cancel_work(xe);
-
-	if (has_display(xe)) {
-		intel_display_driver_suspend_access(xe);
-		intel_encoder_suspend_all(&xe->display);
-	}
-
-	intel_opregion_suspend(display, s2idle ? PCI_D1 : PCI_D3cold);
-
-	intel_dmc_suspend(display);
+	intel_display_driver_suspend_noggtt(display, s2idle);
 }
 
 void xe_display_pm_shutdown(struct xe_device *xe)
