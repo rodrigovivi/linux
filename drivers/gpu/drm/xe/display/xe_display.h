@@ -41,6 +41,8 @@ void xe_display_pm_shutdown_noirq(struct xe_device *xe);
 void xe_display_pm_shutdown_noaccel(struct xe_device *xe);
 void xe_display_pm_resume_early(struct xe_device *xe);
 void xe_display_pm_resume(struct xe_device *xe);
+void xe_display_pm_resume_noirq(struct xe_device *xe);
+void xe_display_pm_resume_noaccel(struct xe_device *xe);
 void xe_display_pm_runtime_suspend(struct xe_device *xe);
 void xe_display_pm_runtime_resume(struct xe_device *xe);
 

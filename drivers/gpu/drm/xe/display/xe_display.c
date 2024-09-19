@@ -419,19 +419,28 @@ void xe_display_pm_resume_early(struct xe_device *xe)
 
 void xe_display_pm_resume(struct xe_device *xe)
 {
-	struct intel_display *display = &xe->display;
-
 	if (!xe->info.probe_display)
 		return;
-
-	intel_dmc_resume(display);
-
-	if (has_display(xe))
-		drm_mode_config_reset(&xe->drm);
 
 	intel_display_driver_init_hw(xe);
 
 	intel_display_driver_resume(xe);
+}
+
+void xe_display_pm_resume_noirq(struct xe_device *xe)
+{
+	if (!xe->info.probe_display)
+		return;
+
+	intel_display_driver_resume_noirq(xe);
+}
+
+void xe_display_pm_resume_noaccel(struct xe_device *xe)
+{
+	if (!xe->info.probe_display)
+		return;
+
+	intel_display_driver_resume_nogem(&xe->display);
 }
 
 void xe_display_pm_runtime_resume(struct xe_device *xe)
