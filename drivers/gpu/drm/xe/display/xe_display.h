@@ -35,6 +35,8 @@ void xe_display_irq_reset(struct xe_device *xe);
 void xe_display_irq_postinstall(struct xe_device *xe, struct xe_gt *gt);
 
 void xe_display_pm_suspend(struct xe_device *xe);
+void xe_display_pm_suspend_noirq(struct xe_device *xe);
+void xe_display_pm_suspend_noggtt(struct xe_device *xe);
 void xe_display_pm_suspend_late(struct xe_device *xe);
 void xe_display_pm_shutdown(struct xe_device *xe);
 void xe_display_pm_shutdown_noirq(struct xe_device *xe);
