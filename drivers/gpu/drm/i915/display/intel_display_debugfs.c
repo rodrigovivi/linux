@@ -3,6 +3,7 @@
  * Copyright © 2020 Intel Corporation
  */
 
+#include <linux/debugfs.h>
 #include <linux/string_helpers.h>
 
 #include <drm/drm_debugfs.h>
@@ -10,13 +11,13 @@
 #include <drm/drm_fourcc.h>
 
 #include "hsw_ips.h"
-#include "i915_debugfs.h"
 #include "i915_irq.h"
 #include "i915_reg.h"
 #include "intel_alpm.h"
+#include "intel_bo.h"
 #include "intel_crtc.h"
-#include "intel_de.h"
 #include "intel_crtc_state_dump.h"
+#include "intel_de.h"
 #include "intel_display_debugfs.h"
 #include "intel_display_debugfs_params.h"
 #include "intel_display_power.h"
@@ -27,6 +28,7 @@
 #include "intel_dp_link_training.h"
 #include "intel_dp_mst.h"
 #include "intel_drrs.h"
+#include "intel_fb.h"
 #include "intel_fbc.h"
 #include "intel_fbdev.h"
 #include "intel_hdcp.h"
@@ -39,9 +41,26 @@
 #include "intel_vdsc.h"
 #include "intel_wm.h"
 
+static struct intel_display *node_to_intel_display(struct drm_info_node *node)
+{
+	return to_intel_display(node->minor->dev);
+}
+
 static inline struct drm_i915_private *node_to_i915(struct drm_info_node *node)
 {
 	return to_i915(node->minor->dev);
+}
+
+static int intel_display_caps(struct seq_file *m, void *data)
+{
+	struct intel_display *display = node_to_intel_display(m->private);
+	struct drm_printer p = drm_seq_file_printer(m);
+
+	intel_display_device_info_print(DISPLAY_INFO(display),
+					DISPLAY_RUNTIME_INFO(display), &p);
+	intel_display_params_dump(&display->params, display->drm->driver->name, &p);
+
+	return 0;
 }
 
 static int i915_frontbuffer_tracking(struct seq_file *m, void *unused)
@@ -106,7 +125,7 @@ static int i915_gem_framebuffer_info(struct seq_file *m, void *data)
 			   fbdev_fb->base.format->cpp[0] * 8,
 			   fbdev_fb->base.modifier,
 			   drm_framebuffer_read_refcount(&fbdev_fb->base));
-		i915_debugfs_describe_obj(m, intel_fb_obj(&fbdev_fb->base));
+		intel_bo_describe(m, intel_fb_bo(&fbdev_fb->base));
 		seq_putc(m, '\n');
 	}
 #endif
@@ -124,7 +143,7 @@ static int i915_gem_framebuffer_info(struct seq_file *m, void *data)
 			   fb->base.format->cpp[0] * 8,
 			   fb->base.modifier,
 			   drm_framebuffer_read_refcount(&fb->base));
-		i915_debugfs_describe_obj(m, intel_fb_obj(&fb->base));
+		intel_bo_describe(m, intel_fb_bo(&fb->base));
 		seq_putc(m, '\n');
 	}
 	mutex_unlock(&dev_priv->drm.mode_config.fb_lock);
@@ -424,7 +443,7 @@ static void intel_scaler_info(struct seq_file *m, struct intel_crtc *crtc)
 	int num_scalers = crtc->num_scalers;
 	int i;
 
-	/* Not all platformas have a scaler */
+	/* Not all platforms have a scaler */
 	if (num_scalers) {
 		seq_printf(m, "\tnum_scalers=%d, scaler_users=%x scaler_id=%d scaling_filter=%d",
 			   num_scalers,
@@ -1025,6 +1044,7 @@ static const struct file_operations i915_fifo_underrun_reset_ops = {
 };
 
 static const struct drm_info_list intel_display_debugfs_list[] = {
+	{"intel_display_caps", intel_display_caps, 0},
 	{"i915_frontbuffer_tracking", i915_frontbuffer_tracking, 0},
 	{"i915_sr_status", i915_sr_status, 0},
 	{"i915_gem_framebuffer", i915_gem_framebuffer_info, 0},
@@ -1066,8 +1086,8 @@ void intel_display_debugfs_register(struct drm_i915_private *i915)
 				 minor->debugfs_root, minor);
 
 	intel_bios_debugfs_register(display);
-	intel_cdclk_debugfs_register(i915);
-	intel_dmc_debugfs_register(i915);
+	intel_cdclk_debugfs_register(display);
+	intel_dmc_debugfs_register(display);
 	intel_fbc_debugfs_register(display);
 	intel_hpd_debugfs_register(i915);
 	intel_opregion_debugfs_register(display);
@@ -1548,7 +1568,7 @@ void intel_connector_debugfs_add(struct intel_connector *connector)
 				    connector, &i915_dsc_fractional_bpp_fops);
 	}
 
-	if (DISPLAY_VER(i915) >= 11 &&
+	if (HAS_BIGJOINER(i915) &&
 	    (connector_type == DRM_MODE_CONNECTOR_DisplayPort ||
 	     connector_type == DRM_MODE_CONNECTOR_eDP)) {
 		debugfs_create_bool("i915_bigjoiner_force_enable", 0644, root,

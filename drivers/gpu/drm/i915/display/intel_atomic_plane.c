@@ -35,9 +35,10 @@
 #include <linux/dma-resv.h>
 
 #include <drm/drm_atomic_helper.h>
-#include <drm/drm_gem_atomic_helper.h>
 #include <drm/drm_blend.h>
 #include <drm/drm_fourcc.h>
+#include <drm/drm_gem.h>
+#include <drm/drm_gem_atomic_helper.h>
 
 #include "i915_config.h"
 #include "i9xx_plane_regs.h"
@@ -710,13 +711,13 @@ intel_crtc_get_plane(struct intel_crtc *crtc, enum plane_id plane_id)
 int intel_plane_atomic_check(struct intel_atomic_state *state,
 			     struct intel_plane *plane)
 {
-	struct drm_i915_private *i915 = to_i915(state->base.dev);
+	struct intel_display *display = to_intel_display(state);
 	struct intel_plane_state *new_plane_state =
 		intel_atomic_get_new_plane_state(state, plane);
 	const struct intel_plane_state *old_plane_state =
 		intel_atomic_get_old_plane_state(state, plane);
 	const struct intel_plane_state *new_primary_crtc_plane_state;
-	struct intel_crtc *crtc = intel_crtc_for_pipe(i915, plane->pipe);
+	struct intel_crtc *crtc = intel_crtc_for_pipe(display, plane->pipe);
 	const struct intel_crtc_state *old_crtc_state =
 		intel_atomic_get_old_crtc_state(state, crtc);
 	struct intel_crtc_state *new_crtc_state =
@@ -1114,8 +1115,8 @@ intel_prepare_plane_fb(struct drm_plane *_plane,
 	struct drm_i915_private *dev_priv = to_i915(plane->base.dev);
 	struct intel_plane_state *old_plane_state =
 		intel_atomic_get_old_plane_state(state, plane);
-	struct drm_i915_gem_object *obj = intel_fb_obj(new_plane_state->hw.fb);
-	struct drm_i915_gem_object *old_obj = intel_fb_obj(old_plane_state->hw.fb);
+	struct drm_gem_object *obj = intel_fb_bo(new_plane_state->hw.fb);
+	struct drm_gem_object *old_obj = intel_fb_bo(old_plane_state->hw.fb);
 	int ret;
 
 	if (old_obj) {
@@ -1135,7 +1136,7 @@ intel_prepare_plane_fb(struct drm_plane *_plane,
 		 * can safely continue.
 		 */
 		if (new_crtc_state && intel_crtc_needs_modeset(new_crtc_state)) {
-			ret = add_dma_resv_fences(intel_bo_to_drm_bo(old_obj)->resv,
+			ret = add_dma_resv_fences(old_obj->resv,
 						  &new_plane_state->uapi);
 			if (ret < 0)
 				return ret;
@@ -1195,7 +1196,7 @@ intel_cleanup_plane_fb(struct drm_plane *plane,
 	struct intel_atomic_state *state =
 		to_intel_atomic_state(old_plane_state->uapi.state);
 	struct drm_i915_private *dev_priv = to_i915(plane->dev);
-	struct drm_i915_gem_object *obj = intel_fb_obj(old_plane_state->hw.fb);
+	struct drm_gem_object *obj = intel_fb_bo(old_plane_state->hw.fb);
 
 	if (!obj)
 		return;
