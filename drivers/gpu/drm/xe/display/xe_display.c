@@ -27,6 +27,7 @@
 #include "intel_hdcp.h"
 #include "intel_hotplug.h"
 #include "intel_opregion.h"
+#include "skl_watermark.h"
 #include "xe_module.h"
 
 /* Xe device functions */
@@ -469,6 +470,7 @@ void xe_display_pm_runtime_resume(struct xe_device *xe)
 
 	intel_hpd_init(xe);
 	intel_hpd_poll_disable(xe);
+	skl_watermark_ipc_update(xe);
 }
 
 static void display_device_remove(struct drm_device *dev, void *arg)
