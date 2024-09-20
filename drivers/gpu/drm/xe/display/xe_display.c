@@ -447,6 +447,8 @@ void xe_display_pm_runtime_suspend_late(struct xe_device *xe)
 
 	if (xe->d3cold.allowed)
 		intel_display_power_suspend_late(xe, false);
+	else
+		intel_opregion_notify_adapter(&xe->display, PCI_D1);
 
 	intel_hpd_poll_enable(xe);
 }
@@ -458,6 +460,8 @@ void xe_display_pm_runtime_resume_early(struct xe_device *xe)
 
 	if (xe->d3cold.allowed)
 		intel_display_power_resume_early(xe);
+	else
+		intel_opregion_notify_adapter(&xe->display, PCI_D0);
 }
 
 void xe_display_pm_runtime_resume(struct xe_device *xe)
