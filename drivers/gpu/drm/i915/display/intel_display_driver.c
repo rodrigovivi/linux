@@ -856,6 +856,64 @@ void intel_display_driver_resume(struct drm_i915_private *i915)
 	intel_power_domains_enable(i915);
 }
 
+void intel_display_driver_runtime_suspend(struct drm_i915_private *i915)
+{
+	intel_display_power_suspend(i915);
+}
+
+void intel_display_driver_runtime_suspend_late(struct drm_i915_private *i915)
+{
+	struct intel_display *display = &i915->display;
+
+	/*
+	 * FIXME: We really should find a document that references the arguments
+	 * used below!
+	 */
+	if (IS_BROADWELL(i915)) {
+		/*
+		 * On Broadwell, if we use PCI_D1 the PCH DDI ports will stop
+		 * being detected, and the call we do at intel_runtime_resume()
+		 * won't be able to restore them. Since PCI_D3hot matches the
+		 * actual specification and appears to be working, use it.
+		 */
+		intel_opregion_notify_adapter(display, PCI_D3hot);
+	} else {
+		/*
+		 * current versions of firmware which depend on this opregion
+		 * notification have repurposed the D1 definition to mean
+		 * "runtime suspended" vs. what you would normally expect (D3)
+		 * to distinguish it from notifications that might be sent via
+		 * the suspend path.
+		 */
+		intel_opregion_notify_adapter(display, PCI_D1);
+	}
+
+	if (!IS_VALLEYVIEW(i915) && !IS_CHERRYVIEW(i915))
+		intel_hpd_poll_enable(i915);
+}
+
+void intel_display_driver_runtime_resume_early(struct drm_i915_private *i915)
+{
+	intel_opregion_notify_adapter(&i915->display, PCI_D0);
+
+	intel_display_power_resume(i915);
+}
+
+void intel_display_driver_runtime_resume(struct drm_i915_private *i915)
+{
+	/*
+	 * On VLV/CHV display interrupts are part of the display
+	 * power well, so hpd is reinitialized from there. For
+	 * everyone else do it here.
+	 */
+	if (!IS_VALLEYVIEW(i915) && !IS_CHERRYVIEW(i915)) {
+		intel_hpd_init(i915);
+		intel_hpd_poll_disable(i915);
+	}
+
+	skl_watermark_ipc_update(i915);
+}
+
 void intel_display_driver_shutdown(struct drm_i915_private *i915)
 {
 	intel_power_domains_disable(i915);

@@ -1373,7 +1373,6 @@ static int i915_pm_restore(struct device *kdev)
 static int intel_runtime_suspend(struct device *kdev)
 {
 	struct drm_i915_private *dev_priv = kdev_to_i915(kdev);
-	struct intel_display *display = &dev_priv->display;
 	struct intel_runtime_pm *rpm = &dev_priv->runtime_pm;
 	struct pci_dev *pdev = to_pci_dev(dev_priv->drm.dev);
 	struct pci_dev *root_pdev;
@@ -1403,7 +1402,7 @@ static int intel_runtime_suspend(struct device *kdev)
 	for_each_gt(gt, dev_priv, i)
 		intel_uncore_suspend(gt->uncore);
 
-	intel_display_power_suspend(dev_priv);
+	intel_display_driver_runtime_suspend(dev_priv);
 
 	ret = vlv_suspend_complete(dev_priv);
 	if (ret) {
@@ -1437,33 +1436,9 @@ static int intel_runtime_suspend(struct device *kdev)
 	if (root_pdev)
 		pci_d3cold_disable(root_pdev);
 
-	/*
-	 * FIXME: We really should find a document that references the arguments
-	 * used below!
-	 */
-	if (IS_BROADWELL(dev_priv)) {
-		/*
-		 * On Broadwell, if we use PCI_D1 the PCH DDI ports will stop
-		 * being detected, and the call we do at intel_runtime_resume()
-		 * won't be able to restore them. Since PCI_D3hot matches the
-		 * actual specification and appears to be working, use it.
-		 */
-		intel_opregion_notify_adapter(display, PCI_D3hot);
-	} else {
-		/*
-		 * current versions of firmware which depend on this opregion
-		 * notification have repurposed the D1 definition to mean
-		 * "runtime suspended" vs. what you would normally expect (D3)
-		 * to distinguish it from notifications that might be sent via
-		 * the suspend path.
-		 */
-		intel_opregion_notify_adapter(display, PCI_D1);
-	}
+	intel_display_driver_runtime_suspend_late(dev_priv);
 
 	assert_forcewakes_inactive(&dev_priv->uncore);
-
-	if (!IS_VALLEYVIEW(dev_priv) && !IS_CHERRYVIEW(dev_priv))
-		intel_hpd_poll_enable(dev_priv);
 
 	drm_dbg(&dev_priv->drm, "Device suspended\n");
 	return 0;
@@ -1472,7 +1447,6 @@ static int intel_runtime_suspend(struct device *kdev)
 static int intel_runtime_resume(struct device *kdev)
 {
 	struct drm_i915_private *dev_priv = kdev_to_i915(kdev);
-	struct intel_display *display = &dev_priv->display;
 	struct intel_runtime_pm *rpm = &dev_priv->runtime_pm;
 	struct pci_dev *pdev = to_pci_dev(dev_priv->drm.dev);
 	struct pci_dev *root_pdev;
@@ -1487,8 +1461,6 @@ static int intel_runtime_resume(struct device *kdev)
 	drm_WARN_ON_ONCE(&dev_priv->drm, atomic_read(&rpm->wakeref_count));
 	disable_rpm_wakeref_asserts(rpm);
 
-	intel_opregion_notify_adapter(display, PCI_D0);
-
 	root_pdev = pcie_find_root_port(pdev);
 	if (root_pdev)
 		pci_d3cold_enable(root_pdev);
@@ -1497,7 +1469,7 @@ static int intel_runtime_resume(struct device *kdev)
 		drm_dbg(&dev_priv->drm,
 			"Unclaimed access during suspend, bios?\n");
 
-	intel_display_power_resume(dev_priv);
+	intel_display_driver_runtime_resume_early(dev_priv);
 
 	ret = vlv_resume_prepare(dev_priv, true);
 
@@ -1515,17 +1487,7 @@ static int intel_runtime_resume(struct device *kdev)
 
 	intel_pxp_runtime_resume(dev_priv->pxp);
 
-	/*
-	 * On VLV/CHV display interrupts are part of the display
-	 * power well, so hpd is reinitialized from there. For
-	 * everyone else do it here.
-	 */
-	if (!IS_VALLEYVIEW(dev_priv) && !IS_CHERRYVIEW(dev_priv)) {
-		intel_hpd_init(dev_priv);
-		intel_hpd_poll_disable(dev_priv);
-	}
-
-	skl_watermark_ipc_update(dev_priv);
+	intel_display_driver_runtime_resume_early(dev_priv);
 
 	enable_rpm_wakeref_asserts(rpm);
 
