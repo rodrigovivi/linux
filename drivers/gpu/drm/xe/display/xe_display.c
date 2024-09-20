@@ -330,8 +330,6 @@ static void xe_display_from_d3cold(struct xe_device *xe)
 
 	intel_display_driver_init_hw(xe);
 
-	intel_hpd_init(xe);
-
 	intel_opregion_resume(display);
 
 	intel_power_domains_enable(xe);
@@ -470,6 +468,8 @@ void xe_display_pm_runtime_resume(struct xe_device *xe)
 
 	if (xe->d3cold.allowed)
 		xe_display_from_d3cold(xe);
+
+	intel_hpd_init(xe);
 }
 
 static void display_device_remove(struct drm_device *dev, void *arg)
