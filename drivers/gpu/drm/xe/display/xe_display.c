@@ -388,17 +388,6 @@ void xe_display_pm_shutdown_noaccel(struct xe_device *xe)
 	intel_display_driver_shutdown_nogem(xe);
 }
 
-void xe_display_pm_runtime_suspend(struct xe_device *xe)
-{
-	if (!xe->info.probe_display)
-		return;
-
-	if (xe->d3cold.allowed)
-		xe_display_to_d3cold(xe);
-
-	intel_hpd_poll_enable(xe);
-}
-
 void xe_display_pm_suspend_late(struct xe_device *xe)
 {
 	bool s2idle = suspend_to_idle();
@@ -443,6 +432,35 @@ void xe_display_pm_resume_noaccel(struct xe_device *xe)
 	intel_display_driver_resume_nogem(&xe->display);
 }
 
+void xe_display_pm_runtime_suspend(struct xe_device *xe)
+{
+	if (!xe->info.probe_display)
+		return;
+
+	if (xe->d3cold.allowed)
+		xe_display_to_d3cold(xe);
+
+	intel_hpd_poll_enable(xe);
+}
+
+void xe_display_pm_runtime_suspend_late(struct xe_device *xe)
+{
+	if (!xe->info.probe_display)
+		return;
+
+	if (xe->d3cold.allowed)
+		intel_display_power_suspend_late(xe, false);
+}
+
+void xe_display_pm_runtime_resume_early(struct xe_device *xe)
+{
+	if (!xe->info.probe_display)
+		return;
+
+	if (xe->d3cold.allowed)
+		intel_display_power_resume_early(xe);
+}
+
 void xe_display_pm_runtime_resume(struct xe_device *xe)
 {
 	if (!xe->info.probe_display)
@@ -453,7 +471,6 @@ void xe_display_pm_runtime_resume(struct xe_device *xe)
 	if (xe->d3cold.allowed)
 		xe_display_from_d3cold(xe);
 }
-
 
 static void display_device_remove(struct drm_device *dev, void *arg)
 {

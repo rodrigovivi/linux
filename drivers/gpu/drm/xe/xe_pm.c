@@ -418,8 +418,7 @@ int xe_pm_runtime_suspend(struct xe_device *xe)
 
 	xe_irq_suspend(xe);
 
-	if (xe->d3cold.allowed)
-		xe_display_pm_suspend_late(xe);
+	xe_display_pm_runtime_suspend_late(xe);
 out:
 	if (err)
 		xe_display_pm_runtime_resume(xe);
@@ -450,9 +449,11 @@ int xe_pm_runtime_resume(struct xe_device *xe)
 		err = xe_pcode_ready(xe, true);
 		if (err)
 			goto out;
+	}
 
-		xe_display_pm_resume_early(xe);
+	xe_display_pm_runtime_resume_early(xe);
 
+	if (xe->d3cold.allowed) {
 		/*
 		 * This only restores pinned memory which is the memory
 		 * required for the GT(s) to resume.
