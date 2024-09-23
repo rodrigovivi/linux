@@ -415,6 +415,8 @@ void xe_display_pm_runtime_suspend(struct xe_device *xe)
 
 	if (xe->d3cold.allowed)
 		xe_display_to_d3cold(xe);
+	else
+		intel_display_power_suspend(xe);
 }
 
 void xe_display_pm_runtime_suspend_late(struct xe_device *xe)
@@ -435,10 +437,12 @@ void xe_display_pm_runtime_resume_early(struct xe_device *xe)
 	if (!xe->info.probe_display)
 		return;
 
-	if (xe->d3cold.allowed)
+	if (xe->d3cold.allowed) {
 		intel_display_power_resume_early(xe);
-	else
+	} else {
 		intel_opregion_notify_adapter(&xe->display, PCI_D0);
+		intel_display_power_resume(xe);
+	}
 }
 
 void xe_display_pm_runtime_resume(struct xe_device *xe)
