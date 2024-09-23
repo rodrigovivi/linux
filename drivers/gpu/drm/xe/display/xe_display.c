@@ -437,8 +437,6 @@ void xe_display_pm_runtime_suspend(struct xe_device *xe)
 
 	if (xe->d3cold.allowed)
 		xe_display_to_d3cold(xe);
-
-	intel_hpd_poll_enable(xe);
 }
 
 void xe_display_pm_runtime_suspend_late(struct xe_device *xe)
@@ -448,6 +446,8 @@ void xe_display_pm_runtime_suspend_late(struct xe_device *xe)
 
 	if (xe->d3cold.allowed)
 		intel_display_power_suspend_late(xe, false);
+
+	intel_hpd_poll_enable(xe);
 }
 
 void xe_display_pm_runtime_resume_early(struct xe_device *xe)
@@ -464,12 +464,11 @@ void xe_display_pm_runtime_resume(struct xe_device *xe)
 	if (!xe->info.probe_display)
 		return;
 
-	intel_hpd_poll_disable(xe);
-
 	if (xe->d3cold.allowed)
 		xe_display_from_d3cold(xe);
 
 	intel_hpd_init(xe);
+	intel_hpd_poll_disable(xe);
 }
 
 static void display_device_remove(struct drm_device *dev, void *arg)
