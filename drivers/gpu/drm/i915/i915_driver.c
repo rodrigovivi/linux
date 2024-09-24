@@ -1402,7 +1402,7 @@ static int intel_runtime_suspend(struct device *kdev)
 	for_each_gt(gt, dev_priv, i)
 		intel_uncore_suspend(gt->uncore);
 
-	intel_display_driver_runtime_suspend(dev_priv);
+	intel_display_driver_runtime_suspend(dev_priv, false);
 
 	ret = vlv_suspend_complete(dev_priv);
 	if (ret) {
@@ -1436,7 +1436,7 @@ static int intel_runtime_suspend(struct device *kdev)
 	if (root_pdev)
 		pci_d3cold_disable(root_pdev);
 
-	intel_display_driver_runtime_suspend_late(dev_priv);
+	intel_display_driver_runtime_suspend_late(dev_priv, false);
 
 	assert_forcewakes_inactive(&dev_priv->uncore);
 
@@ -1469,7 +1469,7 @@ static int intel_runtime_resume(struct device *kdev)
 		drm_dbg(&dev_priv->drm,
 			"Unclaimed access during suspend, bios?\n");
 
-	intel_display_driver_runtime_resume_early(dev_priv);
+	intel_display_driver_runtime_resume_early(dev_priv, false);
 
 	ret = vlv_resume_prepare(dev_priv, true);
 
@@ -1487,7 +1487,7 @@ static int intel_runtime_resume(struct device *kdev)
 
 	intel_pxp_runtime_resume(dev_priv->pxp);
 
-	intel_display_driver_runtime_resume_early(dev_priv);
+	intel_display_driver_runtime_resume_early(dev_priv, false);
 
 	enable_rpm_wakeref_asserts(rpm);
 

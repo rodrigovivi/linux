@@ -856,12 +856,45 @@ void intel_display_driver_resume(struct drm_i915_private *i915)
 	intel_power_domains_enable(i915);
 }
 
-void intel_display_driver_runtime_suspend(struct drm_i915_private *i915)
+static void intel_display_to_d3cold(struct drm_i915_private *i915)
 {
-	intel_display_power_suspend(i915);
+	struct intel_display *display = &i915->display;
+
+	/* We do a lot of poking in a lot of registers, make sure they work properly. */
+	intel_power_domains_disable(i915);
+
+	intel_hpd_cancel_work(i915);
+
+	intel_opregion_suspend(display, PCI_D3cold);
+
+	intel_dmc_suspend(display);
 }
 
-void intel_display_driver_runtime_suspend_late(struct drm_i915_private *i915)
+static void intel_display_from_d3cold(struct drm_i915_private *i915)
+{
+	struct intel_display *display = &i915->display;
+
+	intel_dmc_resume(display);
+
+	if (HAS_DISPLAY(i915))
+		drm_mode_config_reset(&i915->drm);
+
+	intel_display_driver_init_hw(i915);
+
+	intel_opregion_resume(display);
+
+	intel_power_domains_enable(i915);
+}
+
+void intel_display_driver_runtime_suspend(struct drm_i915_private *i915, bool d3cold_allowed)
+{
+	if (d3cold_allowed)
+		intel_display_to_d3cold(i915);
+	else
+		intel_display_power_suspend(i915);
+}
+
+static void display_runtime_suspend_notify_opregion(struct drm_i915_private *i915)
 {
 	struct intel_display *display = &i915->display;
 
@@ -887,20 +920,37 @@ void intel_display_driver_runtime_suspend_late(struct drm_i915_private *i915)
 		 */
 		intel_opregion_notify_adapter(display, PCI_D1);
 	}
+}
+
+void intel_display_driver_runtime_suspend_late(struct drm_i915_private *i915,
+					       bool d3cold_allowed)
+{
+	if (d3cold_allowed)
+		intel_display_power_suspend_late(i915, false);
+	else
+		display_runtime_suspend_notify_opregion(i915);
 
 	if (!IS_VALLEYVIEW(i915) && !IS_CHERRYVIEW(i915))
 		intel_hpd_poll_enable(i915);
 }
 
-void intel_display_driver_runtime_resume_early(struct drm_i915_private *i915)
+void intel_display_driver_runtime_resume_early(struct drm_i915_private *i915,
+					       bool d3cold_allowed)
 {
-	intel_opregion_notify_adapter(&i915->display, PCI_D0);
-
-	intel_display_power_resume(i915);
+	if (d3cold_allowed) {
+		intel_display_power_resume_early(i915);
+	} else {
+		intel_opregion_notify_adapter(&i915->display, PCI_D0);
+		intel_display_power_resume(i915);
+	}
 }
 
-void intel_display_driver_runtime_resume(struct drm_i915_private *i915)
+void intel_display_driver_runtime_resume(struct drm_i915_private *i915,
+					 bool d3cold_allowed)
 {
+	if (d3cold_allowed)
+		intel_display_from_d3cold(i915);
+
 	/*
 	 * On VLV/CHV display interrupts are part of the display
 	 * power well, so hpd is reinitialized from there. For

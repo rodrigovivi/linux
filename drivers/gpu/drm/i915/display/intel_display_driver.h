@@ -33,10 +33,14 @@ void intel_display_driver_resume(struct drm_i915_private *i915);
 void intel_display_driver_resume_noirq(struct drm_i915_private *i915);
 void intel_display_driver_resume_noirq_legacy(struct drm_i915_private *i915);
 void intel_display_driver_resume_nogem(struct intel_display *display);
-void intel_display_driver_runtime_suspend(struct drm_i915_private *i915);
-void intel_display_driver_runtime_suspend_late(struct drm_i915_private *i915);
-void intel_display_driver_runtime_resume_early(struct drm_i915_private *i915);
-void intel_display_driver_runtime_resume(struct drm_i915_private *i915);
+void intel_display_driver_runtime_suspend(struct drm_i915_private *i915,
+					  bool d3cold_allowed);
+void intel_display_driver_runtime_suspend_late(struct drm_i915_private *i915,
+					       bool d3cold_allowed);
+void intel_display_driver_runtime_resume_early(struct drm_i915_private *i915,
+					       bool d3cold_allowed);
+void intel_display_driver_runtime_resume(struct drm_i915_private *i915,
+					 bool d3cold_allowed);
 void intel_display_driver_shutdown(struct drm_i915_private *i915);
 void intel_display_driver_shutdown_noirq(struct drm_i915_private *i915);
 void intel_display_driver_shutdown_nogem(struct drm_i915_private *i915);
