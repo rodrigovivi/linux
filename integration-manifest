@@ -1,0 +1,28 @@
+drm drm-fixes 135be1dc46c64c454f2828dbb7f239d035f47180
+	Merge tag 'drm-xe-fixes-2024-09-12' of https://gitlab.freedesktop.org/drm/xe/kernel into drm-fixes
+drm-misc drm-misc-fixes 440d52b370b03b366fd26ace36bab20552116145
+	drm/sched: Fix dynamic job-flow control race
+drm-intel drm-intel-fixes 98f7e32f20d28ec452afb208f9cffc08448a2652
+	Linux 6.11
+drm-xe drm-xe-fixes 98f7e32f20d28ec452afb208f9cffc08448a2652
+	Linux 6.11
+drm drm-next ae2c6d8b3b88c176dff92028941a4023f1b4cb91
+	Merge tag 'drm-xe-next-fixes-2024-09-12' of https://gitlab.freedesktop.org/drm/xe/kernel into drm-next
+drm-misc drm-misc-next-fixes ba2b9de0c1ac2abfbe663414a292c5881e64c361
+	drm/tegra: fix potential uninitialized variable use
+drm-intel drm-intel-next-fixes b06f737283b7719fc920df0dbc5c1ed540236fe1
+	drm/i915/dp: Fix colorimetry detection
+drm-xe drm-xe-next-fixes 6c10ba06bb1b48acce6d4d9c1e33beb9954f1788
+	drm/xe/oa: Fix overflow in oa batch buffer
+drm-misc drm-misc-next 1e436f4fff1fd1fcc904ee18139f7e284001dc81
+	drm/scheduler: Improve documentation
+drm-intel drm-intel-next e25c84e0abbeb164332d1b030323106979ef6593
+	drm/i915: Set clear color block size to 0x0
+drm-intel drm-intel-gt-next aa944281bd00647dbef2f1b5e8a69e9ceebbc263
+	drm/i915/gt: Fixed "CPU" -> "GPU" typo
+drm-xe drm-xe-next 876253165f3eaaacacb8c8bed16a9df4b6081479
+	drm/xe/xe2: Add performance tuning for L3 cache flushing
+drm-intel topic/core-for-CI 5794eadad18819238a802e44d6dea9882b62e011
+	thunderbolt: Add Kconfig option to disable PCIe tunneling
+drm-xe topic/xe-for-CI ec78e665e25834158bb45dd6c62452677cd5ceaf
+	drm/xe/guc: Pre-release GuC firmware v70.29.2 for PVC
