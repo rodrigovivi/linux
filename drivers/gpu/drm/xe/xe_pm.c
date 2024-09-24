@@ -402,8 +402,6 @@ int xe_pm_runtime_suspend(struct xe_device *xe)
 		xe_bo_runtime_pm_release_mmap_offset(bo);
 	mutex_unlock(&xe->mem_access.vram_userfault.lock);
 
-	xe_display_pm_runtime_suspend(xe);
-
 	if (xe->d3cold.allowed) {
 		err = xe_bo_evict_all(xe);
 		if (err)
@@ -418,6 +416,7 @@ int xe_pm_runtime_suspend(struct xe_device *xe)
 
 	xe_irq_suspend(xe);
 
+	xe_display_pm_runtime_suspend(xe);
 	xe_display_pm_runtime_suspend_late(xe);
 out:
 	if (err)
