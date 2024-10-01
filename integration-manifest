@@ -1,0 +1,28 @@
+drm drm-fixes 43102a2012c2e2f8424d7eef52aede8e73cf2fed
+	Merge tag 'drm-misc-fixes-2024-09-26' of https://gitlab.freedesktop.org/drm/misc/kernel into drm-fixes
+drm-misc drm-misc-fixes abf201f6ce14c4ceeccde5471bdf59614b83a3d8
+	drm/sched: revert "Always increment correct scheduler score"
+drm-intel drm-intel-fixes 394b52462020b6cceff1f7f47fdebd03589574f3
+	drm/i915/gem: fix bitwise and logical AND mixup
+drm-xe drm-xe-fixes 98f7e32f20d28ec452afb208f9cffc08448a2652
+	Linux 6.11
+drm drm-next 9852d85ec9d492ebef56dc5f229416c925758edc
+	Linux 6.12-rc1
+drm-misc drm-misc-next-fixes ba2b9de0c1ac2abfbe663414a292c5881e64c361
+	drm/tegra: fix potential uninitialized variable use
+drm-intel drm-intel-next-fixes e860513f56d8428fcb2bd0282ac8ab691a53fc6c
+	drm/i915/dp: Fix colorimetry detection
+drm-xe drm-xe-next-fixes f1c6a03b07377730f8787217874f622ac502b02f
+	drm/xe/xe2: Add performance tuning for L3 cache flushing
+drm-misc drm-misc-next 86fdd6b9b1e98cfd26249505e8ce72f4fc0de37f
+	fbdev: sh_mobile_lcdc_fb: Use backlight power constants
+drm-intel drm-intel-next 9949bf7b025b469a9700f31c550eb186273651d9
+	drm/i915/intel_dp: Add support for forcing ultrajoiner
+drm-intel drm-intel-gt-next aa944281bd00647dbef2f1b5e8a69e9ceebbc263
+	drm/i915/gt: Fixed "CPU" -> "GPU" typo
+drm-xe drm-xe-next ff35237de5f00a8dd777cddb7ca433a41f503872
+	drm/xe/compat: remove unused i915_gpu_error.h
+drm-intel topic/core-for-CI 5794eadad18819238a802e44d6dea9882b62e011
+	thunderbolt: Add Kconfig option to disable PCIe tunneling
+drm-xe topic/xe-for-CI ec78e665e25834158bb45dd6c62452677cd5ceaf
+	drm/xe/guc: Pre-release GuC firmware v70.29.2 for PVC
