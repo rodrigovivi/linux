@@ -849,7 +849,7 @@ static void i8xx_irq_reset(struct drm_i915_private *dev_priv)
 {
 	struct intel_uncore *uncore = &dev_priv->uncore;
 
-	i9xx_pipestat_irq_reset(dev_priv);
+	i9xx_display_irq_reset(dev_priv);
 
 	gen2_irq_reset(uncore);
 	dev_priv->irq_mask = ~0u;
@@ -1037,13 +1037,7 @@ static void i915_irq_reset(struct drm_i915_private *dev_priv)
 {
 	struct intel_uncore *uncore = &dev_priv->uncore;
 
-	if (I915_HAS_HOTPLUG(dev_priv)) {
-		i915_hotplug_interrupt_update(dev_priv, 0xffffffff, 0);
-		intel_uncore_rmw(&dev_priv->uncore,
-				 PORT_HOTPLUG_STAT(dev_priv), 0, 0);
-	}
-
-	i9xx_pipestat_irq_reset(dev_priv);
+	i9xx_display_irq_reset(dev_priv);
 
 	GEN3_IRQ_RESET(uncore, GEN2_);
 	dev_priv->irq_mask = ~0u;
@@ -1148,10 +1142,7 @@ static void i965_irq_reset(struct drm_i915_private *dev_priv)
 {
 	struct intel_uncore *uncore = &dev_priv->uncore;
 
-	i915_hotplug_interrupt_update(dev_priv, 0xffffffff, 0);
-	intel_uncore_rmw(uncore, PORT_HOTPLUG_STAT(dev_priv), 0, 0);
-
-	i9xx_pipestat_irq_reset(dev_priv);
+	i9xx_display_irq_reset(dev_priv);
 
 	GEN3_IRQ_RESET(uncore, GEN2_);
 	dev_priv->irq_mask = ~0u;
@@ -1404,16 +1395,14 @@ int intel_irq_install(struct drm_i915_private *dev_priv)
 	 * interrupts as enabled _before_ actually enabling them to avoid
 	 * special cases in our ordering checks.
 	 */
-	dev_priv->runtime_pm.irqs_enabled = true;
-
-	dev_priv->irq_enabled = true;
+	dev_priv->irqs_enabled = true;
 
 	intel_irq_reset(dev_priv);
 
 	ret = request_irq(irq, intel_irq_handler(dev_priv),
 			  IRQF_SHARED, DRIVER_NAME, dev_priv);
 	if (ret < 0) {
-		dev_priv->irq_enabled = false;
+		dev_priv->irqs_enabled = false;
 		return ret;
 	}
 
@@ -1433,56 +1422,46 @@ void intel_irq_uninstall(struct drm_i915_private *dev_priv)
 {
 	int irq = to_pci_dev(dev_priv->drm.dev)->irq;
 
-	/*
-	 * FIXME we can get called twice during driver probe
-	 * error handling as well as during driver remove due to
-	 * intel_display_driver_remove() calling us out of sequence.
-	 * Would be nice if it didn't do that...
-	 */
-	if (!dev_priv->irq_enabled)
+	if (drm_WARN_ON(&dev_priv->drm, !dev_priv->irqs_enabled))
 		return;
-
-	dev_priv->irq_enabled = false;
 
 	intel_irq_reset(dev_priv);
 
 	free_irq(irq, dev_priv);
 
 	intel_hpd_cancel_work(dev_priv);
-	dev_priv->runtime_pm.irqs_enabled = false;
+	dev_priv->irqs_enabled = false;
 }
 
 /**
- * intel_runtime_pm_disable_interrupts - runtime interrupt disabling
- * @dev_priv: i915 device instance
+ * intel_irq_suspend - Suspend interrupts
+ * @i915: i915 device instance
  *
- * This function is used to disable interrupts at runtime, both in the runtime
- * pm and the system suspend/resume code.
+ * This function is used to disable interrupts at runtime.
  */
-void intel_runtime_pm_disable_interrupts(struct drm_i915_private *dev_priv)
+void intel_irq_suspend(struct drm_i915_private *i915)
 {
-	intel_irq_reset(dev_priv);
-	dev_priv->runtime_pm.irqs_enabled = false;
-	intel_synchronize_irq(dev_priv);
+	intel_irq_reset(i915);
+	i915->irqs_enabled = false;
+	intel_synchronize_irq(i915);
 }
 
 /**
- * intel_runtime_pm_enable_interrupts - runtime interrupt enabling
- * @dev_priv: i915 device instance
+ * intel_irq_resume - Resume interrupts
+ * @i915: i915 device instance
  *
- * This function is used to enable interrupts at runtime, both in the runtime
- * pm and the system suspend/resume code.
+ * This function is used to enable interrupts at runtime.
  */
-void intel_runtime_pm_enable_interrupts(struct drm_i915_private *dev_priv)
+void intel_irq_resume(struct drm_i915_private *i915)
 {
-	dev_priv->runtime_pm.irqs_enabled = true;
-	intel_irq_reset(dev_priv);
-	intel_irq_postinstall(dev_priv);
+	i915->irqs_enabled = true;
+	intel_irq_reset(i915);
+	intel_irq_postinstall(i915);
 }
 
 bool intel_irqs_enabled(struct drm_i915_private *dev_priv)
 {
-	return dev_priv->runtime_pm.irqs_enabled;
+	return dev_priv->irqs_enabled;
 }
 
 void intel_synchronize_irq(struct drm_i915_private *i915)
