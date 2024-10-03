@@ -947,6 +947,24 @@ out:
 	return ret;
 }
 
+static void slpc_override_params_set(struct xe_guc_pc *pc, u32 id, u32 value)
+{
+	/* When the flag bit is set, corresponding value will be read and applied by SLPC */
+	slpc_shared_data_write(pc, override_params.bits[id >> 5], (1 << (id % 32)));
+	slpc_shared_data_write(pc, override_params.bits[id], value);
+}
+
+static void slpc_overrides_default(struct xe_guc_pc *pc)
+{
+	struct xe_device *xe = pc_to_xe(pc);
+
+	if (xe->info.platform == XE_LUNARLAKE) {
+		/* If DCC task enable is TRUE, and DCC Task Disable is FALSE, DCC will be enabled */
+		slpc_override_params_set(pc, SLPC_PARAM_TASK_ENABLE_DCC, 1);
+		slpc_override_params_set(pc, SLPC_PARAM_TASK_DISABLE_DCC, 0);
+	}
+}
+
 /**
  * xe_guc_pc_start - Start GuC's Power Conservation component
  * @pc: Xe_GuC_PC instance
@@ -977,6 +995,8 @@ int xe_guc_pc_start(struct xe_guc_pc *pc)
 
 	memset(pc->bo->vmap.vaddr, 0, size);
 	slpc_shared_data_write(pc, header.size, size);
+
+	slpc_overrides_default(pc);
 
 	ret = pc_action_reset(pc);
 	if (ret)
