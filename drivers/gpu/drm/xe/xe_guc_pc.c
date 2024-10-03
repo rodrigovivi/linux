@@ -948,6 +948,16 @@ out:
 	return ret;
 }
 
+static int slpc_set_policies(struct xe_guc_pc *pc)
+{
+	struct xe_device *xe = pc_to_xe(pc);
+
+	if (xe->info.platform == XE_LUNARLAKE)
+		return pc_action_set_param(pc, SLPC_PARAM_TASK_ENABLE_DCC, 1);
+
+	return 0;
+}
+
 /**
  * xe_guc_pc_start - Start GuC's Power Conservation component
  * @pc: Xe_GuC_PC instance
@@ -980,6 +990,10 @@ int xe_guc_pc_start(struct xe_guc_pc *pc)
 	slpc_shared_data_write(pc, header.size, size);
 
 	ret = pc_action_reset(pc);
+	if (ret)
+		goto out;
+
+	ret = slpc_set_policies(pc);
 	if (ret)
 		goto out;
 
