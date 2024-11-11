@@ -372,6 +372,7 @@ static int do_eu_control(struct xe_eudebug *d,
 	struct xe_device *xe = d->xe;
 	struct xe_exec_queue *q, *active;
 	struct xe_hw_engine *active_hwe;
+	struct dma_fence *pf_fence;
 	struct xe_lrc *lrc;
 	unsigned int hw_attn_size, attn_size;
 	u8 *bits = NULL;
@@ -449,8 +450,19 @@ static int do_eu_control(struct xe_eudebug *d,
 		}
 	}
 
-	ret = -EINVAL;
 	mutex_lock(&xe->eudebug.lock);
+	do {
+		pf_fence = dma_fence_get(d->pf.fence);
+		if (pf_fence) {
+			mutex_unlock(&xe->eudebug.lock);
+			ret = dma_fence_wait(pf_fence, true);
+			dma_fence_put(pf_fence);
+			if (ret)
+				goto out_free;
+			mutex_lock(&xe->eudebug.lock);
+		}
+	} while (pf_fence);
+	ret = -EINVAL;
 
 	switch (arg->cmd) {
 	case DRM_XE_EUDEBUG_EU_CONTROL_CMD_INTERRUPT_ALL:

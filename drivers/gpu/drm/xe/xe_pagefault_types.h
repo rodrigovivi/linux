@@ -11,6 +11,7 @@
 struct xe_device;
 struct xe_gt;
 struct xe_pagefault;
+struct xe_eudebug_pagefault;
 
 /** enum xe_pagefault_access_type - Xe page fault access type */
 enum xe_pagefault_access_type {

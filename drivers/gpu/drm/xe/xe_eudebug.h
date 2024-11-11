@@ -14,12 +14,14 @@ struct drm_file;
 struct xe_debug_data;
 struct xe_device;
 struct xe_file;
+struct xe_gt;
 struct xe_vm;
 struct xe_exec_queue;
 struct xe_vma;
 struct xe_vma_ops;
 struct xe_user_fence;
 struct xe_eudebug;
+struct xe_eudebug_pagefault;
 
 #if IS_ENABLED(CONFIG_DRM_XE_EUDEBUG)
 
@@ -48,6 +50,20 @@ struct xe_eudebug;
 	for_each_hw_engine(__hwe, __gt, __id)	       \
 		for_each_if(xe_hw_engine_has_eudebug(__hwe))
 
+bool xe_eudebug_detach(struct xe_eudebug *d, const int err);
+
+#define xe_eudebug_disconnect(_d, _err) ({ \
+	struct xe_eudebug *__disc_d = (_d); \
+	int __disc_err = (_err); \
+	if (xe_eudebug_detach(__disc_d, __disc_err)) { \
+		if (__disc_err == 0 || __disc_err == -ETIMEDOUT) \
+			eu_dbg(__disc_d, "Session closed (%d)", __disc_err); \
+		else \
+			eu_err(__disc_d, "Session disconnected, err = %d (%s:%d)", \
+			       __disc_err, __func__, __LINE__); \
+	} \
+})
+
 int xe_eudebug_connect_ioctl(struct drm_device *dev,
 			     void *data,
 			     struct drm_file *file);
@@ -71,6 +87,8 @@ int xe_eudebug_enable(struct xe_device *xe, bool enable);
 
 struct xe_eudebug *xe_eudebug_get_nolock(struct xe_file *xef);
 struct xe_eudebug *xe_eudebug_get_nolock_with_discovery(struct xe_file *xef);
+
+struct xe_eudebug *xe_eudebug_instance_get(struct xe_eudebug *d);
 void xe_eudebug_put(struct xe_eudebug *d);
 
 struct xe_vm *xe_eudebug_vm_get(struct xe_eudebug *d, u32 vm_id);
@@ -85,6 +103,12 @@ void xe_eudebug_vm_bind_execute(struct xe_vm *vm, struct xe_vma_ops *ops);
 void xe_eudebug_ufence_init(struct xe_user_fence *ufence);
 void xe_eudebug_ufence_fini(struct xe_user_fence *ufence);
 bool xe_eudebug_ufence_track(struct xe_user_fence *ufence);
+
+int xe_eudebug_send_pagefault_event(struct xe_eudebug *d,
+				    struct xe_eudebug_pagefault *pf);
+
+void xe_eudebug_attention_poll_stop(struct xe_device *xe);
+void xe_eudebug_attention_poll_start(struct xe_device *xe);
 
 #else
 

@@ -90,6 +90,7 @@ struct drm_xe_eudebug_event {
 #define DRM_XE_EUDEBUG_EVENT_VM_BIND_OP_DEBUG_DATA	5
 #define DRM_XE_EUDEBUG_EVENT_VM_BIND_UFENCE	6
 #define DRM_XE_EUDEBUG_EVENT_EU_ATTENTION	7
+#define DRM_XE_EUDEBUG_EVENT_PAGEFAULT		8
 
 	/** @flags: Flags */
 	__u16 flags;
@@ -472,6 +473,59 @@ struct drm_xe_eudebug_event_eu_attention {
 	 * aligned within the event, so it can be scanned as u32 or u64
 	 * words instead of byte at a time. The content is hardware register
 	 * state in native endianness.
+	 */
+	__u8 bitmask[];
+};
+
+/**
+ * struct drm_xe_eudebug_event_pagefault - EU Pagefault Event
+ *
+ * Delivered when a thread of a debuggable exec queue takes a pagefault that
+ * the debugger is expected to resolve. The EUs are halted while the fault is
+ * handled, and the attention state is captured on the way in and on the way
+ * out, so that the threads the fault itself stopped can be told apart from
+ * the ones that were already halted.
+ */
+struct drm_xe_eudebug_event_pagefault {
+	/** @base: base event */
+	struct drm_xe_eudebug_event base;
+
+	/** @exec_queue_handle: Exec queue handle for the faulting threads */
+	__u64 exec_queue_handle;
+
+	/** @lrc_handle: LRC handle for the faulting threads */
+	__u64 lrc_handle;
+
+	/**
+	 * @flags: Reserved for future use, reads as zero
+	 *
+	 * Event wide flags are carried in
+	 * :c:member:`drm_xe_eudebug_event_pagefault.base`.
+	 */
+	__u32 flags;
+
+	/** @bitmask_size: Combined size in bytes of the bitmaps in bitmask[] */
+	__u32 bitmask_size;
+
+	/** @pagefault_address: The address that faulted */
+	__u64 pagefault_address;
+
+	/**
+	 * @bitmask: Three attention bitmaps back to back, one bit per thread
+	 *
+	 * @bitmask_size covers all three, so each one is @bitmask_size / 3
+	 * bytes, and they appear in this order:
+	 *
+	 *  - before: threads already in attention when the fault arrived
+	 *  - after: threads that halted in response to the fault being
+	 *    taken. A thread still stalled on the fault itself cannot run
+	 *    the instruction that would halt it, so it does not appear
+	 *    here; if every thread faulted, this is empty
+	 *  - resolved: threads in attention once the fault was serviced,
+	 *    which is where threads from the second group turn up
+	 *
+	 * Each has the same layout, alignment and endianness as
+	 * :c:member:`drm_xe_eudebug_event_eu_attention.bitmask`.
 	 */
 	__u8 bitmask[];
 };

@@ -17,6 +17,7 @@
 #include <linux/xarray.h>
 
 #include <uapi/drm/xe_drm_eudebug.h>
+#include "xe_gt_debug_types.h"
 
 struct xe_device;
 struct xe_eudebug;
@@ -38,7 +39,7 @@ enum xe_eudebug_cap_state {
 	XE_EUDEBUG_CAP_ENABLED,
 };
 
-#define XE_EUDEBUG_MAX_EVENT_TYPE DRM_XE_EUDEBUG_EVENT_EU_ATTENTION
+#define XE_EUDEBUG_MAX_EVENT_TYPE DRM_XE_EUDEBUG_EVENT_PAGEFAULT
 
 /**
  * struct xe_eudebug_handle - eudebug resource handle
@@ -189,6 +190,110 @@ struct xe_eudebug {
 
 	/** @ops: operations for eu_control */
 	const struct xe_eudebug_eu_control_ops *ops;
+
+	/**
+	 * @pf: Aggregates pagefault related fields.
+	 */
+	struct {
+		/** @pf.lock: guards access to pagefaults list*/
+		struct mutex lock;
+
+		/** @pf.pagefaults: xe_eudebug_pagefault list for pagefault event queuing */
+		struct list_head pagefaults;
+
+		/**
+		 * @pf.fence: fence on operations of eus (eu thread control and attention)
+		 * when page faults are being handled, protected by @xe.eudebug.lock.
+		 */
+		struct dma_fence *fence;
+
+		/**
+		 * @pf.active: number of pagefaults that are being processed in
+		 * parallel by workers and that are after xe_eudebug_pagefault_start()
+		 * but before xe_eudebug_pagefault_end() (ack_fault_end() handler).
+		 *
+		 * Value 0 means that no other worker is currently handling eudebug
+		 * related pagefault but there still may be a pagefault queued and waiting.
+		 *
+		 * Protected by @xe.eudebug.lock.
+		 */
+		u32 active;
+
+		/**
+		 * @pf.first: first pagefault. Only this pagefault will be reported
+		 * with event.
+		 * Subsequent pagefaults with matching VM will be ACKed without
+		 * being handled by eudebug.
+		 * Valid until there are no more pagefaults with matching asid.
+		 *
+		 * This field may be set while @pf.active is 0 if eudebug related
+		 * pagefault is queued but not yet processed.
+		 * Protected by @xe.eudebug.lock.
+		 */
+		struct xe_eudebug_pagefault *first;
+
+		/**
+		 * @pf.asid: VM id of the first pagefault (@pf.first).
+		 */
+		u32 asid;
+	} pf;
+};
+
+/**
+ * struct xe_eudebug_pagefault - eudebug structure for queuing pagefault
+ */
+struct xe_eudebug_pagefault {
+	/** @link: link into the xe_eudebug.pagefaults */
+	struct list_head link;
+	/** @d: eudebug instance. */
+	struct xe_eudebug *d;
+	/** @q: exec_queue which raised pagefault */
+	struct xe_exec_queue *q;
+	/** @lrc_idx: lrc index of the workload which raised pagefault */
+	int lrc_idx;
+
+	/** @fault: pagefault raw partial data passed from guc */
+	struct {
+		/** @fault.addr: ppgtt address where the pagefault occurred */
+		u64 addr;
+		/** @fault.type_level: mixed type & level */
+		u8 type_level;
+		/** @fault.access_type: access type */
+		u8 access_type;
+	} fault;
+
+	/** @attentions: attention states in different phases of fault */
+	struct {
+		/** @attentions.before: state of attention bits before page fault WA processing*/
+		struct xe_eu_attentions before;
+		/**
+		 * @attentions.after: status of attention bits during page fault WA processing.
+		 * It includes eu threads where attention bits are turned on for
+		 * reasons other than page fault WA (breakpoint, interrupt, etc.).
+		 */
+		struct xe_eu_attentions after;
+		/**
+		 * @attentions.resolved: state of the attention bits after page fault WA.
+		 * It includes the eu thread that caused the page fault.
+		 * To determine the eu thread that caused the page fault,
+		 * do XOR attentions.after and attentions.resolved.
+		 */
+		struct xe_eu_attentions resolved;
+	} attentions;
+
+	/**
+	 * @private: copied the (struct xe_pagefault *)->producer.private filed.
+	 * EU Debugger masks private field in the struct xe_pagefault.
+	 * The xe_eudebug_pagefault_get_private() function to extracts original
+	 * private field regardless if it was shadowed or not.
+	 */
+	void *private;
+
+	/**
+	 * @null_vma_addr: address to look for temporary vma for handling pagefault.
+	 * Shall be removed when pagefault is handled.
+	 */
+	u64 null_vma_addr;
 };
 
 #endif /* _XE_EUDEBUG_TYPES_H_ */
