@@ -17,6 +17,7 @@
 #include "xe_gt_mcr.h"
 #include "xe_gt_printk.h"
 #include "regs/xe_gt_regs.h"
+#include "xe_pm.h"
 #include "xe_vm.h"
 #include "xe_guc.h"
 #include "xe_guc_submit.h"
@@ -121,18 +122,36 @@ void xe_eudebug_pagefault_set_private(struct xe_pagefault *pf,
 				      struct xe_vm *vm)
 {
 	struct xe_eudebug_pagefault *epf;
-	struct xe_eudebug *d;
+	struct xe_eudebug *d = NULL;
+	struct xe_vm *lvm = NULL;
 
 	if (!xe_eudebug_is_enabled(gt_to_xe(pf->gt)))
 		return;
 
+	/*
+	 * This services the case when function is called on
+	 * cache hit. The xe_pagefault_queue_work() jumps to
+	 * ack_fault bypassing xe_pagefault_service().
+	 */
+	if (!vm) {
+		lvm = xe_device_asid_to_vm(gt_to_xe(pf->gt), PF_ASID(pf));
+		if (IS_ERR(lvm))
+			return;
+
+		if (!xe_vm_in_fault_mode(lvm)) {
+			xe_vm_put(lvm);
+			return;
+		}
+		vm = lvm;
+	}
+
 	/* Could be a retry from -EAGAIN handler error */
 	if ((u64)pf->producer.private & XE_EUDEBUG_PAGEFAULT_PRIVATE_EUDEBUG)
-		return;
+		goto out;
 
 	d = xe_eudebug_get_nolock_with_discovery(vm->xef);
 	if (!d)
-		return;
+		goto out;
 
 	mutex_lock(&d->xe->eudebug.lock);
 	epf = d->pf.first;
@@ -146,7 +165,12 @@ void xe_eudebug_pagefault_set_private(struct xe_pagefault *pf,
 	if (epf)
 		pagefault_set_private(pf, epf);
 
-	xe_eudebug_put(d);
+ out:
+	if (d)
+		xe_eudebug_put(d);
+
+	if (lvm)
+		xe_vm_put(lvm);
 }
 
 void *xe_eudebug_pagefault_get_private(void *private)
@@ -225,8 +249,25 @@ static int __clear_td_ctl_fee(struct xe_gt *gt, struct xe_eudebug *d)
 	return 0;
 }
 
+static void
+eudebug_try_svm_remap(struct xe_vm *vm, struct xe_vma *vma)
+{
+	if (xe_vm_find_overlapping_vma(vm,
+				       xe_vma_start(vma),
+				       xe_vma_size(vma))) {
+		xe_vm_destroy_vma(vma);
+		return;
+	}
+
+	if (xe_vm_insert_vma(vm, vma)) {
+		xe_vm_destroy_vma(vma);
+		xe_vm_kill(vm, true);
+	}
+}
+
 int
-xe_eudebug_pagefault_start(struct xe_vm *vm, struct xe_pagefault *pf)
+xe_eudebug_pagefault_start(struct xe_vm *vm, struct xe_vma *vma,
+			   struct xe_pagefault *pf)
 {
 	struct pagefault_fence *pf_fence;
 	struct xe_eudebug_pagefault *epf;
@@ -254,6 +295,9 @@ xe_eudebug_pagefault_start(struct xe_vm *vm, struct xe_pagefault *pf)
 	if (!xe_exec_queue_is_debuggable(q))
 		goto err_put_exec_queue;
 
+	if (vma && !xe_vma_is_cpu_addr_mirror(vma))
+		goto err_put_exec_queue;
+
 	/**
 	 * Check if there is an active pagefault.
 	 * If so, attach original epf to current pagefault and leave.
@@ -273,7 +317,9 @@ xe_eudebug_pagefault_start(struct xe_vm *vm, struct xe_pagefault *pf)
 			mutex_unlock(&d->xe->eudebug.lock);
 			goto err_put_exec_queue;
 		}
-		d->pf.active++;
+		/* SVM pf is early tagged since vma was found */
+		if (!pf_tagged(pf))
+			d->pf.active++;
 		INIT_LIST_HEAD(&epf->link);
 		goto out_set_epf;
 	}
@@ -338,7 +384,18 @@ out_set_epf:
 	epf->fault.type_level = pf->consumer.fault_type_level;
 	epf->fault.access_type = pf->consumer.access_type;
 
+	/*
+	 * VMA is only present on SVM pf and that pf
+	 * was early tagged (first pass).
+	 * Clear early tag and restore original private
+	 * field so it can be safely tagged again.
+	 */
+	if (vma)
+		pf->producer.private =
+			xe_eudebug_pagefault_get_private(pf->producer.private);
+
 	pagefault_set_private(pf, epf);
+	epf->svm_vma = vma;
 
 	return 0;
 
@@ -425,8 +482,13 @@ static void epf_release_vma(struct xe_eudebug_pagefault *epf)
 	struct xe_vm *vm = epf_to_vm(epf);
 	struct xe_vma *vma;
 
-	if (xe_vm_is_closed(vm))
+	if (xe_vm_is_closed(vm)) {
+		if (epf->svm_vma) {
+			xe_vm_destroy_vma(epf->svm_vma);
+			epf->svm_vma = NULL;
+		}
 		return;
+	}
 
 	if (epf->null_vma_addr) {
 		u32 psize = vm->flags & XE_VM_FLAG_64K ? SZ_64K : SZ_4K;
@@ -444,6 +506,12 @@ static void epf_release_vma(struct xe_eudebug_pagefault *epf)
 		    xe_vma_is_null(vma))
 			eudebug_destroy_vma(vm, vma);
 		epf->null_vma_addr = 0;
+	}
+
+	if (epf->svm_vma) {
+		lockdep_assert_held_write(&vm->lock);
+		eudebug_try_svm_remap(epf->q->vm, epf->svm_vma);
+		epf->svm_vma = NULL;
 	}
 }
 
@@ -867,6 +935,95 @@ void xe_eudebug_pagefault_signal(struct xe_eudebug *d)
 		dma_fence_signal(f);
 		dma_fence_put(f);
 	}
+}
+
+static void eudebug_pagefault_gt_reset_work(struct work_struct *work)
+{
+	struct xe_gt *gt = container_of(work, typeof(*gt),
+					eudebug.gt_reset_work);
+	struct xe_eudebug_pagefault *epf = NULL;
+	struct xe_device *xe = gt_to_xe(gt);
+	struct xe_eudebug *d = NULL;
+	struct xe_vm *vm;
+	unsigned long i;
+
+	/*
+	 * Search for deferred abandoned eudebug pagefault.
+	 * xe_pagefault_queue_reset() drops QUEUED entries but
+	 * not the ACTIVE ones which are already in some worker.
+	 * If there are any d->pf.active it means some worker
+	 * will reach eudebug_pagefault_end() and clear
+	 * d->pf.first.
+	 * If there is no active and there if first the
+	 * pagefault was deferred but now queue is cleared
+	 * and no one will reach the first now.
+	 */
+
+	down_read(&xe->usm.lock);
+	xa_for_each(&xe->usm.asid_to_vm, i, vm) {
+		vm = xe_vm_get(vm);
+
+		d = xe_eudebug_get_nolock_with_discovery(vm->xef);
+		if (!d) {
+			xe_vm_put(vm);
+			continue;
+		}
+
+		down_write(&vm->lock);
+		mutex_lock(&xe->eudebug.lock);
+		if (!d->pf.active && d->pf.first &&
+		    d->pf.first->q->gt == gt &&
+		    d->pf.first->q->vm == vm) {
+			epf = d->pf.first;
+
+			d->pf.first = NULL;
+			d->pf.asid = 0;
+
+			if (d->pf.fence) {
+				dma_fence_signal(d->pf.fence);
+				dma_fence_put(d->pf.fence);
+				d->pf.fence = NULL;
+			}
+		}
+		mutex_unlock(&xe->eudebug.lock);
+		up_write(&vm->lock);
+
+		if (epf)
+			break;
+
+		xe_vm_put(vm);
+		xe_eudebug_put(d);
+	}
+	up_read(&xe->usm.lock);
+
+	if (epf) {
+		eu_dbg(d, "pagefault 0x%016llx canceled due to GT reset\n",
+		       epf->fault.addr);
+		xe_pm_runtime_get(xe);
+		down_write(&vm->lock);
+		destroy_pagefault(epf);
+		up_write(&vm->lock);
+		xe_pm_runtime_put(xe);
+		xe_vm_put(vm);
+		xe_eudebug_disconnect(d, -EAGAIN);
+		xe_eudebug_put(d);
+		xe_eudebug_attention_poll_start(xe);
+	}
+}
+
+void xe_eudebug_pagefault_gt_init(struct xe_gt *gt)
+{
+	INIT_WORK(&gt->eudebug.gt_reset_work,
+		  eudebug_pagefault_gt_reset_work);
+}
+
+void xe_eudebug_pagefault_reset(struct xe_device *xe,
+				struct xe_gt *gt)
+{
+	if (!xe_eudebug_is_enabled(xe))
+		return;
+
+	queue_work(xe->eudebug.pagefault_reset_wq, &gt->eudebug.gt_reset_work);
 }
 
 bool xe_eudebug_pagefault_creatable(struct xe_gt *gt, struct xe_vm *vm)

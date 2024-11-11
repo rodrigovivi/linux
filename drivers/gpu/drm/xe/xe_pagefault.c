@@ -10,6 +10,7 @@
 
 #include "xe_bo.h"
 #include "xe_device.h"
+#include "xe_eudebug_pagefault.h"
 #include "xe_gt_printk.h"
 #include "xe_gt_types.h"
 #include "xe_gt_stats.h"
@@ -256,9 +257,51 @@ static int xe_pagefault_service(struct xe_pagefault *pf)
 
 	vma = xe_vm_find_vma_by_addr(vm, xe_pagefault_addr(pf));
 	if (!vma) {
+#if IS_ENABLED(CONFIG_DRM_XE_EUDEBUG)
+retry_eudebug_pf:
+#endif
 		err = -EINVAL;
-		xe_pagefault_set_error(pf, XE_PAGEFAULT_ERROR_VMA_NOT_FOUND);
-		goto unlock_vm;
+		if (!xe_eudebug_pagefault_start(vm, vma, pf)) {
+			/*
+			 * This section is reachable only when eudebug is connected.
+			 * It's rather safe since page faults hitting same vma
+			 * are chained. Only the first one will be fully processed.
+			 *
+			 * For SVM retry case we're holding vm write lock
+			 */
+			if (!vma) {
+				up_read(&vm->lock);
+				down_write(&vm->lock);
+				/* The lock was dropped, re-check the vma */
+				vma = xe_vm_find_vma_by_addr(vm, xe_pagefault_addr(pf));
+				if (vma) {
+					err = -EINVAL;
+					downgrade_write(&vm->lock);
+					goto unlock_vm;
+				}
+			}
+			vma = xe_eudebug_create_vma(vm, pf);
+			downgrade_write(&vm->lock);
+			if (IS_ERR(vma)) {
+				err = PTR_ERR(vma);
+				vma = NULL;
+			}
+		} else if (vma) {
+			/*
+			 * xe_eudebug_pagefault_start() failed on svm retry.
+			 * Need to insert again vma.
+			 * Write-lock is still held so no error expected.
+			 */
+			xe_vm_insert_vma(vm, vma);
+			vma = NULL;
+			downgrade_write(&vm->lock);
+		}
+		if (!vma) {
+			xe_pagefault_set_error(pf, XE_PAGEFAULT_ERROR_VMA_NOT_FOUND);
+			goto unlock_vm;
+		}
+	} else {
+		xe_eudebug_pagefault_set_private(pf, vm);
 	}
 
 	if (xe_vma_read_only(vma) &&
@@ -270,11 +313,52 @@ static int xe_pagefault_service(struct xe_pagefault *pf)
 
 	atomic = xe_pagefault_access_is_atomic(pf->consumer.access_type);
 
-	if (xe_vma_is_cpu_addr_mirror(vma))
+	if (xe_vma_is_cpu_addr_mirror(vma)) {
 		err = xe_svm_handle_pagefault(vm, vma, pf, gt,
 					      xe_pagefault_addr(pf), atomic);
-	else
+#if IS_ENABLED(CONFIG_DRM_XE_EUDEBUG)
+		/*
+		 * If err is -ENOENT, it means that the cpu-address-space-mirrored
+		 * xe vma exists, but there is no mm vma allocated in
+		 * the CPU address space. This indicates that no memory has been
+		 * allocated in the CPU address space.
+		 */
+		if (err == -ENOENT &&
+		    !xe_vm_is_closed_or_banned(vm) &&
+		    xe_eudebug_pagefault_creatable(gt, vm)) {
+			u32 page_size = vm->flags & XE_VM_FLAG_64K ? SZ_64K : SZ_4K;
+			u64 fault_addr = ALIGN_DOWN(xe_pagefault_addr(pf), page_size);
+
+			/*
+			 * This section is reachable only when eudebug is connected.
+			 *
+			 * Up until now there was a read-lock. Now entering write-lock.
+			 * Under new lock a vma split may occur. This means that before
+			 * entering write-lock a origin vma could be already split.
+			 * Update the vma to get current one before subtracting.
+			 */
+			up_read(&vm->lock);
+			down_write(&vm->lock);
+			vma = xe_vm_find_vma_by_addr(vm, xe_pagefault_addr(pf));
+			if (vma && xe_vma_is_cpu_addr_mirror(vma))
+				vma = xe_vm_svm_vma_subtract(vm, vma,
+							     fault_addr,
+							     fault_addr + page_size);
+			else
+				vma = ERR_PTR(-EINVAL);
+
+			if (IS_ERR(vma)) {
+				downgrade_write(&vm->lock);
+				err = PTR_ERR(vma);
+			} else {
+				/* keep the write lock for vma */
+				goto retry_eudebug_pf;
+			}
+		}
+#endif
+	} else {
 		err = xe_pagefault_handle_vma(gt, vma, pf, atomic);
+	}
 
 unlock_vm:
 	if (err)
@@ -641,7 +725,7 @@ static void xe_pagefault_queue_work(struct work_struct *w)
 
 	while (xe_pagefault_queue_pop(pf_queue, &pf, pf_work->id)) {
 		const struct xe_pagefault_ops *ops = pf->producer.ops;
-		void *private = pf->producer.private;
+		void *private;
 		struct xe_gt *gt = pf->gt;
 		u32 asid = FIELD_GET(XE_PAGEFAULT_ASID_MASK, pf->consumer.id);
 		int err = 0;
@@ -650,6 +734,7 @@ static void xe_pagefault_queue_work(struct work_struct *w)
 		/* Last fault same address, ack immediately */
 		if (xe_pagefault_match(pf, cache_start, cache_end, cache_asid)) {
 			xe_gt_stats_incr(gt, XE_GT_STATS_ID_LAST_PAGEFAULT_COUNT, 1);
+			xe_eudebug_pagefault_set_private(pf, NULL);
 			goto ack_fault;
 		}
 
@@ -674,6 +759,12 @@ static void xe_pagefault_queue_work(struct work_struct *w)
 		}
 
 ack_fault:
+		/*
+		 * set private after xe_pagefault_service() since eudebug could swap
+		 * the pf->producer.private field. Also needed when cache was hit.
+		 */
+		private = pf->producer.private;
+
 		xe_assert(xe, pf->consumer.alloc_state ==
 			  XE_PAGEFAULT_ALLOC_STATE_ACTIVE);
 		xe_assert(xe, pf == pf_work->cache.pf);
@@ -713,7 +804,7 @@ ack_fault:
 
 			spin_unlock_irq(&pf_queue->lock);
 		}
-		ops->ack_fault_end(private);
+		ops->ack_fault_end(private, asid, err);
 
 		if (time_after(jiffies, threshold)) {
 			queue_work(xe->usm.pagefault_wq, w);
@@ -873,6 +964,7 @@ static void xe_pagefault_queue_reset(struct xe_device *xe, struct xe_gt *gt,
 void xe_pagefault_reset(struct xe_device *xe, struct xe_gt *gt)
 {
 	xe_pagefault_queue_reset(xe, gt, &xe->usm.pf_queue);
+	xe_eudebug_pagefault_reset(xe, gt);
 }
 
 /*

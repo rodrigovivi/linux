@@ -8,18 +8,23 @@
 
 #include <linux/types.h>
 
+struct xe_device;
 struct xe_eudebug;
 struct xe_gt;
 struct xe_pagefault;
 struct xe_eudebug_pagefault;
 struct xe_vm;
+struct xe_vma;
 struct xe_file;
 
 #if IS_ENABLED(CONFIG_DRM_XE_EUDEBUG)
 void xe_eudebug_pagefault_fini(struct xe_eudebug *d);
 int xe_eudebug_handle_pagefaults(struct xe_gt *gt);
 
-int xe_eudebug_pagefault_start(struct xe_vm *vm, struct xe_pagefault *pf);
+void xe_eudebug_pagefault_gt_init(struct xe_gt *gt);
+int xe_eudebug_pagefault_start(struct xe_vm *vm, struct xe_vma *vma,
+			       struct xe_pagefault *pf);
+
 struct xe_vma *xe_eudebug_create_vma(struct xe_vm *vm, struct xe_pagefault *pf);
 void xe_eudebug_pagefault_end(void *private, u32 asid, int err);
 /*
@@ -38,6 +43,7 @@ void xe_eudebug_pagefault_signal(struct xe_eudebug *d);
 
 bool xe_eudebug_pagefault_creatable(struct xe_gt *gt, struct xe_vm *vm);
 
+void xe_eudebug_pagefault_reset(struct xe_device *xe, struct xe_gt *gt);
 #else
 #include <linux/errno.h>
 #include <linux/err.h>
@@ -51,8 +57,12 @@ static inline int xe_eudebug_handle_pagefaults(struct xe_gt *gt)
 	return -EOPNOTSUPP;
 }
 
+static inline void xe_eudebug_pagefault_gt_init(struct xe_gt *gt)
+{
+}
+
 static inline int
-xe_eudebug_pagefault_start(struct xe_vm *vm, struct xe_pagefault *pf)
+xe_eudebug_pagefault_start(struct xe_vm *vm, struct xe_vma *vma, struct xe_pagefault *pf)
 {
 	return -EOPNOTSUPP;
 }
@@ -85,6 +95,11 @@ static inline bool xe_eudebug_pagefault_creatable(struct xe_gt *gt,
 						  struct xe_vm *vm)
 {
 	return false;
+}
+
+static inline void xe_eudebug_pagefault_reset(struct xe_device *xe,
+					      struct xe_gt *gt)
+{
 }
 #endif
 

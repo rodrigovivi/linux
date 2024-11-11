@@ -419,6 +419,17 @@ struct xe_gt {
 
 	/** @eu_stall: EU stall counters subsystem per gt info */
 	struct xe_eu_stall_gt *eu_stall;
+#if IS_ENABLED(CONFIG_DRM_XE_EUDEBUG)
+	/**
+	 * @eudebug: Worker to finalize eudebug pagefault on gt reset.
+	 */
+	struct {
+		/**
+		 * @eudebug.gt_reset_work: eudebug reset work for that gt.
+		 */
+		struct work_struct gt_reset_work;
+	} eudebug;
+#endif
 };
 
 #endif

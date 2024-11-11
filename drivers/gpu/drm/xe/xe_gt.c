@@ -24,6 +24,7 @@
 #include "xe_debugfs.h"
 #include "xe_device.h"
 #include "xe_eu_stall.h"
+#include "xe_eudebug_pagefault.h"
 #include "xe_exec_queue.h"
 #include "xe_execlist.h"
 #include "xe_force_wake.h"
@@ -738,6 +739,7 @@ int xe_gt_init(struct xe_gt *gt)
 	int i;
 
 	INIT_WORK(&gt->reset.worker, gt_reset_worker);
+	xe_eudebug_pagefault_gt_init(gt);
 
 	for (i = 0; i < XE_ENGINE_CLASS_MAX; ++i) {
 		gt->ring_ops[i] = xe_ring_ops_get(gt, i);

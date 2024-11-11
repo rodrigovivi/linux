@@ -136,10 +136,12 @@ struct xe_pagefault_ops {
 	/**
 	 * @ack_fault_end: Ack fault end
 	 * @private: producer private data
+	 * @asid: address space ID
+	 * @err: Error state of fault
 	 *
 	 * Page fault producer ends acknowledgment from the consumer.
 	 */
-	void (*ack_fault_end)(void *private);
+	void (*ack_fault_end)(void *private, u32 asid, int err);
 	/**
 	 * @print: Print pagefault info
 	 * @pf: Page fault

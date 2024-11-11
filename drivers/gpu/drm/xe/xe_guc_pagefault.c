@@ -11,12 +11,13 @@
 #include "xe_hw_engine.h"
 #include "xe_pagefault.h"
 #include "xe_pagefault_types.h"
+#include "xe_eudebug_pagefault.h"
 
 #define XE_GUC_PAGEFAULT_FLUSH_PERIOD	BIT(4)	/* Sixteen */
 
 static void guc_ack_fault_begin(void *private)
 {
-	struct xe_guc *guc = private;
+	struct xe_guc *guc = xe_eudebug_pagefault_get_private(private);
 
 	xe_guc_ct_lock(&guc->ct);
 
@@ -53,7 +54,7 @@ static void guc_ack_fault(struct xe_pagefault *pf, int err)
 		FIELD_PREP(PFR_ENG_CLASS, engine_class) |
 		FIELD_PREP(PFR_PDATA, pdata),
 	};
-	struct xe_guc *guc = pf->producer.private;
+	struct xe_guc *guc = xe_eudebug_pagefault_get_private(pf->producer.private);
 	bool write_only = guc->pagefault_ack_counter++ &
 		(XE_GUC_PAGEFAULT_FLUSH_PERIOD - 1);
 
@@ -62,13 +63,14 @@ static void guc_ack_fault(struct xe_pagefault *pf, int err)
 			      write_only);
 }
 
-static void guc_ack_fault_end(void *private)
+static void guc_ack_fault_end(void *private, u32 asid, int err)
 {
-	struct xe_guc *guc = private;
+	struct xe_guc *guc = xe_eudebug_pagefault_get_private(private);
 
 	if ((guc->pagefault_ack_counter & (XE_GUC_PAGEFAULT_FLUSH_PERIOD - 1)) != 1)
 		xe_guc_ct_send_flush(&guc->ct);
 	xe_guc_ct_unlock(&guc->ct);
+	xe_eudebug_pagefault_end(private, asid, err);
 }
 
 static void xe_guc_pagefault_print(struct xe_pagefault *pf,

@@ -294,6 +294,11 @@ struct xe_eudebug_pagefault {
 	 * Shall be removed when pagefault is handled.
 	 */
 	u64 null_vma_addr;
+	/**
+	 * @svm_vma: After handling SVM pagefault original mapping shall be restored.
+	 * The svm_vma is the vma which was removed from original SVM mapping.
+	 */
+	struct xe_vma *svm_vma;
 };
 
 #endif /* _XE_EUDEBUG_TYPES_H_ */

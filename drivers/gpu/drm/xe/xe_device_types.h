@@ -672,6 +672,9 @@ struct xe_device {
 		/** @eudebug.attention_dwork: attention poll work */
 		struct delayed_work attention_dwork;
 
+		/** @eudebug.pagefault_reset_wq: used when there is a GT reset during pagefault */
+		struct workqueue_struct *pagefault_reset_wq;
+
 		/** @eudebug.send_attentions: handle attentions or ignore */
 		bool send_attentions;
 	} eudebug;

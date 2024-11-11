@@ -2900,6 +2900,13 @@ void xe_eudebug_init(struct xe_device *xe)
 	if (err)
 		goto out_err;
 
+	wq = drmm_alloc_ordered_workqueue(dev, "xe-eudebug-pf-gt-reset", 0);
+	if (IS_ERR(wq)) {
+		err = PTR_ERR(wq);
+		goto out_err;
+	}
+	xe->eudebug.pagefault_reset_wq = wq;
+
 	err = devm_add_action_or_reset(dev->dev, xe_eudebug_sysfs_fini, xe);
 	if (err)
 		goto out_err;
