@@ -1317,7 +1317,31 @@ static void xe_vm_assert_write_mode_or_garbage_collector(struct xe_vm *vm)
 			lockdep_is_held_type(&vm->svm.garbage_collector.lock, 0)));
 }
 
-static void xe_vma_destroy(struct xe_vma *vma, struct dma_fence *fence)
+/**
+ * xe_vma_destroy() - Tear down a VMA that has been removed from its VM
+ * @vma: The VMA to destroy.
+ * @fence: Optional fence to wait on before the final teardown, or NULL.
+ *
+ * Releases everything the VMA owns: the userptr registration for a userptr
+ * VMA, or the link to the backing object for a BO-backed one. A NULL or
+ * CPU-address-mirror VMA owns a reference on @vm instead, which is dropped
+ * here.
+ *
+ * This does not unlink the VMA from the VM's GPUVA tree; the caller is
+ * expected to have done that already with xe_vm_remove_vma(). Passing a VMA
+ * that is still in the tree leaves a dangling node behind.
+ *
+ * If @fence is given, the final free is deferred to a worker that runs once
+ * @fence signals, so the caller may drop its locks immediately on return. An
+ * already-signalled @fence is handled inline. If @fence is NULL the VMA is
+ * freed before this function returns, which requires the caller to be certain
+ * no GPU access to the mapping is still outstanding.
+ *
+ * Context: Caller must hold @vm->lock in write mode, or in read mode together
+ * with the SVM garbage collector lock. The VM reservation object must be held.
+ * For a BO-backed VMA the BO reservation object must be held as well.
+ */
+void xe_vma_destroy(struct xe_vma *vma, struct dma_fence *fence)
 {
 	struct xe_vm *vm = xe_vma_vm(vma);
 	struct xe_bo *bo = xe_vma_bo(vma);
@@ -1413,7 +1437,24 @@ xe_vm_find_overlapping_vma(struct xe_vm *vm, u64 start, u64 range)
 	return gpuva ? gpuva_to_vma(gpuva) : NULL;
 }
 
-static int xe_vm_insert_vma(struct xe_vm *vm, struct xe_vma *vma)
+/**
+ * xe_vm_insert_vma() - Insert a VMA into a VM's GPUVA tree
+ * @vm: The VM to insert into.
+ * @vma: The VMA to insert. Must have been created for @vm.
+ *
+ * Links @vma into @vm's GPUVA address space so that address lookups such as
+ * xe_vm_find_vma_by_addr() can find it. The VMA's address range must lie
+ * inside the VM and must not overlap any mapping already present; callers are
+ * expected to have carved out a hole first, so a collision is treated as a
+ * driver bug and warns.
+ *
+ * Context: Caller must hold @vm->lock in write mode, or in read mode together
+ * with the SVM garbage collector lock.
+ *
+ * Return: 0 on success. -EEXIST if the range overlaps an existing mapping,
+ * -EINVAL if it falls outside the VM's address space.
+ */
+int xe_vm_insert_vma(struct xe_vm *vm, struct xe_vma *vma)
 {
 	int err;
 
@@ -5381,4 +5422,85 @@ struct xe_pt *xe_vm_pt_root(struct xe_vm *vm, u8 tile_id)
 		return vm->pt_root[tile_id];
 
 	return vm->pt_root[0];
+}
+
+/**
+ * xe_vm_create_null_vma() - Map a single scratch page into a VM
+ * @vm: The VM to map into.
+ * @addr: Start address of the mapping. Must be aligned to the VM's page size,
+ * which is 64K for a VM created with XE_VM_FLAG_64K and 4K otherwise.
+ *
+ * Creates a sparse (NULL) VMA one page long at @addr and inserts it into @vm.
+ * A NULL VMA has no backing object: reads return zero and writes are dropped,
+ * so a thread faulting on @addr can be let through without giving it access to
+ * anyone's memory. This is what lets the EU debugger resume a shader that
+ * faulted on an unmapped address instead of killing it.
+ *
+ * The mapping is created with default memory attributes and uncached PAT. The
+ * returned VMA holds a reference on @vm until it is destroyed.
+ *
+ * The caller owns the returned VMA and must eventually remove it from @vm with
+ * xe_vm_remove_vma() and tear it down with xe_vma_destroy().
+ *
+ * Context: Caller must hold @vm->lock in write mode.
+ *
+ * Return: The new VMA on success, or an ERR_PTR on failure. -ENOENT if @vm is
+ * closed or banned, -EEXIST if @addr already has a mapping, -ENOMEM on
+ * allocation failure.
+ */
+struct xe_vma *xe_vm_create_null_vma(struct xe_vm *vm, u64 addr)
+{
+	struct xe_vma_mem_attr default_attr = {
+		.preferred_loc = {
+			.devmem_fd = DRM_XE_PREFERRED_LOC_DEFAULT_DEVICE,
+			.migration_policy = DRM_XE_MIGRATE_ALL_PAGES,
+		},
+		.atomic_access = DRM_XE_ATOMIC_UNDEFINED,
+		.default_pat_index = vm->xe->pat.idx[XE_CACHE_NONE],
+		.pat_index = vm->xe->pat.idx[XE_CACHE_NONE],
+	};
+	struct xe_vma *vma;
+	u32 page_size;
+	int err;
+
+	if (xe_vm_is_closed_or_banned(vm))
+		return ERR_PTR(-ENOENT);
+
+	page_size = vm->flags & XE_VM_FLAG_64K ? SZ_64K : SZ_4K;
+
+	if (addr > vm->size - page_size)
+		return ERR_PTR(-EINVAL);
+
+	vma = xe_vma_create(vm, NULL, 0, addr, addr + page_size - 1,
+			    &default_attr, DRM_GPUVA_SPARSE);
+	if (IS_ERR(vma))
+		return ERR_CAST(vma);
+
+	err = xe_vm_insert_vma(vm, vma);
+	if (err) {
+		xe_vma_destroy_late(vma);
+		return ERR_PTR(err);
+	}
+
+	return vma;
+}
+
+/**
+ * xe_vm_destroy_vma() - Free a VMA that is not part of any VM
+ * @vma: The VMA to free.
+ *
+ * Tears down and frees a detached VMA: one that was never inserted into a VM's
+ * GPUVA tree, or that has already been removed from it with
+ * xe_vm_remove_vma(). Drops the VMA's reference on its VM for a NULL or
+ * CPU-address-mirror VMA, releases the memory attributes and frees the VMA.
+ *
+ * Unlike xe_vma_destroy() this performs no GPUVA tree or backing-object
+ * bookkeeping and takes no locks, because a detached VMA shares no state with
+ * the VM. Never call it on a VMA that is still reachable through @vm.
+ *
+ * Context: Any. No locks required.
+ */
+void xe_vm_destroy_vma(struct xe_vma *vma)
+{
+	xe_vma_destroy_late(vma);
 }
