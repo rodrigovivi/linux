@@ -19,6 +19,7 @@
 #include "xe_force_wake.h"
 #include "xe_gt.h"
 #include "xe_gt_debug.h"
+#include "xe_gt_debug_types.h"
 #include "xe_gt_mcr.h"
 #include "xe_hw_engine.h"
 #include "xe_lrc.h"

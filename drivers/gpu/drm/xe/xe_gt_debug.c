@@ -4,6 +4,7 @@
  */
 
 #include <linux/debugfs.h>
+#include <linux/delay.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/string.h>
@@ -17,6 +18,7 @@
 #include "xe_gt.h"
 #include "xe_gt_topology.h"
 #include "xe_gt_debug.h"
+#include "xe_gt_debug_types.h"
 #include "xe_gt_mcr.h"
 #include "xe_pm.h"
 #include "xe_macros.h"
@@ -220,6 +222,94 @@ int xe_gt_eu_threads_needing_attention(struct xe_gt *gt)
 
 	/* A negative here just means the device is asleep or gone; yield. */
 	return err < 0 ? 0 : err;
+}
+
+static inline unsigned int
+xe_eu_attentions_count(const struct xe_eu_attentions *a)
+{
+	return memweight(a->att, a->size);
+}
+
+int xe_gt_eu_attentions_read(struct xe_gt *gt,
+			     struct xe_eu_attentions *a,
+			     const unsigned int settle_time_ms)
+{
+	unsigned int attn = 0, prev = 0;
+	ktime_t end, hard_end, now;
+	int ret;
+
+	now = ktime_get_raw();
+
+	/*
+	 * Wait one settle period for the picture to stop moving, restarting
+	 * it below on every change. There is no point starting out with a
+	 * longer window in the hope that something turns up: on a gt where
+	 * nothing raises attention, every sample reads zero and waiting ten
+	 * periods returns exactly what waiting one would have, having swept
+	 * the attention registers of every dss a few thousand times to get
+	 * there.
+	 */
+	end = ktime_add_ms(now, settle_time_ms);
+
+	/*
+	 * The grace period restarts on any change in the count, so a count
+	 * that keeps churning could push @end out for as long as it churns.
+	 * Cap the whole thing at what used to be the starting window.
+	 */
+	hard_end = ktime_add_ms(now, settle_time_ms * 10);
+
+	a->size = min_t(int,
+			xe_gt_eu_attention_bitmap_size(gt),
+			sizeof(a->att));
+
+	do {
+		/*
+		 * Report the failure rather than leaving @att holding
+		 * whatever it held before. A caller that relayed it with
+		 * @size still set would be telling the debugger that no
+		 * thread raised attention, which is not something we know.
+		 */
+		ret = xe_gt_eu_attention_bitmap(gt, a->att, a->size);
+		if (ret < 0) {
+			a->size = 0;
+			return ret;
+		}
+
+		if (!settle_time_ms)
+			break;
+
+		attn = xe_eu_attentions_count(a);
+
+		now = ktime_get_raw();
+
+		/*
+		 * Any change means the picture is still moving, so give it
+		 * another settle period to stop. Growth alone is not the
+		 * test: threads leaving attention are just as much a sign
+		 * that this is not a stable snapshot yet.
+		 */
+		if (attn != prev) {
+			prev = attn;
+			end = ktime_add_ms(now, settle_time_ms);
+			if (ktime_after(end, hard_end))
+				end = hard_end;
+		}
+
+		/*
+		 * Sleeping rather than spinning: every caller is in process
+		 * context holding a mutex, and the loop below runs for the
+		 * whole settle window rather than exiting early.
+		 */
+		usleep_range(15, 30);
+
+		/*
+		 * XXX We are gathering data for production SIP to find
+		 * the upper limit of settle time. For now, we wait full
+		 * timeout value regardless.
+		 */
+	} while ((attn < a->size * 8) && ktime_before(now, end));
+
+	return 0;
 }
 
 static int eu_attention_show(struct seq_file *m, void *data)
