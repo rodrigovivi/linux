@@ -8,6 +8,7 @@
 #include <linux/anon_inodes.h>
 #include <linux/dma-resv.h>
 #include <linux/fs.h>
+#include <linux/sched/mm.h>
 #include <linux/string_choices.h>
 #include <linux/vmalloc.h>
 
@@ -91,6 +92,50 @@ static int xe_eudebug_vma_access(struct xe_vma *vma,
 		xe_bo_put(bo);
 
 		return ret;
+	} else if (xe_vma_is_userptr(vma)) {
+		struct xe_userptr *userptr = &to_userptr_vma(vma)->userptr;
+		struct mm_struct *mm;
+		int ret;
+
+		if (XE_WARN_ON(!userptr->eudebug.task))
+			return -EINVAL;
+
+		/*
+		 * XXX FIXME: access_remote_vm() is the preferred
+		 *
+		 * access_remote_vm() would fit as userptr notifier has
+		 * mm ref so we would not need to carry task ref at all.
+		 * But access_remote_vm is not exported. access_process_vm()
+		 * is exported so use it instead.
+		 *
+		 * Going through the task means the address space is resolved
+		 * from it on every access, and the task outlives its mm: after
+		 * an execve the same task carries a different address space,
+		 * and after the thread exits it carries none at all even
+		 * though the process and this mapping are still alive.
+		 *
+		 * Confirm the mm the userptr was bound against is still the
+		 * one the task holds, so that a replaced address space is
+		 * refused instead of handing the debugger bytes from an
+		 * unrelated program. access_process_vm() resolves the mm
+		 * again on its own, so this narrows that window rather than
+		 * closing it. Keying the access on the mm instead, with
+		 * get_user_pages_remote() on userptr->notifier.mm, would
+		 * remove the task from the picture entirely.
+		 */
+		mm = get_task_mm(userptr->eudebug.task);
+		if (!mm)
+			return -ESRCH;
+
+		ret = mm == userptr->notifier.mm ? 0 : -ESRCH;
+		mmput(mm);
+		if (ret)
+			return ret;
+
+		return access_process_vm(userptr->eudebug.task,
+					 xe_vma_userptr(vma) + offset_in_vma,
+					 buf, bytes,
+					 write ? FOLL_WRITE : 0);
 	}
 
 	return -EINVAL;
