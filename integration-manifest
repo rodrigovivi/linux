@@ -1,0 +1,28 @@
+drm drm-fixes 0ad2507d5d93f39619fc42372c347d6006b64319
+	Linux 6.14-rc3
+drm-misc drm-misc-fixes b3fefbb30a1691533cb905006b69b2a474660744
+	nouveau/svm: fix missing folio unlock + put after make_device_exclusive_range()
+drm-intel drm-intel-fixes 07fb70d82e0df085980246bf17bc12537588795f
+	drm/i915: Make sure all planes in use by the joiner have their crtc included
+drm-xe drm-xe-fixes 0c455f3a12298e9c89a78d2f3327e15e52c0adc5
+	drm/xe: Fix error handling in xe_irq_install()
+drm drm-next 0ed1356af8f629ae807963b7db4e501e3b580bc2
+	Merge tag 'drm-misc-next-2025-02-12' of https://gitlab.freedesktop.org/drm/misc/kernel into drm-next
+drm-misc drm-misc-next-fixes ecee4d0695067ae04959b121028b42a588e75370
+	accel/amdxdna: Add MODULE_FIRMWARE() declarations
+drm-intel drm-intel-next-fixes 2014c95afecee3e76ca4a56956a936e23283f05b
+	Linux 6.14-rc1
+drm-xe drm-xe-next-fixes 8dcb26b493d3bab90851f93ae1c127af5cb2dbb5
+	Merge tag 'amd-drm-fixes-6.14-2025-01-29' of https://gitlab.freedesktop.org/agd5f/linux into drm-next
+drm-misc drm-misc-next b296955b3a740ecc8b3b08e34fd64f1ceabb8fb4
+	drm/bridge: panel: forbid initializing a panel with unknown connector type
+drm-intel drm-intel-next 1bcba228535f8c551d6ffe355c347415a88c1dc8
+	drm/i915: s/state/plane_state/
+drm-intel drm-intel-gt-next c088387ddd6482b40f21ccf23db1125e8fa4af7e
+	drm/i915/gt: Use spin_lock_irqsave() in interruptible context
+drm-xe drm-xe-next 339adeb10472a34bb74624958b031e490531d37c
+	drm/xe/display: Clarify XE_IOCTL_DBG message
+drm-intel topic/core-for-CI 69a373f3b198bfdbaaf68a38ea400136b7ed329c
+	Revert "lockdep: Enable PROVE_RAW_LOCK_NESTING with PROVE_LOCKING."
+drm-xe topic/xe-for-CI 6ea369b34748ef5377f23e24b577912585ce5445
+	drm/xe/ptl: Define HuC FW version for PTL
