@@ -25,6 +25,7 @@
 #include "xe_pxp.h"
 #include "xe_trace.h"
 #include "xe_wa.h"
+#include "xe_mmio.h"
 
 /**
  * DOC: Xe Power Management
@@ -285,9 +286,28 @@ ALLOW_ERROR_INJECTION(xe_pm_init_early, ERRNO); /* See xe_pci_probe() */
  *
  * Returns 0 for success, negative error code otherwise.
  */
+
+
+#define SOC_BASE			0x280000
+#define REMAP_BASE			0xF6000
+#define PMCS				XE_REG(SOC_BASE + REMAP_BASE + 0x84)
+#define VID				XE_REG(SOC_BASE + REMAP_BASE + 0x00)
+#define DID				XE_REG(SOC_BASE + REMAP_BASE + 0x02)
+
+static void print_i2c_status(struct xe_device *xe)
+{
+       printk(KERN_ERR "KERNEL-DEBUG: PMCS=0x%08x\n", xe_mmio_read32(xe_root_tile_mmio(xe), PMCS));
+       printk(KERN_ERR "KERNEL-DEBUG: VID=0x%08x\n", xe_mmio_read32(xe_root_tile_mmio(xe), VID));
+       printk(KERN_ERR "KERNEL-DEBUG: DID=0x%08x\n", xe_mmio_read32(xe_root_tile_mmio(xe), DID));
+}
+
 int xe_pm_init(struct xe_device *xe)
 {
 	int err;
+
+	print_i2c_status(xe);
+
+	xe_mmio_rmw32(xe_root_tile_mmio(xe), PMCS, 0, 0x100);
 
 	/* For now suspend/resume is only allowed with GuC */
 	if (!xe_device_uc_enabled(xe))
@@ -433,6 +453,13 @@ int xe_pm_runtime_suspend(struct xe_device *xe)
 
 	xe_rpm_lockmap_release(xe);
 	xe_pm_write_callback_task(xe, NULL);
+
+	print_i2c_status(xe);
+
+	xe_mmio_rmw32(xe_root_tile_mmio(xe), PMCS, 0x3, 0);
+
+	print_i2c_status(xe);
+
 	return 0;
 
 out_resume:
@@ -443,6 +470,8 @@ out:
 	xe_pm_write_callback_task(xe, NULL);
 	return err;
 }
+
+#include <linux/delay.h>
 
 /**
  * xe_pm_runtime_resume - Waking up from D3hot/D3Cold
@@ -455,6 +484,12 @@ int xe_pm_runtime_resume(struct xe_device *xe)
 	struct xe_gt *gt;
 	u8 id;
 	int err = 0;
+
+	print_i2c_status(xe);
+	xe_mmio_rmw32(xe_root_tile_mmio(xe), PMCS, 0, 0x3);
+
+	msleep(1000);
+	print_i2c_status(xe);
 
 	trace_xe_pm_runtime_resume(xe, __builtin_return_address(0));
 	/* Disable access_ongoing asserts and prevent recursive pm calls */

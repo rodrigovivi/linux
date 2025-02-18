@@ -35,6 +35,8 @@ static struct xe_device *node_to_xe(struct drm_info_node *node)
 	return to_xe_device(node->minor->dev);
 }
 
+#include "xe_mmio.h"
+
 static int info(struct seq_file *m, void *data)
 {
 	struct xe_device *xe = node_to_xe(m->private);
@@ -68,6 +70,17 @@ static int info(struct seq_file *m, void *data)
 		drm_printf(&p, "gt%d engine_mask 0x%llx\n", id,
 			   gt->info.engine_mask);
 	}
+
+
+#define SOC_BASE			0x280000
+#define REMAP_BASE			0xF6000
+#define PMCS				XE_REG(SOC_BASE + REMAP_BASE + 0x84)
+#define VID				XE_REG(SOC_BASE + REMAP_BASE + 0x00)
+#define DID				XE_REG(SOC_BASE + REMAP_BASE + 0x02)
+
+       drm_printf(&p, "PMCS=0x%08x\n", xe_mmio_read32(xe_root_tile_mmio(xe), PMCS));
+       drm_printf(&p, "VID=0x%04x\n", xe_mmio_read16(xe_root_tile_mmio(xe), VID));
+       drm_printf(&p, "DID=0x%04x\n", xe_mmio_read16(xe_root_tile_mmio(xe), DID));
 
 	xe_pm_runtime_put(xe);
 	return 0;
