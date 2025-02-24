@@ -82,6 +82,54 @@ static struct lockdep_map xe_pm_runtime_nod3cold_map = {
 };
 #endif
 
+/* Temporarily (hopefully) disallow D3Cold in specific devices */
+struct disallow_d3cold_quirk {
+	u16 device;
+	u16 subsystem_vendor;
+	u16 subsystem_device;
+};
+
+static struct disallow_d3cold_quirk d3cold_quirks[] = {
+	/* SPARKLE Intel Arc B580 TITAN OC */
+	{
+		.device = 0xe20b,
+		.subsystem_vendor = 0x172f,
+		.subsystem_device = 0x4215,
+	}
+	/* Zycoo Co., Ltd Device */
+	{
+		.device = 0xe20b,
+		.subsystem_vendor = 0x6688,
+		.subsystem_device = 0x8069,
+	}
+};
+
+/*
+ * Temporarily disallow d3cold for this device by tweaking the vram threshold,
+ * but without entirely disabling its capability.
+ * So, it can be overridden at runtime by:
+ * $ echo 300 > /sys/bus/pci/devices/0000\:03\:00.0/vram_d3cold_threshold
+ */
+static bool d3cold_quirk(struct xe_device *xe)
+{
+	struct pci_dev *d = to_pci_dev(xe->drm.dev);
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(d3cold_quirks); i++) {
+		struct disallow_d3cold_quirk *q = &d3cold_quirks[i];
+
+		if (d->device == q->device &&
+		    d->subsystem_vendor == q->subsystem_vendor &&
+		    d->subsystem_device == q->subsystem_device) {
+			drm_dbg(&xe->drm,
+				"Xe PM Quirk: D3Cold temporarily disable\n");
+			return true;
+		}
+	}
+
+	return false;
+}
+
 /**
  * xe_rpm_reclaim_safe() - Whether runtime resume can be done from reclaim context
  * @xe: The xe device.
@@ -287,6 +335,7 @@ ALLOW_ERROR_INJECTION(xe_pm_init_early, ERRNO); /* See xe_pci_probe() */
  */
 int xe_pm_init(struct xe_device *xe)
 {
+	u32 threshold;
 	int err;
 
 	/* For now suspend/resume is only allowed with GuC */
@@ -300,7 +349,8 @@ int xe_pm_init(struct xe_device *xe)
 		if (err)
 			return err;
 
-		err = xe_pm_set_vram_threshold(xe, DEFAULT_VRAM_THRESHOLD);
+		threshold = d3cold_quirk(xe) ? 0 : DEFAULT_VRAM_THRESHOLD;
+		err = xe_pm_set_vram_threshold(xe, threshold);
 		if (err)
 			return err;
 	}
