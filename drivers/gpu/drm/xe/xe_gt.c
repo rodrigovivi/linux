@@ -19,6 +19,7 @@
 #include "xe_bb.h"
 #include "xe_bo.h"
 #include "xe_device.h"
+#include "xe_eu_stall.h"
 #include "xe_exec_queue.h"
 #include "xe_execlist.h"
 #include "xe_force_wake.h"
@@ -361,6 +362,10 @@ int xe_gt_init_early(struct xe_gt *gt)
 	if (err)
 		return err;
 
+	err = xe_tuning_init(gt);
+	if (err)
+		return err;
+
 	xe_wa_process_oob(gt);
 
 	xe_force_wake_init_gt(gt, gt_to_fw(gt));
@@ -612,6 +617,10 @@ int xe_gt_init(struct xe_gt *gt)
 		return err;
 
 	xe_gt_record_user_engines(gt);
+
+	err = xe_eu_stall_init(gt);
+	if (err)
+		return err;
 
 	return 0;
 }
