@@ -11,3 +11,4 @@ to securely construct and execute RPCs inside device firmware.
 
    fwctl
    pds_fwctl
+   xe_pcode_fwctl
