@@ -25,6 +25,7 @@
 #include "regs/xe_regs.h"
 #include "xe_bo.h"
 #include "xe_bo_evict.h"
+#include "xe_client_debugfs.h"
 #include "xe_configfs.h"
 #include "xe_debugfs.h"
 #include "xe_cpu_bind.h"
@@ -130,6 +131,8 @@ static int xe_file_open(struct drm_device *dev, struct drm_file *file)
 		xef->pid = task->pid;
 		put_task_struct(task);
 	}
+
+	xe_client_debugfs_register(xef);
 
 	return 0;
 }
