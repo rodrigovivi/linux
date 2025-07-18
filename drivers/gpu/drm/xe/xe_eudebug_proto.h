@@ -11,6 +11,8 @@
  * include/uapi/drm/xe_drm_eudebug.h by the eudebug uAPI patch.
  */
 
+#include <linux/limits.h>
+
 #include <uapi/drm/xe_drm.h>
 
 #if defined(__cplusplus)
@@ -193,6 +195,69 @@ struct drm_xe_eudebug_connect {
 
 #define   DRM_XE_EXEC_QUEUE_SET_PROPERTY_EUDEBUG		7
 #define     DRM_XE_EXEC_QUEUE_EUDEBUG_FLAG_ENABLE		(1 << 0)
+
+#define	XE_VM_BIND_OP_EXTENSIONS_DEBUG_DATA 0
+
+#define DRM_XE_VM_BIND_OP_ADD_DEBUG_DATA	0x5
+#define DRM_XE_VM_BIND_OP_REMOVE_DEBUG_DATA	0x6
+
+/**
+ * struct drm_xe_vm_bind_op_ext_debug_data - debug data extension struct for
+ * :c:type:`drm_xe_vm_bind_op`
+ *
+ * The GPU VM can be annotated by issuing a bind operation with the
+ * :c:member:`drm_xe_vm_bind_op.op` set to %DRM_XE_VM_BIND_OP_ADD_DEBUG_DATA or
+ * %DRM_XE_VM_BIND_OP_REMOVE_DEBUG_DATA. Each such operation has to provide a
+ * :c:type:`drm_xe_vm_bind_op_ext_debug_data` extension, which describes the
+ * debug data to add or remove.
+ *
+ * This extension can either point to a file that contains relevant debug data
+ * or annotate the VM range with a pseudopath by setting the
+ * %DRM_XE_VM_BIND_DEBUG_DATA_FLAG_PSEUDO flag and providing one of the supported
+ * pseudopath values:
+ *
+ *  - %DRM_XE_VM_BIND_DEBUG_DATA_PSEUDO_MODULE_AREA
+ *  - %DRM_XE_VM_BIND_DEBUG_DATA_PSEUDO_SBA_AREA
+ *  - %DRM_XE_VM_BIND_DEBUG_DATA_PSEUDO_SIP_AREA
+ *
+ */
+struct drm_xe_vm_bind_op_ext_debug_data {
+	/** @base: Base user extension */
+	struct drm_xe_user_extension base;
+
+	/** @addr: Address of the debug data mapping */
+	__u64 addr;
+
+	/** @range: Range of the debug data mapping */
+	__u64 range;
+
+#define DRM_XE_VM_BIND_DEBUG_DATA_FLAG_PSEUDO (1 << 0)
+	/** @flags: Debug data flags */
+	__u64 flags;
+
+	/**
+	 * @offset: Offset into the debug data file, MBZ when
+	 * %DRM_XE_VM_BIND_DEBUG_DATA_FLAG_PSEUDO is set
+	 */
+	__u64 offset;
+
+	/** @reserved: Reserved */
+	__u64 reserved;
+
+	union {
+#define DRM_XE_VM_BIND_DEBUG_DATA_PSEUDO_MODULE_AREA	0x1
+#define DRM_XE_VM_BIND_DEBUG_DATA_PSEUDO_SBA_AREA	0x2
+#define DRM_XE_VM_BIND_DEBUG_DATA_PSEUDO_SIP_AREA	0x3
+		/**
+		 * @pseudopath: Pseudopath used when
+		 * %DRM_XE_VM_BIND_DEBUG_DATA_FLAG_PSEUDO is set
+		 */
+		__u64 pseudopath;
+
+		/** @pathname: Path to the debug data file */
+		char pathname[PATH_MAX];
+	};
+};
 
 #if defined(__cplusplus)
 }

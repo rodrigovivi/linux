@@ -36,6 +36,7 @@ xe-y += xe_bb.o \
 	xe_bo.o \
 	xe_bo_evict.o \
 	xe_cpu_bind.o \
+	xe_debug_data.o \
 	xe_dep_scheduler.o \
 	xe_devcoredump.o \
 	xe_device.o \

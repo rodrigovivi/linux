@@ -25,9 +25,11 @@
 #include "xe_assert.h"
 #include "xe_bo.h"
 #include "xe_cpu_bind.h"
+#include "xe_debug_data.h"
 #include "xe_device.h"
 #include "xe_drm_client.h"
 #include "xe_eudebug.h"
+#include "xe_eudebug_proto.h"
 #include "xe_exec_queue.h"
 #include "xe_gt.h"
 #include "xe_migrate.h"
@@ -1449,10 +1451,29 @@ static struct drm_gpuva_op *xe_vm_op_alloc(void)
 	return &op->base;
 }
 
+static void xe_vm_op_free(struct drm_gpuva_op *__op)
+{
+	struct xe_vma_op *op = gpuva_op_to_vma_op(__op);
+
+	/*
+	 * Only REMOVE_DEBUG_DATA ops carry a detached list object here.
+	 * modify_debug_data overlaps map/unmap/prefetch in the union, so
+	 * it must not be touched for any other op type. NULL-safe: set
+	 * only on a committed remove that was not unwound.
+	 */
+	if (__op->op == DRM_GPUVA_OP_DRIVER &&
+	    (op->subop == XE_VMA_SUBOP_ADD_DEBUG_DATA ||
+	     op->subop == XE_VMA_SUBOP_REMOVE_DEBUG_DATA))
+		kfree(op->modify_debug_data.removed);
+
+	kfree(op);
+}
+
 static void xe_vm_free(struct drm_gpuvm *gpuvm);
 
 static const struct drm_gpuvm_ops gpuvm_ops = {
 	.op_alloc = xe_vm_op_alloc,
+	.op_free = xe_vm_op_free,
 	.vm_bo_validate = xe_gpuvm_validate,
 	.vm_free = xe_vm_free,
 };
@@ -1772,6 +1793,9 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags, struct xe_file *xef)
 	xe_vm_init_prove_locking(xe, vm);
 	xe_range_fence_tree_init(&vm->rftree);
 
+	INIT_LIST_HEAD(&vm->debug_data.list);
+	mutex_init(&vm->debug_data.lock);
+
 	vm->pt_ops = &xelp_pt_ops;
 
 	/*
@@ -1912,6 +1936,7 @@ err_svm_fini:
 		xe_svm_close(vm);
 	xe_svm_fini(vm);
 err_no_resv:
+	mutex_destroy(&vm->debug_data.lock);
 	mutex_destroy(&vm->snap_mutex);
 	xe_range_fence_tree_fini(&vm->rftree);
 	ttm_lru_bulk_move_fini(&xe->ttm, &vm->lru_bulk_move);
@@ -2069,6 +2094,8 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 
 	xe_range_fence_tree_fini(&vm->rftree);
 
+	xe_debug_data_destroy(vm);
+
 	xe_vm_put(vm);
 }
 
@@ -2086,6 +2113,7 @@ static void vm_destroy_work_func(struct work_struct *w)
 	if (xe_vm_in_preempt_fence_mode(vm))
 		flush_work(&vm->preempt.rebind_work);
 
+	mutex_destroy(&vm->debug_data.lock);
 	mutex_destroy(&vm->snap_mutex);
 
 	if (vm->flags & XE_VM_FLAG_LR_MODE)
@@ -2410,6 +2438,7 @@ static void prep_vma_destroy(struct xe_vm *vm, struct xe_vma *vma,
 #if IS_ENABLED(CONFIG_DRM_XE_DEBUG_VM)
 static void print_op(struct xe_device *xe, struct drm_gpuva_op *op)
 {
+	struct xe_vma_op *vma_op;
 	struct xe_vma *vma;
 
 	switch (op->op) {
@@ -2443,6 +2472,12 @@ static void print_op(struct xe_device *xe, struct drm_gpuva_op *op)
 		vma = gpuva_to_vma(op->prefetch.va);
 		vm_dbg(&xe->drm, "PREFETCH: addr=0x%016llx, range=0x%016llx",
 		       (ULL)xe_vma_start(vma), (ULL)xe_vma_size(vma));
+		break;
+	case DRM_GPUVA_OP_DRIVER:
+		vma_op = gpuva_op_to_vma_op(op);
+		if (vma_op->subop != XE_VMA_SUBOP_ADD_DEBUG_DATA &&
+		    vma_op->subop != XE_VMA_SUBOP_REMOVE_DEBUG_DATA)
+			drm_warn(&xe->drm, "Unexpected vma sub op: %d", vma_op->subop);
 		break;
 	default:
 		drm_warn(&xe->drm, "NOT POSSIBLE\n");
@@ -2494,6 +2529,7 @@ vm_bind_ioctl_ops_create(struct xe_vm *vm, struct xe_vma_ops *vops,
 	struct drm_gpuva_ops *ops;
 	struct drm_gpuva_op *__op;
 	struct drm_gpuvm_bo *vm_bo;
+	struct xe_vma_op *vma_op;
 	u64 range_start = addr;
 	u64 range_end = addr + range;
 	int err;
@@ -2549,6 +2585,24 @@ vm_bind_ioctl_ops_create(struct xe_vm *vm, struct xe_vma_ops *vops,
 		ops = drm_gpuvm_bo_unmap_ops_create(vm_bo);
 		drm_gpuvm_bo_put(vm_bo);
 		xe_bo_unlock(bo);
+		break;
+	case DRM_XE_VM_BIND_OP_ADD_DEBUG_DATA:
+	case DRM_XE_VM_BIND_OP_REMOVE_DEBUG_DATA:
+		ops = kzalloc(sizeof(*ops), GFP_KERNEL);
+		if (!ops)
+			return ERR_PTR(-ENOMEM);
+
+		INIT_LIST_HEAD(&ops->list);
+		vma_op = kzalloc_obj(*vma_op, GFP_KERNEL);
+		if (!vma_op) {
+			kfree(ops);
+			return ERR_PTR(-ENOMEM);
+		}
+
+		vma_op->base.op = DRM_GPUVA_OP_DRIVER;
+		vma_op->subop = operation == DRM_XE_VM_BIND_OP_ADD_DEBUG_DATA ?
+			XE_VMA_SUBOP_ADD_DEBUG_DATA : XE_VMA_SUBOP_REMOVE_DEBUG_DATA;
+		list_add_tail(&vma_op->base.entry, &ops->list);
 		break;
 	default:
 		drm_warn(&vm->xe->drm, "NOT POSSIBLE\n");
@@ -2861,6 +2915,11 @@ static int xe_vma_op_commit(struct xe_vm *vm, struct xe_vma_op *op)
 	case DRM_GPUVA_OP_PREFETCH:
 		op->flags |= XE_VMA_OP_COMMITTED;
 		break;
+	case DRM_GPUVA_OP_DRIVER:
+		if (op->subop != XE_VMA_SUBOP_ADD_DEBUG_DATA &&
+		    op->subop != XE_VMA_SUBOP_REMOVE_DEBUG_DATA)
+			drm_warn(&vm->xe->drm, "Unexpected vma sub op: %d", op->subop);
+		break;
 	default:
 		drm_warn(&vm->xe->drm, "NOT POSSIBLE\n");
 	}
@@ -3063,6 +3122,11 @@ static int vm_bind_ioctl_ops_parse(struct xe_vm *vm, struct drm_gpuva_ops *ops,
 				xe_vma_ops_incr_pt_update_ops(vops, op->tile_mask, 1);
 
 			break;
+		case DRM_GPUVA_OP_DRIVER:
+			if (op->subop != XE_VMA_SUBOP_ADD_DEBUG_DATA &&
+			    op->subop != XE_VMA_SUBOP_REMOVE_DEBUG_DATA)
+				drm_warn(&vm->xe->drm, "Unexpected vma sub op: %d", op->subop);
+			break;
 		default:
 			drm_warn(&vm->xe->drm, "NOT POSSIBLE\n");
 		}
@@ -3141,6 +3205,13 @@ static void xe_vma_op_unwind(struct xe_vm *vm, struct xe_vma_op *op,
 	}
 	case DRM_GPUVA_OP_PREFETCH:
 		/* Nothing to do */
+		break;
+	case DRM_GPUVA_OP_DRIVER:
+		if (op->subop != XE_VMA_SUBOP_ADD_DEBUG_DATA &&
+		    op->subop != XE_VMA_SUBOP_REMOVE_DEBUG_DATA)
+			drm_warn(&vm->xe->drm, "Unexpected vma sub op: %d", op->subop);
+		else if (post_commit)
+			xe_debug_data_op_unwind(vm, op);
 		break;
 	default:
 		drm_warn(&vm->xe->drm, "NOT POSSIBLE\n");
@@ -3497,6 +3568,11 @@ static int op_lock_and_prep(struct drm_exec *exec, struct xe_vm *vm,
 		}
 		break;
 	}
+	case DRM_GPUVA_OP_DRIVER:
+		if (op->subop != XE_VMA_SUBOP_ADD_DEBUG_DATA &&
+		    op->subop != XE_VMA_SUBOP_REMOVE_DEBUG_DATA)
+			drm_warn(&vm->xe->drm, "Unexpected vma sub op: %d", op->subop);
+		break;
 	default:
 		drm_warn(&vm->xe->drm, "NOT POSSIBLE\n");
 	}
@@ -3695,6 +3771,11 @@ static void op_add_ufence(struct xe_vm *vm, struct xe_vma_op *op,
 		break;
 	case DRM_GPUVA_OP_PREFETCH:
 		vma_add_ufence(gpuva_to_vma(op->base.prefetch.va), ufence);
+		break;
+	case DRM_GPUVA_OP_DRIVER:
+		if (op->subop != XE_VMA_SUBOP_ADD_DEBUG_DATA &&
+		    op->subop != XE_VMA_SUBOP_REMOVE_DEBUG_DATA)
+			drm_warn(&vm->xe->drm, "Unexpected vma sub op: %d", op->subop);
 		break;
 	default:
 		drm_warn(&vm->xe->drm, "NOT POSSIBLE\n");
