@@ -90,6 +90,8 @@ struct drm_xe_eudebug_event {
 #define DRM_XE_EUDEBUG_EVENT_READ		1
 #define DRM_XE_EUDEBUG_EVENT_VM			2
 #define DRM_XE_EUDEBUG_EVENT_EXEC_QUEUE		3
+#define DRM_XE_EUDEBUG_EVENT_VM_BIND		4
+#define DRM_XE_EUDEBUG_EVENT_VM_BIND_OP_DEBUG_DATA	5
 
 	/** @flags: Flags */
 	__u16 flags;
@@ -162,6 +164,97 @@ struct drm_xe_eudebug_event_exec_queue {
 
 	/** @lrc_handle: array of lrc handles */
 	__u64 lrc_handle[];
+};
+
+/**
+ * struct drm_xe_eudebug_event_vm_bind - VM Bind Event
+ *
+ * When the client (debuggee) calls the vm_bind_ioctl with the
+ * DRM_XE_VM_BIND_OP_[ADD|REMOVE]_DEBUG_DATA operation, the following event
+ * sequence will be created (for the debugger)::
+ *
+ *  ┌───────────────────────┐
+ *  │  EVENT_VM_BIND        ├──────────────────┬─┬┄┐
+ *  └───────────────────────┘                  │ │ ┊
+ *      ┌──────────────────────────────────┐   │ │ ┊
+ *      │ EVENT_VM_BIND_OP_DEBUG_DATA #1   ├───┘ │ ┊
+ *      └──────────────────────────────────┘     │ ┊
+ *                      ...                      │ ┊
+ *      ┌──────────────────────────────────┐     │ ┊
+ *      │ EVENT_VM_BIND_OP_DEBUG_DATA #n   ├─────┘ ┊
+ *      └──────────────────────────────────┘       ┊
+ *                                                 ┊
+ *      ┌┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┐       ┊
+ *      ┊ EVENT_UFENCE                     ├┄┄┄┄┄┄┄┘
+ *      └┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┘
+ *
+ * All the events below VM_BIND will reference the VM_BIND
+ * they associate with, by field .vm_bind_ref_seqno.
+ */
+struct drm_xe_eudebug_event_vm_bind {
+	/** @base: Base event */
+	struct drm_xe_eudebug_event base;
+
+	/** @vm_handle: VM handle for this bind */
+	__u64 vm_handle;
+
+	/** @flags: Bind specific flags */
+	__u32 flags;
+
+	/** @num_bind_ops: How many [ADD|REMOVE]_DEBUG_DATA operations this bind has */
+	__u32 num_bind_ops;
+};
+
+/**
+ * struct drm_xe_eudebug_event_vm_bind_op_debug_data - VM Bind Op Debug Data Event
+ *
+ * When the target drm client issues a vm bind, each operation of type
+ * %DRM_XE_VM_BIND_OP_ADD_DEBUG_DATA or %DRM_XE_VM_BIND_OP_REMOVE_DEBUG_DATA
+ * will generate an event of this type. For reference see
+ * :c:type:`drm_xe_vm_bind_op_ext_debug_data`.
+ */
+struct drm_xe_eudebug_event_vm_bind_op_debug_data {
+	/** @base: Base event */
+	struct drm_xe_eudebug_event base;
+
+	/** @vm_bind_ref_seqno: Parent :c:member:`drm_xe_eudebug_event_vm_bind.base.seqno` */
+	__u64 vm_bind_ref_seqno;
+
+	/** @addr: Address of the debug data mapping */
+	__u64 addr;
+
+	/** @range: Range of the debug data mapping */
+	__u64 range;
+
+	/** @flags: Debug data flags */
+	__u64 flags;
+
+	/** @offset: Offset into the debug data file */
+	__u64 offset;
+
+	/** @reserved: Reserved, must be zero */
+	__u64 reserved;
+
+	/**
+	 * @pseudopath: Pseudopath when
+	 * %DRM_XE_VM_BIND_DEBUG_DATA_FLAG_PSEUDO is set in @flags, zero
+	 * otherwise
+	 */
+	__u64 pseudopath;
+
+	/**
+	 * @pathname: Path to the debug data file
+	 *
+	 * Present only when %DRM_XE_VM_BIND_DEBUG_DATA_FLAG_PSEUDO is not
+	 * set in @flags, and covered by
+	 * :c:member:`drm_xe_eudebug_event.len` rather than by a fixed size:
+	 * the event is as long as the path it carries. The path is NUL
+	 * terminated and the terminator is included in @len, which may then
+	 * be padded with further zeroes to keep the event size aligned, so
+	 * read it as a string rather than taking the whole tail of the
+	 * event as the name.
+	 */
+	char pathname[];
 };
 
 /*

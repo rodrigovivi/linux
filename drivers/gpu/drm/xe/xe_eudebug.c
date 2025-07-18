@@ -16,6 +16,7 @@
 #include <uapi/drm/xe_drm.h>
 
 #include "xe_assert.h"
+#include "xe_debug_data_types.h"
 #include "xe_device.h"
 #include "xe_eudebug.h"
 #include "xe_eudebug_hw.h"
@@ -192,7 +193,8 @@ static bool xe_eudebug_detach(struct xe_eudebug *d,
 		WRITE_ONCE(d->target.xef, NULL);
 
 		XE_WARN_ON(target->eudebug.debugger != d);
-		target->eudebug.debugger = NULL;
+		scoped_guard(spinlock, &target->eudebug.lock)
+			target->eudebug.debugger = NULL;
 
 		d->xe->eudebug.attached--;
 
@@ -278,11 +280,11 @@ __xe_eudebug_get(struct xe_file *xef)
 	if (READ_ONCE(xe->eudebug.cap_state) == XE_EUDEBUG_CAP_NOT_SUPPORTED)
 		return NULL;
 
-	mutex_lock(&xe->eudebug.lock);
+	spin_lock(&xef->eudebug.lock);
 	d = xef->eudebug.debugger;
 	if (d && !kref_get_unless_zero(&d->ref))
 		d = NULL;
-	mutex_unlock(&xe->eudebug.lock);
+	spin_unlock(&xef->eudebug.lock);
 
 	if (d && xe_eudebug_detached(d)) {
 		xe_eudebug_put(d);
@@ -897,6 +899,198 @@ void xe_eudebug_exec_queue_destroy(struct xe_file *xef, struct xe_exec_queue *q)
 	xe_eudebug_put(d);
 }
 
+static int send_vm_bind_event(struct xe_eudebug *d,
+			      struct xe_vm *vm,
+			      u64 vm_handle,
+			      u32 bind_flags,
+			      u32 num_ops, u64 *seqno)
+{
+	struct drm_xe_eudebug_event_vm_bind *e;
+	struct drm_xe_eudebug_event *event;
+	const u32 sz = sizeof(*e);
+	const u32 base_flags = DRM_XE_EUDEBUG_EVENT_STATE_CHANGE;
+	int err;
+
+	/* Stamped at generation, see @events.seqno in xe_eudebug_types.h */
+	*seqno = atomic64_inc_return(&d->events.seqno);
+
+	spin_lock(&d->events.lock);
+	event = xe_eudebug_prepare_event(d, DRM_XE_EUDEBUG_EVENT_VM_BIND,
+					 *seqno, base_flags, sz);
+	e = cast_event(e, event);
+
+	e->vm_handle = vm_handle;
+	e->flags = bind_flags;
+	e->num_bind_ops = num_ops;
+
+	err = xe_eudebug_queue_event(d, event);
+	spin_unlock(&d->events.lock);
+
+	if (err)
+		xe_eudebug_disconnect(d, err);
+
+	return err;
+}
+
+static int vm_bind_event(struct xe_eudebug *d,
+			 struct xe_vm *vm,
+			 u32 flags,
+			 u32 num_ops,
+			 u64 *seqno)
+{
+	int h_vm;
+
+	h_vm = find_handle(d, XE_EUDEBUG_RES_TYPE_VM, vm);
+	if (h_vm < 0)
+		return h_vm;
+
+	return send_vm_bind_event(d, vm, h_vm, flags,
+				  num_ops, seqno);
+}
+
+static int vm_bind_op_event(struct xe_eudebug *d,
+			    struct xe_vm *vm,
+			    const u32 flags,
+			    const u64 bind_ref_seqno,
+			    const struct xe_debug_data *debug_data,
+			    u64 *op_seqno)
+{
+	struct drm_xe_eudebug_event_vm_bind_op_debug_data *e;
+	struct drm_xe_eudebug_event *event;
+	const bool pseudo = debug_data->flags & DRM_XE_VM_BIND_DEBUG_DATA_FLAG_PSEUDO;
+	/* NUL included, so that the debugger can read the tail as a string */
+	const size_t path_sz = pseudo ? 0 : strlen(debug_data->pathname) + 1;
+	const u32 sz = round_up(struct_size(e, pathname, path_sz), 8);
+	int err;
+
+	/* A path of the size the bind extension accepts has to fit an event */
+	BUILD_BUG_ON(sizeof(*e) + sizeof(debug_data->pathname) >
+		     DRM_XE_EUDEBUG_EVENT_MAX_SIZE);
+
+	*op_seqno = atomic64_inc_return(&d->events.seqno);
+
+	spin_lock(&d->events.lock);
+	event = xe_eudebug_prepare_event(d, DRM_XE_EUDEBUG_EVENT_VM_BIND_OP_DEBUG_DATA,
+					 *op_seqno, flags, sz);
+	e = cast_event(e, event);
+
+	e->vm_bind_ref_seqno = bind_ref_seqno;
+	e->addr = debug_data->addr;
+	e->range = debug_data->range;
+	e->flags = debug_data->flags;
+	e->offset = debug_data->offset;
+
+	/*
+	 * The event is sized to the path, and xe_eudebug_prepare_event() has
+	 * zeroed it, so the terminator and any alignment padding are there
+	 * without writing them.
+	 */
+	if (pseudo)
+		e->pseudopath = debug_data->pseudopath;
+	else
+		memcpy(e->pathname, debug_data->pathname, path_sz - 1);
+
+	err = xe_eudebug_queue_event(d, event);
+	spin_unlock(&d->events.lock);
+
+	if (err)
+		xe_eudebug_disconnect(d, err);
+
+	return err;
+}
+
+static int vm_bind_op(struct xe_eudebug *d, struct xe_vm *vm,
+		      const u32 flags, const u64 bind_ref_seqno,
+		      const struct xe_debug_data *debug_data)
+{
+	u64 op_seqno;
+
+	return vm_bind_op_event(d, vm, flags, bind_ref_seqno,
+				debug_data, &op_seqno);
+}
+
+/*
+ * The debug data entry a bind op adds or removes, and the event flag for
+ * it, or NULL if the op is not a debug data op. vm_bind_ioctl_check_args()
+ * requires the extension, so a debug data op always has its entry here.
+ * Counting and sending both go through this, so that num_bind_ops always
+ * matches the op events that follow.
+ */
+static const struct xe_debug_data *bind_op_debug_data(struct xe_vma_op *op,
+						      u32 *flags)
+{
+	if (op->base.op != DRM_GPUVA_OP_DRIVER)
+		return NULL;
+
+	if (op->subop == XE_VMA_SUBOP_ADD_DEBUG_DATA) {
+		*flags = DRM_XE_EUDEBUG_EVENT_CREATE;
+		return op->modify_debug_data.added;
+	}
+
+	if (op->subop == XE_VMA_SUBOP_REMOVE_DEBUG_DATA) {
+		*flags = DRM_XE_EUDEBUG_EVENT_DESTROY;
+		return op->modify_debug_data.removed;
+	}
+
+	return NULL;
+}
+
+void xe_eudebug_vm_bind_execute(struct xe_vm *vm,
+				struct xe_vma_ops *ops)
+{
+	struct xe_eudebug *d;
+	struct xe_vma_op *op;
+	u64 bind_seqno = 0;
+	u32 num_ops;
+	int err;
+
+	if (!xe_vm_in_lr_mode(vm))
+		return;
+
+	d = xe_eudebug_get(vm->xef);
+	if (!d)
+		return;
+
+	num_ops = 0;
+	list_for_each_entry(op, &ops->list, link) {
+		u32 flags;
+
+		if (bind_op_debug_data(op, &flags))
+			num_ops++;
+	}
+
+	lockdep_assert_held(&vm->lock);
+
+	if (!num_ops) {
+		xe_eudebug_put(d);
+		return;
+	}
+
+	err = vm_bind_event(d, vm, 0,
+			    num_ops, &bind_seqno);
+	if (err)
+		goto out_err;
+
+	list_for_each_entry(op, &ops->list, link) {
+		const struct xe_debug_data *dd;
+		u32 flags;
+
+		dd = bind_op_debug_data(op, &flags);
+		if (!dd)
+			continue;
+
+		err = vm_bind_op(d, vm, flags, bind_seqno, dd);
+		if (err)
+			goto out_err;
+	}
+
+out_err:
+	if (err)
+		xe_eudebug_disconnect(d, err);
+
+	xe_eudebug_put(d);
+}
+
 static struct xe_file *xe_eudebug_target_get(struct xe_eudebug *d)
 {
 	struct xe_file *xef = NULL;
@@ -909,13 +1103,67 @@ static struct xe_file *xe_eudebug_target_get(struct xe_eudebug *d)
 	return xef;
 }
 
+static int vm_discover_binds(struct xe_eudebug *d, struct xe_vm *vm)
+{
+	struct xe_debug_data *dd;
+	struct list_head *pos;
+	unsigned int ops, count;
+	u64 ref_seqno;
+	int err;
+
+	/*
+	 * Only long running vms are announced to the debugger, so only those
+	 * have a handle to reference here. Nothing stops a client adding
+	 * debug data to a vm that is not long running, and without this the
+	 * bind event below would fail to resolve the vm and take down the
+	 * whole discovery. Matches xe_eudebug_vm_bind_execute().
+	 */
+	if (!xe_vm_in_lr_mode(vm))
+		return 0;
+
+	/*
+	 * Walked without vm->debug_data.lock. The caller holds the target's
+	 * eudebug.ioctl_lock for write, and everything that adds to or
+	 * removes from this list runs under DRM_XE_VM_BIND, which takes that
+	 * same rwsem for read, so the list cannot change under us here.
+	 */
+	if (list_empty(&vm->debug_data.list))
+		return 0;
+
+	count = 0;
+	list_for_each(pos, &vm->debug_data.list)
+		count++;
+
+	ops = count;
+	ref_seqno = 0;
+	err = vm_bind_event(d, vm, 0, ops, &ref_seqno);
+	if (err) {
+		eu_dbg(d, "vm_bind_event error %d\n", err);
+		return err;
+	}
+
+	list_for_each_entry(dd, &vm->debug_data.list, link) {
+		err = vm_bind_op(d, vm, DRM_XE_EUDEBUG_EVENT_CREATE, ref_seqno, dd);
+		if (err) {
+			eu_dbg(d, "vm_bind_op error %d\n", err);
+			return err;
+		}
+
+		ops--;
+	}
+
+	XE_WARN_ON(ops);
+
+	return ops ? -EIO : count;
+}
+
 static void discover_client(struct xe_eudebug *d)
 {
 	struct xe_file *xef;
 	struct xe_exec_queue *q;
 	struct xe_vm *vm;
 	unsigned long i;
-	unsigned int vm_count = 0, eq_count = 0;
+	unsigned int vm_count = 0, eq_count = 0, ops_count = 0;
 	int err = 0;
 
 	xef = xe_eudebug_target_get(d);
@@ -947,6 +1195,12 @@ static void discover_client(struct xe_eudebug *d)
 		if (err)
 			goto out;
 		vm_count++;
+
+		err = vm_discover_binds(d, vm);
+		if (err < 0)
+			goto out;
+
+		ops_count += err;
 	}
 
 	xa_for_each(&xef->exec_queue.xa, i, q) {
@@ -965,9 +1219,9 @@ out:
 
 	up_write(&xef->eudebug.ioctl_lock);
 
-	if (vm_count || eq_count)
-		eu_dbg(d, "Discovery found %u vms, %u exec_queues",
-		       vm_count, eq_count);
+	if (vm_count || eq_count || ops_count)
+		eu_dbg(d, "Discovery found %u vms, %u exec_queues, %u bind_ops",
+		       vm_count, eq_count, ops_count);
 
 	xe_file_put(xef);
 
@@ -1006,7 +1260,8 @@ static int add_debugger(struct xe_device *xe, struct xe_eudebug *d,
 	d->target.xef = xe_file_get(xef);
 	d->target.pid = xef->pid;
 	kref_get(&d->ref);
-	xef->eudebug.debugger = d;
+	scoped_guard(spinlock, &xef->eudebug.lock)
+		xef->eudebug.debugger = d;
 
 	xe->eudebug.attached++;
 

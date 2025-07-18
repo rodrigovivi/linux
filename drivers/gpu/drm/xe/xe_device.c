@@ -118,6 +118,7 @@ static int xe_file_open(struct drm_device *dev, struct drm_file *file)
 
 #if IS_ENABLED(CONFIG_DRM_XE_EUDEBUG)
 	init_rwsem(&xef->eudebug.ioctl_lock);
+	spin_lock_init(&xef->eudebug.lock);
 #endif
 
 	file->driver_priv = xef;

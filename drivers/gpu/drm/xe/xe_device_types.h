@@ -757,6 +757,14 @@ struct xe_file {
 		struct xe_eudebug *debugger;
 
 		/**
+		 * @eudebug.lock: protects @eudebug.debugger. Writers hold
+		 * xe->eudebug.lock as well, lookups take only this, so that
+		 * they nest inside any lock the caller holds, the vm
+		 * reservation of a vm bind included.
+		 */
+		spinlock_t lock;
+
+		/**
 		 * @eudebug.ioctl_lock: excludes the ioctls that mutate the
 		 * eudebug visible resources of this client, so that a writer
 		 * sees a stable set of vms and exec queues. Taken for read
