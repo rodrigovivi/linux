@@ -8,6 +8,7 @@
 #include <linux/sched.h>
 
 #include <drm/drm_mode_config.h>
+#include <drm/drm_netlink.h> // REALLY? forcing every driver to include the netlink?
 
 struct drm_driver;
 struct drm_minor;
@@ -21,6 +22,8 @@ struct inode;
 
 struct pci_dev;
 struct pci_controller;
+
+struct genl_family;
 
 /*
  * Recovery methods for wedged device in order of less to more side-effects.
@@ -362,6 +365,13 @@ struct drm_device {
 	 * Root directory for debugfs files.
 	 */
 	struct dentry *debugfs_root;
+
+	/**
+	 * @drm_genl_family:
+	 *
+	 * Generic netlink family registration structure.
+	 */
+	struct genl_family *drm_genl_family;
 };
 
 void drm_dev_set_dma_dev(struct drm_device *dev, struct device *dma_dev);

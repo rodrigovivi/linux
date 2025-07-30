@@ -431,6 +431,13 @@ struct drm_driver {
 	 * some examples.
 	 */
 	const struct file_operations *fops;
+
+	/**
+	 * @genl_ops:
+	 *
+	 * Drivers private callback to genl commands
+	 */
+	const struct driver_genl_ops *genl_ops;
 };
 
 void *__devm_drm_dev_alloc(struct device *parent,

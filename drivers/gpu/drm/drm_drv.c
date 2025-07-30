@@ -1084,6 +1084,12 @@ int drm_dev_register(struct drm_device *dev, unsigned long flags)
 	if (ret)
 		goto err_minors;
 
+	if (driver->genl_ops) {
+		ret = drm_genl_register(dev);
+		if (ret)
+			goto err_minors;
+	}
+
 	ret = create_compat_control_link(dev);
 	if (ret)
 		goto err_minors;
@@ -1225,6 +1231,7 @@ static void drm_core_exit(void)
 	drm_privacy_screen_lookup_exit();
 	drm_panic_exit();
 	accel_core_exit();
+	drm_genl_exit();
 	unregister_chrdev(DRM_MAJOR, "drm");
 	drm_debugfs_remove_root();
 	drm_sysfs_destroy();
