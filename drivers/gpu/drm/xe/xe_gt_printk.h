@@ -46,6 +46,13 @@
 #define xe_gt_WARN_ON_ONCE(_gt, _condition) \
 	xe_gt_WARN_ONCE((_gt), _condition, "%s(%s)", "gt_WARN_ON_ONCE", __stringify(_condition))
 
+#define xe_gt_log_hw_err(_gt, _fmt, ...) \
+	drm_err_ratelimited(&gt_to_xe(_gt)->drm, HW_ERR "GT%d reported " _fmt, \
+			    (_gt)->info.id, ##__VA_ARGS__)
+
+#define xe_gt_log_hw_warn(_gt, _fmt, ...) \
+	drm_warn(&gt_to_xe(_gt)->drm, HW_ERR "GT%d reported " _fmt, (_gt)->info.id, ##__VA_ARGS__)
+
 static inline void __xe_gt_printfn_err(struct drm_printer *p, struct va_format *vaf)
 {
 	struct xe_gt *gt = p->arg;
