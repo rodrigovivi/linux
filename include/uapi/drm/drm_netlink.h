@@ -30,6 +30,8 @@
 #define _DRM_NETLINK_H_
 
 #define DRM_GENL_VERSION 1
+#define DRM_GENL_MCAST_GROUP_NAME_CORR_ERR	"drm_corr_err"
+#define DRM_GENL_MCAST_GROUP_NAME_UNCORR_ERR	"drm_uncorr_err"
 
 #if defined(__cplusplus)
 extern "C" {
@@ -54,6 +56,8 @@ enum drm_genl_error_cmds {
 	DRM_RAS_CMD_READ_BLOCK,
 	/** @DRM_RAS_CMD_READ_ALL: Command to get counters of all errors */
 	DRM_RAS_CMD_READ_ALL,
+	/** @DRM_RAS_CMD_ERROR_EVENT: Command sent as part of multicast event */
+	DRM_RAS_CMD_ERROR_EVENT,
 
 	__DRM_CMD_MAX,
 	DRM_CMD_MAX = __DRM_CMD_MAX - 1,

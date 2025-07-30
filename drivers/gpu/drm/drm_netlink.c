@@ -15,6 +15,11 @@
 
 DEFINE_XARRAY(drm_dev_xarray);
 
+static const struct genl_multicast_group drm_event_mcgrps[] = {
+	[DRM_GENL_MCAST_CORR_ERR] = { .name = DRM_GENL_MCAST_GROUP_NAME_CORR_ERR, },
+	[DRM_GENL_MCAST_UNCORR_ERR] = { .name = DRM_GENL_MCAST_GROUP_NAME_UNCORR_ERR, },
+};
+
 /**
  * drm_genl_reply - response to a request
  * @msg: socket buffer
@@ -155,6 +160,8 @@ static void drm_genl_family_init(struct drm_device *dev)
 	dev->drm_genl_family->ops = drm_genl_ops;
 	dev->drm_genl_family->n_ops = ARRAY_SIZE(drm_genl_ops);
 	dev->drm_genl_family->maxattr = DRM_ATTR_MAX;
+	dev->drm_genl_family->mcgrps = drm_event_mcgrps;
+	dev->drm_genl_family->n_mcgrps = ARRAY_SIZE(drm_event_mcgrps);
 	dev->drm_genl_family->module = dev->dev->driver->owner;
 }
 

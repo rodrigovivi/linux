@@ -12,6 +12,11 @@ struct drm_device;
 struct genl_info;
 struct sk_buff;
 
+enum mcgrps_events {
+	DRM_GENL_MCAST_CORR_ERR,
+	DRM_GENL_MCAST_UNCORR_ERR,
+};
+
 struct driver_genl_ops {
 	int (*doit)(struct drm_device *dev, struct sk_buff *skb,
 		    struct genl_info *info);
