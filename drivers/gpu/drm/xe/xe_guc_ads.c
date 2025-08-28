@@ -402,6 +402,18 @@ static void guc_waklv_init(struct xe_guc_ads *ads)
 				 GUC_FEATURE_KLV_DISABLE_MULTI_QUEUE);
 	}
 
+	if (IS_ENABLED(CONFIG_DRM_XE_EUDEBUG) && XE_GT_WA(gt, 14022766366)) {
+		if (xe_guc_has_debug_contexts(&gt->uc.guc)) {
+			guc_waklv_enable(ads, NULL, 0, &offset, &remain,
+					 GUC_WA_KLV_RESET_DEP_ENGINES_ON_DEBUG_CTX_SWITCH);
+		} else {
+			xe_gt_info(gt, "eudebug needs GuC version %u.%u.%u or greater\n",
+				   XE_GUC_VER_DEBUG_CONTEXTS_MAJOR,
+				   XE_GUC_VER_DEBUG_CONTEXTS_MINOR,
+				   XE_GUC_VER_DEBUG_CONTEXTS_PATCH);
+		}
+	}
+
 	size = guc_ads_waklv_size(ads) - remain;
 	if (!size)
 		return;

@@ -1936,6 +1936,14 @@ u16 xe_hwe_guc_logical_instance(struct xe_hw_engine *hwe)
 	return hwe->logical_instance;
 }
 
+bool xe_guc_has_debug_contexts(struct xe_guc *guc)
+{
+	return GUC_FIRMWARE_VER_AT_LEAST(guc,
+					 XE_GUC_VER_DEBUG_CONTEXTS_MAJOR,
+					 XE_GUC_VER_DEBUG_CONTEXTS_MINOR,
+					 XE_GUC_VER_DEBUG_CONTEXTS_PATCH);
+}
+
 #if IS_ENABLED(CONFIG_DRM_XE_KUNIT_TEST)
 #include "tests/xe_guc_g2g_test.c"
 #endif

@@ -29,6 +29,11 @@
 #define GUC_FIRMWARE_VER_AT_LEAST(guc, ver...) \
 	xe_guc_fw_version_at_least((guc), MAKE_GUC_VER_ARGS(ver))
 
+/* Lowest GuC version that knows how to handle debuggable contexts */
+#define XE_GUC_VER_DEBUG_CONTEXTS_MAJOR	70
+#define XE_GUC_VER_DEBUG_CONTEXTS_MINOR	49
+#define XE_GUC_VER_DEBUG_CONTEXTS_PATCH	4
+
 struct drm_printer;
 struct xe_gt;
 
@@ -65,6 +70,7 @@ int xe_guc_start(struct xe_guc *guc);
 void xe_guc_declare_wedged(struct xe_guc *guc);
 bool xe_guc_using_main_gamctrl_queues(struct xe_guc *guc);
 bool xe_guc_has_paging_engine(struct xe_guc *guc);
+bool xe_guc_has_debug_contexts(struct xe_guc *guc);
 
 #if IS_ENABLED(CONFIG_DRM_XE_KUNIT_TEST)
 int xe_guc_g2g_test_notification(struct xe_guc *guc, u32 *payload, u32 len);
