@@ -1,0 +1,30 @@
+drm drm-fixes 42d2abbfa8c40299e047a9b3e5578fdd309dd2ff
+	Merge tag 'mediatek-drm-fixes-20250829' of https://git.kernel.org/pub/scm/linux/kernel/git/chunkuang.hu/linux into drm-fixes
+drm-misc drm-misc-fixes 2cb66ae6040fd3cb058c3391b180f378fc0e3e2f
+	nouveau: Membar before between semaphore writes and the interrupt
+drm-intel drm-intel-fixes 1b237f190eb3d36f52dffe07a40b5eb210280e00
+	Linux 6.17-rc3
+drm-xe drm-xe-fixes 75671d90fde8c78e940e15a1366a50ece56c6b69
+	drm/xe: switch to local xbasename() helper
+drm drm-next ddcc2bb28878b5e7f7aeeb2b510629960b6714a5
+	Merge tag 'drm-misc-next-2025-08-28' of https://gitlab.freedesktop.org/drm/misc/kernel into drm-next
+drm-misc drm-misc-next-fixes 54d4f445517fe8350d735624d7f4225e7511d9eb
+	drm/panfrost: Print RSS for tiler heap BO's in debugfs GEMS file
+drm-intel drm-intel-next-fixes 5a569ef4d4ab184a481dd8ecb58f464a89b44d2f
+	drm/i915/display: Set C10_VDR_CTRL_MSGBUS_ACCESS before phy reg read
+drm-xe drm-xe-next-fixes 8f5ae30d69d7543eee0d70083daf4de8fe15d585
+	Linux 6.17-rc1
+drm-misc drm-misc-next 24de3daf6179bce3710527b8292d7ee6f1b56393
+	accel/amdxdna: Use int instead of u32 to store error codes
+drm-intel drm-intel-next 3b6f62b6b5777f56e3fedc45041c2f61645b5204
+	iopoll: Reorder the timeout handling in poll_timeout_us()
+drm-intel drm-intel-gt-next b7a855f488c6825e3dc06e78c49326491bef6f98
+	drm/i915/gt: Relocate Gen6 context-specific workaround
+drm-xe drm-xe-next 1047bd82794a1eab64d643f196d09171ce983f44
+	drm/xe: Fix incorrect migration of backed-up object to VRAM
+drm-intel topic/core-for-CI 822bdcee36a8e5d8a24aa6ba8e14a86459a78e4f
+	platform/x86: asus-wmi: Only register lps0 dev for Ally devices
+drm-xe topic/xe-for-CI 6916e5fb25c414cb3d4adcfc8f12f55f602c53b2
+	drm/xe/pm: Re-enable D3Cold by default on BMG
+drm topic/drm-next-nouveau-r570 6cc6e08d4542473d79ea83d9123d9d35e9c01c92
+	drm/nouveau/kms: add support for GB20x
