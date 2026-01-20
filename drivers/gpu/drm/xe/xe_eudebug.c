@@ -36,6 +36,49 @@
 #include "xe_vm.h"
 
 /**
+ * DOC: Connection Establishment
+ *
+ * To debug a target DRM client, the debugger must first establish
+ * a connection with the DRM_IOCTL_XE_EUDEBUG_CONNECT ioctl, issued on a
+ * DRM file descriptor of its own for the same device and taking a
+ * :c:type:`drm_xe_eudebug_connect`. On success the ioctl returns a new
+ * file descriptor, the eudebug file descriptor, on which the debugger
+ * reads events and issues the eudebug ioctls. Closing it ends the
+ * connection.
+ *
+ * The interface has to be enabled for the device first, by writing 1 to
+ * its enable_eudebug sysfs attribute; until then the connect ioctl fails
+ * with -EOPNOTSUPP. See Documentation/ABI/testing/sysfs-driver-intel-xe-eudebug.
+ *
+ * The debug target's DRM client file descriptor is passed into the
+ * connect ioctl via :c:member:`drm_xe_eudebug_connect.fd`.
+ * This is the fd that the target process obtained from open('/dev/dri/cardX').
+ *
+ * This file descriptor must be a valid DRM client fd in the debugger's
+ * (calling) process context. For debugging an Xe DRM client in
+ * another process, pidfd_getfd() can be used to acquire a duplicate
+ * of the file descriptor from the target process. See
+ * :ref:`File Descriptor Acquisition Methods <fd_acquisition_methods>` for
+ * details on how to obtain the target's fd.
+ *
+ * After a successful connection, all existing resources that the target Xe DRM
+ * client already has are sent as events, as if they had been
+ * created right after the connection. This is referred to as discovery.
+ *
+ */
+
+/**
+ * DOC: Events
+ *
+ * Resource creation/destruction and hardware state changes are
+ * delivered as events to the debugger.
+ *
+ * To read an event, ioctl DRM_XE_EUDEBUG_IOCTL_READ_EVENT command
+ * can be issued with prefilled :c:type:`drm_xe_eudebug_event` as argument.
+ *
+ */
+
+/**
  * DOC: EU debug mode
  *
  * In EU debug mode the render and compute engines run with the thread
