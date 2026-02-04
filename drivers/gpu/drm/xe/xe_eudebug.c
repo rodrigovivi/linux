@@ -68,6 +68,88 @@
  */
 
 /**
+ * DOC: Security Model
+ *
+ * If you are inside the same process, you can connect to your own DRM client
+ * by simply passing its fd to drm_xe_eudebug_connect.
+ *
+ * For a remote process, possession of that process's DRM client fd is
+ * the capability: the connect ioctl adds no credential check of its own.
+ * What sets the bar is therefore how that fd was obtained.
+ *
+ * Taking an fd from a process that did not offer it goes through
+ * pidfd_getfd(), and the kernel enforces credentials there.
+ * __pidfd_fget() requires ptrace_may_access() with
+ * PTRACE_MODE_ATTACH_REALCREDS, under the target's
+ * signal->exec_update_lock. That is the check ptrace(PTRACE_ATTACH)
+ * makes, and the one process_vm_readv() makes under the same lock in
+ * mm_access(), so for this path the same ptrace_may_access() rules apply
+ * as in CPU process debugging with gdb. Most of the File Descriptor
+ * Acquisition Methods end up here, including those that only use procfs
+ * to discover which fd number to ask for.
+ *
+ * Two methods do not involve ptrace_may_access(), because nothing is
+ * being taken. With SCM_RIGHTS the target sends its own fd over a unix
+ * socket, which is the target consenting. With fork() inheritance the fd
+ * belonged to the debugger before the fork and the child merely
+ * inherited a copy of it.
+ *
+ * See :ref:`File Descriptor Acquisition Methods <fd_acquisition_methods>`.
+ */
+
+/**
+ * DOC: File Descriptor Acquisition Methods
+ * .. _fd_acquisition_methods:
+ *
+ * There are multiple ways to get the target DRM client fd for
+ * another process:
+ *
+ * Unix domain socket
+ *     The debugger can receive the DRM client fd from the target via a Unix
+ *     domain socket using SCM_RIGHTS ancillary data. This is the standard
+ *     mechanism for passing file descriptors between processes, but requires
+ *     coordination to establish the socket connection.
+ *
+ * Pipe
+ *     The target sends the fd number through a pipe, and the debugger
+ *     duplicates it via pidfd_getfd(). This requires coordination between
+ *     the processes to establish the pipe and synchronize the transfer.
+ *
+ * Fork
+ *     If the debugger spawns the target process via fork(), a DRM client
+ *     fd can be shared across the fork boundary — either inherited by the
+ *     child from the debugger, or acquired from the child by the debugger
+ *     via pidfd_getfd() after the child opens the device. This is useful
+ *     when the debugger launches the target directly, similar to how gdb
+ *     spawns inferiors.
+ *
+ * Ptrace
+ *     The debugger can attach to the target process using ptrace. It can
+ *     intercept the return value of the target's open() or drmOpen() call
+ *     by inspecting registers at syscall exit to catch the fd when it is
+ *     created. Alternatively, if the target has already opened the device,
+ *     the debugger can read the target's memory using PTRACE_PEEKDATA to
+ *     locate the stored fd value in a known variable or data structure.
+ *     Once the fd number is known, pidfd_getfd() can be used to acquire a
+ *     duplicate in the debugger's process context.
+ *
+ * Procfs
+ *     The debugger can look through /proc/<targetpid>/fd for file descriptors
+ *     and inspect /proc/<targetpid>/fdinfo to see which of those
+ *     are for an Xe DRM client, then duplicate that fd number with
+ *     pidfd_getfd().
+ *
+ * Brute force
+ *     The debugger can duplicate each fd listed in /proc/<targetpid>/fd
+ *     with pidfd_getfd() and try to connect with it to see if it succeeds.
+ *
+ * In both procfs methods the fd has to be taken with pidfd_getfd(). Opening
+ * /proc/<targetpid>/fd/<N> instead opens the device node anew and yields a
+ * new, empty DRM client of the debugger's own, which connect accepts but
+ * which is not the target.
+ */
+
+/**
  * DOC: Events
  *
  * Resource creation/destruction and hardware state changes are
