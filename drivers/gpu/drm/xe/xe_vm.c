@@ -5504,3 +5504,151 @@ void xe_vm_destroy_vma(struct xe_vma *vma)
 {
 	xe_vma_destroy_late(vma);
 }
+
+/**
+ * xe_vm_svm_vma_subtract() - Subtract an address range from an existing SVM VMA
+ * @vm: The xe_vm the @vma belongs to
+ * @vma: Target SVM VMA from which a sub-range will be removed
+ * @sub_start: Start address of the range to subtract (inclusive)
+ * @sub_end:   End address of the range to subtract (exclusive)
+ *
+ * Behavior:
+ *   1) If [sub_start, sub_end) does not overlap @vma at all, return -EINVAL.
+ *   2) If [sub_start, sub_end) fully covers @vma, the entire VMA is removed.
+ *   3) If [sub_start, sub_end) partially overlaps @vma, only the overlapping
+ *      portion is removed. The remaining non-overlapping head and/or tail
+ *      regions are re-inserted as new VMAs that inherit the original VMA's
+ *      memory attributes and creation flags.
+ *
+ * Locking: Caller must hold vm->lock for write.
+ *
+ * Return: pointer to vma which is the subtracted hole in SVM mapping
+ *         or error on failure
+ */
+struct xe_vma *xe_vm_svm_vma_subtract(struct xe_vm *vm, struct xe_vma *vma,
+				      u64 sub_start, u64 sub_end)
+{
+	u64 vma_start = xe_vma_start(vma);
+	u64 vma_end   = xe_vma_end(vma); /* exclusive */
+	u64 overlap_start, overlap_end;  /* overlap range, end is exclusive */
+	u64 start, end;
+	struct xe_vma_mem_attr attr = {};
+	struct xe_vma *rvma = NULL;
+	struct xe_vma *prev_vma = NULL;
+	struct xe_vma *next_vma = NULL;
+	unsigned int flags;
+	int err = 0;
+
+	lockdep_assert_held_write(&vm->lock);
+
+	/* Reject obviously invalid input range. */
+	if (sub_start >= sub_end)
+		return ERR_PTR(-EINVAL);
+
+	/* 1) No overlap with the existing VMA. */
+	if (sub_end <= vma_start || sub_start >= vma_end)
+		return ERR_PTR(-EINVAL);
+
+	/* Compute the actual overlapping region clipped to the VMA. */
+	overlap_start = max(sub_start, vma_start);
+	overlap_end = min(sub_end, vma_end);
+
+	start = vma_start;
+	end = vma_end;
+	/*
+	 * Preserve the original VMA's memory attributes (with proper refcount
+	 * handling on dpagemap) and creation flags before destroying it, then
+	 * re-insert the non-overlapping head/tail regions as new VMAs.
+	 */
+	xe_vma_mem_attr_copy(&attr, &vma->attr);
+	flags = vma->gpuva.flags & XE_VMA_CREATE_MASK;
+
+	xe_vm_remove_vma(vm, vma);
+	/* 2) Subtract range fully covers the VMA -> remove it entirely. */
+	if (overlap_start == vma_start && overlap_end == vma_end)
+		goto out;
+
+	/*
+	 * 3) Partial overlap.
+	 *
+	 * Head region: [vma_start, overlap_start)
+	 */
+	if (vma_start < overlap_start) {
+		/* xe_vma_create() takes an inclusive end address. */
+		prev_vma = xe_vma_create(vm, NULL, 0, vma_start,
+					 overlap_start - 1, &attr, flags);
+		if (IS_ERR(prev_vma)) {
+			err = PTR_ERR(prev_vma);
+			prev_vma = NULL;
+			goto err;
+		}
+
+		err = xe_vm_insert_vma(vm, prev_vma);
+		if (err) {
+			xe_vma_destroy_late(prev_vma);
+			prev_vma = NULL;
+			goto err;
+		}
+		start = overlap_start;
+	}
+
+	/* Tail region: [overlap_end, vma_end) */
+	if (overlap_end < vma_end) {
+		next_vma = xe_vma_create(vm, NULL, 0, overlap_end, vma_end - 1,
+					 &attr, flags);
+		if (IS_ERR(next_vma)) {
+			err = PTR_ERR(next_vma);
+			next_vma = NULL;
+			goto err;
+		}
+
+		err = xe_vm_insert_vma(vm, next_vma);
+		if (err) {
+			xe_vma_destroy_late(next_vma);
+			next_vma = NULL;
+			goto err;
+		}
+		end = overlap_end;
+	}
+
+out:
+	/*
+	 * [start, end) is the hole. It stops being cpu-addr-mirror territory
+	 * once a sparse VMA is bound over it, so every range touching it has
+	 * to go, not just the ones straddling its edges. Ranges outside the
+	 * hole stay: xe_svm_range_find_or_insert() clamps to the VMA, so they
+	 * rebuild themselves against the head and tail VMAs on the next fault.
+	 */
+	xe_svm_remove_address_range(vm, start, end);
+
+	rvma = xe_vma_create(vm, NULL, 0,
+			     start, end - 1,
+			     &attr,
+			     flags);
+	if (IS_ERR(rvma)) {
+		err = PTR_ERR(rvma);
+		goto err;
+	}
+	xe_vma_destroy_unlocked(vma);
+	xe_vma_mem_attr_fini(&attr);
+	return rvma;
+
+err:
+	xe_vma_mem_attr_fini(&attr);
+
+	if (prev_vma) {
+		xe_vm_remove_vma(vm, prev_vma);
+		xe_vma_destroy_unlocked(prev_vma);
+	}
+	if (next_vma) {
+		xe_vm_remove_vma(vm, next_vma);
+		xe_vma_destroy_unlocked(next_vma);
+	}
+
+	if (xe_vm_insert_vma(vm, vma)) {
+		xe_vma_destroy_unlocked(vma);
+		xe_vm_kill(vm, true);
+	}
+
+	return ERR_PTR(err);
+}

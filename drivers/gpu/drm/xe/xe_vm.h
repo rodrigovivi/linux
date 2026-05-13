@@ -449,4 +449,7 @@ struct xe_vma *xe_vm_create_null_vma(struct xe_vm *vm, u64 addr);
 void xe_vm_destroy_vma(struct xe_vma *vma);
 void xe_vma_destroy(struct xe_vma *vma, struct dma_fence *fence);
 
+struct xe_vma *xe_vm_svm_vma_subtract(struct xe_vm *vm, struct xe_vma *vma, u64 sub_start,
+				      u64 sub_end);
+
 #endif
