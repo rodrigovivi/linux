@@ -1375,8 +1375,16 @@ static bool check_timeout(struct xe_exec_queue *q, struct xe_sched_job *job)
 		xe_gt_warn(gt, "Check job timeout: seqno=%u, lrc_seqno=%u, guc_id=%d, not started",
 			   xe_sched_job_seqno(job), xe_sched_job_lrc_seqno(job),
 			   q->guc->id);
-
-		return xe_sched_invalidate_job(job, 2);
+		/*
+		 * Job never started: report a real timeout immediately so that
+		 * the outer karma check in guc_exec_queue_timedout_job() can
+		 * trigger xe_gt_reset_async() and attempt recovery.  Using
+		 * xe_sched_invalidate_job() here would exhaust the karma
+		 * counter before the outer check ever sees it, preventing the
+		 * reset from firing and leading to an endless stream of
+		 * "Kernel-submitted job timed out" WARNs with no recovery.
+		 */
+		return true;
 	}
 
 	ctx_timestamp = lower_32_bits(xe_lrc_timestamp(q->lrc[0]));
