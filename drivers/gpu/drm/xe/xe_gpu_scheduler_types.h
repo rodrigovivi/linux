@@ -51,6 +51,13 @@ struct xe_gpu_scheduler {
 	spinlock_t				msg_lock;
 	/** @work_process_msg: processes messages */
 	struct work_struct		work_process_msg;
+	/**
+	 * @timeout: the original job timeout, saved at init time.
+	 * drm_sched_tdr_queue_imm() permanently zeroes sched->base.timeout,
+	 * so we must keep a copy here to restore the correct value after a
+	 * GT reset via xe_sched_submission_resume_tdr().
+	 */
+	long				timeout;
 };
 
 #define xe_sched_entity		drm_sched_entity

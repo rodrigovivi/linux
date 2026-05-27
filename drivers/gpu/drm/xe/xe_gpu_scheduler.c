@@ -76,6 +76,7 @@ int xe_sched_init(struct xe_gpu_scheduler *sched,
 	};
 
 	sched->ops = xe_ops;
+	sched->timeout = timeout;
 	spin_lock_init(&sched->msg_lock);
 	INIT_LIST_HEAD(&sched->msgs);
 	INIT_WORK(&sched->work_process_msg, xe_sched_process_msg_work);
@@ -103,7 +104,7 @@ void xe_sched_submission_stop(struct xe_gpu_scheduler *sched)
 
 void xe_sched_submission_resume_tdr(struct xe_gpu_scheduler *sched)
 {
-	drm_sched_resume_timeout(&sched->base, sched->base.timeout);
+	drm_sched_resume_timeout(&sched->base, sched->timeout);
 }
 
 void xe_sched_add_msg(struct xe_gpu_scheduler *sched,
