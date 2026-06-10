@@ -153,4 +153,14 @@ static inline u64 xe_pagefault_start_addr(struct xe_pagefault *pf)
 	return xe_pagefault_addr(pf);
 }
 
+static inline int xe_pagefault_entry_size(void)
+{
+	/*
+	 * Power of two alignment is not a hardware requirement, rather a
+	 * software restriction which makes the math for page fault queue
+	 * management simpler.
+	 */
+	return roundup_pow_of_two(sizeof(struct xe_pagefault));
+}
+
 #endif

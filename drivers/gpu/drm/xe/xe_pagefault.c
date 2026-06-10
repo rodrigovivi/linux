@@ -71,49 +71,6 @@
  * free state once they are complete.
  */
 
-/**
- * enum xe_pagefault_alloc_state - lifetime state for a page fault queue entry
- * @XE_PAGEFAULT_ALLOC_STATE_FREE:
- *	Entry is unused and may be overwritten by the producer, consumer retry
- *	or requeue..
- * @XE_PAGEFAULT_ALLOC_STATE_QUEUED:
- *	Entry has been enqueued and may be dequeued by a worker.
- * @XE_PAGEFAULT_ALLOC_STATE_ACTIVE:
- *	Entry has been dequeued and is the worker's currently serviced fault.
- *	The worker may attach additional faults to it via consumer.next.
- * @XE_PAGEFAULT_ALLOC_STATE_CHAINED:
- *	Entry is not independently serviced; it has been chained onto an
- *	ACTIVE entry via consumer.next and will be acknowledged when the
- *	leading fault completes.
- * @XE_PAGEFAULT_ALLOC_STATE_COUNT:
- *	Count of allocation states.
- *
- * The page fault queue provides stable storage for outstanding faults so the
- * IRQ handler can chain new cache hits directly onto a worker's active fault.
- * Because entries may remain referenced outside the consumer dequeue window,
- * the producer must only write into entries in the FREE state.
- *
- * State transitions are protected by the page fault queue lock. Workers return
- * entries to FREE after acknowledging the fault (either as ACTIVE or CHAINED).
- */
-enum xe_pagefault_alloc_state {
-	XE_PAGEFAULT_ALLOC_STATE_FREE		= 0,
-	XE_PAGEFAULT_ALLOC_STATE_QUEUED		= 1,
-	XE_PAGEFAULT_ALLOC_STATE_CHAINED	= 2,
-	XE_PAGEFAULT_ALLOC_STATE_ACTIVE		= 3,
-	XE_PAGEFAULT_ALLOC_STATE_COUNT		= 4,
-};
-
-static int xe_pagefault_entry_size(void)
-{
-	/*
-	 * Power of two alignment is not a hardware requirement, rather a
-	 * software restriction which makes the math for page fault queue
-	 * management simplier.
-	 */
-	return roundup_pow_of_two(sizeof(struct xe_pagefault));
-}
-
 static int xe_pagefault_begin(struct drm_exec *exec, struct xe_vma *vma,
 			      struct xe_vram_region *vram, bool need_vram_move)
 {
@@ -331,7 +288,6 @@ unlock_vm:
 	return err;
 }
 
-#define XE_PAGEFAULT_CACHE_START_INVALID	U64_MAX
 #define xe_pagefault_cache_start_invalidate(val)	\
 	(val = XE_PAGEFAULT_CACHE_START_INVALID)
 

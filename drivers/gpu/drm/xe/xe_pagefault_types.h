@@ -248,6 +248,39 @@ struct xe_pagefault {
 };
 
 /**
+ * enum xe_pagefault_alloc_state - lifetime state for a page fault queue entry
+ * @XE_PAGEFAULT_ALLOC_STATE_FREE:
+ *	Entry is unused and may be overwritten by the producer, consumer retry
+ *	or requeue..
+ * @XE_PAGEFAULT_ALLOC_STATE_QUEUED:
+ *	Entry has been enqueued and may be dequeued by a worker.
+ * @XE_PAGEFAULT_ALLOC_STATE_ACTIVE:
+ *	Entry has been dequeued and is the worker's currently serviced fault.
+ *	The worker may attach additional faults to it via consumer.next.
+ * @XE_PAGEFAULT_ALLOC_STATE_CHAINED:
+ *	Entry is not independently serviced; it has been chained onto an
+ *	ACTIVE entry via consumer.next and will be acknowledged when the
+ *	leading fault completes.
+ * @XE_PAGEFAULT_ALLOC_STATE_COUNT:
+ *	Maximum enum value.
+ *
+ * The page fault queue provides stable storage for outstanding faults so the
+ * IRQ handler can chain new cache hits directly onto a worker's active fault.
+ * Because entries may remain referenced outside the consumer dequeue window,
+ * the producer must only write into entries in the FREE state.
+ *
+ * State transitions are protected by the page fault queue lock. Workers return
+ * entries to FREE after acknowledging the fault (either as ACTIVE or CHAINED).
+ */
+enum xe_pagefault_alloc_state {
+	XE_PAGEFAULT_ALLOC_STATE_FREE		= 0,
+	XE_PAGEFAULT_ALLOC_STATE_QUEUED		= 1,
+	XE_PAGEFAULT_ALLOC_STATE_CHAINED	= 2,
+	XE_PAGEFAULT_ALLOC_STATE_ACTIVE		= 3,
+	XE_PAGEFAULT_ALLOC_STATE_COUNT		= 4,
+};
+
+/**
  * struct xe_pagefault_queue - Xe pagefault queue (consumer)
  *
  * Used to capture all device page faults for deferred processing. Size this
@@ -288,6 +321,7 @@ struct xe_pagefault_work {
 	 * Protected by the page fault queue lock.
 	 */
 	struct {
+#define XE_PAGEFAULT_CACHE_START_INVALID	U64_MAX
 		/** @cache.start: Start address of the current page fault */
 		u64 start;
 		/** @cache.end: End address of the current page fault */
