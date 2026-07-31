@@ -2543,8 +2543,17 @@ static const u32 region_to_mem_type[] = {
 	XE_PL_VRAM1,
 };
 
-static void prep_vma_destroy(struct xe_vm *vm, struct xe_vma *vma,
-			     bool post_commit)
+/**
+ * xe_vm_prep_vma_destroy - Prepare vma to be destroyed.
+ * @vm: the vm vma belongs to
+ * @vma: vma to be removed
+ * @post_commit: if to remove vma from gpuvm tree
+ *
+ * Marks vma as destroyed and if post_commit is true
+ * also removes it from gpuvm tree.
+ */
+void xe_vm_prep_vma_destroy(struct xe_vm *vm, struct xe_vma *vma,
+			    bool post_commit)
 {
 	xe_svm_notifier_lock(vm);
 	vma->gpuva.flags |= XE_VMA_DESTROYED;
@@ -2906,7 +2915,7 @@ static struct xe_vma *new_vma(struct xe_vm *vm, struct drm_gpuva_op_map *op,
 			if (!bo->vm) {
 				err = add_preempt_fences(vm, bo);
 				if (err) {
-					prep_vma_destroy(vm, vma, false);
+					xe_vm_prep_vma_destroy(vm, vma, false);
 					xe_vma_destroy(vma, NULL);
 				}
 			}
@@ -2933,7 +2942,7 @@ static struct xe_vma *new_vma(struct xe_vm *vm, struct drm_gpuva_op_map *op,
 		}
 	}
 	if (err) {
-		prep_vma_destroy(vm, vma, false);
+		xe_vm_prep_vma_destroy(vm, vma, false);
 		xe_vma_destroy_unlocked(vma);
 		vma = ERR_PTR(err);
 	}
@@ -2994,8 +3003,8 @@ static int xe_vma_op_commit(struct xe_vm *vm, struct xe_vma_op *op)
 
 		xe_vm_assert_write_mode_or_garbage_collector(vm);
 
-		prep_vma_destroy(vm, gpuva_to_vma(op->base.remap.unmap->va),
-				 true);
+		xe_vm_prep_vma_destroy(vm, gpuva_to_vma(op->base.remap.unmap->va),
+				       true);
 		op->flags |= XE_VMA_OP_COMMITTED;
 
 		if (op->remap.prev) {
@@ -3030,7 +3039,7 @@ static int xe_vma_op_commit(struct xe_vm *vm, struct xe_vma_op *op)
 	case DRM_GPUVA_OP_UNMAP:
 		xe_vm_assert_write_mode_or_garbage_collector(vm);
 
-		prep_vma_destroy(vm, gpuva_to_vma(op->base.unmap.va), true);
+		xe_vm_prep_vma_destroy(vm, gpuva_to_vma(op->base.unmap.va), true);
 		op->flags |= XE_VMA_OP_COMMITTED;
 		break;
 	case DRM_GPUVA_OP_PREFETCH:
@@ -3271,7 +3280,7 @@ static void xe_vma_op_unwind(struct xe_vm *vm, struct xe_vma_op *op,
 		xe_vm_assert_write_mode_or_garbage_collector(vm);
 
 		if (op->map.vma) {
-			prep_vma_destroy(vm, op->map.vma, post_commit);
+			xe_vm_prep_vma_destroy(vm, op->map.vma, post_commit);
 			xe_vma_destroy_unlocked(op->map.vma);
 		}
 		break;
@@ -3297,11 +3306,11 @@ static void xe_vma_op_unwind(struct xe_vm *vm, struct xe_vma_op *op,
 		xe_vm_assert_write_mode_or_garbage_collector(vm);
 
 		if (op->remap.prev) {
-			prep_vma_destroy(vm, op->remap.prev, prev_post_commit);
+			xe_vm_prep_vma_destroy(vm, op->remap.prev, prev_post_commit);
 			xe_vma_destroy_unlocked(op->remap.prev);
 		}
 		if (op->remap.next) {
-			prep_vma_destroy(vm, op->remap.next, next_post_commit);
+			xe_vm_prep_vma_destroy(vm, op->remap.next, next_post_commit);
 			xe_vma_destroy_unlocked(op->remap.next);
 		}
 		if (vma) {

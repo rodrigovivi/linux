@@ -449,6 +449,8 @@ struct xe_pt *xe_vm_pt_root(struct xe_vm *vm, u8 tile_id);
 
 int xe_vm_insert_vma(struct xe_vm *vm, struct xe_vma *vma);
 struct xe_vma *xe_vm_create_null_vma(struct xe_vm *vm, u64 addr);
+void xe_vm_prep_vma_destroy(struct xe_vm *vm, struct xe_vma *vma,
+			    bool post_commit);
 void xe_vm_destroy_vma(struct xe_vma *vma);
 void xe_vma_destroy(struct xe_vma *vma, struct dma_fence *fence);
 
