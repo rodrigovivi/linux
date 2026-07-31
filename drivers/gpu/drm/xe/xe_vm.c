@@ -1117,6 +1117,87 @@ free_ops:
 	return fence;
 }
 
+static void xe_vm_populate_unbind(struct xe_vma_op *op,
+				  struct xe_vma *vma,
+				  u8 tile_mask)
+{
+	INIT_LIST_HEAD(&op->link);
+	op->tile_mask = tile_mask;
+	op->base.op = DRM_GPUVA_OP_UNMAP;
+	op->base.unmap.va = &vma->gpuva;
+	op->base.unmap.keep = false;
+}
+
+static int xe_vm_ops_add_unbind(struct xe_vma_ops *vops,
+				struct xe_vma *vma,
+				u8 tile_mask)
+{
+	struct xe_vma_op *op;
+
+	op = kzalloc_obj(*op);
+	if (!op)
+		return -ENOMEM;
+
+	xe_vm_populate_unbind(op, vma, tile_mask);
+	list_add_tail(&op->link, &vops->list);
+	xe_vma_ops_incr_pt_update_ops(vops, tile_mask, 1);
+
+	return 0;
+}
+
+/**
+ * xe_vma_unbind() - Unbind a vma from GPU page tables.
+ * @vm: The VM which the vma belongs to.
+ * @vma: The vma to be unbound.
+ * @tile_mask: tiles for unbind.
+ *
+ * Return: dma fence for unbind to signal completion on success, ERR_PTR on
+ * failure
+ */
+struct dma_fence *xe_vma_unbind(struct xe_vm *vm, struct xe_vma *vma,
+				u8 tile_mask)
+{
+	struct dma_fence *fence = NULL;
+	struct xe_vma_ops vops;
+	struct xe_vma_op *op, *next_op;
+	int err;
+
+	lockdep_assert_held_write(&vm->lock);
+	xe_vm_assert_held(vm);
+	xe_assert(vm->xe, xe_vm_in_fault_mode(vm));
+
+	if (!vma->tile_present)
+		return dma_fence_get_stub();
+
+	xe_vma_ops_init(&vops, vm, NULL, NULL, 0);
+
+	vops.flags |= XE_VMA_OPS_FLAG_WAIT_VM_BOOKKEEP;
+
+	err = xe_vm_ops_add_unbind(&vops, vma, tile_mask);
+	if (err) {
+		fence = ERR_PTR(err);
+		goto err_fini;
+	}
+
+	err = xe_vma_ops_alloc(&vops, false);
+	if (err) {
+		fence = ERR_PTR(err);
+		goto free_ops;
+	}
+
+	fence = ops_execute(vm, &vops);
+
+free_ops:
+	list_for_each_entry_safe(op, next_op, &vops.list, link) {
+		list_del(&op->link);
+		kfree(op);
+	}
+err_fini:
+	xe_vma_ops_fini(&vops);
+
+	return fence;
+}
+
 static void xe_vma_mem_attr_fini(struct xe_vma_mem_attr *attr)
 {
 	drm_pagemap_put(attr->preferred_loc.dpagemap);

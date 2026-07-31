@@ -249,6 +249,9 @@ struct dma_fence *xe_vm_range_rebind(struct xe_vm *vm,
 				     u8 tile_mask);
 struct dma_fence *xe_vm_range_unbind(struct xe_vm *vm,
 				     struct xe_svm_range *range);
+struct dma_fence *xe_vma_unbind(struct xe_vm *vm,
+				struct xe_vma *vma,
+				u8 tile_mask);
 
 int xe_vm_invalidate_vma(struct xe_vma *vma);
 
