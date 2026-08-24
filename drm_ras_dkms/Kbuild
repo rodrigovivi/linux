@@ -6,3 +6,4 @@
 
 obj-m += drm_ras.o
 obj-m += xe_ras.o
+obj-m += blah.o
