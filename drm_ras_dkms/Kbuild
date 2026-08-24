@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0
+#
+# The drm-ras genl core. Exports the node register/unregister/event API for
+# consumer modules (xe_ras, blah) built alongside it.
+
+obj-m += drm_ras.o
