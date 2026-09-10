@@ -2526,6 +2526,7 @@ int xe_migrate_access_memory(struct xe_migrate *m, struct xe_bo *bo,
 		struct dma_fence *__fence;
 		u64 vram_addr = vram_region_gpu_offset(bo->ttm.resource) +
 			cursor.start;
+		unsigned long sram_offset = (unsigned long)buf & ~PAGE_MASK;
 		int current_bytes;
 		u32 pitch;
 
@@ -2535,6 +2536,17 @@ int xe_migrate_access_memory(struct xe_migrate *m, struct xe_bo *bo,
 		else
 			current_bytes = min_t(int, bytes_left, cursor.size);
 
+		/*
+		 * xe_migrate_vram() maps from the start of the page @buf points
+		 * into, so the offset into that page counts against the limit
+		 * as well. Cap at whole pages, so that the following chunks
+		 * start at the same offset again instead of being cut short
+		 * by the pitch.
+		 */
+		current_bytes = min_t(int, current_bytes,
+				      round_down(MAX_PREEMPTDISABLE_TRANSFER -
+						 sram_offset, PAGE_SIZE));
+
 		pitch = xe_migrate_copy_pitch(xe, current_bytes);
 		if (xe->info.has_mem_copy_instr)
 			current_bytes = min_t(int, current_bytes, U16_MAX * pitch);
@@ -2543,8 +2555,7 @@ int xe_migrate_access_memory(struct xe_migrate *m, struct xe_bo *bo,
 					      round_down(S16_MAX * pitch,
 							 XE_CACHELINE_BYTES));
 
-		__fence = xe_migrate_vram(m, current_bytes,
-					  (unsigned long)buf & ~PAGE_MASK,
+		__fence = xe_migrate_vram(m, current_bytes, sram_offset,
 					  &pagemap_addr[current_page],
 					  vram_addr, NULL, write ?
 					  XE_MIGRATE_COPY_TO_VRAM :
