@@ -2227,6 +2227,7 @@ void xe_eudebug_init_early(struct xe_device *xe)
 	struct drm_device *dev = &xe->drm;
 	int err;
 
+	INIT_LIST_HEAD(&xe->eudebug.targets);
 	WRITE_ONCE(xe->eudebug.cap_state, XE_EUDEBUG_CAP_NOT_SUPPORTED);
 
 	err = drmm_mutex_init(dev, &xe->eudebug.lock);
@@ -2299,6 +2300,50 @@ out_err:
 	drm_warn(&xe->drm, "eudebug disabled, init fail: %d\n", err);
 
 	WRITE_ONCE(xe->eudebug.cap_state, XE_EUDEBUG_CAP_NOT_SUPPORTED);
+}
+
+/**
+ * xe_eudebug_track_exec_queue - Make an exec queue findable on attention
+ * @q: The exec queue
+ *
+ * Adds a debuggable exec queue into the device wide target list, so that
+ * the attention handling can resolve the hardware context that raised
+ * attention back to the exec queue owning it. Membership does not depend
+ * on a debugger being attached to the owning client.
+ *
+ * Must be called only after the queue is fully initialized, as the lookup
+ * dereferences the lrc array of every queue it walks.
+ */
+void xe_eudebug_track_exec_queue(struct xe_exec_queue *q)
+{
+	struct xe_device *xe = gt_to_xe(q->gt);
+
+	if (!xe_exec_queue_is_debuggable(q))
+		return;
+
+	guard(mutex)(&xe->eudebug.lock);
+
+	if (list_empty(&q->eudebug.target_link))
+		list_add_tail(&q->eudebug.target_link, &xe->eudebug.targets);
+}
+
+/**
+ * xe_eudebug_untrack_exec_queue - Remove an exec queue from the target list
+ * @q: The exec queue
+ *
+ * Reverses xe_eudebug_track_exec_queue(). Safe to call on a queue that was
+ * never tracked, and safe to repeat.
+ */
+void xe_eudebug_untrack_exec_queue(struct xe_exec_queue *q)
+{
+	struct xe_device *xe = gt_to_xe(q->gt);
+
+	if (!xe_exec_queue_is_debuggable(q))
+		return;
+
+	guard(mutex)(&xe->eudebug.lock);
+
+	list_del_init(&q->eudebug.target_link);
 }
 
 /**

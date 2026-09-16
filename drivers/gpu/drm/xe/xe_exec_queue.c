@@ -231,6 +231,9 @@ static struct xe_exec_queue *__xe_exec_queue_alloc(struct xe_device *xe,
 	INIT_LIST_HEAD(&q->vm_exec_queue_link);
 	INIT_LIST_HEAD(&q->hw_engine_group_link);
 	INIT_LIST_HEAD(&q->pxp.link);
+#if IS_ENABLED(CONFIG_DRM_XE_EUDEBUG)
+	INIT_LIST_HEAD(&q->eudebug.target_link);
+#endif
 	spin_lock_init(&q->multi_queue.lock);
 	spin_lock_init(&q->lrc_lookup_lock);
 	q->multi_queue.priority = XE_MULTI_QUEUE_PRIORITY_NORMAL;
@@ -514,6 +517,14 @@ struct xe_exec_queue *xe_exec_queue_create(struct xe_device *xe, struct xe_vm *v
 	}
 
 	/*
+	 * Same reasoning as for the PXP list above: the attention lookup walks
+	 * xe->eudebug.targets and dereferences q->lrc[], which is only filled
+	 * in by __xe_exec_queue_init(), so the queue must not be published
+	 * there while it is half-initialized.
+	 */
+	xe_eudebug_track_exec_queue(q);
+
+	/*
 	 * Publish the LRC BO back-pointers last: past this point the queue can
 	 * only be destroyed through xe_exec_queue_destroy(), so a concurrent
 	 * reader that takes a reference via bo->q cannot race with the
@@ -682,6 +693,8 @@ void xe_exec_queue_fini(struct xe_exec_queue *q)
 	xe_exec_queue_update_run_ticks(q);
 	if (q->xef && atomic_dec_and_test(&q->xef->exec_queue.pending_removal))
 		wake_up_var(&q->xef->exec_queue.pending_removal);
+
+	xe_eudebug_untrack_exec_queue(q);
 
 	__xe_exec_queue_fini(q);
 	__xe_exec_queue_free(q);
@@ -1650,6 +1663,7 @@ void xe_exec_queue_update_run_ticks(struct xe_exec_queue *q)
  */
 void xe_exec_queue_kill(struct xe_exec_queue *q)
 {
+	xe_eudebug_untrack_exec_queue(q);
 	q->ops->kill(q);
 	xe_vm_remove_compute_exec_queue(q->vm, q);
 }

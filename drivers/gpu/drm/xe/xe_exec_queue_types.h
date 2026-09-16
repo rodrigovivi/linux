@@ -284,6 +284,14 @@ struct xe_exec_queue {
 	u64 tlb_flush_seqno;
 	/** @hw_engine_group_link: link into exec queues in the same hw engine group */
 	struct list_head hw_engine_group_link;
+
+#if IS_ENABLED(CONFIG_DRM_XE_EUDEBUG)
+	/** @eudebug: eudebug specifics */
+	struct {
+		/** @eudebug.target_link: link into xe_device.eudebug.targets */
+		struct list_head target_link;
+	} eudebug;
+#endif
 	/**
 	 * @lrc_lookup_lock: Lock for protecting lrc array access. Only used when
 	 * running in parallel to queue creation is possible.

@@ -654,6 +654,9 @@ struct xe_device {
 		/** @eudebug.attached: number of debuggers currently attached */
 		unsigned int attached;
 
+		/** @eudebug.targets: exec queues that are debuggable */
+		struct list_head targets;
+
 		/** @eudebug.lock: protects the eudebug state of this device */
 		struct mutex lock;
 

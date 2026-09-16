@@ -57,6 +57,9 @@ void xe_eudebug_init_early(struct xe_device *xe);
 bool xe_eudebug_is_supported(struct xe_device *xe);
 bool xe_eudebug_is_enabled(struct xe_device *xe);
 
+void xe_eudebug_track_exec_queue(struct xe_exec_queue *q);
+void xe_eudebug_untrack_exec_queue(struct xe_exec_queue *q);
+
 void xe_eudebug_file_close(struct xe_file *xef);
 
 void xe_eudebug_vm_create(struct xe_file *xef, struct xe_vm *vm);
@@ -90,6 +93,8 @@ static inline int xe_eudebug_connect_ioctl(struct drm_device *dev,
 static inline void xe_eudebug_init(struct xe_device *xe) { }
 static inline void xe_eudebug_init_early(struct xe_device *xe) { }
 static inline bool xe_eudebug_is_enabled(struct xe_device *xe) { return false; }
+static inline void xe_eudebug_track_exec_queue(struct xe_exec_queue *q) { }
+static inline void xe_eudebug_untrack_exec_queue(struct xe_exec_queue *q) { }
 
 static inline void xe_eudebug_file_close(struct xe_file *xef) { }
 
