@@ -21,6 +21,7 @@
 #include "xe_eudebug.h"
 #include "xe_eudebug_hw.h"
 #include "xe_eudebug_types.h"
+#include "xe_eudebug_vm.h"
 #include "xe_exec_queue.h"
 #include "xe_gt.h"
 #include "xe_hw_engine.h"
@@ -153,7 +154,7 @@ xe_eudebug_resources_destroy(struct xe_eudebug *d)
 	}
 }
 
-static bool xe_eudebug_detached(struct xe_eudebug *d)
+bool xe_eudebug_detached(struct xe_eudebug *d)
 {
 	return !READ_ONCE(d->target.xef);
 }
@@ -664,6 +665,31 @@ static int xe_eudebug_remove_handle(struct xe_eudebug *d, int type, void *p,
 	eu_dbg(d, "handle type %d handle %p removed: %d\n", type, p, ret);
 
 	return ret;
+}
+
+static void *find_resource__unlocked(struct xe_eudebug_resource *r,
+				     u32 id)
+{
+	struct xe_eudebug_handle *h;
+
+	h = xa_load(&r->xa, id);
+
+	return h ? (void *)(uintptr_t)h->key : NULL;
+}
+
+struct xe_vm *xe_eudebug_vm_get(struct xe_eudebug *d, u32 id)
+{
+	struct xe_eudebug_resource *r =
+		resource_from_type(d, XE_EUDEBUG_RES_TYPE_VM);
+	struct xe_vm *vm;
+
+	mutex_lock(&r->lock);
+	vm = find_resource__unlocked(r, id);
+	if (vm)
+		xe_vm_get(vm);
+	mutex_unlock(&r->lock);
+
+	return vm;
 }
 
 static struct drm_xe_eudebug_event *
@@ -1880,6 +1906,10 @@ static long xe_eudebug_ioctl(struct file *file,
 	case DRM_XE_EUDEBUG_IOCTL_ACK_EVENT:
 		ret = discovery_pending(d) ?: xe_eudebug_ack_event_ioctl(d, arg);
 		eu_dbg(d, "ioctl cmd=EVENT_ACK ret=%ld\n", ret);
+		break;
+	case DRM_XE_EUDEBUG_IOCTL_VM_OPEN:
+		ret = discovery_pending(d) ?: xe_eudebug_vm_open_ioctl(d, arg);
+		eu_dbg(d, "ioctl cmd=VM_OPEN ret=%ld\n", ret);
 		break;
 	default:
 		ret = -ENOTTY;

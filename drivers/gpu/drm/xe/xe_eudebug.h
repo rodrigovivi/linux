@@ -19,6 +19,7 @@ struct xe_exec_queue;
 struct xe_vma;
 struct xe_vma_ops;
 struct xe_user_fence;
+struct xe_eudebug;
 
 #if IS_ENABLED(CONFIG_DRM_XE_EUDEBUG)
 
@@ -43,6 +44,10 @@ struct xe_user_fence;
 
 #define xe_eudebug_assert(d, ...) xe_assert((d)->xe, ##__VA_ARGS__)
 
+#define xe_eudebug_for_each_hw_engine(__hwe, __gt, __id) \
+	for_each_hw_engine(__hwe, __gt, __id)	       \
+		for_each_if(xe_hw_engine_has_eudebug(__hwe))
+
 int xe_eudebug_connect_ioctl(struct drm_device *dev,
 			     void *data,
 			     struct drm_file *file);
@@ -56,11 +61,16 @@ void xe_eudebug_file_close(struct xe_file *xef);
 
 void xe_eudebug_vm_create(struct xe_file *xef, struct xe_vm *vm);
 void xe_eudebug_vm_destroy(struct xe_file *xef, struct xe_vm *vm);
+
+bool xe_eudebug_detached(struct xe_eudebug *d);
+
 int xe_eudebug_enable(struct xe_device *xe, bool enable);
 
 struct xe_eudebug *xe_eudebug_get_nolock(struct xe_file *xef);
 struct xe_eudebug *xe_eudebug_get_nolock_with_discovery(struct xe_file *xef);
 void xe_eudebug_put(struct xe_eudebug *d);
+
+struct xe_vm *xe_eudebug_vm_get(struct xe_eudebug *d, u32 vm_id);
 
 void xe_eudebug_exec_queue_create(struct xe_file *xef, struct xe_exec_queue *q);
 void xe_eudebug_exec_queue_destroy(struct xe_file *xef, struct xe_exec_queue *q);

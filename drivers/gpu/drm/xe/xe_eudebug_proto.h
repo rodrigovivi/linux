@@ -47,6 +47,7 @@ extern "C" {
  */
 #define DRM_XE_EUDEBUG_IOCTL_READ_EVENT		_IOWR('j', 0x40, struct drm_xe_eudebug_event)
 #define DRM_XE_EUDEBUG_IOCTL_ACK_EVENT		_IOW('j', 0x41, struct drm_xe_eudebug_ack)
+#define DRM_XE_EUDEBUG_IOCTL_VM_OPEN		_IOW('j', 0x42, struct drm_xe_eudebug_vm_open)
 
 /**
  * struct drm_xe_eudebug_event - Base type of event delivered by xe_eudebug.
@@ -321,6 +322,55 @@ struct drm_xe_eudebug_ack {
 
 	/** @reserved: Reserved field, must be zero. */
 	__u64 reserved;
+};
+
+/**
+ * struct drm_xe_eudebug_vm_open - Open a target vm
+ *
+ * Open target VM for reading and writing with DRM_XE_EUDEBUG_IOCTL_VM_OPEN.
+ *
+ * The ioctl returns -EBUSY while discovery is still in progress. Retry.
+ *
+ * File descriptor is returned which can be used with pread and pwrite
+ * to inspect and modify the target VM.
+ *
+ * Multiple operations can be synced with calling fsync(fd). The
+ * fsync will time out after timeout_ns if the VM can't be guaranteed
+ * to be in sync. Caller should re-read the state with pread again.
+ *
+ * pread() and pwrite() take a vm address as the offset and transfer
+ * within one mapping, so a transfer that reaches its end is short rather
+ * than continuing into the next one. Errors worth telling apart:
+ *
+ * - -EINVAL if no mapping of this vm covers the offset, or the vm handle
+ *   has gone. Retrying does not help until the target binds the range.
+ * - -EBUSY if the mapping is there but its backing store is not ready to
+ *   be touched yet. Retry.
+ * - -EINTR if the wait for that backing store was interrupted.
+ * - -ENOTCONN if the debug target is gone.
+ * - -ETIMEDOUT from fsync() if the flush did not complete within
+ *   @timeout_ns. The vm may be out of sync, so pread() again.
+ *
+ */
+struct drm_xe_eudebug_vm_open {
+	/** @extensions: Reserved for future extensions, must be zero */
+	__u64 extensions;
+
+	/** @vm_handle: handle of vm to be accessed */
+	__u64 vm_handle;
+
+	/** @flags: flags, must be zero */
+	__u64 flags;
+
+	/**
+	 * @timeout_ns: Timeout value in nanoseconds
+	 *
+	 * Applies to each fsync() on the returned fd. The flush waits on
+	 * hardware while holding a device wide lock, so the value is capped:
+	 * anything above 10 seconds is rejected with -EINVAL. 0 selects the
+	 * cap. The value is rounded up to microseconds.
+	 */
+	__u64 timeout_ns;
 };
 
 /*
