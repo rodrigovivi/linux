@@ -441,6 +441,8 @@ s64 ttm_bo_evict_cgroup(struct ttm_device *bdev,
 			struct dmem_cgroup_pool_state *limit_pool,
 			s64 target_bytes,
 			struct ttm_operation_ctx *ctx);
+int ttm_bo_access_locked(struct ttm_buffer_object *bo, unsigned long offset,
+			 void *buf, int len, int write);
 int ttm_bo_access(struct ttm_buffer_object *bo, unsigned long offset,
 		  void *buf, int len, int write);
 vm_fault_t ttm_bo_vm_reserve(struct ttm_buffer_object *bo,

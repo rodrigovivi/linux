@@ -406,6 +406,48 @@ static int ttm_bo_vm_access_kmap(struct ttm_buffer_object *bo,
 }
 
 /**
+ * ttm_bo_access_locked - Helper to access a reserved buffer object
+ *
+ * @bo: ttm buffer object, reserved by the caller
+ * @offset: access offset into buffer object
+ * @buf: pointer to caller memory to read into or write from
+ * @len: length of access
+ * @write: write access
+ *
+ * Same as ttm_bo_access(), for a caller that already holds the reservation,
+ * for instance to wait for fences before the access without the placement
+ * changing in between.
+ * Should not directly be exported to user space via a peak / poke interface.
+ *
+ * Returns:
+ * @len if successful, negative error code on failure.
+ */
+int ttm_bo_access_locked(struct ttm_buffer_object *bo, unsigned long offset,
+			 void *buf, int len, int write)
+{
+	dma_resv_assert_held(bo->base.resv);
+
+	if (len < 1 || (offset + len) > bo->base.size)
+		return -EIO;
+
+	if (!bo->resource)
+		return -ENODATA;
+
+	switch (bo->resource->mem_type) {
+	case TTM_PL_SYSTEM:
+		fallthrough;
+	case TTM_PL_TT:
+		return ttm_bo_vm_access_kmap(bo, offset, buf, len, write);
+	default:
+		if (bo->bdev->funcs->access_memory)
+			return bo->bdev->funcs->access_memory
+				(bo, offset, buf, len, write);
+		return -EIO;
+	}
+}
+EXPORT_SYMBOL(ttm_bo_access_locked);
+
+/**
  * ttm_bo_access - Helper to access a buffer object
  *
  * @bo: ttm buffer object
@@ -433,26 +475,8 @@ int ttm_bo_access(struct ttm_buffer_object *bo, unsigned long offset,
 	if (ret)
 		return ret;
 
-	if (!bo->resource) {
-		ret = -ENODATA;
-		goto unlock;
-	}
+	ret = ttm_bo_access_locked(bo, offset, buf, len, write);
 
-	switch (bo->resource->mem_type) {
-	case TTM_PL_SYSTEM:
-		fallthrough;
-	case TTM_PL_TT:
-		ret = ttm_bo_vm_access_kmap(bo, offset, buf, len, write);
-		break;
-	default:
-		if (bo->bdev->funcs->access_memory)
-			ret = bo->bdev->funcs->access_memory
-				(bo, offset, buf, len, write);
-		else
-			ret = -EIO;
-	}
-
-unlock:
 	ttm_bo_unreserve(bo);
 
 	return ret;
