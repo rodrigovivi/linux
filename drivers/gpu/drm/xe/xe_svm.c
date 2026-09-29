@@ -1517,6 +1517,21 @@ bool xe_svm_has_mapping(struct xe_vm *vm, u64 start, u64 end)
 	return drm_gpusvm_has_mapping(&vm->svm.gpusvm, start, end);
 }
 
+static void __xe_svm_range_remove(struct xe_vm *vm,
+				  struct drm_gpusvm_range *range)
+{
+	if (IS_DGFX(vm->xe) && xe_svm_range_in_vram(to_xe_range(range)))
+		drm_gpusvm_range_evict(&vm->svm.gpusvm, range);
+	drm_gpusvm_range_get(range);
+	__xe_svm_garbage_collector(vm, to_xe_range(range));
+	if (!list_empty(&to_xe_range(range)->garbage_collector_link)) {
+		spin_lock(&vm->svm.garbage_collector.list_lock);
+		list_del(&to_xe_range(range)->garbage_collector_link);
+		spin_unlock(&vm->svm.garbage_collector.list_lock);
+	}
+	drm_gpusvm_range_put(range);
+}
+
 /**
  * xe_svm_unmap_address_range - UNMAP SVM mappings and ranges
  * @vm: The VM
@@ -1537,18 +1552,36 @@ void xe_svm_unmap_address_range(struct xe_vm *vm, u64 start, u64 end)
 		drm_gpusvm_for_each_range_safe(range, __next, notifier, start, end) {
 			if (start > drm_gpusvm_range_start(range) ||
 			    end < drm_gpusvm_range_end(range)) {
-				if (IS_DGFX(vm->xe) && xe_svm_range_in_vram(to_xe_range(range)))
-					drm_gpusvm_range_evict(&vm->svm.gpusvm, range);
-				drm_gpusvm_range_get(range);
-				__xe_svm_garbage_collector(vm, to_xe_range(range));
-				if (!list_empty(&to_xe_range(range)->garbage_collector_link)) {
-					spin_lock(&vm->svm.garbage_collector.list_lock);
-					list_del(&to_xe_range(range)->garbage_collector_link);
-					spin_unlock(&vm->svm.garbage_collector.list_lock);
-				}
-				drm_gpusvm_range_put(range);
+				__xe_svm_range_remove(vm, range);
 			}
 		}
+	}
+}
+
+/**
+ * xe_svm_remove_address_range - Remove every SVM range in an address range
+ * @vm: The VM
+ * @start: start addr
+ * @end: end addr, exclusive
+ *
+ * Unlike xe_svm_unmap_address_range(), which only removes ranges crossing
+ * @start or @end, this removes every range overlapping [@start, @end),
+ * including ranges contained entirely within it. Use it when the address
+ * range stops being backed by a cpu-addr-mirror VMA altogether.
+ *
+ * Caller must hold vm->lock for write.
+ */
+void xe_svm_remove_address_range(struct xe_vm *vm, u64 start, u64 end)
+{
+	struct drm_gpusvm_notifier *notifier, *next;
+
+	lockdep_assert_held_write(&vm->lock);
+
+	drm_gpusvm_for_each_notifier_safe(notifier, next, &vm->svm.gpusvm, start, end) {
+		struct drm_gpusvm_range *range, *__next;
+
+		drm_gpusvm_for_each_range_safe(range, __next, notifier, start, end)
+			__xe_svm_range_remove(vm, range);
 	}
 }
 
