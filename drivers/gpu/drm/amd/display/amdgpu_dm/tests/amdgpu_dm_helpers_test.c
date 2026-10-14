@@ -4106,7 +4106,7 @@ static void dm_test_is_dp_sink_present_queries_link_service(struct kunit *test)
  * device pointer, so build a real one here.
  */
 static const struct drm_connector_funcs dm_test_connector_funcs = {
-	.reset = drm_atomic_helper_connector_reset,
+	.atomic_create_state = drm_atomic_helper_connector_create_state,
 };
 
 static struct amdgpu_dm_connector *dm_test_alloc_real_connector(struct kunit *test,
