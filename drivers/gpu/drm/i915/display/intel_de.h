@@ -36,24 +36,6 @@ intel_de_read(struct intel_display *display, intel_reg_t reg)
 }
 
 static inline u64
-intel_de_read64_2x32_volatile(struct intel_display *display,
-			      intel_reg_t lower_reg, intel_reg_t upper_reg)
-{
-	u64 val;
-
-	intel_dmc_wl_get(display, lower_reg);
-	intel_dmc_wl_get(display, upper_reg);
-
-	val = intel_uncore_read64_2x32(__to_uncore(display), lower_reg,
-				       upper_reg);
-
-	intel_dmc_wl_put(display, upper_reg);
-	intel_dmc_wl_put(display, lower_reg);
-
-	return val;
-}
-
-static inline u64
 intel_de_read64_2x32(struct intel_display *display, intel_reg_t reg)
 {
 	intel_reg_t upper_reg = _MMIO(intel_reg_offset(reg) + 4);
@@ -156,6 +138,23 @@ intel_de_rmw_fw(struct intel_display *display, intel_reg_t reg, u32 clear, u32 s
 	intel_de_write_fw(display, reg, val);
 
 	return old;
+}
+
+static inline u64
+intel_de_read64_2x32_volatile_fw(struct intel_display *display,
+				 i915_reg_t lower_reg, i915_reg_t upper_reg)
+{
+	u32 old_upper, upper, lower;
+	int loop = 0;
+
+	upper = intel_de_read_fw(display, upper_reg);
+	do {
+		old_upper = upper;
+		lower = intel_de_read_fw(display, lower_reg);
+		upper = intel_de_read_fw(display, upper_reg);
+	} while (upper != old_upper && loop++ < 2);
+
+	return (u64)upper << 32 | lower;
 }
 
 static inline void
