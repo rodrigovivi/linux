@@ -70,15 +70,13 @@ intel_de_write(struct intel_display *display, intel_reg_t reg, u32 val)
 static inline u32
 intel_de_rmw(struct intel_display *display, intel_reg_t reg, u32 clear, u32 set)
 {
-	u32 val;
+	u32 old, val;
 
-	intel_dmc_wl_get(display, reg);
+	old = intel_de_read(display, reg);
+	val = (old & ~clear) | set;
+	intel_de_write(display, reg, val);
 
-	val = intel_uncore_rmw(__to_uncore(display), reg, clear, set);
-
-	intel_dmc_wl_put(display, reg);
-
-	return val;
+	return old;
 }
 
 int intel_de_wait_us(struct intel_display *display, intel_reg_t reg,
