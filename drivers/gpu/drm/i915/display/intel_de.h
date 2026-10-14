@@ -50,11 +50,7 @@ intel_de_read64_2x32(struct intel_display *display, intel_reg_t reg)
 static inline void
 intel_de_posting_read(struct intel_display *display, intel_reg_t reg)
 {
-	intel_dmc_wl_get(display, reg);
-
-	intel_uncore_posting_read(__to_uncore(display), reg);
-
-	intel_dmc_wl_put(display, reg);
+	intel_de_read(display, reg);
 }
 
 static inline void
