@@ -10,11 +10,16 @@
 
 #include "abi/uc_fw_abi.h"
 #include "xe_macros.h"
+#include "xe_platform_types.h"
 #include "xe_uc_fw_types.h"
 
+struct device;
 struct drm_printer;
+struct pci_dev;
 
 int xe_uc_fw_init(struct xe_uc_fw *uc_fw);
+int xe_uc_fw_prefetch(struct pci_dev *pdev, enum xe_platform platform);
+void xe_uc_fw_prefetch_done(struct device *dev);
 size_t xe_uc_fw_copy_rsa(struct xe_uc_fw *uc_fw, void *dst, u32 max_len);
 int xe_uc_fw_upload(struct xe_uc_fw *uc_fw, u32 offset, u32 dma_flags);
 int xe_uc_fw_check_version_requirements(struct xe_uc_fw *uc_fw);

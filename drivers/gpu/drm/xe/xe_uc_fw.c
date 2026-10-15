@@ -231,27 +231,28 @@ void xe_uc_fw_change_status(struct xe_uc_fw *uc_fw, enum xe_uc_fw_status status)
 }
 #endif
 
+static const struct uc_fw_entry entries_guc[] = {
+	XE_GUC_FIRMWARE_DEFS(XE_UC_FW_ENTRY,
+			     uc_fw_entry_mmp_ver,
+			     uc_fw_entry_major_ver)
+};
+static const struct uc_fw_entry entries_huc[] = {
+	XE_HUC_FIRMWARE_DEFS(XE_UC_FW_ENTRY,
+			     uc_fw_entry_mmp_ver,
+			     uc_fw_entry_no_ver)
+};
+static const struct uc_fw_entry entries_gsc[] = {
+	XE_GSC_FIRMWARE_DEFS(XE_UC_FW_ENTRY, uc_fw_entry_gsc)
+};
+static const struct fw_blobs_by_type blobs_all[XE_UC_FW_NUM_TYPES] = {
+	[XE_UC_FW_TYPE_GUC] = { entries_guc, ARRAY_SIZE(entries_guc) },
+	[XE_UC_FW_TYPE_HUC] = { entries_huc, ARRAY_SIZE(entries_huc) },
+	[XE_UC_FW_TYPE_GSC] = { entries_gsc, ARRAY_SIZE(entries_gsc) },
+};
+
 static void
 uc_fw_auto_select(struct xe_device *xe, struct xe_uc_fw *uc_fw)
 {
-	static const struct uc_fw_entry entries_guc[] = {
-		XE_GUC_FIRMWARE_DEFS(XE_UC_FW_ENTRY,
-				     uc_fw_entry_mmp_ver,
-				     uc_fw_entry_major_ver)
-	};
-	static const struct uc_fw_entry entries_huc[] = {
-		XE_HUC_FIRMWARE_DEFS(XE_UC_FW_ENTRY,
-				     uc_fw_entry_mmp_ver,
-				     uc_fw_entry_no_ver)
-	};
-	static const struct uc_fw_entry entries_gsc[] = {
-		XE_GSC_FIRMWARE_DEFS(XE_UC_FW_ENTRY, uc_fw_entry_gsc)
-	};
-	static const struct fw_blobs_by_type blobs_all[XE_UC_FW_NUM_TYPES] = {
-		[XE_UC_FW_TYPE_GUC] = { entries_guc, ARRAY_SIZE(entries_guc) },
-		[XE_UC_FW_TYPE_HUC] = { entries_huc, ARRAY_SIZE(entries_huc) },
-		[XE_UC_FW_TYPE_GSC] = { entries_gsc, ARRAY_SIZE(entries_gsc) },
-	};
 	struct xe_gt *gt = uc_fw_to_gt(uc_fw);
 	enum xe_platform p = xe->info.platform;
 	const struct uc_fw_entry *entries;
@@ -287,31 +288,132 @@ uc_fw_auto_select(struct xe_device *xe, struct xe_uc_fw *uc_fw)
 	}
 }
 
+static const char *uc_fw_override_path(enum xe_uc_fw_type type)
+{
+	/* empty string disables, but it's not allowed for GuC */
+	switch (type) {
+	case XE_UC_FW_TYPE_GUC:
+		if (xe_modparam.guc_firmware_path && *xe_modparam.guc_firmware_path)
+			return xe_modparam.guc_firmware_path;
+		return NULL;
+	case XE_UC_FW_TYPE_HUC:
+		return xe_modparam.huc_firmware_path;
+	case XE_UC_FW_TYPE_GSC:
+		return xe_modparam.gsc_firmware_path;
+	default:
+		return NULL;
+	}
+}
+
 static void
 uc_fw_override(struct xe_uc_fw *uc_fw)
 {
-	char *path_override = NULL;
-
-	/* empty string disables, but it's not allowed for GuC */
-	switch (uc_fw->type) {
-	case XE_UC_FW_TYPE_GUC:
-		if (xe_modparam.guc_firmware_path && *xe_modparam.guc_firmware_path)
-			path_override = xe_modparam.guc_firmware_path;
-		break;
-	case XE_UC_FW_TYPE_HUC:
-		path_override = xe_modparam.huc_firmware_path;
-		break;
-	case XE_UC_FW_TYPE_GSC:
-		path_override = xe_modparam.gsc_firmware_path;
-		break;
-	default:
-		break;
-	}
+	const char *path_override = uc_fw_override_path(uc_fw->type);
 
 	if (path_override) {
 		uc_fw->path = path_override;
 		uc_fw->user_overridden = true;
 	}
+}
+
+struct uc_fw_prefetch {
+	struct {
+		const char *path;
+		const struct firmware *fw;
+	} blobs[4];
+};
+
+static void uc_fw_prefetch_release(struct device *dev, void *res)
+{
+	struct uc_fw_prefetch *prefetch = res;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(prefetch->blobs); i++)
+		release_firmware(prefetch->blobs[i].fw);
+}
+
+/**
+ * xe_uc_fw_prefetch - request the uC firmwares of a platform ahead of time
+ * @pdev: the &pci_dev
+ * @platform: the platform
+ *
+ * Meant to be called before taking over the firmware framebuffer, so a missing
+ * GuC firmware fails the probe while the console is still alive. The blobs are
+ * kept until consumed by xe_uc_fw_init() or xe_uc_fw_prefetch_done().
+ *
+ * Return: 0 on success, negative error code if the GuC firmware is missing.
+ */
+int xe_uc_fw_prefetch(struct pci_dev *pdev, enum xe_platform platform)
+{
+	struct uc_fw_prefetch *prefetch;
+	enum xe_uc_fw_type type;
+	unsigned int n = 0;
+	int i, err;
+
+	if (pdev->is_virtfn)
+		return 0;
+
+	prefetch = devres_alloc(uc_fw_prefetch_release, sizeof(*prefetch), GFP_KERNEL);
+	if (!prefetch)
+		return -ENOMEM;
+	devres_add(&pdev->dev, prefetch);
+
+	for (type = 0; type < XE_UC_FW_NUM_TYPES; type++) {
+		const char *override = uc_fw_override_path(type);
+
+		for (i = 0; i < blobs_all[type].count; i++) {
+			const char *path = override ?: blobs_all[type].entries[i].path;
+			const struct firmware *fw;
+
+			if (blobs_all[type].entries[i].platform != platform || !*path)
+				continue;
+
+			if (WARN_ON(n == ARRAY_SIZE(prefetch->blobs)))
+				return 0;
+
+			err = firmware_request_nowarn(&fw, path, &pdev->dev);
+			if (err && type == XE_UC_FW_TYPE_GUC) {
+				dev_err(&pdev->dev, "GuC firmware %s not found, can be downloaded from %s\n",
+					path, XE_UC_FIRMWARE_URL);
+				return err;
+			}
+
+			if (!err) {
+				prefetch->blobs[n].path = path;
+				prefetch->blobs[n++].fw = fw;
+			}
+
+			if (override)
+				break;
+		}
+	}
+
+	return 0;
+}
+
+/**
+ * xe_uc_fw_prefetch_done - release the prefetched uC firmwares not consumed
+ * @dev: the device
+ */
+void xe_uc_fw_prefetch_done(struct device *dev)
+{
+	devres_release(dev, uc_fw_prefetch_release, NULL, NULL);
+}
+
+static int uc_fw_fetch(struct device *dev, const char *path, const struct firmware **fw)
+{
+	struct uc_fw_prefetch *prefetch = devres_find(dev, uc_fw_prefetch_release, NULL, NULL);
+	int i;
+
+	for (i = 0; prefetch && i < ARRAY_SIZE(prefetch->blobs); i++) {
+		if (prefetch->blobs[i].fw && !strcmp(prefetch->blobs[i].path, path)) {
+			*fw = prefetch->blobs[i].fw;
+			prefetch->blobs[i].fw = NULL;
+			return 0;
+		}
+	}
+
+	return firmware_request_nowarn(fw, path, dev);
 }
 
 /**
@@ -757,7 +859,7 @@ static int uc_fw_request(struct xe_uc_fw *uc_fw, const struct firmware **firmwar
 		return 0;
 	}
 
-	err = firmware_request_nowarn(&fw, uc_fw->path, dev);
+	err = uc_fw_fetch(dev, uc_fw->path, &fw);
 	if (err)
 		goto fail;
 

@@ -39,6 +39,7 @@
 #include "xe_survivability_mode.h"
 #include "xe_tile.h"
 #include "xe_tile_printk.h"
+#include "xe_uc_fw.h"
 
 enum toggle_d3cold {
 	D3COLD_DISABLE,
@@ -1209,6 +1210,10 @@ static int __xe_pci_probe(struct pci_dev *pdev, const struct xe_device_desc *des
 	if (err)
 		return err;
 
+	err = xe_uc_fw_prefetch(pdev, desc->platform);
+	if (err)
+		return err;
+
 	xe = xe_device_create(pdev);
 	if (IS_ERR(xe))
 		return PTR_ERR(xe);
@@ -1289,6 +1294,8 @@ static int __xe_pci_probe(struct pci_dev *pdev, const struct xe_device_desc *des
 	err = xe_device_probe(xe);
 	if (err)
 		return err;
+
+	xe_uc_fw_prefetch_done(&pdev->dev);
 
 	err = xe_pm_init(xe);
 	if (err)
