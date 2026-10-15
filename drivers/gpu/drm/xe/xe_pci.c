@@ -1206,11 +1206,11 @@ static int __xe_pci_probe(struct pci_dev *pdev, const struct xe_device_desc *des
 	if (!group)
 		return -ENOMEM;
 
-	err = pcim_enable_device(pdev);
+	err = xe_uc_fw_prefetch(pdev, desc->platform);
 	if (err)
 		return err;
 
-	err = xe_uc_fw_prefetch(pdev, desc->platform);
+	err = pcim_enable_device(pdev);
 	if (err)
 		return err;
 
