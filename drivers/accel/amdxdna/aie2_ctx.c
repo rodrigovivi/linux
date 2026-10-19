@@ -1288,17 +1288,6 @@ up_sem:
 	return ret;
 }
 
-void aie2_hmm_invalidate(struct amdxdna_gem_obj *abo,
-			 unsigned long cur_seq)
-{
-	/*
-	 * The pages must not be released while the device may still access
-	 * them, so this wait must be neither interruptible nor time limited.
-	 */
-	dma_resv_wait_timeout(to_gobj(abo)->resv, DMA_RESV_USAGE_BOOKKEEP,
-			      false, MAX_SCHEDULE_TIMEOUT);
-}
-
 int aie2_hwctx_heap_expand(struct amdxdna_hwctx *hwctx,
 			   struct amdxdna_gem_obj *heap)
 {

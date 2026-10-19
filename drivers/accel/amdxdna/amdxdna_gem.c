@@ -12,6 +12,7 @@
 #include <drm/gpu_scheduler.h>
 #include <linux/dma-buf.h>
 #include <linux/dma-direct.h>
+#include <linux/dma-resv.h>
 #include <linux/iosys-map.h>
 #include <linux/pagemap.h>
 #include <linux/swap.h>
@@ -249,8 +250,12 @@ static bool amdxdna_hmm_invalidate(struct mmu_interval_notifier *mni,
 	mmu_interval_set_seq(&mapp->notifier, cur_seq);
 	up_write(&xdna->notifier_lock);
 
-	if (xdna->dev_info->ops->hmm_invalidate)
-		xdna->dev_info->ops->hmm_invalidate(abo, cur_seq);
+	/*
+	 * The pages must not be released while the device may still access
+	 * them, so this wait must be neither interruptible nor time limited.
+	 */
+	dma_resv_wait_timeout(to_gobj(abo)->resv, DMA_RESV_USAGE_BOOKKEEP,
+			      false, MAX_SCHEDULE_TIMEOUT);
 
 	if (range->event == MMU_NOTIFY_UNMAP) {
 		down_write(&xdna->notifier_lock);
