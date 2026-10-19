@@ -20,6 +20,7 @@
 #include "amdxdna_mailbox.h"
 #include "amdxdna_mailbox_helper.h"
 #include "amdxdna_pci_drv.h"
+#include "amdxdna_pm.h"
 
 #define NO_IOHUB		0
 #define PSP_NOTIFY_INTR		0xD007BE11
@@ -817,6 +818,10 @@ static int aie4_get_info(struct amdxdna_client *client, struct amdxdna_drm_get_i
 	if (!drm_dev_enter(&xdna->ddev, &idx))
 		return -ENODEV;
 
+	ret = amdxdna_pm_resume_get_locked(xdna);
+	if (ret)
+		goto dev_exit;
+
 	switch (args->param) {
 	case DRM_AMDXDNA_QUERY_AIE_METADATA:
 		ret = amdxdna_get_metadata(&ndev->aie, client, args);
@@ -841,8 +846,10 @@ static int aie4_get_info(struct amdxdna_client *client, struct amdxdna_drm_get_i
 		ret = -EOPNOTSUPP;
 	}
 
+	amdxdna_pm_suspend_put(xdna);
 	XDNA_DBG(xdna, "Got param %d", args->param);
 
+dev_exit:
 	drm_dev_exit(idx);
 	return ret;
 }
@@ -893,6 +900,10 @@ static int aie4_set_state(struct amdxdna_client *client,
 	if (!drm_dev_enter(&xdna->ddev, &idx))
 		return -ENODEV;
 
+	ret = amdxdna_pm_resume_get_locked(xdna);
+	if (ret)
+		goto dev_exit;
+
 	switch (args->param) {
 	case DRM_AMDXDNA_SET_POWER_MODE:
 		ret = aie4_set_power_mode(client, args);
@@ -903,6 +914,9 @@ static int aie4_set_state(struct amdxdna_client *client,
 		break;
 	}
 
+	amdxdna_pm_suspend_put(xdna);
+
+dev_exit:
 	drm_dev_exit(idx);
 	return ret;
 }
@@ -1031,6 +1045,7 @@ static int aie4_classic_init(struct amdxdna_dev *xdna)
 	if (ret)
 		goto free_work_buf;
 
+	amdxdna_pm_init(xdna);
 	return 0;
 
 free_work_buf:
@@ -1054,6 +1069,7 @@ static void aie4_vf_fini(struct amdxdna_dev *xdna)
 
 static void aie4_classic_fini(struct amdxdna_dev *xdna)
 {
+	amdxdna_pm_fini(xdna);
 	aie4_classic_hw_stop(xdna->dev_handle);
 	aie4_free_fw_log_buffer(xdna->dev_handle);
 	aie4_free_work_buffer(xdna->dev_handle);
@@ -1083,9 +1099,18 @@ static int aie4_ctx_hysteresis_set(void *data, u64 val)
 		return -ENODEV;
 
 	mutex_lock(&xdna->dev_lock);
+
+	ret = amdxdna_pm_resume_get_locked(xdna);
+	if (ret)
+		goto unlock;
+
 	ret = aie4_set_ctx_hysteresis(ndev, (u32)val);
 	if (!ret)
 		ndev->ctx_switch_hysteresis_us = (u32)val;
+
+	amdxdna_pm_suspend_put(xdna);
+
+unlock:
 	mutex_unlock(&xdna->dev_lock);
 	drm_dev_exit(idx);
 
@@ -1389,4 +1414,6 @@ const struct amdxdna_dev_ops aie4_classic_ops = {
 	.set_aie_state		= aie4_set_state,
 	.resume			= pm_ptr(aie4_classic_resume),
 	.suspend		= pm_ptr(aie4_classic_suspend),
+	.runtime_resume		= pm_ptr(aie4_classic_resume),
+	.runtime_suspend	= pm_ptr(aie4_classic_suspend),
 };
