@@ -16,7 +16,7 @@
 #include <linux/wait.h>
 #include <linux/xarray.h>
 
-#include "xe_eudebug_proto.h"
+#include <uapi/drm/xe_drm_eudebug.h>
 
 struct xe_device;
 struct xe_eudebug;

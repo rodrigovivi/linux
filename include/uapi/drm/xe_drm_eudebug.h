@@ -3,17 +3,10 @@
  * Copyright © 2023 Intel Corporation
  */
 
-#ifndef _XE_EUDEBUG_PROTO_H_
-#define _XE_EUDEBUG_PROTO_H_
+#ifndef _UAPI_XE_DRM_EUDEBUG_H_
+#define _UAPI_XE_DRM_EUDEBUG_H_
 
-/*
- * Staging copy of the eudebug uAPI, not ABI: moved to
- * include/uapi/drm/xe_drm_eudebug.h by the eudebug uAPI patch.
- */
-
-#include <linux/limits.h>
-
-#include <uapi/drm/xe_drm.h>
+#include "drm.h"
 
 #if defined(__cplusplus)
 extern "C" {
@@ -483,103 +476,8 @@ struct drm_xe_eudebug_event_eu_attention {
 	__u8 bitmask[];
 };
 
-/*
- * To be added to xe_drm.h when the eudebug uAPI is exposed.
- */
-
-#define DRM_XE_EUDEBUG_CONNECT		0x10
-#define DRM_IOCTL_XE_EUDEBUG_CONNECT		DRM_IOW(DRM_COMMAND_BASE + DRM_XE_EUDEBUG_CONNECT, struct drm_xe_eudebug_connect)
-
-/**
- * struct drm_xe_eudebug_connect - Input of &DRM_IOCTL_XE_EUDEBUG_CONNECT
- *
- * This structure is used to connect to an eudebug interface of target drm file.
- *
- * On connect, the resources the target already has are first relayed to
- * the debugger as events. This is called discovery.
- */
-struct drm_xe_eudebug_connect {
-	/** @extensions: Pointer to the first extension struct, if any */
-	__u64 extensions;
-
-	/** @fd: Debug target DRM client fd */
-	__u64 fd;
-
-	/** @flags: Flags, MBZ */
-	__u64 flags;
-
-	/** @reserved: MBZ */
-	__u64 reserved;
-};
-
-#define   DRM_XE_EXEC_QUEUE_SET_PROPERTY_EUDEBUG		7
-#define     DRM_XE_EXEC_QUEUE_EUDEBUG_FLAG_ENABLE		(1 << 0)
-
-#define	XE_VM_BIND_OP_EXTENSIONS_DEBUG_DATA 0
-
-#define DRM_XE_VM_BIND_OP_ADD_DEBUG_DATA	0x5
-#define DRM_XE_VM_BIND_OP_REMOVE_DEBUG_DATA	0x6
-
-/**
- * struct drm_xe_vm_bind_op_ext_debug_data - debug data extension struct for
- * :c:type:`drm_xe_vm_bind_op`
- *
- * The GPU VM can be annotated by issuing a bind operation with the
- * :c:member:`drm_xe_vm_bind_op.op` set to %DRM_XE_VM_BIND_OP_ADD_DEBUG_DATA or
- * %DRM_XE_VM_BIND_OP_REMOVE_DEBUG_DATA. Each such operation has to provide a
- * :c:type:`drm_xe_vm_bind_op_ext_debug_data` extension, which describes the
- * debug data to add or remove.
- *
- * This extension can either point to a file that contains relevant debug data
- * or annotate the VM range with a pseudopath by setting the
- * %DRM_XE_VM_BIND_DEBUG_DATA_FLAG_PSEUDO flag and providing one of the supported
- * pseudopath values:
- *
- *  - %DRM_XE_VM_BIND_DEBUG_DATA_PSEUDO_MODULE_AREA
- *  - %DRM_XE_VM_BIND_DEBUG_DATA_PSEUDO_SBA_AREA
- *  - %DRM_XE_VM_BIND_DEBUG_DATA_PSEUDO_SIP_AREA
- *
- */
-struct drm_xe_vm_bind_op_ext_debug_data {
-	/** @base: Base user extension */
-	struct drm_xe_user_extension base;
-
-	/** @addr: Address of the debug data mapping */
-	__u64 addr;
-
-	/** @range: Range of the debug data mapping */
-	__u64 range;
-
-#define DRM_XE_VM_BIND_DEBUG_DATA_FLAG_PSEUDO (1 << 0)
-	/** @flags: Debug data flags */
-	__u64 flags;
-
-	/**
-	 * @offset: Offset into the debug data file, MBZ when
-	 * %DRM_XE_VM_BIND_DEBUG_DATA_FLAG_PSEUDO is set
-	 */
-	__u64 offset;
-
-	/** @reserved: Reserved */
-	__u64 reserved;
-
-	union {
-#define DRM_XE_VM_BIND_DEBUG_DATA_PSEUDO_MODULE_AREA	0x1
-#define DRM_XE_VM_BIND_DEBUG_DATA_PSEUDO_SBA_AREA	0x2
-#define DRM_XE_VM_BIND_DEBUG_DATA_PSEUDO_SIP_AREA	0x3
-		/**
-		 * @pseudopath: Pseudopath used when
-		 * %DRM_XE_VM_BIND_DEBUG_DATA_FLAG_PSEUDO is set
-		 */
-		__u64 pseudopath;
-
-		/** @pathname: Path to the debug data file */
-		char pathname[PATH_MAX];
-	};
-};
-
 #if defined(__cplusplus)
 }
 #endif
 
-#endif /* _XE_EUDEBUG_PROTO_H_ */
+#endif /* _UAPI_XE_DRM_EUDEBUG_H_ */

@@ -5,7 +5,6 @@
 
 #include <linux/anon_inodes.h>
 #include <linux/cleanup.h>
-#include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/poll.h>
 #include <linux/string.h>
@@ -44,10 +43,9 @@
  * debugging needs. A breakpoint or an exception then halts the EU thread
  * that hit it and raises attention, instead of being ignored.
  *
- * The mode is off by default and is toggled per device. The new state is
- * applied through a GT reset. While no debugger interface is merged, the
- * only way to toggle it is the eudebug file in the device debugfs
- * directory.
+ * The mode is off by default and is toggled per device, through the
+ * enable_eudebug sysfs attribute. The new state is applied through a GT
+ * reset.
  */
 
 #define cast_event(T, event) container_of((event), typeof(*(T)), base)
@@ -2528,26 +2526,23 @@ int xe_eudebug_enable(struct xe_device *xe, bool enable)
 	return 0;
 }
 
-static ssize_t eudebug_show(struct file *f, char __user *ubuf,
-			    size_t size, loff_t *pos)
+static ssize_t enable_eudebug_show(struct device *dev,
+				   struct device_attribute *attr, char *buf)
 {
-	struct xe_device *xe = file_inode(f)->i_private;
-	char buf[8];
-	int len;
+	struct xe_device *xe = pdev_to_xe_device(to_pci_dev(dev));
 
-	len = scnprintf(buf, sizeof(buf), "%u\n", xe_eudebug_is_enabled(xe));
-
-	return simple_read_from_buffer(ubuf, size, pos, buf, len);
+	return sysfs_emit(buf, "%u\n", xe_eudebug_is_enabled(xe));
 }
 
-static ssize_t eudebug_set(struct file *f, const char __user *ubuf,
-			   size_t size, loff_t *pos)
+static ssize_t enable_eudebug_store(struct device *dev,
+				    struct device_attribute *attr,
+				    const char *buf, size_t count)
 {
-	struct xe_device *xe = file_inode(f)->i_private;
+	struct xe_device *xe = pdev_to_xe_device(to_pci_dev(dev));
 	bool enable;
 	int ret;
 
-	ret = kstrtobool_from_user(ubuf, size, &enable);
+	ret = kstrtobool(buf, &enable);
 	if (ret)
 		return ret;
 
@@ -2555,22 +2550,27 @@ static ssize_t eudebug_set(struct file *f, const char __user *ubuf,
 	if (ret)
 		return ret;
 
-	return size;
+	return count;
 }
 
-static const struct file_operations eudebug_fops = {
-	.owner = THIS_MODULE,
-	.read = eudebug_show,
-	.write = eudebug_set,
-};
+static DEVICE_ATTR_RW(enable_eudebug);
+
+static void xe_eudebug_sysfs_fini(void *arg)
+{
+	struct xe_device *xe = arg;
+	struct drm_device *dev = &xe->drm;
+
+	sysfs_remove_file(&dev->dev->kobj,
+			  &dev_attr_enable_eudebug.attr);
+}
 
 /*
  * xe_eudebug_fini() only runs at the final drm_dev_put(), which an open
  * file, or a debugger connection, can hold off long past unbind. devm
  * teardown unmaps the registers the poll reads well before that, and the
  * device is left runtime active, so stop the poll at unbind. devm actions
- * unwind in reverse, so this runs once nothing can enable eudebug and
- * restart it.
+ * unwind in reverse, so this runs once the sysfs knob is gone and nothing
+ * can enable eudebug and restart it.
  */
 static void xe_eudebug_attention_fini(void *arg)
 {
@@ -2680,9 +2680,18 @@ void xe_eudebug_init(struct xe_device *xe)
 	if (err)
 		goto out_err;
 
-	/* Last: once the file exists it can enable us */
-	debugfs_create_file("eudebug", 0600, xe->drm.primary->debugfs_root,
-			    xe, &eudebug_fops);
+	err = devm_add_action_or_reset(dev->dev, xe_eudebug_sysfs_fini, xe);
+	if (err)
+		goto out_err;
+
+	/*
+	 * Last: once the attribute exists it can enable us, and nothing may
+	 * fail and overwrite cap_state after that.
+	 */
+	err = sysfs_create_file(&dev->dev->kobj,
+				&dev_attr_enable_eudebug.attr);
+	if (err)
+		goto out_err;
 
 	return;
 

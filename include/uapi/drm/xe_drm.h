@@ -6,6 +6,8 @@
 #ifndef _UAPI_XE_DRM_H_
 #define _UAPI_XE_DRM_H_
 
+#include <linux/limits.h>
+
 #include "drm.h"
 
 #if defined(__cplusplus)
@@ -110,6 +112,7 @@ extern "C" {
 #define DRM_XE_VM_QUERY_MEM_RANGE_ATTRS	0x0d
 #define DRM_XE_EXEC_QUEUE_SET_PROPERTY	0x0e
 #define DRM_XE_VM_GET_PROPERTY		0x0f
+#define DRM_XE_EUDEBUG_CONNECT		0x10
 
 /* Must be kept compact -- no holes */
 
@@ -129,6 +132,7 @@ extern "C" {
 #define DRM_IOCTL_XE_VM_QUERY_MEM_RANGE_ATTRS	DRM_IOWR(DRM_COMMAND_BASE + DRM_XE_VM_QUERY_MEM_RANGE_ATTRS, struct drm_xe_vm_query_mem_range_attr)
 #define DRM_IOCTL_XE_EXEC_QUEUE_SET_PROPERTY	DRM_IOW(DRM_COMMAND_BASE + DRM_XE_EXEC_QUEUE_SET_PROPERTY, struct drm_xe_exec_queue_set_property)
 #define DRM_IOCTL_XE_VM_GET_PROPERTY		DRM_IOWR(DRM_COMMAND_BASE + DRM_XE_VM_GET_PROPERTY, struct drm_xe_vm_get_property)
+#define DRM_IOCTL_XE_EUDEBUG_CONNECT		DRM_IOW(DRM_COMMAND_BASE + DRM_XE_EUDEBUG_CONNECT, struct drm_xe_eudebug_connect)
 
 /**
  * DOC: Xe IOCTL Extensions
@@ -1019,6 +1023,64 @@ struct drm_xe_vm_destroy {
 };
 
 /**
+ * struct drm_xe_vm_bind_op_ext_debug_data - debug data extension struct for
+ * :c:type:`drm_xe_vm_bind_op`
+ *
+ * The GPU VM can be annotated by issuing a bind operation with the
+ * :c:member:`drm_xe_vm_bind_op.op` set to %DRM_XE_VM_BIND_OP_ADD_DEBUG_DATA or
+ * %DRM_XE_VM_BIND_OP_REMOVE_DEBUG_DATA. Each such operation has to provide a
+ * :c:type:`drm_xe_vm_bind_op_ext_debug_data` extension, which describes the
+ * debug data to add or remove.
+ *
+ * This extension can either point to a file that contains relevant debug data
+ * or annotate the VM range with a pseudopath by setting the
+ * %DRM_XE_VM_BIND_DEBUG_DATA_FLAG_PSEUDO flag and providing one of the supported
+ * pseudopath values:
+ *
+ *  - %DRM_XE_VM_BIND_DEBUG_DATA_PSEUDO_MODULE_AREA
+ *  - %DRM_XE_VM_BIND_DEBUG_DATA_PSEUDO_SBA_AREA
+ *  - %DRM_XE_VM_BIND_DEBUG_DATA_PSEUDO_SIP_AREA
+ *
+ */
+struct drm_xe_vm_bind_op_ext_debug_data {
+	/** @base: Base user extension */
+	struct drm_xe_user_extension base;
+
+	/** @addr: Address of the debug data mapping */
+	__u64 addr;
+
+	/** @range: Range of the debug data mapping */
+	__u64 range;
+
+#define DRM_XE_VM_BIND_DEBUG_DATA_FLAG_PSEUDO (1 << 0)
+	/** @flags: Debug data flags */
+	__u64 flags;
+
+	/**
+	 * @offset: Offset into the debug data file, MBZ when
+	 * %DRM_XE_VM_BIND_DEBUG_DATA_FLAG_PSEUDO is set
+	 */
+	__u64 offset;
+
+	/** @reserved: Reserved */
+	__u64 reserved;
+
+	union {
+#define DRM_XE_VM_BIND_DEBUG_DATA_PSEUDO_MODULE_AREA	0x1
+#define DRM_XE_VM_BIND_DEBUG_DATA_PSEUDO_SBA_AREA	0x2
+#define DRM_XE_VM_BIND_DEBUG_DATA_PSEUDO_SIP_AREA	0x3
+		/**
+		 * @pseudopath: Pseudopath used when
+		 * %DRM_XE_VM_BIND_DEBUG_DATA_FLAG_PSEUDO is set
+		 */
+		__u64 pseudopath;
+
+		/** @pathname: Path to the debug data file */
+		char pathname[PATH_MAX];
+	};
+};
+
+/**
  * struct drm_xe_vm_bind_op - run bind operations
  *
  * The @op can be:
@@ -1027,6 +1089,8 @@ struct drm_xe_vm_destroy {
  *  - %DRM_XE_VM_BIND_OP_MAP_USERPTR
  *  - %DRM_XE_VM_BIND_OP_UNMAP_ALL
  *  - %DRM_XE_VM_BIND_OP_PREFETCH
+ *  - %DRM_XE_VM_BIND_OP_ADD_DEBUG_DATA
+ *  - %DRM_XE_VM_BIND_OP_REMOVE_DEBUG_DATA
  *
  * and the @flags can be:
  *  - %DRM_XE_VM_BIND_FLAG_READONLY - Setup the page tables as read-only
@@ -1078,6 +1142,7 @@ struct drm_xe_vm_destroy {
  *    the memory region advised by madvise.
  */
 struct drm_xe_vm_bind_op {
+#define	XE_VM_BIND_OP_EXTENSIONS_DEBUG_DATA 0
 	/** @extensions: Pointer to the first extension struct, if any */
 	__u64 extensions;
 
@@ -1132,7 +1197,11 @@ struct drm_xe_vm_bind_op {
 	 * attributes likely do not apply.  Simply leaving as zero is one
 	 * option (still a valid pat_index). Same applies to
 	 * DRM_XE_VM_BIND_FLAG_CPU_ADDR_MIRROR bindings as for such mapping
-	 * there is no actual memory being mapped.
+	 * there is no actual memory being mapped, and to the
+	 * %DRM_XE_VM_BIND_OP_ADD_DEBUG_DATA and
+	 * %DRM_XE_VM_BIND_OP_REMOVE_DEBUG_DATA operations, which annotate a
+	 * range rather than map anything: the value is ignored for them, so
+	 * zero is fine.
 	 */
 	__u16 pat_index;
 
@@ -1171,6 +1240,8 @@ struct drm_xe_vm_bind_op {
 #define DRM_XE_VM_BIND_OP_MAP_USERPTR	0x2
 #define DRM_XE_VM_BIND_OP_UNMAP_ALL	0x3
 #define DRM_XE_VM_BIND_OP_PREFETCH	0x4
+#define DRM_XE_VM_BIND_OP_ADD_DEBUG_DATA	0x5
+#define DRM_XE_VM_BIND_OP_REMOVE_DEBUG_DATA	0x6
 	/** @op: Bind operation to perform */
 	__u32 op;
 
@@ -1393,6 +1464,16 @@ struct drm_xe_vm_get_property {
  *  - %DRM_XE_EXEC_QUEUE_SET_DISABLE_STATE_CACHE_PERF_FIX - Set the queue to
  *    enable render color cache keying on BTP+BTI instead of just BTI
  *    (only valid for render queues).
+ *  - %DRM_XE_EXEC_QUEUE_SET_PROPERTY_EUDEBUG - Make the queue debuggable
+ *    by an EU debugger. The value must have
+ *    %DRM_XE_EXEC_QUEUE_EUDEBUG_FLAG_ENABLE set, and no other bits. The
+ *    queue runs in runalone mode, one engine at a time, with a
+ *    preemption timeout of 0. It needs eudebug enabled through sysfs
+ *    (-EPERM otherwise), a render or compute engine, width 1, a
+ *    long-running VM, and GuC support for debug contexts (-EOPNOTSUPP
+ *    otherwise). It cannot be combined with
+ *    %DRM_XE_EXEC_QUEUE_SET_PROPERTY_PXP_TYPE or
+ *    %DRM_XE_EXEC_QUEUE_SET_PROPERTY_MULTI_GROUP.
  *
  * The example below shows how to use &struct drm_xe_exec_queue_create to create
  * a simple exec_queue (no parallel submission) of class
@@ -1440,6 +1521,8 @@ struct drm_xe_exec_queue_create {
 #define     DRM_XE_MULTI_GROUP_CREATE				(1ull << 63)
 #define   DRM_XE_EXEC_QUEUE_SET_PROPERTY_MULTI_QUEUE_PRIORITY	5
 #define   DRM_XE_EXEC_QUEUE_SET_DISABLE_STATE_CACHE_PERF_FIX	6
+#define   DRM_XE_EXEC_QUEUE_SET_PROPERTY_EUDEBUG		7
+#define     DRM_XE_EXEC_QUEUE_EUDEBUG_FLAG_ENABLE		(1 << 0)
 	/** @extensions: Pointer to the first extension struct, if any */
 	__u64 extensions;
 
@@ -2633,6 +2716,30 @@ enum drm_xe_ras_error_component {
 	[DRM_XE_RAS_ERR_COMP_PCIE] = "pcie",				\
 	[DRM_XE_RAS_ERR_COMP_FABRIC] = "fabric",			\
 }
+
+/**
+ * struct drm_xe_eudebug_connect - Input of &DRM_IOCTL_XE_EUDEBUG_CONNECT
+ *
+ * This structure is used to connect to an eudebug interface of target drm file.
+ *
+ * On connect, the resources the target already has are first relayed to
+ * the debugger as events. This is called discovery.
+ */
+struct drm_xe_eudebug_connect {
+	/** @extensions: Pointer to the first extension struct, if any */
+	__u64 extensions;
+
+	/** @fd: Debug target DRM client fd */
+	__u64 fd;
+
+	/** @flags: Flags, MBZ */
+	__u64 flags;
+
+	/** @reserved: MBZ */
+	__u64 reserved;
+};
+
+#include "xe_drm_eudebug.h"
 
 #if defined(__cplusplus)
 }
