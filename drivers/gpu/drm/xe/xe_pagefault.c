@@ -11,6 +11,7 @@
 #include "xe_bo.h"
 #include "xe_device.h"
 #include "xe_eudebug_pagefault.h"
+#include "prelim/xe_eudebug.h"
 #include "xe_gt_printk.h"
 #include "xe_gt_types.h"
 #include "xe_gt_stats.h"
@@ -222,8 +223,11 @@ static struct xe_vm *xe_pagefault_asid_to_vm(struct xe_pagefault *pf, u32 asid)
 	return vm;
 }
 
-static int xe_pagefault_service(struct xe_pagefault *pf)
+static int xe_pagefault_service(struct xe_pagefault *pf,
+				struct prelim_xe_eudebug_pagefault **out_prelim_pf)
 {
+	struct prelim_xe_eudebug_pagefault *prelim_pf;
+	bool destroy_prelim_pf = false;
 	struct xe_gt *gt = pf->gt;
 	struct xe_device *xe = gt_to_xe(gt);
 	struct xe_vm *vm;
@@ -247,16 +251,36 @@ static int xe_pagefault_service(struct xe_pagefault *pf)
 
 	xe_migrate_ulls_enter(gt_to_tile(gt)->migrate);
 
+	prelim_pf = prelim_xe_eudebug_pagefault_create(gt, vm, pf);
+
 	down_read(&vm->lock);
 
 	if (xe_vm_is_closed(vm)) {
 		err = -ENOENT;
+		destroy_prelim_pf = true;
 		xe_pagefault_set_error(pf, XE_PAGEFAULT_ERROR_VM_CLOSED);
 		goto unlock_vm;
 	}
 
 	vma = xe_vm_find_vma_by_addr(vm, xe_pagefault_addr(pf));
-	if (!vma) {
+	if (!vma && prelim_pf) {
+		/* PRELIM v1 debugger: back the faulting page with a null vma */
+		up_read(&vm->lock);
+		down_write(&vm->lock);
+		vma = xe_vm_find_vma_by_addr(vm, xe_pagefault_addr(pf));
+		if (vma)
+			destroy_prelim_pf = true;
+		else
+			vma = xe_vm_create_null_vma(vm, xe_pagefault_addr(pf));
+		downgrade_write(&vm->lock);
+		if (IS_ERR_OR_NULL(vma)) {
+			err = -EINVAL;
+			vma = NULL;
+			destroy_prelim_pf = true;
+			xe_pagefault_set_error(pf, XE_PAGEFAULT_ERROR_VMA_NOT_FOUND);
+			goto unlock_vm;
+		}
+	} else if (!vma) {
 #if IS_ENABLED(CONFIG_DRM_XE_EUDEBUG)
 retry_eudebug_pf:
 #endif
@@ -301,6 +325,8 @@ retry_eudebug_pf:
 			goto unlock_vm;
 		}
 	} else {
+		/* a vma showed up meanwhile, nothing for a PRELIM debugger to do */
+		destroy_prelim_pf = true;
 		xe_eudebug_pagefault_set_private(pf, vm);
 	}
 
@@ -367,6 +393,13 @@ unlock_vm:
 					xe_pagefault_get_error(pf), err);
 
 	up_read(&vm->lock);
+
+	if (destroy_prelim_pf) {
+		prelim_xe_eudebug_pagefault_finalize(prelim_pf, true);
+		prelim_pf = NULL;
+	}
+	*out_prelim_pf = prelim_pf;
+
 	xe_vm_put(vm);
 
 	return err;
@@ -728,6 +761,7 @@ static void xe_pagefault_queue_work(struct work_struct *w)
 		void *private;
 		struct xe_gt *gt = pf->gt;
 		u32 asid = FIELD_GET(XE_PAGEFAULT_ASID_MASK, pf->consumer.id);
+		struct prelim_xe_eudebug_pagefault *prelim_pf = NULL;
 		int err = 0;
 		bool invalidated = false;
 
@@ -738,7 +772,7 @@ static void xe_pagefault_queue_work(struct work_struct *w)
 			goto ack_fault;
 		}
 
-		err = xe_pagefault_service(pf);
+		err = xe_pagefault_service(pf, &prelim_pf);
 
 		if (err) {
 			if (!(pf->consumer.access_type & XE_PAGEFAULT_ACCESS_PREFETCH)) {
@@ -805,6 +839,8 @@ ack_fault:
 			spin_unlock_irq(&pf_queue->lock);
 		}
 		ops->ack_fault_end(private, asid, err);
+
+		prelim_xe_eudebug_pagefault_finalize(prelim_pf, !!err);
 
 		if (time_after(jiffies, threshold)) {
 			queue_work(xe->usm.pagefault_wq, w);

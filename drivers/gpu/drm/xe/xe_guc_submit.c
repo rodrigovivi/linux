@@ -1022,7 +1022,7 @@ static u32 xe_hwe_guc_logical_to_submit_mask(struct xe_hw_engine *hwe, u32 logic
 	return logical_mask;
 }
 
-static int xe_guc_action_eu_kernel_debug(struct xe_guc *guc, u32 id, u32 cmd)
+int xe_guc_action_eu_kernel_debug(struct xe_guc *guc, u32 id, u32 cmd)
 {
 	const u32 action[] = {
 		XE_GUC_ACTION_EU_KERNEL_DEBUG,

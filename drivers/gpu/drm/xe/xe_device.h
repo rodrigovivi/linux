@@ -197,6 +197,11 @@ static inline void xe_device_clear_in_reset(struct xe_device *xe)
 	atomic_set(&xe->in_reset, 0);
 }
 
+static inline bool xe_device_eudebug_uses_guc(struct xe_device *xe)
+{
+	return GRAPHICS_VERx100(xe) >= 3500;
+}
+
 u32 xe_device_ccs_bytes(struct xe_device *xe, u64 size);
 
 void xe_device_snapshot_print(struct xe_device *xe, struct drm_printer *p);

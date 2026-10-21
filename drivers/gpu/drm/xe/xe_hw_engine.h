@@ -6,6 +6,8 @@
 #ifndef _XE_HW_ENGINE_H_
 #define _XE_HW_ENGINE_H_
 
+#include <uapi/drm/xe_drm.h>
+
 #include "xe_hw_engine_types.h"
 
 struct drm_printer;
@@ -90,6 +92,26 @@ static inline bool xe_engine_supports_eudebug(const enum xe_engine_class ec)
 static inline bool xe_hw_engine_has_eudebug(const struct xe_hw_engine *hwe)
 {
 	return xe_engine_supports_eudebug(hwe->class);
+}
+
+#define XE_ENGINE_CLASS_INVALID ((u16)-1)
+
+static inline u16 xe_hw_engine_xe_to_user_class(enum xe_engine_class class)
+{
+	switch (class) {
+	case XE_ENGINE_CLASS_RENDER:
+		return DRM_XE_ENGINE_CLASS_RENDER;
+	case XE_ENGINE_CLASS_COPY:
+		return DRM_XE_ENGINE_CLASS_COPY;
+	case XE_ENGINE_CLASS_VIDEO_DECODE:
+		return DRM_XE_ENGINE_CLASS_VIDEO_DECODE;
+	case XE_ENGINE_CLASS_VIDEO_ENHANCE:
+		return DRM_XE_ENGINE_CLASS_VIDEO_ENHANCE;
+	case XE_ENGINE_CLASS_COMPUTE:
+		return DRM_XE_ENGINE_CLASS_COMPUTE;
+	default:
+		return XE_ENGINE_CLASS_INVALID;
+	}
 }
 
 #endif

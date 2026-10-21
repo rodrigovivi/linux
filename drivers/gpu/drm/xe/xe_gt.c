@@ -5,6 +5,7 @@
 
 #include "xe_gt.h"
 
+#include <linux/delay.h>
 #include <linux/minmax.h>
 
 #include <kunit/visibility.h>
@@ -25,6 +26,8 @@
 #include "xe_device.h"
 #include "xe_eu_stall.h"
 #include "xe_eudebug_pagefault.h"
+#include "prelim/xe_eudebug.h"
+#include "prelim/xe_gt_debug.h"
 #include "xe_exec_queue.h"
 #include "xe_execlist.h"
 #include "xe_force_wake.h"
@@ -754,6 +757,10 @@ int xe_gt_init(struct xe_gt *gt)
 	if (err)
 		return err;
 
+	err = prelim_xe_gt_debug_init(gt);
+	if (err)
+		return err;
+
 	err = gt_init_with_gt_forcewake(gt);
 	if (err)
 		return err;
@@ -837,6 +844,38 @@ void xe_gt_record_user_engines(struct xe_gt *gt)
 		     == gt->info.engine_mask);
 }
 
+static void do_render_reset(struct xe_gt *gt)
+{
+	/*
+	 * Original workaround suggest that we reset all engines before gt.
+	 * with igt/xe-eudebug-online/interrupt-other test, it looks like
+	 * render seems to be enough to release the hardware state so
+	 * that gt reset will succeed without a failure.
+	 */
+	const u32 mask = GRDOM_RENDER;
+	int loops = 2;
+	int err;
+	u32 val;
+
+	if (gt->info.id != 0)
+		return;
+
+	do {
+		xe_mmio_write32(&gt->mmio, GDRST, mask);
+
+		err = xe_mmio_wait32(&gt->mmio, GDRST, mask, 0,
+				     10000, &val, true);
+	} while (err && --loops);
+
+	if (err)
+		xe_gt_err(gt, "engine reset failed 0x%08x:0x%08x (%d)\n", mask, val, err);
+	/*
+	 * As we have observed that the engine state is still volatile
+	 * after GDRST is acked, impose a small delay to let everything settle.
+	 */
+	udelay(50);
+}
+
 static int do_gt_reset(struct xe_gt *gt)
 {
 	int err;
@@ -845,6 +884,9 @@ static int do_gt_reset(struct xe_gt *gt)
 		return xe_gt_sriov_vf_reset(gt);
 
 	xe_gsc_wa_14015076503(gt, true);
+
+	if (prelim_xe_eudebug_is_enabled(gt_to_xe(gt)))
+		do_render_reset(gt);
 
 	xe_mmio_write32(&gt->mmio, GDRST, GRDOM_FULL);
 	err = xe_mmio_wait32(&gt->mmio, GDRST, GRDOM_FULL, 0,
@@ -975,6 +1017,7 @@ static void gt_reset_worker(struct work_struct *w)
 	xe_guc_rc_disable(&gt->uc.guc);
 	xe_uc_stop_prepare(&gt->uc);
 	xe_pagefault_reset(gt_to_xe(gt), gt);
+	prelim_xe_gt_debug_reset(gt);
 
 	xe_uc_stop(&gt->uc);
 

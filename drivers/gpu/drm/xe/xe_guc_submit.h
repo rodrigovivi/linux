@@ -61,5 +61,6 @@ u32 xe_guc_submit_active_multi_queue_lrca(struct xe_guc *guc,
 					  u32 cur_lrca, u32 active_id);
 
 int xe_guc_contexts_hwsp_rebase(struct xe_guc *guc, void *scratch);
+int xe_guc_action_eu_kernel_debug(struct xe_guc *guc, u32 id, u32 cmd);
 
 #endif

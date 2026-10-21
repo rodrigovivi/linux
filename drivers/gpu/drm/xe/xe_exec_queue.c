@@ -33,6 +33,7 @@
 #include "xe_vm.h"
 #include "xe_pxp.h"
 #include "xe_eudebug.h"
+#include "prelim/xe_eudebug.h"
 
 /**
  * DOC: Execution Queue
@@ -421,8 +422,12 @@ static int __xe_exec_queue_init(struct xe_exec_queue *q, u32 exec_queue_flags)
 	if (q->flags & EXEC_QUEUE_FLAG_DISABLE_STATE_CACHE_PERF_FIX)
 		flags |= XE_LRC_DISABLE_STATE_CACHE_PERF_FIX;
 
-	if (q->eudebug_flags & EXEC_QUEUE_EUDEBUG_FLAG_ENABLE)
+	if (q->eudebug_flags & EXEC_QUEUE_EUDEBUG_FLAG_ENABLE) {
 		flags |= XE_LRC_CREATE_RUNALONE;
+
+		if (q->eudebug_flags & EXEC_QUEUE_EUDEBUG_FLAG_PAGEFAULT_ENABLE)
+			flags |= XE_LRC_CREATE_SUP_TRANS_CATERR;
+	}
 
 	err = q->ops->init(q);
 	if (err)
@@ -1084,6 +1089,48 @@ typedef int (*xe_exec_queue_set_property_fn)(struct xe_device *xe,
 					     struct xe_exec_queue *q,
 					     u64 value);
 
+static int prelim_exec_queue_set_eudebug(struct xe_device *xe, struct xe_exec_queue *q,
+					 u64 value)
+{
+	const u64 known_flags = PRELIM_DRM_XE_EXEC_QUEUE_EUDEBUG_FLAG_ENABLE |
+				PRELIM_DRM_XE_EXEC_QUEUE_EUDEBUG_FLAG_PAGEFAULT_ENABLE;
+	struct xe_guc *guc = &q->gt->uc.guc;
+
+	if (XE_IOCTL_DBG(xe, (q->class != XE_ENGINE_CLASS_RENDER &&
+			      q->class != XE_ENGINE_CLASS_COMPUTE)))
+		return -EINVAL;
+
+	if (XE_IOCTL_DBG(xe, (value & ~known_flags)))
+		return -EINVAL;
+
+	if (XE_IOCTL_DBG(xe, !IS_ENABLED(CONFIG_PRELIM_DRM_XE_EUDEBUG)))
+		return -EOPNOTSUPP;
+
+	if (XE_IOCTL_DBG(xe, !xe_guc_has_debug_contexts(guc)))
+		return -EOPNOTSUPP;
+
+	if (XE_IOCTL_DBG(xe, !xe_exec_queue_is_lr(q)))
+		return -EINVAL;
+	/*
+	 * We want to explicitly set the global feature if
+	 * property is set.
+	 */
+	if (XE_IOCTL_DBG(xe,
+			 !(value & PRELIM_DRM_XE_EXEC_QUEUE_EUDEBUG_FLAG_ENABLE)))
+		return -EINVAL;
+
+	if (XE_IOCTL_DBG(xe, !prelim_xe_eudebug_is_enabled(xe)))
+		return -EPERM;
+
+	q->eudebug_flags = EXEC_QUEUE_EUDEBUG_FLAG_ENABLE;
+	q->sched_props.preempt_timeout_us = 0;
+
+	if (value & PRELIM_DRM_XE_EXEC_QUEUE_EUDEBUG_FLAG_PAGEFAULT_ENABLE)
+		q->eudebug_flags |= EXEC_QUEUE_EUDEBUG_FLAG_PAGEFAULT_ENABLE;
+
+	return 0;
+}
+
 static const xe_exec_queue_set_property_fn exec_queue_set_property_funcs[] = {
 	[DRM_XE_EXEC_QUEUE_SET_PROPERTY_PRIORITY] = exec_queue_set_priority,
 	[DRM_XE_EXEC_QUEUE_SET_PROPERTY_TIMESLICE] = exec_queue_set_timeslice,
@@ -1135,8 +1182,13 @@ static int prelim_v2_exec_queue_set_eudebug(struct xe_device *xe, struct xe_exec
 }
 
 static const xe_exec_queue_set_property_fn prelim_exec_queue_set_property_funcs[] = {
+#define MAKE_TABLE_IDX(id)[PRELIM_DRM_XE_EXEC_QUEUE_SET_PROPERTY_##id & PRELIM_DRM_XE_VALUE_MASK]
+
+	MAKE_TABLE_IDX(EUDEBUG) = prelim_exec_queue_set_eudebug,
 	[PRELIM_V2_DRM_XE_EXEC_QUEUE_SET_PROPERTY_EUDEBUG & PRELIM_DRM_XE_VALUE_MASK] =
 		prelim_v2_exec_queue_set_eudebug,
+
+#undef MAKE_TABLE_IDX
 };
 
 /* bit of a PRELIM property in the properties mask, from the top */
@@ -1270,6 +1322,7 @@ static int exec_queue_user_ext_set_property(struct xe_device *xe,
 			 ext.property != DRM_XE_EXEC_QUEUE_SET_PROPERTY_MULTI_GROUP &&
 			 ext.property != DRM_XE_EXEC_QUEUE_SET_PROPERTY_MULTI_QUEUE_PRIORITY &&
 			 ext.property != DRM_XE_EXEC_QUEUE_SET_DISABLE_STATE_CACHE_PERF_FIX &&
+			 ext.property != PRELIM_DRM_XE_EXEC_QUEUE_SET_PROPERTY_EUDEBUG &&
 			 ext.property != PRELIM_V2_DRM_XE_EXEC_QUEUE_SET_PROPERTY_EUDEBUG))
 		return -EINVAL;
 
@@ -1598,6 +1651,8 @@ int xe_exec_queue_create_ioctl(struct drm_device *dev, void *data,
 		goto del_hw_engine_group;
 	}
 
+	prelim_xe_eudebug_exec_queue_create(xef, q);
+
 	args->exec_queue_id = id;
 
 	return 0;
@@ -1783,6 +1838,7 @@ int xe_exec_queue_destroy_ioctl(struct drm_device *dev, void *data,
 		xe_hw_engine_group_del_exec_queue(q->hwe->hw_engine_group, q);
 
 	xe_eudebug_exec_queue_destroy(xef, q);
+	prelim_xe_eudebug_exec_queue_destroy(xef, q);
 
 	xe_exec_queue_kill(q);
 

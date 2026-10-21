@@ -16,6 +16,7 @@
 
 #include "xe_device.h"
 #include "xe_eudebug.h"
+#include "prelim/xe_eudebug.h"
 #include "xe_exec_queue.h"
 #include "xe_macros.h"
 #include "xe_sched_job_types.h"
@@ -99,7 +100,8 @@ static void user_fence_worker(struct work_struct *w)
 	struct xe_user_fence *ufence = container_of(w, struct xe_user_fence, worker);
 
 	/* Lets see if debugger wants to track this */
-	if (!xe_eudebug_ufence_track(ufence))
+	if (!xe_eudebug_ufence_track(ufence) &&
+	    prelim_xe_eudebug_vm_bind_ufence(ufence))
 		xe_sync_ufence_signal(ufence);
 
 	user_fence_put(ufence);

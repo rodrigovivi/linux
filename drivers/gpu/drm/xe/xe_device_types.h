@@ -15,6 +15,7 @@
 #include "xe_devcoredump_types.h"
 #include "xe_drm_ras_types.h"
 #include "xe_eudebug_types.h"
+#include "prelim/xe_eudebug_types.h"
 #include "xe_heci_gsc.h"
 #include "xe_late_bind_fw_types.h"
 #include "xe_oa_types.h"
@@ -680,6 +681,43 @@ struct xe_device {
 	} eudebug;
 #endif
 
+#if IS_ENABLED(CONFIG_PRELIM_DRM_XE_EUDEBUG)
+	/** @prelim_clients: eudebug clients info */
+	struct {
+		/** @prelim_clients.lock: Protects client list */
+		spinlock_t lock;
+
+		/** @prelim_clients.list: client list for eudebug discovery */
+		struct list_head list;
+	} prelim_clients;
+#endif
+
+#if IS_ENABLED(CONFIG_PRELIM_DRM_XE_EUDEBUG)
+	/** @prelim_eudebug: connection list and globals for device */
+	struct {
+		/** @prelim_eudebug.lock: protects the list of connections */
+		spinlock_t lock;
+
+		/** @prelim_eudebug.list: list of connections, aka debuggers */
+		struct list_head list;
+
+		/** @prelim_eudebug.session_count: session counter to track connections */
+		u64 session_count;
+
+		/** @prelim_eudebug.ordered_wq: used to discovery */
+		struct workqueue_struct *ordered_wq;
+
+		/** @prelim_eudebug.discovery_lock: used for discovery to block xe ioctls */
+		struct rw_semaphore discovery_lock;
+
+		/** @prelim_eudebug.state: debugging functionality state */
+		enum prelim_xe_eudebug_state state;
+
+		/** @prelim_eudebug.attention_scan: attention scan worker */
+		struct delayed_work attention_scan;
+	} prelim_eudebug;
+#endif
+
 	/* private: */
 
 #if IS_ENABLED(CONFIG_DRM_XE_DISPLAY)
@@ -794,6 +832,31 @@ struct xe_file {
 		 */
 		struct rw_semaphore ioctl_lock;
 	} eudebug;
+#endif
+
+#if IS_ENABLED(CONFIG_PRELIM_DRM_XE_EUDEBUG)
+	/** @prelim_eudebug: stores link to drm client and debug metadata */
+	struct {
+		/**
+		 * @prelim_eudebug.client_link: list entry in xe_device.prelim_clients.list.
+		 * protected by xe_device.prelim_clients.lock
+		 */
+		struct list_head client_link;
+
+		/**
+		 * @prelim_eudebug.discovery_link: list entry for current discovery process.
+		 * protected by single-walker discovery via prelim_eudebug.ordered_wq
+		 */
+		struct list_head discovery_link;
+
+		/** @prelim_eudebug.metadata: debug metadata handling */
+		struct {
+			/** @prelim_eudebug.metadata.xa: xarray to store debug metadata */
+			struct xarray xa;
+			/** @prelim_eudebug.metadata.lock: protects debug metadata xarray */
+			struct mutex lock;
+		} metadata;
+	} prelim_eudebug;
 #endif
 };
 

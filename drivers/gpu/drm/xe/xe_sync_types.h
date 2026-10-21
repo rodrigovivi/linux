@@ -31,6 +31,16 @@ struct xe_user_fence {
 		struct work_struct worker;
 	} eudebug;
 #endif
+
+#if IS_ENABLED(CONFIG_PRELIM_DRM_XE_EUDEBUG)
+	struct {
+		spinlock_t lock;
+		struct prelim_xe_eudebug *debugger;
+		u64 bind_ref_seqno;
+		u64 signalled_seqno;
+		struct work_struct worker;
+	} prelim_eudebug;
+#endif
 };
 
 struct xe_sync_entry {

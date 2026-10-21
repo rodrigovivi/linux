@@ -4,6 +4,7 @@
  */
 
 #include "xe_guc_ct.h"
+#include "prelim/xe_gt_debug.h"
 
 #include <linux/bitfield.h>
 #include <linux/circ_buf.h>
@@ -1877,6 +1878,9 @@ static int process_g2h_msg(struct xe_guc_ct *ct, u32 *msg, u32 len)
 		break;
 	case XE_GUC_ACTION_PAGE_RECLAMATION_DONE:
 		ret = xe_guc_page_reclaim_done_handler(guc, payload, adj_len);
+		break;
+	case XE_GUC_ACTION_NOTIFY_EU_KERNEL_DEBUG_EVENT:
+		ret = prelim_xe_guc_eu_kernel_debug_event_handler(guc, payload, adj_len);
 		break;
 	case XE_GUC_ACTION_GUC2PF_RELAY_FROM_VF:
 		ret = xe_guc_relay_process_guc2pf(&guc->relay, hxg, hxg_len);

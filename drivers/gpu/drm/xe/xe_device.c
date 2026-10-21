@@ -37,6 +37,8 @@
 #include "xe_drm_client.h"
 #include "xe_drv.h"
 #include "xe_eudebug.h"
+#include "prelim/xe_debug_metadata.h"
+#include "prelim/xe_eudebug.h"
 #include "prelim/xe_eudebug_v2.h"
 #include "xe_exec.h"
 #include "xe_exec_queue.h"
@@ -134,6 +136,8 @@ static int xe_file_open(struct drm_device *dev, struct drm_file *file)
 		put_task_struct(task);
 	}
 
+	prelim_xe_eudebug_file_open(xef);
+
 	xe_client_debugfs_register(xef);
 
 	return 0;
@@ -192,6 +196,7 @@ static void xe_file_close(struct drm_device *dev, struct drm_file *file)
 	guard(xe_pm_runtime)(xe);
 
 	xe_eudebug_file_close(xef);
+	prelim_xe_eudebug_file_close(xef);
 
 	/*
 	 * No need for exec_queue.lock here as there is no contention for it
@@ -217,6 +222,14 @@ static void xe_file_close(struct drm_device *dev, struct drm_file *file)
 
 	xe_file_put(xef);
 }
+
+#define PRELIM_DRM_IOCTL_DEF_DRV(ioctl, _func, _flags)			\
+	[DRM_IOCTL_NR(PRELIM_DRM_IOCTL_##ioctl) - DRM_COMMAND_BASE] = {	\
+		.cmd = PRELIM_DRM_IOCTL_##ioctl,			\
+		.func = _func,						\
+		.flags = _flags,					\
+		.name = #ioctl						\
+	}
 
 #define PRELIM_V2_DRM_IOCTL_DEF_DRV(ioctl, _func, _flags)			\
 	[DRM_IOCTL_NR(PRELIM_V2_DRM_IOCTL_##ioctl) - DRM_COMMAND_BASE] = {	\
@@ -252,6 +265,11 @@ static const struct drm_ioctl_desc xe_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(XE_VM_GET_PROPERTY, xe_vm_get_property_ioctl,
 			  DRM_RENDER_ALLOW),
 #if IS_ENABLED(CONFIG_PRELIM_DRM_XE_EUDEBUG)
+	PRELIM_DRM_IOCTL_DEF_DRV(XE_EUDEBUG_CONNECT, prelim_xe_eudebug_connect_ioctl, DRM_RENDER_ALLOW),
+	PRELIM_DRM_IOCTL_DEF_DRV(XE_DEBUG_METADATA_CREATE, prelim_xe_debug_metadata_create_ioctl,
+				 DRM_RENDER_ALLOW),
+	PRELIM_DRM_IOCTL_DEF_DRV(XE_DEBUG_METADATA_DESTROY, prelim_xe_debug_metadata_destroy_ioctl,
+				 DRM_RENDER_ALLOW),
 	PRELIM_V2_DRM_IOCTL_DEF_DRV(XE_EUDEBUG_CONNECT, prelim_v2_xe_eudebug_connect_ioctl,
 				    DRM_RENDER_ALLOW),
 #endif
@@ -1094,6 +1112,7 @@ int xe_device_probe(struct xe_device *xe)
 		return err;
 
 	xe_eudebug_init_early(xe);
+	prelim_xe_eudebug_init_early(xe);
 
 	err = drm_dev_register(&xe->drm, 0);
 	if (err)
@@ -1133,6 +1152,7 @@ int xe_device_probe(struct xe_device *xe)
 		goto err_unregister_display;
 
 	xe_eudebug_init(xe);
+	prelim_xe_eudebug_init(xe);
 	prelim_v2_xe_eudebug_init(xe);
 
 	detect_preproduction_hw(xe);

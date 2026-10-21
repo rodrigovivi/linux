@@ -110,6 +110,24 @@ struct xe_vma_mem_attr {
 	u32 purgeable_state;
 };
 
+struct xe_vma_debug_metadata {
+	/** @debug.metadata: id of attached xe_debug_metadata */
+	u32 metadata_id;
+	/** @debug.cookie: user defined cookie */
+	u64 cookie;
+
+	/** @link: list of metadata attached to vma */
+	struct list_head link;
+};
+
+#if IS_ENABLED(CONFIG_PRELIM_DRM_XE_EUDEBUG)
+struct prelim_xe_eudebug_vma_metadata {
+	struct list_head list;
+};
+#else
+struct prelim_xe_eudebug_vma_metadata { };
+#endif
+
 struct xe_vma {
 	/** @gpuva: Base GPUVA object */
 	struct drm_gpuva gpuva;
@@ -181,6 +199,11 @@ struct xe_vma {
 	 * and encoding of the PTEs for this vma.
 	 */
 	struct xe_vma_mem_attr attr;
+
+	struct {
+		/** @prelim_eudebug.metadata: List of vma debug metadata */
+		struct prelim_xe_eudebug_vma_metadata metadata;
+	} prelim_eudebug;
 };
 
 /**
@@ -433,6 +456,19 @@ struct xe_vm {
 		/** @lock: guards access to the debug data list */
 		struct mutex lock;
 	} debug_data;
+
+#if IS_ENABLED(CONFIG_PRELIM_DRM_XE_EUDEBUG)
+	struct {
+		/** @lock: Lock for eudebug_bind members */
+		spinlock_t lock;
+		/** @events: List of vm bind ops gathered */
+		struct list_head events;
+		/** @ops: How many operations we have stored */
+		u32 ops;
+		/** @ref_seqno: Reference to the VM_BIND that the ops relate */
+		u64 ref_seqno;
+	} prelim_eudebug;
+#endif
 };
 
 /** struct xe_vma_op_map - VMA map operation */
@@ -449,6 +485,11 @@ struct xe_vma_op_map {
 	bool request_decompress;
 	/** @pat_index: The pat index to use for this operation. */
 	u16 pat_index;
+	/** @prelim_eudebug: PRELIM eudebug data */
+	struct {
+		/** @prelim_eudebug.metadata: List of vma debug metadata */
+		struct prelim_xe_eudebug_vma_metadata metadata;
+	} prelim_eudebug;
 };
 
 /** struct xe_vma_op_remap - VMA remap operation */

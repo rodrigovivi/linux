@@ -30,6 +30,11 @@ extern struct kunit_suite xe_eudebug_test_suite;
 kunit_test_suite(xe_eudebug_test_suite);
 #endif
 
+#if IS_ENABLED(CONFIG_PRELIM_DRM_XE_EUDEBUG)
+extern struct kunit_suite prelim_xe_eudebug_test_suite;
+kunit_test_suite(prelim_xe_eudebug_test_suite);
+#endif
+
 MODULE_AUTHOR("Intel Corporation");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("xe live kunit tests");

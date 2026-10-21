@@ -160,6 +160,7 @@ struct xe_exec_queue {
 	 * Set up with DRM_XE_EXEC_QUEUE_SET_PROPERTY_EUDEBUG.
 	 */
 #define EXEC_QUEUE_EUDEBUG_FLAG_ENABLE		BIT(0)
+#define EXEC_QUEUE_EUDEBUG_FLAG_PAGEFAULT_ENABLE	BIT(1)
 	unsigned long eudebug_flags;
 
 	union {

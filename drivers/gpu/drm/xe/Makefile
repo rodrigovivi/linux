@@ -60,6 +60,7 @@ xe-y += xe_bb.o \
 	xe_gt_clock.o \
 	xe_gt_freq.o \
 	xe_gt_idle.o \
+	prelim/xe_gt_debug.o \
 	xe_gt_mcr.o \
 	xe_gt_sysfs.o \
 	xe_gt_throttle.o \
@@ -164,9 +165,11 @@ xe-$(CONFIG_DRM_XE_GPUSVM) += xe_svm.o
 xe-$(CONFIG_DRM_GPUSVM) += xe_userptr.o
 
 # debugging shaders with gdb (eudebug) support
-xe-$(CONFIG_PRELIM_DRM_XE_EUDEBUG) += prelim/xe_eudebug_v2.o
-
 xe-$(CONFIG_DRM_XE_EUDEBUG) += xe_eudebug.o xe_eudebug_vm.o xe_eudebug_hw.o xe_eudebug_pagefault.o xe_gt_debug.o
+
+xe-$(CONFIG_PRELIM_DRM_XE_EUDEBUG) += prelim/xe_eudebug.o \
+	prelim/xe_debug_metadata.o \
+	prelim/xe_eudebug_v2.o
 
 # graphics hardware monitoring (HWMON) support
 xe-$(CONFIG_HWMON) += xe_hwmon.o

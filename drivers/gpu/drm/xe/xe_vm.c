@@ -30,6 +30,8 @@
 #include "xe_device.h"
 #include "xe_drm_client.h"
 #include "xe_eudebug.h"
+#include "prelim/xe_debug_metadata.h"
+#include "prelim/xe_eudebug.h"
 #include "xe_eudebug_proto.h"
 #include "xe_exec_queue.h"
 #include "xe_gt.h"
@@ -1267,6 +1269,7 @@ static struct xe_vma *xe_vma_create(struct xe_vm *vm,
 			vma->gpuva.gem.obj = &bo->ttm.base;
 	}
 
+	prelim_xe_eudebug_vma_metadata_init(vma);
 	INIT_LIST_HEAD(&vma->combined_links.rebind);
 
 	INIT_LIST_HEAD(&vma->gpuva.gem.entry);
@@ -1366,6 +1369,7 @@ static void xe_vma_destroy_late(struct xe_vma *vma)
 	}
 
 	mutex_destroy(&vma->fault_lock);
+	prelim_xe_eudebug_free_vma_metadata(vma);
 	xe_vma_free(vma);
 }
 
@@ -1919,6 +1923,8 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags, struct xe_file *xef)
 	INIT_LIST_HEAD(&vm->debug_data.list);
 	mutex_init(&vm->debug_data.lock);
 
+	prelim_xe_eudebug_vm_init(vm);
+
 	vm->pt_ops = &xelp_pt_ops;
 
 	/*
@@ -2230,6 +2236,8 @@ static void vm_destroy_work_func(struct work_struct *w)
 	struct xe_tile *tile;
 	u8 id;
 
+	prelim_xe_eudebug_vm_bind_end(vm, 0, -ENOENT);
+
 	/* xe_vm_close_and_put was not called? */
 	xe_assert(xe, !vm->size);
 
@@ -2385,6 +2393,8 @@ int xe_vm_create_ioctl(struct drm_device *dev, void *data,
 
 	args->vm_id = id;
 
+	prelim_xe_eudebug_vm_create(xef, vm);
+
 	return 0;
 
 err_close_and_put:
@@ -2418,6 +2428,7 @@ int xe_vm_destroy_ioctl(struct drm_device *dev, void *data,
 
 	if (!err) {
 		xe_eudebug_vm_destroy(xef, vm);
+		prelim_xe_eudebug_vm_destroy(xef, vm);
 		xe_vm_close_and_put(vm);
 	}
 
@@ -2773,6 +2784,8 @@ vm_bind_ioctl_ops_create(struct xe_vm *vm, struct xe_vma_ops *vops,
 			op->map.pat_index = pat_index;
 			op->map.invalidate_on_bind =
 				__xe_vm_needs_clear_scratch_pages(vm, flags);
+
+			prelim_xe_eudebug_op_metadata_init(op);
 		} else if (__op->op == DRM_GPUVA_OP_PREFETCH) {
 			struct xe_vma *vma = gpuva_to_vma(op->base.prefetch.va);
 			struct xe_tile *tile;
@@ -3126,6 +3139,8 @@ static int vm_bind_ioctl_ops_parse(struct xe_vm *vm, struct drm_gpuva_ops *ops,
 			if (IS_ERR(vma))
 				return PTR_ERR(vma);
 
+			prelim_xe_eudebug_move_op_metadata(op, vma);
+
 			op->map.vma = vma;
 			if (((op->map.immediate || !xe_vm_in_fault_mode(vm)) &&
 			     !(op->map.vma_flags & XE_VMA_SYSTEM_ALLOCATOR)) ||
@@ -3168,6 +3183,8 @@ static int vm_bind_ioctl_ops_parse(struct xe_vm *vm, struct drm_gpuva_ops *ops,
 				if (IS_ERR(vma))
 					return PTR_ERR(vma);
 
+				prelim_xe_eudebug_move_vma_metadata(old, vma);
+
 				op->remap.prev = vma;
 
 				/*
@@ -3197,6 +3214,14 @@ static int vm_bind_ioctl_ops_parse(struct xe_vm *vm, struct drm_gpuva_ops *ops,
 					      &old->attr, flags);
 				if (IS_ERR(vma))
 					return PTR_ERR(vma);
+
+				if (op->base.remap.prev) {
+					err = prelim_xe_eudebug_copy_op_metadata(op, vma);
+					if (err)
+						return err;
+				} else {
+					prelim_xe_eudebug_move_vma_metadata(old, vma);
+				}
 
 				op->remap.next = vma;
 
@@ -3282,6 +3307,7 @@ static void xe_vma_op_unwind(struct xe_vm *vm, struct xe_vma_op *op,
 		xe_vm_assert_write_mode_or_garbage_collector(vm);
 
 		if (op->map.vma) {
+			prelim_xe_eudebug_free_op_metadata(op);
 			xe_vm_prep_vma_destroy(vm, op->map.vma, post_commit);
 			xe_vma_destroy_unlocked(op->map.vma);
 		}
@@ -3932,6 +3958,9 @@ static void vm_bind_ioctl_ops_fini(struct xe_vm *vm, struct xe_vma_ops *vops,
 			xe_vma_destroy(gpuva_to_vma(op->base.remap.unmap->va),
 				       fence);
 	}
+
+	prelim_xe_eudebug_vm_bind_end(vm, ufence, 0);
+
 	if (ufence)
 		xe_sync_ufence_put(ufence);
 	if (fence) {
@@ -4015,6 +4044,14 @@ typedef int (*xe_vm_bind_op_user_extension_fn)(struct xe_vm *vm,
 					       struct drm_gpuva_ops *ops,
 					       u32 operation, u64 extension);
 
+static int __maybe_unused prelim_v1_vm_bind_op_ext_attach_debug(struct xe_vm *vm,
+								struct xe_file *xef,
+								struct drm_gpuva_ops *ops,
+								u32 operation, u64 extension)
+{
+	return prelim_vm_bind_op_ext_attach_debug(vm->xe, xef, ops, operation, extension);
+}
+
 /* PRELIM v2 debug data, served by the eudebug core debug data */
 static int __maybe_unused prelim_v2_vm_bind_op_ext_debug_data(struct xe_vm *vm,
 							      struct xe_file *xef,
@@ -4031,8 +4068,13 @@ static int __maybe_unused prelim_v2_vm_bind_op_ext_debug_data(struct xe_vm *vm,
 }
 
 static const __maybe_unused xe_vm_bind_op_user_extension_fn vm_bind_op_extension_funcs[] = {
+#define MAKE_TABLE_IDX(id)[PRELIM_XE_VM_BIND_OP_EXTENSIONS_##id & PRELIM_DRM_XE_VALUE_MASK]
+
+	MAKE_TABLE_IDX(ATTACH_DEBUG) = prelim_v1_vm_bind_op_ext_attach_debug,
 	[PRELIM_V2_XE_VM_BIND_OP_EXTENSIONS_DEBUG_DATA & PRELIM_DRM_XE_VALUE_MASK] =
 		prelim_v2_vm_bind_op_ext_debug_data,
+
+#undef MAKE_TABLE_IDX
 };
 
 #define MAX_USER_EXTENSIONS	16
@@ -4527,6 +4569,8 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		goto free_syncs;
 	}
 
+	prelim_xe_eudebug_vm_bind_start(vm);
+
 	xe_vma_ops_init(&vops, vm, q, syncs, num_syncs);
 	if (args->num_binds > 1)
 		vops.flags |= XE_VMA_OPS_ARRAY_OF_BINDS;
@@ -4557,6 +4601,8 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		err = vm_bind_ioctl_ops_parse(vm, ops[i], &vops);
 		if (err)
 			goto unwind_ops;
+
+		prelim_xe_eudebug_vm_bind_op_add(vm, op, addr, range, ops[i]);
 
 #ifdef TEST_VM_OPS_ERROR
 		if (flags & FORCE_OP_ERROR) {
@@ -4594,6 +4640,9 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		dma_fence_put(fence);
 
 unwind_ops:
+	if (err)
+		prelim_xe_eudebug_vm_bind_end(vm, 0, err);
+
 	if (err && err != -ENODATA)
 		vm_bind_ioctl_ops_unwind(vm, ops, args->num_binds);
 	xe_vma_ops_fini(&vops);
@@ -5293,6 +5342,7 @@ static int xe_vm_alloc_vma(struct xe_vm *vm,
 			if (__op->op == DRM_GPUVA_OP_MAP) {
 				op->map.vma_flags |= vma_flags & XE_VMA_CREATE_MASK;
 				op->map.pat_index = default_pat;
+				prelim_xe_eudebug_op_metadata_init(op);
 			}
 		} else {
 			if (__op->op == DRM_GPUVA_OP_REMAP) {
@@ -5313,6 +5363,7 @@ static int xe_vm_alloc_vma(struct xe_vm *vm,
 				 * unmapping.
 				 */
 				op->map.vma_flags |= vma_flags & XE_VMA_CREATE_MASK;
+				prelim_xe_eudebug_op_metadata_init(op);
 			}
 		}
 		print_op(vm->xe, __op);

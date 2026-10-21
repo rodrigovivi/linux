@@ -1636,8 +1636,13 @@ static int xe_lrc_ctx_init(struct xe_lrc *lrc, struct xe_hw_engine *hwe, struct 
 		xe_lrc_write_ctx_reg(lrc, CTX_QUEUE_TIMESTAMP_UDW, 0);
 	}
 
-	if (xe->info.has_asid && vm)
-		xe_lrc_write_ctx_reg(lrc, CTX_ASID, vm->usm.asid);
+	if (xe->info.has_asid && vm) {
+		u32 asid = vm->usm.asid;
+
+		if (init_flags & XE_LRC_CREATE_SUP_TRANS_CATERR)
+			asid |= SUP_TRANS_CATERR;
+		xe_lrc_write_ctx_reg(lrc, CTX_ASID, asid);
+	}
 
 	if (GRAPHICS_VER(xe) >= 20 && hwe->class == XE_ENGINE_CLASS_RENDER)
 		xe_lrc_set_gpgpu_preemption_level(lrc, gt);

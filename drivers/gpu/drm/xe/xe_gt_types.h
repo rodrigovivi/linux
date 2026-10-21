@@ -430,6 +430,39 @@ struct xe_gt {
 		struct work_struct gt_reset_work;
 	} eudebug;
 #endif
+
+	/** @prelim_eudebug: EU Debugger pagefault handling support */
+	struct {
+		/** @prelim_eudebug.notify_wq: eudebug notification work queue, unbound, high priority */
+		struct workqueue_struct *notify_wq;
+		/**
+		 * @prelim_eudebug.notify_queue: eudebug interrupt queue so they can be sent as eudebug
+		 * events not under the GuC CT lock. The queue is sized so it can store
+		 * 128 eu debug events notifications.
+		 */
+		struct notify_queue {
+			/** @prelim_eudebug.notify_queue.gt: back pointer to GT */
+			struct xe_gt *gt;
+#define EUDEBUG_QUEUE_NUM_DW	128
+			/** @prelim_eudebug.notify_queue.data: data in the eudebug notify queue */
+			u32 data[EUDEBUG_QUEUE_NUM_DW];
+			/**
+			 * @prelim_eudebug.notify_queue.tail: tail pointer in DWs for eudebug notify queue,
+			 * moved by worker which processes counters
+			 * (consumer).
+			 */
+			u16 tail;
+			/**
+			 * @prelim_eudebug.notify_queue.head: head pointer in DWs for eudebug notify queue,
+			 * moved by G2H handler (producer).
+			 */
+			u16 head;
+			/** @prelim_eudebug.notify_queue.lock: protects eudebug notify queue */
+			spinlock_t lock;
+			/** @prelim_eudebug.notify_queue.worker: to send eudebug events */
+			struct work_struct worker;
+		} notify_queue;
+	} prelim_eudebug;
 };
 
 #endif
