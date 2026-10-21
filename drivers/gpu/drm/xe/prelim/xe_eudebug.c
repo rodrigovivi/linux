@@ -2495,6 +2495,42 @@ static void xe_eudebug_reinit_hw_engine(struct xe_hw_engine *hwe, bool enable)
 			     TD_CTL_ENABLE_EXID_FILTER, enable);
 }
 
+/**
+ * prelim_xe_eudebug_hw_claim - take ownership of the eudebug hw
+ * @xe: xe device
+ * @owner: interface claiming the hw
+ *
+ * Return: 0 if @owner now owns the debug hw, -EBUSY if another interface does.
+ */
+int prelim_xe_eudebug_hw_claim(struct xe_device *xe, enum prelim_xe_eudebug_hw_owner owner)
+{
+	int old = atomic_cmpxchg(&xe->prelim_eudebug.hw_owner,
+				 PRELIM_XE_EUDEBUG_HW_OWNER_NONE, owner);
+
+	return old == PRELIM_XE_EUDEBUG_HW_OWNER_NONE || old == owner ? 0 : -EBUSY;
+}
+
+/**
+ * prelim_xe_eudebug_hw_owner - interface owning the eudebug hw
+ * @xe: xe device
+ *
+ * Return: the current owner, PRELIM_XE_EUDEBUG_HW_OWNER_NONE if none.
+ */
+enum prelim_xe_eudebug_hw_owner prelim_xe_eudebug_hw_owner(struct xe_device *xe)
+{
+	return atomic_read(&xe->prelim_eudebug.hw_owner);
+}
+
+/**
+ * prelim_xe_eudebug_hw_release - give up ownership of the eudebug hw
+ * @xe: xe device
+ * @owner: interface releasing the hw
+ */
+void prelim_xe_eudebug_hw_release(struct xe_device *xe, enum prelim_xe_eudebug_hw_owner owner)
+{
+	atomic_cmpxchg(&xe->prelim_eudebug.hw_owner, owner, PRELIM_XE_EUDEBUG_HW_OWNER_NONE);
+}
+
 static int xe_eudebug_enable(struct xe_device *xe, bool enable)
 {
 	struct xe_gt *gt;
@@ -2523,9 +2559,16 @@ static int xe_eudebug_enable(struct xe_device *xe, bool enable)
 		return 0;
 	}
 
+	if (enable && prelim_xe_eudebug_hw_claim(xe, PRELIM_XE_EUDEBUG_HW_OWNER_PRELIM_V1)) {
+		up_write(&xe->prelim_eudebug.discovery_lock);
+		drm_dbg(&xe->drm, "Can't enable PRELIM eudebug: eudebug is enabled\n");
+		return -EBUSY;
+	}
+
 	if (enable && IS_SRIOV_PF(xe)) {
 		ret = xe_sriov_pf_lockdown(xe);
 		if (ret) {
+			prelim_xe_eudebug_hw_release(xe, PRELIM_XE_EUDEBUG_HW_OWNER_PRELIM_V1);
 			up_write(&xe->prelim_eudebug.discovery_lock);
 			return ret;
 		}
@@ -2548,6 +2591,8 @@ static int xe_eudebug_enable(struct xe_device *xe, bool enable)
 	xe_pm_runtime_put(xe);
 
 	xe->prelim_eudebug.state = enable ? PRELIM_XE_EUDEBUG_ENABLED : PRELIM_XE_EUDEBUG_SUPPORTED;
+	if (!enable)
+		prelim_xe_eudebug_hw_release(xe, PRELIM_XE_EUDEBUG_HW_OWNER_PRELIM_V1);
 	up_write(&xe->prelim_eudebug.discovery_lock);
 
 	if (enable) {

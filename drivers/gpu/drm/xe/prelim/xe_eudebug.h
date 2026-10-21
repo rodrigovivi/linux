@@ -24,6 +24,16 @@ struct drm_gpuva_ops;
 struct prelim_xe_eudebug_pagefault;
 struct xe_lrc;
 
+/*
+ * Only one eudebug interface can own the debug hw of a device at a time:
+ * either the eudebug core (also behind PRELIM v2) or PRELIM v1.
+ */
+enum prelim_xe_eudebug_hw_owner {
+	PRELIM_XE_EUDEBUG_HW_OWNER_NONE = 0,
+	PRELIM_XE_EUDEBUG_HW_OWNER_EUDEBUG,
+	PRELIM_XE_EUDEBUG_HW_OWNER_PRELIM_V1,
+};
+
 #if IS_ENABLED(CONFIG_PRELIM_DRM_XE_EUDEBUG)
 
 int prelim_xe_eudebug_connect_ioctl(struct drm_device *dev,
@@ -31,6 +41,9 @@ int prelim_xe_eudebug_connect_ioctl(struct drm_device *dev,
 			     struct drm_file *file);
 
 bool prelim_xe_eudebug_is_enabled(struct xe_device *xe);
+int prelim_xe_eudebug_hw_claim(struct xe_device *xe, enum prelim_xe_eudebug_hw_owner owner);
+void prelim_xe_eudebug_hw_release(struct xe_device *xe, enum prelim_xe_eudebug_hw_owner owner);
+enum prelim_xe_eudebug_hw_owner prelim_xe_eudebug_hw_owner(struct xe_device *xe);
 
 void prelim_xe_eudebug_init_early(struct xe_device *xe);
 void prelim_xe_eudebug_init(struct xe_device *xe);
@@ -73,6 +86,12 @@ static inline int prelim_xe_eudebug_connect_ioctl(struct drm_device *dev,
 					   struct drm_file *file) { return 0; }
 
 static inline bool prelim_xe_eudebug_is_enabled(struct xe_device *xe) { return false; }
+static inline int prelim_xe_eudebug_hw_claim(struct xe_device *xe,
+					     enum prelim_xe_eudebug_hw_owner owner) { return 0; }
+static inline void prelim_xe_eudebug_hw_release(struct xe_device *xe,
+						enum prelim_xe_eudebug_hw_owner owner) { }
+static inline enum prelim_xe_eudebug_hw_owner
+prelim_xe_eudebug_hw_owner(struct xe_device *xe) { return PRELIM_XE_EUDEBUG_HW_OWNER_NONE; }
 
 static inline void prelim_xe_eudebug_init_early(struct xe_device *xe) { }
 static inline void prelim_xe_eudebug_init(struct xe_device *xe) { }

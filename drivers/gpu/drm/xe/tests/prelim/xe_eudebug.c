@@ -165,6 +165,9 @@ static void xe_eudebug_toggle_reg_kunit(struct kunit *test)
 {
 	struct xe_device *xe = test->priv;
 
+	if (prelim_xe_eudebug_hw_owner(xe) == PRELIM_XE_EUDEBUG_HW_OWNER_EUDEBUG)
+		kunit_skip(test, "debug hw owned by the eudebug core\n");
+
 	toggle_reg_value(xe);
 }
 

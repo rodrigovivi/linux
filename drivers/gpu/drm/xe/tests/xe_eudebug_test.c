@@ -138,6 +138,9 @@ static void toggle_reg(struct kunit *test)
 	if (IS_SRIOV_VF(xe))
 		kunit_skip(test, "eudebug not available in SR-IOV VF mode\n");
 
+	if (prelim_xe_eudebug_hw_owner(xe) == PRELIM_XE_EUDEBUG_HW_OWNER_PRELIM_V1)
+		kunit_skip(test, "debug hw owned by PRELIM v1\n");
+
 	kunit_printk(KERN_DEBUG, test, "Test eudebug WAs for graphics version: %u\n",
 		     GRAPHICS_VERx100(xe));
 

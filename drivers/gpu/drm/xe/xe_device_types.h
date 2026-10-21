@@ -715,6 +715,12 @@ struct xe_device {
 
 		/** @prelim_eudebug.attention_scan: attention scan worker */
 		struct delayed_work attention_scan;
+
+		/**
+		 * @prelim_eudebug.hw_owner: eudebug interface currently owning
+		 * the debug hw, see prelim_xe_eudebug_hw_claim()
+		 */
+		atomic_t hw_owner;
 	} prelim_eudebug;
 #endif
 

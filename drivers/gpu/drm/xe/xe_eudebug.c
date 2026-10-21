@@ -19,6 +19,7 @@
 #include "xe_debug_data_types.h"
 #include "xe_device.h"
 #include "xe_eudebug.h"
+#include "prelim/xe_eudebug.h"
 #include "xe_eudebug_hw.h"
 #include "xe_eudebug_types.h"
 #include "xe_eudebug_pagefault.h"
@@ -2652,10 +2653,16 @@ static int __xe_eudebug_enable(struct xe_device *xe, bool enable,
 	 * first and published its stream, or sees eudebug enabled under that
 	 * same lock and is refused.
 	 */
+	if (enable && prelim_xe_eudebug_hw_claim(xe, PRELIM_XE_EUDEBUG_HW_OWNER_EUDEBUG)) {
+		drm_dbg(&xe->drm, "Can't enable eudebug: PRELIM eudebug is enabled\n");
+		return -EBUSY;
+	}
+
 	if (enable) {
 		WRITE_ONCE(xe->eudebug.cap_state, XE_EUDEBUG_CAP_ENABLED);
 		if (xe_oa_stream_active(xe)) {
 			WRITE_ONCE(xe->eudebug.cap_state, XE_EUDEBUG_CAP_DISABLED);
+			prelim_xe_eudebug_hw_release(xe, PRELIM_XE_EUDEBUG_HW_OWNER_EUDEBUG);
 			drm_dbg(&xe->drm, "Can't enable eudebug: OA stream is open\n");
 			return -EBUSY;
 		}
@@ -2666,6 +2673,7 @@ static int __xe_eudebug_enable(struct xe_device *xe, bool enable,
 		if (ret) {
 			/* Take back what the check above published */
 			WRITE_ONCE(xe->eudebug.cap_state, XE_EUDEBUG_CAP_DISABLED);
+			prelim_xe_eudebug_hw_release(xe, PRELIM_XE_EUDEBUG_HW_OWNER_EUDEBUG);
 			drm_dbg(&xe->drm, "Can't enable eudebug: VFs are enabled\n");
 			return ret;
 		}
@@ -2683,6 +2691,8 @@ static int __xe_eudebug_enable(struct xe_device *xe, bool enable,
 
 	WRITE_ONCE(xe->eudebug.cap_state, enable ?
 		   XE_EUDEBUG_CAP_ENABLED : XE_EUDEBUG_CAP_DISABLED);
+	if (!enable)
+		prelim_xe_eudebug_hw_release(xe, PRELIM_XE_EUDEBUG_HW_OWNER_EUDEBUG);
 
 	if (enable) {
 		xe_eudebug_attention_poll_start(xe);
