@@ -8,7 +8,9 @@
 
 #include "xe_sync_types.h"
 
+struct dma_fence;
 struct drm_syncobj;
+struct drm_xe_sync;
 struct xe_device;
 struct xe_exec_queue;
 struct xe_file;
@@ -45,5 +47,6 @@ struct xe_user_fence *__xe_sync_ufence_get(struct xe_user_fence *ufence);
 struct xe_user_fence *xe_sync_ufence_get(struct xe_sync_entry *sync);
 void xe_sync_ufence_put(struct xe_user_fence *ufence);
 int xe_sync_ufence_get_status(struct xe_user_fence *ufence);
+void xe_sync_ufence_signal(struct xe_user_fence *ufence);
 
 #endif
