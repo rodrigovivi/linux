@@ -30,8 +30,6 @@ drm/xe uAPI
 
 .. kernel-doc:: include/uapi/drm/xe_drm.h
 
-.. kernel-doc:: include/uapi/drm/xe_drm_eudebug.h
-
 drm/asahi uAPI
 ================
 

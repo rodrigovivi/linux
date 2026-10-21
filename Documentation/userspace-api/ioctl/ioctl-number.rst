@@ -260,7 +260,6 @@ Code  Seq#    Include File                                             Comments
 'i'   80-8F  linux/i8k.h
 'i'   90-9F  `linux/iio/*.h`                                           IIO
 'j'   00-3F  linux/joystick.h
-'j'   40-4F  uapi/drm/xe_drm_eudebug.h                                 Intel Xe EU debugger connection
 'k'   00-0F  linux/spi/spidev.h                                        conflict!
 'k'   00-05  video/kyro.h                                              conflict!
 'k'   10-17  linux/hsi/hsi_char.h                                      HSI character device

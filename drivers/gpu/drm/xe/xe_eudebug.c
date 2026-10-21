@@ -2746,51 +2746,13 @@ int xe_eudebug_enable(struct xe_device *xe, bool enable)
 	return 0;
 }
 
-static ssize_t enable_eudebug_show(struct device *dev,
-				   struct device_attribute *attr, char *buf)
-{
-	struct xe_device *xe = pdev_to_xe_device(to_pci_dev(dev));
-
-	return sysfs_emit(buf, "%u\n", xe_eudebug_is_enabled(xe));
-}
-
-static ssize_t enable_eudebug_store(struct device *dev,
-				    struct device_attribute *attr,
-				    const char *buf, size_t count)
-{
-	struct xe_device *xe = pdev_to_xe_device(to_pci_dev(dev));
-	bool enable;
-	int ret;
-
-	ret = kstrtobool(buf, &enable);
-	if (ret)
-		return ret;
-
-	ret = xe_eudebug_enable(xe, enable);
-	if (ret)
-		return ret;
-
-	return count;
-}
-
-static DEVICE_ATTR_RW(enable_eudebug);
-
-static void xe_eudebug_sysfs_fini(void *arg)
-{
-	struct xe_device *xe = arg;
-	struct drm_device *dev = &xe->drm;
-
-	sysfs_remove_file(&dev->dev->kobj,
-			  &dev_attr_enable_eudebug.attr);
-}
-
 /*
  * xe_eudebug_fini() only runs at the final drm_dev_put(), which an open
  * file, or a debugger connection, can hold off long past unbind. devm
  * teardown unmaps the registers the poll reads well before that, and the
  * device is left runtime active, so stop the poll at unbind. devm actions
- * unwind in reverse, so this runs once the sysfs knob is gone and nothing
- * can enable eudebug and restart it.
+ * unwind in reverse, so this runs once nothing can enable eudebug and
+ * restart it.
  */
 static void xe_eudebug_attention_fini(void *arg)
 {
@@ -2906,19 +2868,6 @@ void xe_eudebug_init(struct xe_device *xe)
 		goto out_err;
 	}
 	xe->eudebug.pagefault_reset_wq = wq;
-
-	err = devm_add_action_or_reset(dev->dev, xe_eudebug_sysfs_fini, xe);
-	if (err)
-		goto out_err;
-
-	/*
-	 * Last: once the attribute exists it can enable us, and nothing may
-	 * fail and overwrite cap_state after that.
-	 */
-	err = sysfs_create_file(&dev->dev->kobj,
-				&dev_attr_enable_eudebug.attr);
-	if (err)
-		goto out_err;
 
 	return;
 

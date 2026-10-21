@@ -5,6 +5,7 @@
 
 #include "xe_debug_data.h"
 #include "xe_debug_data_types.h"
+#include "xe_eudebug_proto.h"
 #include "xe_vm.h"
 
 const char *xe_debug_data_pseudo_path_to_string(u64 pseudopath)

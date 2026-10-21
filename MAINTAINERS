@@ -13148,13 +13148,11 @@ Q:	http://patchwork.freedesktop.org/project/intel-xe/
 B:	https://gitlab.freedesktop.org/drm/xe/kernel/-/issues
 C:	irc://irc.oftc.net/xe
 T:	git https://gitlab.freedesktop.org/drm/xe/kernel.git
-F:	Documentation/ABI/testing/sysfs-driver-intel-xe-eudebug
 F:	Documentation/ABI/testing/sysfs-driver-intel-xe-hwmon
 F:	Documentation/gpu/xe/
 F:	drivers/gpu/drm/xe/
 F:	include/drm/intel/
 F:	include/uapi/drm/xe_drm.h
-F:	include/uapi/drm/xe_drm_eudebug.h
 
 INTEL ELKHART LAKE PSE I/O DRIVER
 M:	Raag Jadav <raag.jadav@intel.com>

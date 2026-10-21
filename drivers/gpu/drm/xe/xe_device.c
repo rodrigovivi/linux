@@ -18,6 +18,7 @@
 #include <drm/drm_print.h>
 #include <kunit/static_stub.h>
 #include <uapi/drm/xe_drm.h>
+#include <uapi/drm/xe_drm_prelim.h>
 
 #include "display/xe_display.h"
 #include "instructions/xe_gpu_commands.h"
@@ -36,6 +37,7 @@
 #include "xe_drm_client.h"
 #include "xe_drv.h"
 #include "xe_eudebug.h"
+#include "prelim/xe_eudebug_v2.h"
 #include "xe_exec.h"
 #include "xe_exec_queue.h"
 #include "xe_force_wake.h"
@@ -216,6 +218,14 @@ static void xe_file_close(struct drm_device *dev, struct drm_file *file)
 	xe_file_put(xef);
 }
 
+#define PRELIM_V2_DRM_IOCTL_DEF_DRV(ioctl, _func, _flags)			\
+	[DRM_IOCTL_NR(PRELIM_V2_DRM_IOCTL_##ioctl) - DRM_COMMAND_BASE] = {	\
+		.cmd = PRELIM_V2_DRM_IOCTL_##ioctl,				\
+		.func = _func,							\
+		.flags = _flags,						\
+		.name = "PRELIM_V2_" #ioctl					\
+	}
+
 static const struct drm_ioctl_desc xe_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(XE_DEVICE_QUERY, xe_query_ioctl, DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(XE_GEM_CREATE, xe_gem_create_ioctl, DRM_RENDER_ALLOW),
@@ -241,7 +251,10 @@ static const struct drm_ioctl_desc xe_ioctls[] = {
 			  DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(XE_VM_GET_PROPERTY, xe_vm_get_property_ioctl,
 			  DRM_RENDER_ALLOW),
-	DRM_IOCTL_DEF_DRV(XE_EUDEBUG_CONNECT, xe_eudebug_connect_ioctl, DRM_RENDER_ALLOW),
+#if IS_ENABLED(CONFIG_PRELIM_DRM_XE_EUDEBUG)
+	PRELIM_V2_DRM_IOCTL_DEF_DRV(XE_EUDEBUG_CONNECT, prelim_v2_xe_eudebug_connect_ioctl,
+				    DRM_RENDER_ALLOW),
+#endif
 };
 
 static long xe_drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
@@ -1120,6 +1133,7 @@ int xe_device_probe(struct xe_device *xe)
 		goto err_unregister_display;
 
 	xe_eudebug_init(xe);
+	prelim_v2_xe_eudebug_init(xe);
 
 	detect_preproduction_hw(xe);
 

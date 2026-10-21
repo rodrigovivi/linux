@@ -13,6 +13,7 @@
 #include <drm/drm_print.h>
 #include <drm/ttm/ttm_tt.h>
 #include <uapi/drm/xe_drm.h>
+#include <uapi/drm/xe_drm_prelim.h>
 #include <linux/ascii85.h>
 #include <linux/delay.h>
 #include <linux/kthread.h>
@@ -29,6 +30,7 @@
 #include "xe_device.h"
 #include "xe_drm_client.h"
 #include "xe_eudebug.h"
+#include "xe_eudebug_proto.h"
 #include "xe_exec_queue.h"
 #include "xe_gt.h"
 #include "xe_migrate.h"
@@ -3998,87 +4000,90 @@ ALLOW_ERROR_INJECTION(vm_bind_ioctl_ops_execute, ERRNO);
 #define XE_64K_PAGE_MASK 0xffffull
 #define ALL_DRM_XE_SYNCS_FLAGS (DRM_XE_SYNCS_FLAG_WAIT_FOR_OP)
 
+static bool is_debug_data_op(u32 operation)
+{
+	return operation == DRM_XE_VM_BIND_OP_ADD_DEBUG_DATA ||
+	       operation == DRM_XE_VM_BIND_OP_REMOVE_DEBUG_DATA;
+}
+
+/*
+ * PRELIM vm bind op extensions, @ops is NULL when only checking the
+ * extensions from vm_bind_ioctl_check_args().
+ */
+typedef int (*xe_vm_bind_op_user_extension_fn)(struct xe_vm *vm,
+					       struct xe_file *xef,
+					       struct drm_gpuva_ops *ops,
+					       u32 operation, u64 extension);
+
+/* PRELIM v2 debug data, served by the eudebug core debug data */
+static int __maybe_unused prelim_v2_vm_bind_op_ext_debug_data(struct xe_vm *vm,
+							      struct xe_file *xef,
+							      struct drm_gpuva_ops *ops,
+							      u32 operation, u64 extension)
+{
+	if (XE_IOCTL_DBG(vm->xe, !is_debug_data_op(operation)))
+		return -EINVAL;
+
+	if (!ops)
+		return xe_debug_data_check_extension(vm, operation, extension);
+
+	return xe_debug_data_process_extension(vm, ops, operation, extension);
+}
+
+static const __maybe_unused xe_vm_bind_op_user_extension_fn vm_bind_op_extension_funcs[] = {
+	[PRELIM_V2_XE_VM_BIND_OP_EXTENSIONS_DEBUG_DATA & PRELIM_DRM_XE_VALUE_MASK] =
+		prelim_v2_vm_bind_op_ext_debug_data,
+};
+
 #define MAX_USER_EXTENSIONS	16
-
-typedef int (*xe_vm_bind_user_extension_check_fn)(struct xe_vm *vm, u32 operation, u64 extension);
-
-typedef int (*xe_vm_bind_user_extension_process_fn)(struct xe_vm *vm, struct drm_gpuva_ops *ops,
-						    u32 operation, u64 extension);
-
-static const xe_vm_bind_user_extension_check_fn vm_bind_extension_check_funcs[] = {
-	[XE_VM_BIND_OP_EXTENSIONS_DEBUG_DATA] = xe_debug_data_check_extension,
-};
-
-static const xe_vm_bind_user_extension_process_fn vm_bind_extension_process_funcs[] = {
-	[XE_VM_BIND_OP_EXTENSIONS_DEBUG_DATA] = xe_debug_data_process_extension,
-};
-
-static int __vm_bind_op_user_extensions(struct xe_vm *vm, struct drm_gpuva_ops *ops,
-					u32 operation, u64 extensions)
+static int vm_bind_op_user_extensions(struct xe_vm *vm, struct xe_file *xef,
+				      struct drm_gpuva_ops *ops, u32 operation,
+				      u64 extensions)
 {
 	struct xe_device *xe = vm->xe;
 	struct drm_xe_user_extension ext;
-	int debug_data_count = 0;
-	int ext_count = 0;
+	int debug_data = 0;
+	int ext_number = 0;
 	int err;
 	u32 idx;
 
 	while (extensions) {
 		u64 __user *address = u64_to_user_ptr(extensions);
 
-		if (XE_IOCTL_DBG(xe, ++ext_count >= MAX_USER_EXTENSIONS))
+		if (XE_IOCTL_DBG(xe, ext_number++ >= MAX_USER_EXTENSIONS))
 			return -E2BIG;
 
 		err = copy_from_user(&ext, address, sizeof(ext));
 		if (XE_IOCTL_DBG(xe, err))
 			return -EFAULT;
 
-		if (XE_IOCTL_DBG(xe, operation != DRM_XE_VM_BIND_OP_ADD_DEBUG_DATA &&
-				 operation != DRM_XE_VM_BIND_OP_REMOVE_DEBUG_DATA &&
-				 ext.name == XE_VM_BIND_OP_EXTENSIONS_DEBUG_DATA) ||
-		    XE_IOCTL_DBG(xe, ext.name == XE_VM_BIND_OP_EXTENSIONS_DEBUG_DATA &&
-				 ++debug_data_count > 1))
-			return -EINVAL;
-
 		if (XE_IOCTL_DBG(xe, ext.pad) ||
-		    XE_IOCTL_DBG(xe, ext.name > XE_VM_BIND_OP_EXTENSIONS_DEBUG_DATA))
+		    XE_IOCTL_DBG(xe, !(ext.name & PRELIM_DRM_XE_VALUE_INDICATOR)) ||
+		    XE_IOCTL_DBG(xe, PRELIM_DRM_XE_VALUE(ext.name) >=
+				 ARRAY_SIZE(vm_bind_op_extension_funcs)))
 			return -EINVAL;
 
-		if (!ops) {
-			idx = array_index_nospec(ext.name,
-						 ARRAY_SIZE(vm_bind_extension_check_funcs));
-			err = vm_bind_extension_check_funcs[idx](vm, operation, extensions);
-		} else {
-			idx = array_index_nospec(ext.name,
-						 ARRAY_SIZE(vm_bind_extension_process_funcs));
-			err = vm_bind_extension_process_funcs[idx](vm, ops, operation,
-								   extensions);
-		}
+		idx = array_index_nospec(PRELIM_DRM_XE_VALUE(ext.name),
+					 ARRAY_SIZE(vm_bind_op_extension_funcs));
+		if (XE_IOCTL_DBG(xe, !vm_bind_op_extension_funcs[idx]))
+			return -EINVAL;
 
+		if (XE_IOCTL_DBG(xe, ext.name == PRELIM_V2_XE_VM_BIND_OP_EXTENSIONS_DEBUG_DATA &&
+				 ++debug_data > 1))
+			return -EINVAL;
+
+		err = vm_bind_op_extension_funcs[idx](vm, xef, ops, operation, extensions);
 		if (XE_IOCTL_DBG(xe, err))
 			return err;
 
 		extensions = ext.next_extension;
 	}
 
-	/* A debug data op is described by its extension, so it must have one */
-	if (XE_IOCTL_DBG(xe, (operation == DRM_XE_VM_BIND_OP_ADD_DEBUG_DATA ||
-			      operation == DRM_XE_VM_BIND_OP_REMOVE_DEBUG_DATA) &&
-			 !debug_data_count))
+	/* A debug data op is described by exactly one debug data extension */
+	if (XE_IOCTL_DBG(xe, is_debug_data_op(operation) && !debug_data))
 		return -EINVAL;
 
 	return 0;
-}
-
-static int vm_bind_ioctl_check_user_extensions(struct xe_vm *vm, u32 operation, u64 extensions)
-{
-	return __vm_bind_op_user_extensions(vm, NULL, operation, extensions);
-}
-
-static int vm_bind_ioctl_process_user_extensions(struct xe_vm *vm, struct drm_gpuva_ops *ops,
-						 u32 operation, u64 extensions)
-{
-	return __vm_bind_op_user_extensions(vm, ops, operation, extensions);
 }
 
 static int vm_bind_ioctl_check_args(struct xe_device *xe, struct xe_vm *vm,
@@ -4133,8 +4138,20 @@ static int vm_bind_ioctl_check_args(struct xe_device *xe, struct xe_vm *vm,
 		bool is_decompress = flags & DRM_XE_VM_BIND_FLAG_DECOMPRESS;
 		u16 pat_index = (*bind_ops)[i].pat_index;
 		u64 extensions = (*bind_ops)[i].extensions;
+		bool is_debug_data = false;
 		u16 coh_mode;
 		bool comp_en;
+
+		/* PRELIM v2 debug data ops, served by the eudebug core ones */
+		if (IS_ENABLED(CONFIG_PRELIM_DRM_XE_EUDEBUG) &&
+		    (op == PRELIM_V2_DRM_XE_VM_BIND_OP_ADD_DEBUG_DATA ||
+		     op == PRELIM_V2_DRM_XE_VM_BIND_OP_REMOVE_DEBUG_DATA)) {
+			op = op == PRELIM_V2_DRM_XE_VM_BIND_OP_ADD_DEBUG_DATA ?
+				DRM_XE_VM_BIND_OP_ADD_DEBUG_DATA :
+				DRM_XE_VM_BIND_OP_REMOVE_DEBUG_DATA;
+			(*bind_ops)[i].op = op;
+			is_debug_data = true;
+		}
 
 		if (XE_IOCTL_DBG(xe, is_cpu_addr_mirror &&
 				 (!xe_vm_in_fault_mode(vm) ||
@@ -4162,7 +4179,7 @@ static int vm_bind_ioctl_check_args(struct xe_device *xe, struct xe_vm *vm,
 			goto free_bind_ops;
 		}
 
-		if (XE_IOCTL_DBG(xe, op > DRM_XE_VM_BIND_OP_REMOVE_DEBUG_DATA) ||
+		if (XE_IOCTL_DBG(xe, op > DRM_XE_VM_BIND_OP_PREFETCH && !is_debug_data) ||
 		    XE_IOCTL_DBG(xe, flags & ~SUPPORTED_FLAGS) ||
 		    XE_IOCTL_DBG(xe, obj && (is_null || is_cpu_addr_mirror)) ||
 		    XE_IOCTL_DBG(xe, obj_offset && (is_null ||
@@ -4214,9 +4231,18 @@ static int vm_bind_ioctl_check_args(struct xe_device *xe, struct xe_vm *vm,
 		    XE_IOCTL_DBG(xe, addr & ~PAGE_MASK) ||
 		    XE_IOCTL_DBG(xe, range & ~PAGE_MASK) ||
 		    XE_IOCTL_DBG(xe, !range &&
-				 op != DRM_XE_VM_BIND_OP_UNMAP_ALL &&
-				 op != DRM_XE_VM_BIND_OP_ADD_DEBUG_DATA &&
-				 op != DRM_XE_VM_BIND_OP_REMOVE_DEBUG_DATA)) {
+				 op != DRM_XE_VM_BIND_OP_UNMAP_ALL && !is_debug_data)) {
+			err = -EINVAL;
+			goto free_bind_ops;
+		}
+
+		/*
+		 * A debug data op is described entirely by its extension.
+		 * Require the rest of the op to be zero, so that it can be
+		 * given a meaning later without breaking callers.
+		 */
+		if (XE_IOCTL_DBG(xe, is_debug_data &&
+				 (obj || obj_offset || addr || range || flags))) {
 			err = -EINVAL;
 			goto free_bind_ops;
 		}
@@ -4228,21 +4254,11 @@ static int vm_bind_ioctl_check_args(struct xe_device *xe, struct xe_vm *vm,
 			goto free_bind_ops;
 		}
 
-		/*
-		 * A debug data op is described entirely by its extension.
-		 * Require the rest of the op to be zero, so that it can be
-		 * given a meaning later without breaking callers.
-		 */
-		if (XE_IOCTL_DBG(xe, (op == DRM_XE_VM_BIND_OP_ADD_DEBUG_DATA ||
-				      op == DRM_XE_VM_BIND_OP_REMOVE_DEBUG_DATA) &&
-				 (obj || obj_offset || addr || range || flags))) {
-			err = -EINVAL;
-			goto free_bind_ops;
+		if (extensions || is_debug_data) {
+			err = vm_bind_op_user_extensions(vm, vm->xef, NULL, op, extensions);
+			if (err)
+				goto free_bind_ops;
 		}
-
-		err = vm_bind_ioctl_check_user_extensions(vm, op, extensions);
-		if (err)
-			goto free_bind_ops;
 	}
 
 	return 0;
@@ -4527,9 +4543,9 @@ int xe_vm_bind_ioctl(struct drm_device *dev, void *data, struct drm_file *file)
 		ops[i] = vm_bind_ioctl_ops_create(vm, &vops, bos[i], obj_offset,
 						  addr, range, op, flags,
 						  prefetch_region, pat_index);
-
 		if (!IS_ERR(ops[i]) && extensions) {
-			err = vm_bind_ioctl_process_user_extensions(vm, ops[i], op, extensions);
+			err = vm_bind_op_user_extensions(vm, xef, ops[i],
+							 op, extensions);
 			if (err)
 				goto unwind_ops;
 		} else if (IS_ERR(ops[i])) {

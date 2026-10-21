@@ -154,6 +154,16 @@ config DRM_XE_EUDEBUG
 	  With debugger support, Xe provides an interface for a debugger to
 	  track, inspect and modify the resources of that process.
 
+config PRELIM_DRM_XE_EUDEBUG
+	bool "Enable PRELIM gdb debugger support (eudebug)"
+	depends on DRM_XE_EUDEBUG
+	default y
+	help
+	  Choose this option to also provide the PRELIM (xe-internal) eudebug
+	  uAPI versions, so that userspace still using them keeps working
+	  while it moves to the new interface. Only one debugger interface
+	  can be in use on a device at a time.
+
 menu "drm/Xe Debugging"
 depends on DRM_XE
 depends on EXPERT

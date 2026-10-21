@@ -47,7 +47,7 @@ Events
 Reading Events
 --------------
 
-.. kernel-doc:: include/uapi/drm/xe_drm_eudebug.h
+.. kernel-doc:: drivers/gpu/drm/xe/xe_eudebug_proto.h
    :doc: DRM_XE_EUDEBUG_IOCTL_READ_EVENT
 
 Base Event Header
@@ -57,41 +57,41 @@ The debugger receives events with the DRM_XE_EUDEBUG_IOCTL_READ_EVENT
 ioctl on the eudebug file descriptor. Every event has
 :c:type:`drm_xe_eudebug_event` as a header.
 
-.. kernel-doc:: include/uapi/drm/xe_drm_eudebug.h
+.. kernel-doc:: drivers/gpu/drm/xe/xe_eudebug_proto.h
    :identifiers: drm_xe_eudebug_event
 
 Resource Event Types
 --------------------
 
-.. kernel-doc:: include/uapi/drm/xe_drm_eudebug.h
+.. kernel-doc:: drivers/gpu/drm/xe/xe_eudebug_proto.h
    :identifiers: drm_xe_eudebug_event_vm
 
-.. kernel-doc:: include/uapi/drm/xe_drm_eudebug.h
+.. kernel-doc:: drivers/gpu/drm/xe/xe_eudebug_proto.h
    :identifiers: drm_xe_eudebug_event_exec_queue
 
-.. kernel-doc:: include/uapi/drm/xe_drm_eudebug.h
+.. kernel-doc:: drivers/gpu/drm/xe/xe_eudebug_proto.h
    :identifiers: drm_xe_eudebug_event_vm_bind
 
-.. kernel-doc:: include/uapi/drm/xe_drm_eudebug.h
+.. kernel-doc:: drivers/gpu/drm/xe/xe_eudebug_proto.h
    :identifiers: drm_xe_eudebug_event_vm_bind_op_debug_data
 
-.. kernel-doc:: include/uapi/drm/xe_drm_eudebug.h
+.. kernel-doc:: drivers/gpu/drm/xe/xe_eudebug_proto.h
    :identifiers: drm_xe_eudebug_event_vm_bind_ufence
 
-.. kernel-doc:: include/uapi/drm/xe_drm_eudebug.h
+.. kernel-doc:: drivers/gpu/drm/xe/xe_eudebug_proto.h
    :identifiers: drm_xe_eudebug_event_eu_attention
 
-.. kernel-doc:: include/uapi/drm/xe_drm_eudebug.h
+.. kernel-doc:: drivers/gpu/drm/xe/xe_eudebug_proto.h
    :identifiers: drm_xe_eudebug_event_pagefault
 
 VM Access
 =========
 
-.. kernel-doc:: include/uapi/drm/xe_drm_eudebug.h
+.. kernel-doc:: drivers/gpu/drm/xe/xe_eudebug_proto.h
    :identifiers: drm_xe_eudebug_vm_open
 
 EU/HW Control
 =============
 
-.. kernel-doc:: include/uapi/drm/xe_drm_eudebug.h
+.. kernel-doc:: drivers/gpu/drm/xe/xe_eudebug_proto.h
    :identifiers: drm_xe_eudebug_eu_control
