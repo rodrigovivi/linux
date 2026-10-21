@@ -218,8 +218,8 @@ to_intel_gmbus(struct i2c_adapter *i2c)
 void
 intel_gmbus_reset(struct intel_display *display)
 {
-	intel_de_write(display, GMBUS0(display), 0);
-	intel_de_write(display, GMBUS4(display), 0);
+	intel_de_write_fw(display, GMBUS0(display), 0);
+	intel_de_write_fw(display, GMBUS4(display), 0);
 }
 
 static void pnv_gmbus_clock_gating(struct intel_display *display,
@@ -246,97 +246,115 @@ static void bxt_gmbus_clock_gating(struct intel_display *display,
 		     !enable ? BXT_GMBUS_GATING_DIS : 0);
 }
 
-static u32 get_reserved(struct intel_gmbus *bus)
+static u32 gpio_mask_bits(struct intel_display *display)
+{
+	return GPIO_CLOCK_DIR_MASK | GPIO_CLOCK_VAL_MASK |
+		GPIO_DATA_DIR_MASK | GPIO_DATA_VAL_MASK;
+}
+
+static u32 gpio_preserved_bits(struct intel_display *display)
+{
+	u32 val = GPIO_CLOCK_DIR_OUT | GPIO_CLOCK_VAL_OUT |
+		GPIO_DATA_DIR_OUT | GPIO_DATA_VAL_OUT;
+
+	/*
+	 * On gen2/3 these are either internal pullup disables, or
+	 * documented as reserved bits that need to be preserved.
+	 */
+	if (DISPLAY_VER(display) < 4)
+		val |= GPIO_DATA_PULLUP_DISABLE |
+			GPIO_CLOCK_PULLUP_DISABLE;
+
+	return val;
+}
+
+static u32 gpio_read_reg(struct intel_gmbus *bus)
 {
 	struct intel_display *display = bus->display;
-	u32 preserve_bits = 0;
+	u32 val;
 
-	if (display->platform.i830 || display->platform.i845g)
-		return 0;
+	val = intel_de_read_fw(display, bus->gpio_reg);
 
-	/* On most chips, these bits must be preserved in software. */
-	preserve_bits |= GPIO_DATA_PULLUP_DISABLE | GPIO_CLOCK_PULLUP_DISABLE;
+	val &= gpio_preserved_bits(display);
 
-	/* Wa_16025573575: the masks bits need to be preserved through out */
-	if (intel_display_wa(display, INTEL_DISPLAY_WA_16025573575))
-		preserve_bits |= GPIO_CLOCK_DIR_MASK | GPIO_CLOCK_VAL_MASK |
-				 GPIO_DATA_DIR_MASK | GPIO_DATA_VAL_MASK;
+	/*
+	 * Wa_16025573575:
+	 * The (write only!) masks bits need to be kept set through out
+	 * on PTL. Do it always to keep the code uniform for all platforms.
+	 */
+	val |= gpio_mask_bits(display);
 
-	return intel_de_read_notrace(display, bus->gpio_reg) & preserve_bits;
+	return val;
 }
 
 static int get_clock(void *data)
 {
 	struct intel_gmbus *bus = data;
 	struct intel_display *display = bus->display;
-	u32 reserved = get_reserved(bus);
 
-	intel_de_write_notrace(display, bus->gpio_reg, reserved | GPIO_CLOCK_DIR_MASK);
-	intel_de_write_notrace(display, bus->gpio_reg, reserved);
-
-	return (intel_de_read_notrace(display, bus->gpio_reg) & GPIO_CLOCK_VAL_IN) != 0;
+	return (intel_de_read_fw(display, bus->gpio_reg) & GPIO_CLOCK_VAL_IN) != 0;
 }
 
 static int get_data(void *data)
 {
 	struct intel_gmbus *bus = data;
 	struct intel_display *display = bus->display;
-	u32 reserved = get_reserved(bus);
 
-	intel_de_write_notrace(display, bus->gpio_reg, reserved | GPIO_DATA_DIR_MASK);
-	intel_de_write_notrace(display, bus->gpio_reg, reserved);
-
-	return (intel_de_read_notrace(display, bus->gpio_reg) & GPIO_DATA_VAL_IN) != 0;
+	return (intel_de_read_fw(display, bus->gpio_reg) & GPIO_DATA_VAL_IN) != 0;
 }
 
 static void set_clock(void *data, int state_high)
 {
 	struct intel_gmbus *bus = data;
 	struct intel_display *display = bus->display;
-	u32 reserved = get_reserved(bus);
-	u32 clock_bits;
+	u32 val;
 
-	if (state_high)
-		clock_bits = GPIO_CLOCK_DIR_IN | GPIO_CLOCK_DIR_MASK;
-	else
-		clock_bits = GPIO_CLOCK_DIR_OUT | GPIO_CLOCK_DIR_MASK |
-			     GPIO_CLOCK_VAL_MASK;
+	val = gpio_read_reg(bus);
 
-	intel_de_write_notrace(display, bus->gpio_reg, reserved | clock_bits);
-	intel_de_posting_read(display, bus->gpio_reg);
+	val &= ~(GPIO_CLOCK_DIR_OUT | GPIO_CLOCK_VAL_OUT);
+
+	if (!state_high)
+		val |= GPIO_CLOCK_DIR_OUT;
+
+	intel_de_write_fw(display, bus->gpio_reg, val);
+	intel_de_posting_read_fw(display, bus->gpio_reg);
 }
 
 static void set_data(void *data, int state_high)
 {
 	struct intel_gmbus *bus = data;
 	struct intel_display *display = bus->display;
-	u32 reserved = get_reserved(bus);
-	u32 data_bits;
+	u32 val;
 
-	if (state_high)
-		data_bits = GPIO_DATA_DIR_IN | GPIO_DATA_DIR_MASK;
-	else
-		data_bits = GPIO_DATA_DIR_OUT | GPIO_DATA_DIR_MASK |
-			GPIO_DATA_VAL_MASK;
+	val = gpio_read_reg(bus);
 
-	intel_de_write_notrace(display, bus->gpio_reg, reserved | data_bits);
-	intel_de_posting_read(display, bus->gpio_reg);
+	val &= ~(GPIO_DATA_DIR_OUT | GPIO_DATA_VAL_OUT);
+
+	if (!state_high)
+		val |= GPIO_DATA_DIR_OUT;
+
+	intel_de_write_fw(display, bus->gpio_reg, val);
+	intel_de_posting_read_fw(display, bus->gpio_reg);
 }
 
 static void
-ptl_handle_mask_bits(struct intel_gmbus *bus, bool set)
+gpio_set_mask(struct intel_gmbus *bus, bool enable)
 {
 	struct intel_display *display = bus->display;
-	u32 reg_val = intel_de_read_notrace(display, bus->gpio_reg);
-	u32 mask_bits = GPIO_CLOCK_DIR_MASK | GPIO_CLOCK_VAL_MASK |
-			GPIO_DATA_DIR_MASK | GPIO_DATA_VAL_MASK;
-	if (set)
-		reg_val |= mask_bits;
-	else
-		reg_val &= ~mask_bits;
+	u32 val;
 
-	intel_de_write_notrace(display, bus->gpio_reg, reg_val);
-	intel_de_posting_read(display, bus->gpio_reg);
+	val = gpio_read_reg(bus);
+
+	val &= ~(GPIO_DATA_DIR_OUT | GPIO_CLOCK_DIR_OUT |
+		 GPIO_DATA_VAL_OUT | GPIO_CLOCK_VAL_OUT);
+
+	if (enable)
+		val |= gpio_mask_bits(display);
+	else
+		val &= ~gpio_mask_bits(display);
+
+	intel_de_write_fw(display, bus->gpio_reg, val);
+	intel_de_posting_read_fw(display, bus->gpio_reg);
 }
 
 static int
@@ -345,13 +363,13 @@ intel_gpio_pre_xfer(struct i2c_adapter *adapter)
 	struct intel_gmbus *bus = to_intel_gmbus(adapter);
 	struct intel_display *display = bus->display;
 
-	intel_gmbus_reset(display);
-
 	if (display->platform.pineview)
 		pnv_gmbus_clock_gating(display, false);
 
-	if (intel_display_wa(display, INTEL_DISPLAY_WA_16025573575))
-		ptl_handle_mask_bits(bus, true);
+	intel_gmbus_reset(display);
+
+	if (gpio_mask_bits(display))
+		gpio_set_mask(bus, true);
 
 	set_data(bus, 1);
 	set_clock(bus, 1);
@@ -368,11 +386,11 @@ intel_gpio_post_xfer(struct i2c_adapter *adapter)
 	set_data(bus, 1);
 	set_clock(bus, 1);
 
+	if (gpio_mask_bits(display))
+		gpio_set_mask(bus, false);
+
 	if (display->platform.pineview)
 		pnv_gmbus_clock_gating(display, true);
-
-	if (intel_display_wa(display, INTEL_DISPLAY_WA_16025573575))
-		ptl_handle_mask_bits(bus, false);
 }
 
 static void

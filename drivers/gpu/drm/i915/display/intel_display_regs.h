@@ -1089,16 +1089,16 @@
  *  frame = (high1 << 8) | low1;
  */
 #define _PIPEAFRAMEHIGH          0x70040
-#define PIPEFRAME(dev_priv, pipe)		_MMIO_PIPE2(dev_priv, pipe, _PIPEAFRAMEHIGH)
-#define   PIPE_FRAME_HIGH_MASK    0x0000ffff
-#define   PIPE_FRAME_HIGH_SHIFT   0
+#define PIPEFRAMEHIGH(dev_priv, pipe)	_MMIO_PIPE2(dev_priv, pipe, _PIPEAFRAMEHIGH)
+#define   PIPE_FRAME_HIGH_MASK	REG_GENMASK(15, 0)
 
 #define _PIPEAFRAMEPIXEL         0x70044
 #define PIPEFRAMEPIXEL(dev_priv, pipe)	_MMIO_PIPE2(dev_priv, pipe, _PIPEAFRAMEPIXEL)
-#define   PIPE_FRAME_LOW_MASK     0xff000000
-#define   PIPE_FRAME_LOW_SHIFT    24
-#define   PIPE_PIXEL_MASK         0x00ffffff
-#define   PIPE_PIXEL_SHIFT        0
+#define   PIPE_FRAME_LOW_MASK	REG_GENMASK(31, 24)
+#define   PIPE_PIXEL_MASK	REG_GENMASK(23, 0)
+
+/* frame counter mask for a combined 64bit value */
+#define   PIPE_FRAME_MASK	((u64)PIPE_FRAME_HIGH_MASK << 32 | PIPE_FRAME_LOW_MASK)
 
 /* GM45+ just has to be different */
 #define _PIPEA_FRMCOUNT_G4X	0x70040

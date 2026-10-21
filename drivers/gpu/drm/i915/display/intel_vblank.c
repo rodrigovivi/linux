@@ -109,11 +109,11 @@ u32 i915_get_vblank_counter(struct drm_crtc *crtc)
 	 * we get a low value that's stable across two reads of the high
 	 * register.
 	 */
-	frame = intel_de_read64_2x32_volatile(display, PIPEFRAMEPIXEL(display, pipe),
-					      PIPEFRAME(display, pipe));
+	frame = intel_de_read64_2x32_volatile_fw(display, PIPEFRAMEPIXEL(display, pipe),
+						 PIPEFRAMEHIGH(display, pipe));
 
-	pixel = frame & PIPE_PIXEL_MASK;
-	frame = (frame >> PIPE_FRAME_LOW_SHIFT) & 0xffffff;
+	pixel = REG_FIELD_GET(PIPE_PIXEL_MASK, frame);
+	frame = REG_FIELD_GET64(PIPE_FRAME_MASK, frame);
 
 	/*
 	 * The frame counter increments at beginning of active.
@@ -388,12 +388,15 @@ static bool i915_get_crtc_scanoutpos(struct drm_crtc *_crtc,
 		 */
 		position = __intel_get_crtc_scanline(crtc);
 	} else {
+		u32 val;
+
 		/*
 		 * Have access to pixelcount since start of frame.
 		 * We can split this into vertical and horizontal
 		 * scanout position.
 		 */
-		position = (intel_de_read_fw(display, PIPEFRAMEPIXEL(display, pipe)) & PIPE_PIXEL_MASK) >> PIPE_PIXEL_SHIFT;
+		val = intel_de_read_fw(display, PIPEFRAMEPIXEL(display, pipe));
+		position = REG_FIELD_GET(PIPE_PIXEL_MASK, val);
 
 		/* convert to pixel counts */
 		vbl_start *= htotal;
@@ -724,10 +727,10 @@ void intel_vblank_evade_init(const struct intel_crtc_state *old_crtc_state,
 	 * undelayed vblank, so with seamless M/N and LRR we must evade
 	 * both vblanks.
 	 *
-	 * DSB execution waits for the transcoder's undelayed vblank,
-	 * hence we must kick off the commit before that.
+	 * Chained DSB execution waits for the transcoder's undelayed
+	 * vblank, hence we must kick off the commit before that.
 	 */
-	if (intel_color_uses_dsb(new_crtc_state) ||
+	if (intel_color_uses_chained_dsb(new_crtc_state) ||
 	    new_crtc_state->update_m_n || new_crtc_state->update_lrr)
 		evade->min -= vblank_delay;
 }
