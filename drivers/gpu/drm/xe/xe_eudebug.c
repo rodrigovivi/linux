@@ -14,6 +14,8 @@
 #include "xe_eudebug_types.h"
 #include "xe_gt.h"
 #include "xe_pm.h"
+#include "xe_sriov.h"
+#include "xe_sriov_pf.h"
 
 /**
  * DOC: EU debug mode
@@ -88,11 +90,16 @@ static void eudebug_hw_update(struct xe_gt *gt, bool enable)
  * @xe: the &xe_device
  * @enable: the new state
  *
- * Return: 0 on success, -EPERM if the device does not support EU debug.
+ * EU debug mode and SR-IOV are exclusive: on a PF, enabling it locks
+ * down VF enabling until it is disabled again.
+ *
+ * Return: 0 on success, -EPERM if the device does not support EU debug,
+ * or a negative error code if VFs are enabled.
  */
 int xe_eudebug_enable(struct xe_device *xe, bool enable)
 {
 	struct xe_gt *gt;
+	int ret;
 	u8 id;
 
 	guard(mutex)(&xe->eudebug.lock);
@@ -102,6 +109,14 @@ int xe_eudebug_enable(struct xe_device *xe, bool enable)
 
 	if (enable == xe_eudebug_is_enabled(xe))
 		return 0;
+
+	if (enable && IS_SRIOV_PF(xe)) {
+		ret = xe_sriov_pf_lockdown(xe);
+		if (ret) {
+			drm_dbg(&xe->drm, "Can't enable eudebug: VFs are enabled\n");
+			return ret;
+		}
+	}
 
 	xe_pm_runtime_get(xe);
 	for_each_gt(gt, xe, id) {
@@ -115,6 +130,9 @@ int xe_eudebug_enable(struct xe_device *xe, bool enable)
 
 	WRITE_ONCE(xe->eudebug.cap_state, enable ?
 		   XE_EUDEBUG_CAP_ENABLED : XE_EUDEBUG_CAP_DISABLED);
+
+	if (!enable && IS_SRIOV_PF(xe))
+		xe_sriov_pf_end_lockdown(xe);
 
 	return 0;
 }
@@ -169,6 +187,8 @@ void xe_eudebug_init_early(struct xe_device *xe)
 	err = drmm_mutex_init(dev, &xe->eudebug.lock);
 	if (err) {
 		drm_warn(&xe->drm, "eudebug disabled, early init fail: %d\n", err);
+	} else if (IS_SRIOV_VF(xe)) {
+		drm_dbg(&xe->drm, "eudebug not available in SR-IOV VF mode\n");
 	} else if (GRAPHICS_VER(xe) >= 35) {
 		/* debug register layouts are only known up to Xe3 */
 		drm_dbg(&xe->drm, "eudebug not supported on graphics version %u\n",
