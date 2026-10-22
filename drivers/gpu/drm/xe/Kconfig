@@ -144,6 +144,16 @@ config DRM_XE_FORCE_PROBE
 
 	  Use "!*" to block the probe of the driver for all known devices.
 
+config DRM_XE_EUDEBUG
+	bool "Enable gdb debugger support (eudebug)"
+	depends on DRM_XE
+	default n
+	help
+	  Choose this option if you want to add support for a debugger (gdb)
+	  to attach to a process using Xe and debug its gpu/gpgpu programs.
+	  With debugger support, Xe provides an interface for a debugger to
+	  track, inspect and modify the resources of that process.
+
 menu "drm/Xe Debugging"
 depends on DRM_XE
 depends on EXPERT

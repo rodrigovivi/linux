@@ -34,6 +34,7 @@
 #include "xe_dma_buf.h"
 #include "xe_drm_client.h"
 #include "xe_drv.h"
+#include "xe_eudebug.h"
 #include "xe_exec.h"
 #include "xe_exec_queue.h"
 #include "xe_force_wake.h"
@@ -1060,6 +1061,8 @@ int xe_device_probe(struct xe_device *xe)
 	if (err)
 		return err;
 
+	xe_eudebug_init_early(xe);
+
 	err = drm_dev_register(&xe->drm, 0);
 	if (err)
 		return err;
@@ -1096,6 +1099,8 @@ int xe_device_probe(struct xe_device *xe)
 	err = xe_sriov_init_late(xe);
 	if (err)
 		goto err_unregister_display;
+
+	xe_eudebug_init(xe);
 
 	detect_preproduction_hw(xe);
 

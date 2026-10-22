@@ -14,6 +14,7 @@
 
 #include "xe_devcoredump_types.h"
 #include "xe_drm_ras_types.h"
+#include "xe_eudebug_types.h"
 #include "xe_heci_gsc.h"
 #include "xe_late_bind_fw_types.h"
 #include "xe_oa_types.h"
@@ -639,6 +640,17 @@ struct xe_device {
 	u32 *g2g_test_array;
 	/** @g2g_test_count: for testing G2G communications */
 	atomic_t g2g_test_count;
+#endif
+
+#if IS_ENABLED(CONFIG_DRM_XE_EUDEBUG)
+	/** @eudebug: eudebug globals for the device */
+	struct {
+		/** @eudebug.cap_state: eudebug capability state */
+		enum xe_eudebug_cap_state cap_state;
+
+		/** @eudebug.lock: protects the eudebug state of this device */
+		struct mutex lock;
+	} eudebug;
 #endif
 
 	/* private: */
