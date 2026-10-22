@@ -234,3 +234,7 @@ void xe_eudebug_init(struct xe_device *xe)
 	debugfs_create_file("eudebug", 0600, xe->drm.primary->debugfs_root,
 			    xe, &eudebug_fops);
 }
+
+#if IS_ENABLED(CONFIG_DRM_XE_KUNIT_TEST)
+#include "tests/xe_eudebug_test.c"
+#endif
