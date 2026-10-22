@@ -26,6 +26,7 @@
 #include "xe_bb.h"
 #include "xe_bo.h"
 #include "xe_device.h"
+#include "xe_eudebug.h"
 #include "xe_exec_queue.h"
 #include "xe_force_wake.h"
 #include "xe_gt.h"
@@ -1849,6 +1850,36 @@ exit:
 	return ret;
 }
 
+/**
+ * xe_oa_stream_active() - Whether any OA unit has a stream open
+ * @xe: the &xe_device
+ *
+ * Return: true if a stream is open on any OA unit of any gt.
+ */
+bool xe_oa_stream_active(struct xe_device *xe)
+{
+	struct xe_gt *gt;
+	u8 id;
+
+	for_each_gt(gt, xe, id) {
+		unsigned int i;
+		bool active = false;
+
+		mutex_lock(&gt->oa.gt_lock);
+		for (i = 0; i < gt->oa.num_oa_units; i++)
+			if (gt->oa.oa_unit[i].exclusive_stream) {
+				active = true;
+				break;
+			}
+		mutex_unlock(&gt->oa.gt_lock);
+
+		if (active)
+			return true;
+	}
+
+	return false;
+}
+
 static int xe_oa_stream_open_ioctl_locked(struct xe_oa *oa,
 					  struct xe_oa_open_param *param)
 {
@@ -1860,6 +1891,21 @@ static int xe_oa_stream_open_ioctl_locked(struct xe_oa *oa,
 	/* We currently only allow exclusive access */
 	if (param->oa_unit->exclusive_stream) {
 		drm_dbg(&oa->xe->drm, "OA unit already in use\n");
+		ret = -EBUSY;
+		goto exit;
+	}
+
+	/*
+	 * eudebug and OA both change EU and engine state that the other
+	 * relies on, such as the debug registers and workarounds eudebug
+	 * keeps in hwe->reg_sr and the settings OA changes and restores
+	 * around a stream. They do not have to run at the same time, so
+	 * refuse rather than interleave. xe_eudebug_enable() checks the
+	 * other direction with xe_oa_stream_active(), under the same
+	 * gt_lock held here.
+	 */
+	if (xe_eudebug_is_enabled(oa->xe)) {
+		drm_dbg(&oa->xe->drm, "OA not available while eudebug is enabled\n");
 		ret = -EBUSY;
 		goto exit;
 	}

@@ -13,6 +13,7 @@
 #include "xe_eudebug_hw.h"
 #include "xe_eudebug_types.h"
 #include "xe_gt.h"
+#include "xe_oa.h"
 #include "xe_pm.h"
 #include "xe_sriov.h"
 #include "xe_sriov_pf.h"
@@ -91,10 +92,12 @@ static void eudebug_hw_update(struct xe_gt *gt, bool enable)
  * @enable: the new state
  *
  * EU debug mode and SR-IOV are exclusive: on a PF, enabling it locks
- * down VF enabling until it is disabled again.
+ * down VF enabling until it is disabled again. It is also exclusive with
+ * OA streams.
  *
  * Return: 0 on success, -EPERM if the device does not support EU debug,
- * or a negative error code if VFs are enabled.
+ * -EBUSY if an OA stream is open, or a negative error code if VFs are
+ * enabled.
  */
 int xe_eudebug_enable(struct xe_device *xe, bool enable)
 {
@@ -110,9 +113,28 @@ int xe_eudebug_enable(struct xe_device *xe, bool enable)
 	if (enable == xe_eudebug_is_enabled(xe))
 		return 0;
 
+	/*
+	 * eudebug and OA are mutually exclusive: both own EU state, see
+	 * xe_oa_stream_open_ioctl_locked(). Publish the new state before
+	 * looking for streams, and take it back if one is found. An OA open
+	 * racing this is then either seen here, because it took the gt_lock
+	 * first and published its stream, or sees eudebug enabled under that
+	 * same lock and is refused.
+	 */
+	if (enable) {
+		WRITE_ONCE(xe->eudebug.cap_state, XE_EUDEBUG_CAP_ENABLED);
+		if (xe_oa_stream_active(xe)) {
+			WRITE_ONCE(xe->eudebug.cap_state, XE_EUDEBUG_CAP_DISABLED);
+			drm_dbg(&xe->drm, "Can't enable eudebug: OA stream is open\n");
+			return -EBUSY;
+		}
+	}
+
 	if (enable && IS_SRIOV_PF(xe)) {
 		ret = xe_sriov_pf_lockdown(xe);
 		if (ret) {
+			/* Take back what the check above published */
+			WRITE_ONCE(xe->eudebug.cap_state, XE_EUDEBUG_CAP_DISABLED);
 			drm_dbg(&xe->drm, "Can't enable eudebug: VFs are enabled\n");
 			return ret;
 		}
