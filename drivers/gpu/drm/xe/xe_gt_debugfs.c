@@ -18,6 +18,7 @@
 #include "xe_device.h"
 #include "xe_force_wake.h"
 #include "xe_gt.h"
+#include "xe_gt_debug.h"
 #include "xe_gt_mcr.h"
 #include "xe_gt_idle.h"
 #include "xe_gt_printk.h"
@@ -624,6 +625,8 @@ void xe_gt_debugfs_register(struct xe_gt *gt)
 		drm_debugfs_create_files(multi_queue_debugfs_list,
 					 ARRAY_SIZE(multi_queue_debugfs_list),
 					 root, minor);
+
+	xe_gt_debug_debugfs_register(gt, root);
 
 	if (xe_gt_is_main_type(gt) && !IS_DGFX(xe) && !IS_SRIOV_VF(xe))
 		debugfs_create_file("gt_ia_bias", 0600, root, gt, &gt_ia_bias_fops);

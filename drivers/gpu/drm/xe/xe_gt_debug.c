@@ -3,10 +3,16 @@
  * Copyright © 2023 Intel Corporation
  */
 
+#include <linux/debugfs.h>
+#include <linux/seq_file.h>
+#include <linux/slab.h>
 #include <linux/string.h>
+
+#include <drm/drm_print.h>
 
 #include "regs/xe_gt_regs.h"
 #include "xe_device.h"
+#include "xe_eudebug.h"
 #include "xe_force_wake.h"
 #include "xe_gt.h"
 #include "xe_gt_topology.h"
@@ -175,4 +181,61 @@ int xe_gt_eu_attention_bitmap(struct xe_gt *gt, u8 *bits,
 		return -EINVAL;
 
 	return xe_gt_foreach_dss_group_instance(gt, read_eu_attentions_mcr, &iter);
+}
+
+static int eu_attention_show(struct seq_file *m, void *data)
+{
+	struct drm_printer p = drm_seq_file_printer(m);
+	struct xe_gt *gt = m->private;
+	unsigned int dss_size, size, i, j;
+	u8 *bits;
+	int ret;
+
+	dss_size = xe_gt_eu_att_regs(gt) * XE_GT_EU_ATT_ROWS * sizeof(u32);
+	size = xe_gt_eu_attention_bitmap_size(gt);
+	if (!size)
+		return -ENODEV;
+
+	bits = kzalloc(size, GFP_KERNEL);
+	if (!bits)
+		return -ENOMEM;
+
+	scoped_guard(xe_pm_runtime, gt_to_xe(gt))
+		ret = xe_gt_eu_attention_bitmap(gt, bits, size);
+	if (ret)
+		goto out;
+
+	drm_printf(&p, "Threads in attention: %zu\n", memweight(bits, size));
+
+	for (i = 0; i + dss_size <= size; i += dss_size) {
+		if (!memchr_inv(&bits[i], 0, dss_size))
+			continue;
+
+		drm_printf(&p, "DSS%u:", i / dss_size);
+		for (j = 0; j < dss_size; j += sizeof(u32)) {
+			u32 val;
+
+			memcpy(&val, &bits[i + j], sizeof(val));
+			drm_printf(&p, " 0x%08x", val);
+		}
+		drm_puts(&p, "\n");
+	}
+
+out:
+	kfree(bits);
+	return ret;
+}
+DEFINE_SHOW_ATTRIBUTE(eu_attention);
+
+/**
+ * xe_gt_debug_debugfs_register - Add the EU attention debugfs file
+ * @gt: the &xe_gt
+ * @root: the GT debugfs directory
+ */
+void xe_gt_debug_debugfs_register(struct xe_gt *gt, struct dentry *root)
+{
+	if (!xe_eudebug_is_supported(gt_to_xe(gt)) || !xe_gt_is_main_type(gt))
+		return;
+
+	debugfs_create_file("eu_attention", 0400, root, gt, &eu_attention_fops);
 }

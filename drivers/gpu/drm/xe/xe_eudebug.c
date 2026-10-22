@@ -32,6 +32,11 @@
  * directory.
  */
 
+bool xe_eudebug_is_supported(struct xe_device *xe)
+{
+	return READ_ONCE(xe->eudebug.cap_state) != XE_EUDEBUG_CAP_NOT_SUPPORTED;
+}
+
 bool xe_eudebug_is_enabled(struct xe_device *xe)
 {
 	return READ_ONCE(xe->eudebug.cap_state) == XE_EUDEBUG_CAP_ENABLED;

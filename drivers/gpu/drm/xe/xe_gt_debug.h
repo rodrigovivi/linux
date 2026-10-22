@@ -8,6 +8,7 @@
 
 #include <linux/types.h>
 
+struct dentry;
 struct xe_gt;
 
 #define XE_GT_EU_ATT_ROWS 2u
@@ -25,5 +26,12 @@ int xe_gt_foreach_dss_group_instance(struct xe_gt *gt,
 int xe_gt_eu_attention_bitmap_size(struct xe_gt *gt);
 int xe_gt_eu_attention_bitmap(struct xe_gt *gt, u8 *bits,
 			      unsigned int bitmap_size);
+
+#if IS_ENABLED(CONFIG_DRM_XE_EUDEBUG)
+void xe_gt_debug_debugfs_register(struct xe_gt *gt, struct dentry *root);
+#else
+static inline void
+xe_gt_debug_debugfs_register(struct xe_gt *gt, struct dentry *root) { }
+#endif
 
 #endif
