@@ -396,6 +396,9 @@ static void xe_device_destroy(struct drm_device *dev, void *dummy)
 
 	ttm_device_fini(&xe->ttm);
 
+	/* Not drmm managed, as the shrinker walks their TTM managers */
+	kfree(xe->mem.sysmem_numa);
+
 	if (atomic_dec_and_test(&xe_device_count))
 		wake_up_var(&xe_device_count);
 }

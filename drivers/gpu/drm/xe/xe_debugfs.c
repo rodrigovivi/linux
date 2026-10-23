@@ -33,6 +33,7 @@
 #include "xe_step.h"
 #include "xe_sysctrl_debugfs.h"
 #include "xe_tile_debugfs.h"
+#include "xe_ttm_sys_mgr.h"
 #include "xe_ttm_vram_mgr.h"
 #include "xe_vsec.h"
 #include "xe_wa.h"
@@ -755,6 +756,7 @@ void xe_debugfs_register(struct xe_device *xe)
 	struct xe_gt *gt;
 	u8 tile_id;
 	u8 id;
+	u32 i;
 
 	drm_debugfs_create_files(debugfs_list,
 				 ARRAY_SIZE(debugfs_list),
@@ -818,6 +820,15 @@ void xe_debugfs_register(struct xe_device *xe)
 
 	man = ttm_manager_type(bdev, XE_PL_TT);
 	ttm_resource_manager_create_debugfs(man, root, "gtt_mm");
+
+	for (i = 0; i < xe->mem.num_sysmem_numa; i++) {
+		char name[32];
+
+		snprintf(name, sizeof(name), "sysmem_numa%d_mm",
+			 xe->mem.sysmem_numa[i].node);
+		ttm_resource_manager_create_debugfs(&xe->mem.sysmem_numa[i].man,
+						    root, name);
+	}
 
 	man = ttm_manager_type(bdev, XE_PL_STOLEN);
 	if (man)

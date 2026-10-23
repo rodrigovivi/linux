@@ -299,7 +299,13 @@ enum drm_xe_memory_class {
 	 * represents the memory that is local to the device, which we
 	 * call VRAM. Not valid on integrated platforms.
 	 */
-	DRM_XE_MEM_REGION_CLASS_VRAM
+	DRM_XE_MEM_REGION_CLASS_VRAM,
+	/**
+	 * @DRM_XE_MEM_REGION_CLASS_SYSMEM_NUMA: System memory of a single
+	 * CPU NUMA node. Only reported by
+	 * %DRM_XE_DEVICE_QUERY_SYSMEM_NUMA_REGIONS.
+	 */
+	DRM_XE_MEM_REGION_CLASS_SYSMEM_NUMA
 };
 
 /**
@@ -368,8 +374,15 @@ struct drm_xe_mem_region {
 	 * here will always be zero).
 	 */
 	__u64 cpu_visible_used;
+	/**
+	 * @sysmem_numa_node: The CPU NUMA node backing a
+	 * %DRM_XE_MEM_REGION_CLASS_SYSMEM_NUMA region. Zero for other classes.
+	 */
+	__u32 sysmem_numa_node;
+	/** @pad: MBZ */
+	__u32 pad;
 	/** @reserved: Reserved */
-	__u64 reserved[6];
+	__u64 reserved[5];
 };
 
 /**
@@ -378,6 +391,16 @@ struct drm_xe_mem_region {
  * If a query is made with a struct drm_xe_device_query where .query
  * is equal to DRM_XE_DEVICE_QUERY_MEM_REGIONS, then the reply uses
  * struct drm_xe_query_mem_regions in .data.
+ *
+ * If .query is equal to DRM_XE_DEVICE_QUERY_SYSMEM_NUMA_REGIONS, the reply
+ * uses the same struct, with one %DRM_XE_MEM_REGION_CLASS_SYSMEM_NUMA region
+ * per CPU NUMA node with memory, nearest to the device first: sorted by
+ * increasing NUMA distance from the device as reported by the platform
+ * firmware, then by node id. No regions are returned if the system has a
+ * single NUMA node with memory, and only the nearest ones if it has more
+ * than the driver supports. Their @used only accounts for the buffer objects
+ * placed there, while the system memory region returned by
+ * DRM_XE_DEVICE_QUERY_MEM_REGIONS keeps accounting for all of them.
  */
 struct drm_xe_query_mem_regions {
 	/** @num_mem_regions: number of memory regions returned in @mem_regions */
@@ -710,6 +733,9 @@ struct drm_xe_query_pxp_status {
  *  - %DRM_XE_DEVICE_QUERY_OA_UNITS
  *  - %DRM_XE_DEVICE_QUERY_PXP_STATUS
  *  - %DRM_XE_DEVICE_QUERY_EU_STALL
+ *  - %DRM_XE_DEVICE_QUERY_SYSMEM_NUMA_REGIONS - Query the system memory of
+ *    each CPU NUMA node as a separate region, see struct
+ *    drm_xe_query_mem_regions
  *
  * If size is set to 0, the driver fills it with the required size for
  * the requested type of data to query. If size is equal to the required
@@ -764,6 +790,7 @@ struct drm_xe_device_query {
 #define DRM_XE_DEVICE_QUERY_OA_UNITS		8
 #define DRM_XE_DEVICE_QUERY_PXP_STATUS		9
 #define DRM_XE_DEVICE_QUERY_EU_STALL		10
+#define DRM_XE_DEVICE_QUERY_SYSMEM_NUMA_REGIONS	11
 	/** @query: The type of data to query */
 	__u32 query;
 
@@ -858,6 +885,12 @@ struct drm_xe_gem_create {
 	 * drm_xe_query_mem_regions' instance, no assumptions should
 	 * be made about order. The type of each region is described
 	 * by struct drm_xe_query_mem_regions' mem_class.
+	 *
+	 * At most one %DRM_XE_MEM_REGION_CLASS_SYSMEM_NUMA instance may be
+	 * set, and not together with the %DRM_XE_MEM_REGION_CLASS_SYSMEM one.
+	 * It places the system memory backing store of the BO on that NUMA
+	 * node, on a best effort basis: when the node runs out of memory,
+	 * pages are allocated from the nearest nodes instead.
 	 */
 	__u32 placement;
 

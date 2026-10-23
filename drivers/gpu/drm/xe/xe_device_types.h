@@ -45,6 +45,7 @@ struct xe_i2c;
 struct xe_mmio_gem;
 struct xe_pat_ops;
 struct xe_pxp;
+struct xe_sysmem_numa;
 struct xe_ttm_stolen_mgr;
 struct xe_vram_region;
 
@@ -312,6 +313,13 @@ struct xe_device {
 		struct xe_vram_region *vram;
 		/** @mem.sys_mgr: system TTM manager */
 		struct ttm_resource_manager sys_mgr;
+		/**
+		 * @mem.sysmem_numa: system memory regions of the CPU NUMA
+		 * nodes, nearest first, if there are multiple nodes
+		 */
+		struct xe_sysmem_numa *sysmem_numa;
+		/** @mem.num_sysmem_numa: number of @mem.sysmem_numa regions */
+		u32 num_sysmem_numa;
 		/** @mem.shrinker: system memory shrinker. */
 		struct xe_shrinker *shrinker;
 		/** @mem.stolen_mgr: stolen memory manager. */

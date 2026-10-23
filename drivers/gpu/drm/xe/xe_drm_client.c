@@ -181,6 +181,9 @@ static void bo_meminfo(struct xe_bo *bo,
 		return;
 
 	mem_type = bo->ttm.resource->mem_type;
+	/* Keep reporting the SYSMEM_NUMA regions as gtt */
+	if (mem_type_is_sysmem_numa(mem_type))
+		mem_type = XE_PL_TT;
 
 	if (drm_gem_object_is_shared_for_memory_stats(&bo->ttm.base))
 		stats[mem_type].shared += sz;
@@ -267,7 +270,8 @@ static void show_meminfo(struct drm_printer *p, struct drm_file *file)
 	xe_bo_put_commit(&deferred);
 
 	for (mem_type = XE_PL_SYSTEM; mem_type < TTM_NUM_MEM_TYPES; ++mem_type) {
-		if (!xe_mem_type_to_name[mem_type])
+		if (!xe_mem_type_to_name[mem_type] ||
+		    mem_type_is_sysmem_numa(mem_type))
 			continue;
 
 		man = ttm_manager_type(bdev, mem_type);

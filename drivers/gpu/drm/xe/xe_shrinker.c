@@ -113,7 +113,7 @@ static int __xe_shrinker_walk(struct xe_shrinker *shrinker,
 	int ret = 0;
 	s64 lret;
 
-	for (mem_type = XE_PL_SYSTEM; mem_type <= XE_PL_TT; ++mem_type) {
+	for (mem_type = XE_PL_SYSTEM; mem_type < XE_PL_STOLEN; ++mem_type) {
 		struct ttm_resource_manager *man = ttm_manager_type(&xe->ttm, mem_type);
 		struct ttm_bo_lru_cursor curs;
 		struct ttm_buffer_object *ttm_bo;
