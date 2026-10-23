@@ -966,6 +966,7 @@ int ttm_pool_restore_and_alloc(struct ttm_pool *pool, struct ttm_tt *tt,
 
 	return __ttm_pool_alloc(pool, tt, ctx, &alloc, restore);
 }
+EXPORT_SYMBOL(ttm_pool_restore_and_alloc);
 
 /**
  * ttm_pool_free - Free the backing pages from a ttm_tt object
