@@ -321,7 +321,7 @@ static void ttm_bo_unreserve_pinned(struct kunit *test)
 static void ttm_bo_unreserve_bulk(struct kunit *test)
 {
 	struct ttm_test_devices *priv = test->priv;
-	struct ttm_lru_bulk_move lru_bulk_move;
+	struct ttm_lru_bulk_move *lru_bulk_move;
 	struct ttm_lru_bulk_move_pos *pos;
 	struct ttm_buffer_object *bo1, *bo2;
 	struct ttm_resource *res1, *res2;
@@ -332,7 +332,9 @@ static void ttm_bo_unreserve_bulk(struct kunit *test)
 	unsigned int bo_priority = 0;
 	int err;
 
-	ttm_lru_bulk_move_init(&lru_bulk_move);
+	lru_bulk_move = kunit_kzalloc(test, sizeof(*lru_bulk_move), GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, lru_bulk_move);
+	ttm_lru_bulk_move_init(lru_bulk_move);
 
 	place = ttm_place_kunit_init(test, mem_type, 0);
 
@@ -352,7 +354,7 @@ static void ttm_bo_unreserve_bulk(struct kunit *test)
 	bo2 = ttm_bo_kunit_init(test, test->priv, BO_SIZE, resv);
 
 	dma_resv_lock(bo1->base.resv, NULL);
-	ttm_bo_set_bulk_move(bo1, &lru_bulk_move);
+	ttm_bo_set_bulk_move(bo1, lru_bulk_move);
 	dma_resv_unlock(bo1->base.resv);
 
 	err = ttm_resource_alloc(bo1, place, &res1, NULL);
@@ -360,7 +362,7 @@ static void ttm_bo_unreserve_bulk(struct kunit *test)
 	bo1->resource = res1;
 
 	dma_resv_lock(bo2->base.resv, NULL);
-	ttm_bo_set_bulk_move(bo2, &lru_bulk_move);
+	ttm_bo_set_bulk_move(bo2, lru_bulk_move);
 	dma_resv_unlock(bo2->base.resv);
 
 	err = ttm_resource_alloc(bo2, place, &res2, NULL);
@@ -370,7 +372,7 @@ static void ttm_bo_unreserve_bulk(struct kunit *test)
 	ttm_bo_reserve(bo1, false, false, NULL);
 	ttm_bo_unreserve(bo1);
 
-	pos = &lru_bulk_move.pos[mem_type][bo_priority];
+	pos = &lru_bulk_move->pos[mem_type][bo_priority];
 	KUNIT_ASSERT_PTR_EQ(test, res1, pos->last);
 
 	ttm_resource_free(bo1, &res1);
@@ -495,7 +497,7 @@ static void ttm_bo_pin_basic(struct kunit *test)
 static void ttm_bo_pin_unpin_resource(struct kunit *test)
 {
 	struct ttm_test_devices *priv = test->priv;
-	struct ttm_lru_bulk_move lru_bulk_move;
+	struct ttm_lru_bulk_move *lru_bulk_move;
 	struct ttm_lru_bulk_move_pos *pos;
 	struct ttm_buffer_object *bo;
 	struct ttm_resource *res;
@@ -505,7 +507,9 @@ static void ttm_bo_pin_unpin_resource(struct kunit *test)
 	unsigned int bo_priority = 0;
 	int err;
 
-	ttm_lru_bulk_move_init(&lru_bulk_move);
+	lru_bulk_move = kunit_kzalloc(test, sizeof(*lru_bulk_move), GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, lru_bulk_move);
+	ttm_lru_bulk_move_init(lru_bulk_move);
 
 	place = ttm_place_kunit_init(test, mem_type, 0);
 
@@ -523,11 +527,11 @@ static void ttm_bo_pin_unpin_resource(struct kunit *test)
 	bo->resource = res;
 
 	dma_resv_lock(bo->base.resv, NULL);
-	ttm_bo_set_bulk_move(bo, &lru_bulk_move);
+	ttm_bo_set_bulk_move(bo, lru_bulk_move);
 	ttm_bo_pin(bo);
 	dma_resv_unlock(bo->base.resv);
 
-	pos = &lru_bulk_move.pos[mem_type][bo_priority];
+	pos = &lru_bulk_move->pos[mem_type][bo_priority];
 
 	KUNIT_ASSERT_EQ(test, bo->pin_count, 1);
 	KUNIT_ASSERT_NULL(test, pos->first);
@@ -546,7 +550,7 @@ static void ttm_bo_pin_unpin_resource(struct kunit *test)
 static void ttm_bo_multiple_pin_one_unpin(struct kunit *test)
 {
 	struct ttm_test_devices *priv = test->priv;
-	struct ttm_lru_bulk_move lru_bulk_move;
+	struct ttm_lru_bulk_move *lru_bulk_move;
 	struct ttm_lru_bulk_move_pos *pos;
 	struct ttm_buffer_object *bo;
 	struct ttm_resource *res;
@@ -556,7 +560,9 @@ static void ttm_bo_multiple_pin_one_unpin(struct kunit *test)
 	unsigned int bo_priority = 0;
 	int err;
 
-	ttm_lru_bulk_move_init(&lru_bulk_move);
+	lru_bulk_move = kunit_kzalloc(test, sizeof(*lru_bulk_move), GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, lru_bulk_move);
+	ttm_lru_bulk_move_init(lru_bulk_move);
 
 	place = ttm_place_kunit_init(test, mem_type, 0);
 
@@ -574,7 +580,7 @@ static void ttm_bo_multiple_pin_one_unpin(struct kunit *test)
 	bo->resource = res;
 
 	dma_resv_lock(bo->base.resv, NULL);
-	ttm_bo_set_bulk_move(bo, &lru_bulk_move);
+	ttm_bo_set_bulk_move(bo, lru_bulk_move);
 
 	/* Multiple pins */
 	ttm_bo_pin(bo);
@@ -582,7 +588,7 @@ static void ttm_bo_multiple_pin_one_unpin(struct kunit *test)
 
 	dma_resv_unlock(bo->base.resv);
 
-	pos = &lru_bulk_move.pos[mem_type][bo_priority];
+	pos = &lru_bulk_move->pos[mem_type][bo_priority];
 
 	KUNIT_ASSERT_EQ(test, bo->pin_count, 2);
 	KUNIT_ASSERT_NULL(test, pos->first);
