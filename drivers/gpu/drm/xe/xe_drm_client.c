@@ -200,7 +200,8 @@ static void bo_meminfo(struct xe_bo *bo,
 
 static void show_meminfo(struct drm_printer *p, struct drm_file *file)
 {
-	struct drm_memory_stats stats[TTM_NUM_MEM_TYPES] = {};
+	struct drm_memory_stats *stats __free(kfree) =
+		kcalloc(TTM_NUM_MEM_TYPES, sizeof(*stats), GFP_KERNEL);
 	struct xe_file *xef = file->driver_priv;
 	struct ttm_device *bdev = &xef->xe->ttm;
 	struct ttm_resource_manager *man;
@@ -210,6 +211,9 @@ static void show_meminfo(struct drm_printer *p, struct drm_file *file)
 	LLIST_HEAD(deferred);
 	unsigned int id;
 	u32 mem_type;
+
+	if (!stats)
+		return;
 
 	client = xef->client;
 
