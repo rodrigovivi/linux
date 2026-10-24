@@ -27,6 +27,7 @@
 #include "xe_mmio.h"
 #include "xe_oa.h"
 #include "xe_pxp.h"
+#include "xe_ttm_sys_mgr.h"
 #include "xe_ttm_vram_mgr.h"
 #include "xe_vram_types.h"
 #include "xe_wa.h"
@@ -313,6 +314,46 @@ user_copy:
 		ret = -ENOSPC;
 
 	kfree(mem_regions);
+	return ret;
+}
+
+static int query_sysmem_numa_regions(struct xe_device *xe,
+				     struct drm_xe_device_query *query)
+{
+	u32 i, num = xe_device_is_admin_only(xe) ? 0 : xe->mem.num_sysmem_numa;
+	size_t size = offsetof(struct drm_xe_query_mem_regions, mem_regions[num]);
+	struct drm_xe_query_mem_regions __user *query_ptr =
+		u64_to_user_ptr(query->data);
+	struct drm_xe_query_mem_regions *mem_regions;
+	int ret;
+
+	if (query->size == 0) {
+		query->size = size;
+		return 0;
+	} else if (XE_IOCTL_DBG(xe, query->size != size)) {
+		return -EINVAL;
+	}
+
+	mem_regions = kzalloc(size, GFP_KERNEL);
+	if (XE_IOCTL_DBG(xe, !mem_regions))
+		return -ENOMEM;
+
+	mem_regions->num_mem_regions = num;
+	for (i = 0; i < num; i++) {
+		struct drm_xe_mem_region *region = &mem_regions->mem_regions[i];
+		struct xe_sysmem_numa *numa = &xe->mem.sysmem_numa[i];
+
+		region->mem_class = DRM_XE_MEM_REGION_CLASS_SYSMEM_NUMA;
+		region->instance = XE_SYSMEM_NUMA_FIRST_INSTANCE + i;
+		region->min_page_size = PAGE_SIZE;
+		region->total_size = numa->size;
+		region->used = atomic64_read(&numa->used);
+		region->sysmem_numa_node = numa->node;
+	}
+
+	ret = copy_to_user(query_ptr, mem_regions, size) ? -EFAULT : 0;
+	kfree(mem_regions);
+
 	return ret;
 }
 
@@ -801,6 +842,7 @@ static int (* const xe_query_funcs[])(struct xe_device *xe,
 	query_oa_units,
 	query_pxp_status,
 	query_eu_stall,
+	query_sysmem_numa_regions,
 };
 
 int xe_query_ioctl(struct drm_device *dev, void *data, struct drm_file *file)

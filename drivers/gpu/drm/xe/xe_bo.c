@@ -39,6 +39,7 @@
 #include "xe_tile.h"
 #include "xe_trace_bo.h"
 #include "xe_ttm_stolen_mgr.h"
+#include "xe_ttm_sys_mgr.h"
 #include "xe_vm.h"
 #include "xe_vram_types.h"
 
@@ -391,6 +392,8 @@ struct xe_ttm_tt {
 	struct ttm_tt ttm;
 	struct sg_table sgt;
 	struct sg_table *sg;
+	/** @pool: The page pool populating @ttm. */
+	struct ttm_pool *pool;
 	/** @purgeable: Whether the content of the pages of @ttm is purgeable. */
 	bool purgeable;
 };
@@ -594,6 +597,7 @@ static struct ttm_tt *xe_ttm_tt_create(struct ttm_buffer_object *ttm_bo,
 		return NULL;
 
 	tt = &xe_tt->ttm;
+	xe_tt->pool = bo->sysmem_numa ? &bo->sysmem_numa->pool : &xe->ttm.pool;
 
 	extra_pages = 0;
 	if (xe_bo_needs_ccs_pages(bo))
@@ -675,7 +679,7 @@ static int xe_ttm_tt_populate(struct ttm_device *ttm_dev, struct ttm_tt *tt,
 		err = ttm_tt_restore(ttm_dev, tt, ctx);
 	} else {
 		ttm_tt_clear_backed_up(tt);
-		err = ttm_pool_alloc(&ttm_dev->pool, tt, ctx);
+		err = ttm_pool_alloc(xe_tt->pool, tt, ctx);
 	}
 	if (err)
 		return err;
@@ -689,6 +693,7 @@ static int xe_ttm_tt_populate(struct ttm_device *ttm_dev, struct ttm_tt *tt,
 
 static void xe_ttm_tt_unpopulate(struct ttm_device *ttm_dev, struct ttm_tt *tt)
 {
+	struct xe_ttm_tt *xe_tt = container_of(tt, struct xe_ttm_tt, ttm);
 	struct xe_device *xe = ttm_to_xe_device(ttm_dev);
 
 	if ((tt->page_flags & TTM_TT_FLAG_EXTERNAL) &&
@@ -697,7 +702,7 @@ static void xe_ttm_tt_unpopulate(struct ttm_device *ttm_dev, struct ttm_tt *tt)
 
 	xe_tt_unmap_sg(xe, tt);
 
-	ttm_pool_free(&ttm_dev->pool, tt);
+	ttm_pool_free(xe_tt->pool, tt);
 	xe_ttm_tt_account_subtract(xe, tt);
 	update_global_total_pages(ttm_dev, -(long)tt->num_pages);
 }
@@ -2675,7 +2680,8 @@ __xe_bo_create_locked(struct xe_device *xe,
 		      struct xe_tile *tile, struct xe_vm *vm,
 		      size_t size, u64 start, u64 end,
 		      u16 cpu_caching, enum ttm_bo_type type, u32 flags,
-		      u64 alignment, struct drm_exec *exec)
+		      u64 alignment, struct xe_sysmem_numa *sysmem_numa,
+		      struct drm_exec *exec)
 {
 	struct xe_bo *bo = NULL;
 	int err;
@@ -2694,6 +2700,16 @@ __xe_bo_create_locked(struct xe_device *xe,
 			xe_bo_free(bo);
 			return ERR_PTR(err);
 		}
+	}
+
+	/* Must be known before the BO gets populated during init */
+	if (sysmem_numa) {
+		if (!bo) {
+			bo = xe_bo_alloc();
+			if (IS_ERR(bo))
+				return bo;
+		}
+		bo->sysmem_numa = sysmem_numa;
 	}
 
 	bo = xe_bo_init_locked(xe, bo, tile, vm ? xe_vm_resv(vm) : NULL,
@@ -2775,7 +2791,7 @@ struct xe_bo *xe_bo_create_locked(struct xe_device *xe, struct xe_tile *tile,
 				  struct drm_exec *exec)
 {
 	return __xe_bo_create_locked(xe, tile, vm, size, 0, ~0ULL, 0, type,
-				     flags, 0, exec);
+				     flags, 0, NULL, exec);
 }
 
 static struct xe_bo *xe_bo_create_novm(struct xe_device *xe, struct xe_tile *tile,
@@ -2791,7 +2807,8 @@ static struct xe_bo *xe_bo_create_novm(struct xe_device *xe, struct xe_tile *til
 	xe_validation_guard(&ctx, &xe->val, &exec, (struct xe_val_flags) {.interruptible = intr},
 			    ret) {
 		bo = __xe_bo_create_locked(xe, tile, NULL, size, 0, ~0ULL,
-					   cpu_caching, type, flags, alignment, &exec);
+					   cpu_caching, type, flags, alignment,
+					   NULL, &exec);
 		drm_exec_retry_on_contention(&exec);
 		if (IS_ERR(bo)) {
 			ret = PTR_ERR(bo);
@@ -2943,6 +2960,39 @@ static void xe_bo_debug_mixed_mode_cur_index_advance(struct xe_device *xe,
 }
 #endif
 
+static struct xe_bo *__xe_bo_create_user(struct xe_device *xe,
+					 struct xe_vm *vm, size_t size,
+					 u16 cpu_caching, u32 flags,
+					 struct xe_sysmem_numa *sysmem_numa,
+					 struct drm_exec *exec)
+{
+	struct xe_bo *bo;
+	int err = 0;
+
+	flags |= XE_BO_FLAG_USER;
+
+	if (xe_debug_page_size_mode_not_none(xe)) {
+		err = xe_bo_apply_debug_page_size_policy(xe, &flags, &size);
+		if (err)
+			return ERR_PTR(err);
+	}
+
+	if (vm || exec) {
+		xe_assert(xe, exec);
+		bo = __xe_bo_create_locked(xe, NULL, vm, size, 0, ~0ULL,
+					   cpu_caching, ttm_bo_type_device,
+					   flags, 0, sysmem_numa, exec);
+		if (!IS_ERR(bo))
+			xe_bo_unlock_vm_held(bo);
+	} else {
+		xe_assert(xe, !sysmem_numa);
+		bo = xe_bo_create_novm(xe, NULL, size, cpu_caching,
+				       ttm_bo_type_device, flags, 0, true);
+	}
+
+	return bo;
+}
+
 /**
  * xe_bo_create_user() - Create a user BO
  * @xe: The xe device.
@@ -2962,30 +3012,7 @@ struct xe_bo *xe_bo_create_user(struct xe_device *xe,
 				u16 cpu_caching,
 				u32 flags, struct drm_exec *exec)
 {
-	struct xe_bo *bo;
-	int err = 0;
-
-	flags |= XE_BO_FLAG_USER;
-
-	if (xe_debug_page_size_mode_not_none(xe)) {
-		err = xe_bo_apply_debug_page_size_policy(xe, &flags, &size);
-		if (err)
-			return ERR_PTR(err);
-	}
-
-	if (vm || exec) {
-		xe_assert(xe, exec);
-		bo = __xe_bo_create_locked(xe, NULL, vm, size, 0, ~0ULL,
-					   cpu_caching, ttm_bo_type_device,
-					   flags, 0, exec);
-		if (!IS_ERR(bo))
-			xe_bo_unlock_vm_held(bo);
-	} else {
-		bo = xe_bo_create_novm(xe, NULL, size, cpu_caching,
-				       ttm_bo_type_device, flags, 0, true);
-	}
-
-	return bo;
+	return __xe_bo_create_user(xe, vm, size, cpu_caching, flags, NULL, exec);
 }
 
 /**
@@ -3016,7 +3043,7 @@ struct xe_bo *xe_bo_create_pin_range_novm(struct xe_device *xe, struct xe_tile *
 
 	xe_validation_guard(&ctx, &xe->val, &exec, (struct xe_val_flags) {}, err) {
 		bo = __xe_bo_create_locked(xe, tile, NULL, size, start, end,
-					   0, type, flags, 0, &exec);
+					   0, type, flags, 0, NULL, &exec);
 		if (IS_ERR(bo)) {
 			drm_exec_retry_on_contention(&exec);
 			err = PTR_ERR(bo);
@@ -3055,7 +3082,7 @@ static struct xe_bo *xe_bo_create_pin_map_at_aligned(struct xe_device *xe,
 
 	bo = __xe_bo_create_locked(xe, tile, vm, size, start, end, 0, type,
 				   flags | XE_BO_FLAG_NEEDS_CPU_ACCESS | XE_BO_FLAG_PINNED,
-				   alignment, exec);
+				   alignment, NULL, exec);
 	if (IS_ERR(bo))
 		return bo;
 
@@ -3660,6 +3687,8 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 	struct drm_xe_gem_create *args = data;
 	struct xe_validation_ctx ctx;
 	struct drm_exec exec;
+	struct xe_sysmem_numa *sysmem_numa = NULL;
+	u32 placement = args->placement;
 	struct xe_vm *vm = NULL;
 	struct xe_bo *bo;
 	unsigned int bo_flags;
@@ -3670,9 +3699,25 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 	    XE_IOCTL_DBG(xe, args->reserved[0] || args->reserved[1]))
 		return -EINVAL;
 
+	/* a SYSMEM_NUMA instance stands for the SYSMEM one on a given node */
+	if (placement >> XE_SYSMEM_NUMA_FIRST_INSTANCE) {
+		u32 numa = placement >> XE_SYSMEM_NUMA_FIRST_INSTANCE;
+		u32 idx = __ffs(numa);
+
+		if (XE_IOCTL_DBG(xe, !is_power_of_2(numa) ||
+				 idx >= xe->mem.num_sysmem_numa ||
+				 placement & BIT(0)))
+			return -EINVAL;
+
+		idx = array_index_nospec(idx, xe->mem.num_sysmem_numa);
+		sysmem_numa = &xe->mem.sysmem_numa[idx];
+		placement &= GENMASK(XE_SYSMEM_NUMA_FIRST_INSTANCE - 1, 0);
+		placement |= BIT(0);
+	}
+
 	/* at least one valid memory placement must be specified */
-	if (XE_IOCTL_DBG(xe, (args->placement & ~xe->info.mem_region_mask) ||
-			 !args->placement))
+	if (XE_IOCTL_DBG(xe, (placement & ~xe->info.mem_region_mask) ||
+			 !placement))
 		return -EINVAL;
 
 	if (XE_IOCTL_DBG(xe, args->flags &
@@ -3710,7 +3755,7 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 		bo_flags |= XE_BO_FLAG_NO_COMPRESSION;
 	}
 
-	bo_flags |= args->placement << (ffs(XE_BO_FLAG_SYSTEM) - 1);
+	bo_flags |= placement << (ffs(XE_BO_FLAG_SYSTEM) - 1);
 
 	/* CCS formats need physical placement at a 64K alignment in VRAM. */
 	if ((bo_flags & XE_BO_FLAG_VRAM_MASK) &&
@@ -3753,8 +3798,8 @@ int xe_gem_create_ioctl(struct drm_device *dev, void *data,
 			if (err)
 				break;
 		}
-		bo = xe_bo_create_user(xe, vm, args->size, args->cpu_caching,
-				       bo_flags, &exec);
+		bo = __xe_bo_create_user(xe, vm, args->size, args->cpu_caching,
+					 bo_flags, sysmem_numa, &exec);
 		drm_exec_retry_on_contention(&exec);
 		if (IS_ERR(bo)) {
 			err = PTR_ERR(bo);
