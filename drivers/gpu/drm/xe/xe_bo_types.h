@@ -19,6 +19,7 @@
 
 struct xe_device;
 struct xe_mem_pool_node;
+struct xe_sysmem_numa;
 struct xe_vm;
 struct xe_exec_queue;
 
@@ -62,6 +63,11 @@ struct xe_bo {
 	struct ttm_place placements[XE_BO_MAX_PLACEMENTS];
 	/** @placement: current placement for this BO */
 	struct ttm_placement placement;
+	/**
+	 * @sysmem_numa: NUMA node region for the system memory backing
+	 * store, NULL for the device default
+	 */
+	struct xe_sysmem_numa *sysmem_numa;
 	/** @ggtt_node: Array of GGTT nodes if this BO is mapped in the GGTTs */
 	struct xe_ggtt_node *ggtt_node[XE_MAX_TILES_PER_DEVICE];
 	/** @vmap: iosys map of this buffer */

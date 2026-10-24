@@ -1224,8 +1224,8 @@ static struct dma_fence *__xe_migrate_copy(struct xe_migrate *m,
 	u64 src_L0, dst_L0;
 	int pass = 0;
 	int err;
-	bool src_is_pltt = src->mem_type == XE_PL_TT;
-	bool dst_is_pltt = dst->mem_type == XE_PL_TT;
+	bool src_is_pltt = mem_type_is_tt(src->mem_type);
+	bool dst_is_pltt = mem_type_is_tt(dst->mem_type);
 	bool src_is_vram = mem_type_is_vram(src->mem_type);
 	bool dst_is_vram = mem_type_is_vram(dst->mem_type);
 	bool type_device = src_bo->ttm.type == ttm_bo_type_device;

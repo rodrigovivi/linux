@@ -119,7 +119,7 @@ int xe_bo_evict_all_user(struct xe_device *xe)
 	int ret;
 
 	/* User memory */
-	for (mem_type = XE_PL_TT; mem_type <= XE_PL_VRAM1; ++mem_type) {
+	for (mem_type = XE_PL_TT; mem_type < XE_PL_STOLEN; ++mem_type) {
 		struct ttm_resource_manager *man =
 			ttm_manager_type(bdev, mem_type);
 
@@ -131,7 +131,8 @@ int xe_bo_evict_all_user(struct xe_device *xe)
 		 * This can be further improved by only evicting objects that we know have actually
 		 * used a compression enabled PAT index.
 		 */
-		if (mem_type == XE_PL_TT && (IS_DGFX(xe) || !xe_device_has_flat_ccs(xe)))
+		if (mem_type_is_tt(mem_type) &&
+		    (IS_DGFX(xe) || !xe_device_has_flat_ccs(xe)))
 			continue;
 
 		if (man) {
@@ -282,6 +283,17 @@ static void xe_bo_pci_dev_remove_pinned(struct xe_device *xe)
 		xe_tile_migrate_wait(tile);
 }
 
+static void xe_bo_pci_dev_remove_mem_type(struct xe_device *xe, u32 mem_type)
+{
+	struct ttm_resource_manager *man = ttm_manager_type(&xe->ttm, mem_type);
+
+	if (man) {
+		int ret = ttm_resource_manager_evict_all(&xe->ttm, man);
+
+		drm_WARN_ON(&xe->drm, ret);
+	}
+}
+
 /**
  * xe_bo_pci_dev_remove_all() - Handle bos when the pci_device is about to be removed
  * @xe: The xe device.
@@ -301,18 +313,13 @@ void xe_bo_pci_dev_remove_all(struct xe_device *xe)
 
 	/*
 	 * Move pagemap bos and exported dma-buf to system, and
-	 * purge everything else.
+	 * purge everything else. VRAM first, as it is evicted to the TT types.
 	 */
-	for (mem_type = XE_PL_VRAM1; mem_type >= XE_PL_TT; --mem_type) {
-		struct ttm_resource_manager *man =
-			ttm_manager_type(&xe->ttm, mem_type);
+	for (mem_type = XE_PL_VRAM1; mem_type >= XE_PL_TT; --mem_type)
+		xe_bo_pci_dev_remove_mem_type(xe, mem_type);
 
-		if (man) {
-			int ret = ttm_resource_manager_evict_all(&xe->ttm, man);
-
-			drm_WARN_ON(&xe->drm, ret);
-		}
-	}
+	for (mem_type = XE_PL_SYSMEM_NUMA0; mem_type < XE_PL_STOLEN; ++mem_type)
+		xe_bo_pci_dev_remove_mem_type(xe, mem_type);
 
 	xe_bo_pci_dev_remove_pinned(xe);
 }

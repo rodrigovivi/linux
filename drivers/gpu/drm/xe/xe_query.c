@@ -27,6 +27,7 @@
 #include "xe_mmio.h"
 #include "xe_oa.h"
 #include "xe_pxp.h"
+#include "xe_ttm_sys_mgr.h"
 #include "xe_ttm_vram_mgr.h"
 #include "xe_vram_types.h"
 #include "xe_wa.h"
@@ -241,6 +242,8 @@ static size_t calc_mem_regions_size(struct xe_device *xe)
 		if (ttm_manager_type(&xe->ttm, i))
 			num_managers++;
 
+	num_managers += xe->mem.num_sysmem_numa;
+
 	return offsetof(struct drm_xe_query_mem_regions, mem_regions[num_managers]);
 }
 
@@ -279,6 +282,9 @@ static int query_mem_regions(struct xe_device *xe,
 	mem_regions->mem_regions[0].min_page_size = PAGE_SIZE;
 	mem_regions->mem_regions[0].total_size = man->size << PAGE_SHIFT;
 	mem_regions->mem_regions[0].used = ttm_resource_manager_usage(man);
+	for (i = 0; i < xe->mem.num_sysmem_numa; i++)
+		mem_regions->mem_regions[0].used +=
+			ttm_resource_manager_usage(&xe->mem.sysmem_numa[i].man);
 	mem_regions->num_mem_regions = 1;
 
 	for (i = XE_PL_VRAM0; i <= XE_PL_VRAM1; ++i) {
@@ -304,6 +310,20 @@ static int query_mem_regions(struct xe_device *xe,
 				xe_ttm_vram_get_cpu_visible_size(man);
 			mem_regions->num_mem_regions++;
 		}
+	}
+
+	/* Last, for the users stopping at the first unknown class */
+	for (i = 0; i < xe->mem.num_sysmem_numa; i++) {
+		struct drm_xe_mem_region *region =
+			&mem_regions->mem_regions[mem_regions->num_mem_regions++];
+		struct xe_sysmem_numa *numa = &xe->mem.sysmem_numa[i];
+
+		region->mem_class = DRM_XE_MEM_REGION_CLASS_SYSMEM_NUMA;
+		region->instance = XE_SYSMEM_NUMA_FIRST_INSTANCE + i;
+		region->min_page_size = PAGE_SIZE;
+		region->total_size = numa->size;
+		region->used = ttm_resource_manager_usage(&numa->man);
+		region->sysmem_numa_node = numa->node;
 	}
 
 user_copy:
@@ -420,8 +440,9 @@ static int query_gt_list(struct xe_device *xe, struct drm_xe_device_query *query
 		else
 			gt_list->gt_list[iter].near_mem_regions =
 				BIT(gt_to_tile(gt)->mem.vram->id) << 1;
-		gt_list->gt_list[iter].far_mem_regions = xe->info.mem_region_mask ^
-			gt_list->gt_list[iter].near_mem_regions;
+		gt_list->gt_list[iter].far_mem_regions = (xe->info.mem_region_mask ^
+			gt_list->gt_list[iter].near_mem_regions) |
+			xe_sysmem_numa_region_mask(xe);
 
 		gt_list->gt_list[iter].ip_ver_major =
 			REG_FIELD_GET(GMD_ID_ARCH_MASK, gt->info.gmdid);

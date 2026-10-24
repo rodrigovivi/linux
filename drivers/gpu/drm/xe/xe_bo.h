@@ -85,6 +85,8 @@
 #define XE_PL_TT		TTM_PL_TT
 #define XE_PL_VRAM0		TTM_PL_VRAM
 #define XE_PL_VRAM1		(XE_PL_VRAM0 + 1)
+/* TT types of the SYSMEM_NUMA regions, up to XE_PL_STOLEN */
+#define XE_PL_SYSMEM_NUMA0	(XE_PL_VRAM1 + 1)
 #define XE_PL_STOLEN		(TTM_NUM_MEM_TYPES - 1)
 
 #define XE_BO_PROPS_INVALID	(-1)
@@ -424,6 +426,18 @@ void xe_bo_vunmap(struct xe_bo *bo);
 int xe_bo_read(struct xe_bo *bo, u64 offset, void *dst, int size);
 
 bool mem_type_is_vram(u32 mem_type);
+
+static inline bool mem_type_is_sysmem_numa(u32 mem_type)
+{
+	return mem_type >= XE_PL_SYSMEM_NUMA0 && mem_type < XE_PL_STOLEN;
+}
+
+/* System memory mapped for the device: XE_PL_TT or a SYSMEM_NUMA type */
+static inline bool mem_type_is_tt(u32 mem_type)
+{
+	return mem_type == XE_PL_TT || mem_type_is_sysmem_numa(mem_type);
+}
+
 bool xe_bo_is_vram(struct xe_bo *bo);
 bool xe_bo_is_visible_vram(struct xe_bo *bo);
 bool xe_bo_is_stolen(struct xe_bo *bo);

@@ -80,7 +80,7 @@ static int xe_dma_buf_pin(struct dma_buf_attachment *attach)
 		}
 	}
 
-	if (xe_bo_is_pinned(bo) && !xe_bo_is_mem_type(bo, XE_PL_TT) &&
+	if (xe_bo_is_pinned(bo) && !mem_type_is_tt(bo->ttm.resource->mem_type) &&
 	    !(xe_bo_is_vram(bo) && allow_vram)) {
 		drm_dbg(&xe->drm, "Can't migrate pinned bo for dma-buf pin.\n");
 		return -EINVAL;
@@ -138,6 +138,7 @@ static struct sg_table *xe_dma_buf_map(struct dma_buf_attachment *attach,
 
 	switch (bo->ttm.resource->mem_type) {
 	case XE_PL_TT:
+	case XE_PL_SYSMEM_NUMA0 ... XE_PL_STOLEN - 1:
 		sgt = drm_prime_pages_to_sg(obj->dev,
 					    bo->ttm.ttm->pages,
 					    obj->size >> PAGE_SHIFT);

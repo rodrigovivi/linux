@@ -299,7 +299,12 @@ enum drm_xe_memory_class {
 	 * represents the memory that is local to the device, which we
 	 * call VRAM. Not valid on integrated platforms.
 	 */
-	DRM_XE_MEM_REGION_CLASS_VRAM
+	DRM_XE_MEM_REGION_CLASS_VRAM,
+	/**
+	 * @DRM_XE_MEM_REGION_CLASS_SYSMEM_NUMA: System memory of a single
+	 * CPU NUMA node, see struct drm_xe_query_mem_regions.
+	 */
+	DRM_XE_MEM_REGION_CLASS_SYSMEM_NUMA
 };
 
 /**
@@ -368,8 +373,15 @@ struct drm_xe_mem_region {
 	 * here will always be zero).
 	 */
 	__u64 cpu_visible_used;
+	/**
+	 * @sysmem_numa_node: The CPU NUMA node backing a
+	 * %DRM_XE_MEM_REGION_CLASS_SYSMEM_NUMA region. Zero for other classes.
+	 */
+	__u32 sysmem_numa_node;
+	/** @pad: MBZ */
+	__u32 pad;
 	/** @reserved: Reserved */
-	__u64 reserved[6];
+	__u64 reserved[5];
 };
 
 /**
@@ -378,6 +390,16 @@ struct drm_xe_mem_region {
  * If a query is made with a struct drm_xe_device_query where .query
  * is equal to DRM_XE_DEVICE_QUERY_MEM_REGIONS, then the reply uses
  * struct drm_xe_query_mem_regions in .data.
+ *
+ * If the system has multiple CPU NUMA nodes with memory, the reply ends with
+ * one %DRM_XE_MEM_REGION_CLASS_SYSMEM_NUMA region per node, by increasing
+ * instance, nearest to the device first: sorted by NUMA distance from the
+ * device as reported by the platform firmware, then by node id. If the
+ * firmware does not report the node of the device, they are sorted by node id
+ * only. Only the nearest ones are reported if there are more nodes than the
+ * driver supports.
+ * Their @used only accounts for the buffer objects placed there, while the
+ * %DRM_XE_MEM_REGION_CLASS_SYSMEM region keeps accounting for all of them.
  */
 struct drm_xe_query_mem_regions {
 	/** @num_mem_regions: number of memory regions returned in @mem_regions */
@@ -481,7 +503,9 @@ struct drm_xe_gt {
 	 * drm_xe_query_mem_regions that are far from the engines of this GT.
 	 * In general, they have extra indirections when compared to the
 	 * @near_mem_regions. For a discrete device this could mean system
-	 * memory and memory living in a different tile.
+	 * memory and memory living in a different tile. The
+	 * %DRM_XE_MEM_REGION_CLASS_SYSMEM_NUMA regions are always reported
+	 * here, the lowest instance being the nearest one.
 	 * Each index in this mask refers directly to the struct
 	 * drm_xe_query_mem_regions' instance, no assumptions should
 	 * be made about order. The type of each region is described
@@ -858,6 +882,13 @@ struct drm_xe_gem_create {
 	 * drm_xe_query_mem_regions' instance, no assumptions should
 	 * be made about order. The type of each region is described
 	 * by struct drm_xe_query_mem_regions' mem_class.
+	 *
+	 * A %DRM_XE_MEM_REGION_CLASS_SYSMEM_NUMA instance stands for the
+	 * %DRM_XE_MEM_REGION_CLASS_SYSMEM one, but places the backing store of
+	 * the BO on the NUMA node of that region, on a best effort basis: when
+	 * the node runs out of memory, pages come from the nearest nodes
+	 * instead. If several are set, the lowest instance wins. They are
+	 * ignored if a %DRM_XE_MEM_REGION_CLASS_VRAM instance is set.
 	 */
 	__u32 placement;
 

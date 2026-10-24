@@ -4701,6 +4701,7 @@ struct xe_vm_snapshot *xe_vm_snapshot_capture(struct xe_vm *vm)
 			switch (bo->ttm.resource->mem_type) {
 			case XE_PL_SYSTEM:
 			case XE_PL_TT:
+			case XE_PL_SYSMEM_NUMA0 ... XE_PL_STOLEN - 1:
 				snap->snap[i].uapi_mem_region = 0;
 				break;
 			case XE_PL_VRAM0:
