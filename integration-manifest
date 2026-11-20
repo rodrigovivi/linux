@@ -1,0 +1,44 @@
+drm drm-fixes 4229f341be8c30cf990a7c982c4cad6f98a3042a
+	Merge tag 'drm-xe-fixes-2026-11-19-1' of https://gitlab.freedesktop.org/drm/xe/kernel into drm-fixes
+drm-misc drm-misc-fixes 878c885830ef004a32e8974c4d1ae14e2ea30c5a
+	dma-buf/dma-fence: Prevent misordering for error checks
+drm-rust drm-rust-fixes 6628e7d4c6b25c8d18f1345e3a20d21829aae7e4
+	Linux 7.4-rc1
+drm-intel drm-intel-fixes 715f145f6204363a50853eb15719dc860db0bc01
+	drm/i915/dsb: Realign GOSUB only for QW slots 6 and 7
+drm-xe drm-xe-fixes 58417a6534dd3c190203a50541aa34b4a98bf275
+	drm/xe/hwmon: Propagate all hardware read errors
+drm-amdgpu drm-amdgpu-fixes b99cc7665fc83c0418a5f0d4af59ea120de84e38
+	drm/amdgpu: bypass IMU ucode loading for GC 11 APU
+drm drm-next 601c30449c80926947d4820d50cec974687d1d11
+	Merge tag 'drm-misc-next-2026-11-13' of https://gitlab.freedesktop.org/drm/misc/kernel into drm-next
+drm-misc drm-misc-next-fixes 9a96e169c9267af918d28fb291df948d83112807
+	drm/panthor: Move cache-flush after UPDATE(UNMAPPED)
+drm-rust drm-rust-next-fixes d511064b2e732b7152a542d589d07a4814c1b674
+	rust: drm: Remove unused flags argument from Registration::new()
+drm-intel drm-intel-next-fixes 6628e7d4c6b25c8d18f1345e3a20d21829aae7e4
+	Linux 7.4-rc1
+drm-xe drm-xe-next-fixes cee9395acd8043be0644b25c34bfa86623f2b935
+	Linux 7.3-rc1
+drm-amdgpu drm-amdgpu-next-fixes fbb201890156e04b062c4488d1b500de52367684
+	drm/amd/display: refresh cached HDMI FreeSync state
+drm-misc drm-misc-next c408466a4dfaee4b12587e926c5b85e68c8b3c40
+	drm/panel: leadtek-ltk500hd1829: Use lowercase hex literals
+drm-rust drm-rust-next 3b63cb016422199f1bda9abdb6503451d3ba9f1e
+	gpu: nova-core: gsp: cmdq: support GMC replies without payload
+drm-intel drm-intel-next 4ebf68851ecef9c180c08e1bb04eb45a76cad738
+	drm/i915: move FBC_RT_BASE register macros to intel_gt_regs.h
+drm-intel drm-intel-gt-next 4e9db08db75f55c920986ac929cfd82a4ee99f41
+	drm/i915/gem: Reset err for each fence entry
+drm-xe drm-xe-next 5fbdab061524bdb0a349c17a79593338311cbf13
+	drm/xe/gt: Wait for context teardown between default LRC recordings
+drm-amdgpu drm-amdgpu-next 83558fcf83cc911e09962ea17c883add596766c0
+	drm/amd/display: Restore PSR-SU guard in power module
+drm-intel topic/core-for-CI 9fa2f96677178cdbfe83b7fc714c081312f482bf
+	Revert "lockdep: Enable PROVE_RAW_LOCK_NESTING with PROVE_LOCKING."
+drm-xe topic/xe-for-CI 2a3310be28182bbbe040fae6c8dfca24c1812c26
+	drm/xe/pvc: Add GuC firmware definition
+drm topic/drm-next-nouveau-r570 6cc6e08d4542473d79ea83d9123d9d35e9c01c92
+	drm/nouveau/kms: add support for GB20x
+drm topic/pci-vgaarb-rework 93d41424caf7569ab50092a922477e2a881232b4
+	PCI/VGA: pass a data pointer to be used in the decode callback (v2)
