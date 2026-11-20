@@ -12,6 +12,7 @@
 #include "xe_device_types.h"
 #include "xe_drm_ras.h"
 #include "xe_ras.h"
+#include "xe_ttm_vram_mgr.h"
 
 static const char * const error_components[] = DRM_XE_RAS_ERROR_COMPONENT_NAMES;
 static const char * const error_severity[] = DRM_XE_RAS_ERROR_SEVERITY_NAMES;
@@ -230,6 +231,54 @@ null_info:
 	return ret;
 }
 
+static int query_retired_page(struct drm_ras_node *node, u64 cursor,
+			      struct drm_ras_retired_page *page)
+{
+	return xe_ttm_vram_get_retired_page(node->priv, cursor, page);
+}
+
+static int query_retired_pages_info(struct drm_ras_node *node, u64 *max_pages)
+{
+	*max_pages = xe_ras_get_max_pages(node->priv);
+
+	return 0;
+}
+
+static int register_retired_pages_node(struct xe_device *xe)
+{
+	struct pci_dev *pdev = to_pci_dev(xe->drm.dev);
+	struct drm_ras_node *node;
+	int ret;
+
+	/* Retired VRAM pages are only tracked on platforms with page offline */
+	if (xe->info.platform != XE_CRESCENTISLAND)
+		return 0;
+
+	node = drmm_kzalloc(&xe->drm, sizeof(*node), GFP_KERNEL);
+	if (!node)
+		return -ENOMEM;
+
+	node->device_name = kasprintf(GFP_KERNEL, "%04x:%02x:%02x.%d",
+				      pci_domain_nr(pdev->bus), pdev->bus->number,
+				      PCI_SLOT(pdev->devfn), PCI_FUNC(pdev->devfn));
+	if (!node->device_name)
+		return -ENOMEM;
+
+	node->node_name = "vram-retired-pages";
+	node->type = DRM_RAS_NODE_TYPE_RETIRED_PAGES;
+	node->query_retired_page = query_retired_page;
+	node->query_retired_pages_info = query_retired_pages_info;
+	node->priv = xe;
+
+	ret = drm_ras_node_register(node);
+	if (ret) {
+		cleanup_node_param(node);
+		return ret;
+	}
+
+	return drmm_add_action_or_reset(&xe->drm, cleanup_node, node);
+}
+
 /**
  * xe_drm_ras_event() - Report drm-ras error event to userspace
  * @xe: xe device structure
@@ -291,6 +340,13 @@ int xe_drm_ras_init(struct xe_device *xe)
 	err = register_nodes(xe);
 	if (err) {
 		drm_err(&xe->drm, "Failed to register DRM RAS nodes (%pe)\n", ERR_PTR(err));
+		return err;
+	}
+
+	err = register_retired_pages_node(xe);
+	if (err) {
+		drm_err(&xe->drm, "Failed to register DRM RAS retired pages node (%pe)\n",
+			ERR_PTR(err));
 		return err;
 	}
 

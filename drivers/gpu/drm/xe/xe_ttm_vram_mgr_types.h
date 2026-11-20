@@ -27,6 +27,11 @@ struct xe_ttm_vram_mgr {
 	struct list_head queued_pages;
 	/** @n_queued_pages: Number of queued pages */
 	u16 n_queued_pages;
+	/**
+	 * @retired_gen: Changed whenever @offlined_pages or @queued_pages
+	 * change. Protected by @lock.
+	 */
+	u32 retired_gen;
 	/** @visible_size: Probed size of the CPU visible portion */
 	u64 visible_size;
 	/** @visible_avail: CPU visible portion still unallocated */
