@@ -13,6 +13,23 @@
 #include <uapi/drm/drm_ras.h>
 
 /**
+ * struct drm_ras_retired_page - A retired page reported by a driver
+ */
+struct drm_ras_retired_page {
+	/** @address: Device address of the page. */
+	u64 address;
+	/** @size: Size of the page in bytes. */
+	u64 size;
+	/** @status: Retirement status (enum drm_ras_retired_page_status). */
+	enum drm_ras_retired_page_status status;
+	/**
+	 * @generation: Generation of the retired page list, changed by the
+	 * driver whenever a page is added, removed or changes status.
+	 */
+	u32 generation;
+};
+
+/**
  * struct drm_ras_node - A DRM RAS Node
  */
 struct drm_ras_node {
@@ -101,6 +118,38 @@ struct drm_ras_node {
 	 * Returns: 0 on success, negative error code on failure.
 	 */
 	int (*set_error_threshold)(struct drm_ras_node *node, u32 error_id, u32 threshold);
+
+	/* Retired-Pages Related Callbacks */
+
+	/**
+	 * @query_retired_page:
+	 *
+	 * This callback is used by drm-ras to list the retired pages of a node.
+	 * It must fill @page with the retired page that has the lowest address
+	 * greater than or equal to @cursor. @page->generation must be set even
+	 * when no page is found.
+	 *
+	 * The @query_retired_page is a mandatory callback for
+	 * retired_pages_node.
+	 *
+	 * Returns: 0 on success,
+	 *          -ENOENT when no page is at or above @cursor, which ends the
+	 *                  list.
+	 *          Other negative values on errors that should terminate the
+	 *          netlink query.
+	 */
+	int (*query_retired_page)(struct drm_ras_node *node, u64 cursor,
+				  struct drm_ras_retired_page *page);
+
+	/**
+	 * @query_retired_pages_info:
+	 *
+	 * This callback is used by drm-ras to query the maximum number of pages
+	 * that can be retired on a node.
+	 *
+	 * Returns: 0 on success, negative error code on failure.
+	 */
+	int (*query_retired_pages_info)(struct drm_ras_node *node, u64 *max_pages);
 
 	/** @priv: Driver private data */
 	void *priv;

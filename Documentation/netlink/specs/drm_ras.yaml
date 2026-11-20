@@ -16,11 +16,22 @@ definitions:
     type: enum
     name: node-type
     value-start: 1
-    entries: [error-counter]
+    entries: [error-counter, retired-pages]
     doc: >-
-         Type of the node. Currently, only error-counter nodes are
-         supported, which expose reliability counters for a hardware/software
-         component.
+         Type of the node.
+         error-counter nodes expose reliability counters for a
+         hardware/software component. retired-pages nodes list the memory
+         pages that have been taken out of service.
+  -
+    type: enum
+    name: retired-page-status
+    value-start: 1
+    entries: [retired, pending, failed]
+    doc: >-
+         Status of a retired page. retired means the page is reserved and out
+         of service; pending means the retirement is queued but the
+         reservation is not complete yet; failed means the reservation failed
+         and the page may still be in use.
 
 attribute-sets:
   -
@@ -100,6 +111,30 @@ attribute-sets:
         name: error-value
         type: u32
         doc: Current value of the error counter.
+  -
+    name: retired-page-attrs
+    attributes:
+      -
+        name: node-id
+        type: u32
+        doc: Node ID targeted by this retired pages operation.
+      -
+        name: address
+        type: uint
+        doc: Device address of the retired page.
+      -
+        name: size
+        type: uint
+        doc: Size of the retired page in bytes.
+      -
+        name: status
+        type: u32
+        doc: Retirement status of the page.
+        enum: retired-page-status
+      -
+        name: max-pages
+        type: uint
+        doc: Maximum number of pages that can be retired on this node.
 
 operations:
   list:
@@ -199,6 +234,38 @@ operations:
             - node-id
             - error-id
             - error-threshold
+    -
+      name: get-retired-pages
+      doc: >-
+           Retrieve the pages retired on a retired-pages node, one entry per
+           page. The dump is flagged as interrupted if the list changes while
+           it is being read.
+      attribute-set: retired-page-attrs
+      flags: [admin-perm]
+      dump:
+        request:
+          attributes:
+            - node-id
+        reply:
+          attributes:
+            - node-id
+            - address
+            - size
+            - status
+    -
+      name: get-retired-pages-info
+      doc: >-
+           Retrieve the retired page limits of a retired-pages node.
+      attribute-set: retired-page-attrs
+      flags: [admin-perm]
+      do:
+        request:
+          attributes:
+            - node-id
+        reply:
+          attributes:
+            - node-id
+            - max-pages
 
 mcast-groups:
   list:

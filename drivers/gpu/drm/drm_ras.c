@@ -53,6 +53,14 @@
  * 7. SET_ERROR_THRESHOLD: Set error threshold of a given counter.
  *    Userspace must provide Node ID, Error ID and threshold to be set.
  *
+ * 8. GET_RETIRED_PAGES: Dump the retired pages of a given node.
+ *    Userspace must provide Node ID.
+ *    Returns one entry per page with its address, size and status.
+ *
+ * 9. GET_RETIRED_PAGES_INFO: Get the retired page limits of a given node.
+ *    Userspace must provide Node ID.
+ *    Returns the maximum number of pages that can be retired.
+ *
  * Node registration:
  *
  * - drm_ras_node_register(): Registers a new node and assigns
@@ -63,7 +71,6 @@
  * Node type:
  *
  * - ERROR_COUNTER:
- *     + Currently, only error counters are supported.
  *     + The driver must implement the query_error_counter() callback to provide
  *       the name and the value of the error counter.
  *     + The driver must provide a error_counter_range.last value informing the
@@ -81,6 +88,13 @@
  *       that are raised by the hardware.
  *     + The driver is responsible for error threshold bounds checking.
  *
+ * - RETIRED_PAGES:
+ *     + The driver must implement the query_retired_page() callback, returning
+ *       the retired page with the lowest address at or above a cursor, and
+ *       -ENOENT when there is none.
+ *     + The driver can implement query_retired_pages_info() to report the
+ *       maximum number of pages that can be retired.
+ *
  * Netlink handlers:
  *
  * - drm_ras_nl_list_nodes_dumpit(): Implements the LIST_NODES
@@ -95,6 +109,10 @@
  *   operation, fetching the error threshold of a specific counter.
  * - drm_ras_nl_set_error_threshold_doit(): Implements the SET_ERROR_THRESHOLD doit
  *   operation, setting the error threshold of a specific counter.
+ * - drm_ras_nl_get_retired_pages_dumpit(): Implements the GET_RETIRED_PAGES dumpit
+ *   operation, listing the retired pages of a specific node.
+ * - drm_ras_nl_get_retired_pages_info_doit(): Implements the GET_RETIRED_PAGES_INFO
+ *   doit operation, fetching the retired page limits of a specific node.
  */
 
 static DEFINE_XARRAY_ALLOC(drm_ras_xa);
@@ -105,6 +123,8 @@ static DEFINE_XARRAY_ALLOC(drm_ras_xa);
 struct drm_ras_ctx {
 	/* Which xarray id to restart the dump from */
 	unsigned long restart;
+	/* Which retired page address to restart the dump from */
+	u64 cursor;
 };
 
 static void drm_ras_node_release(struct kref *ref)
@@ -117,14 +137,16 @@ static void drm_ras_node_put(struct drm_ras_node *node)
 	kref_put(&node->ref, drm_ras_node_release);
 }
 
-static struct drm_ras_node *drm_ras_node_get(u32 id)
+static struct drm_ras_node *drm_ras_node_get(u32 id, enum drm_ras_node_type type)
 {
 	struct drm_ras_node *node;
 
 	xa_lock(&drm_ras_xa);
 	node = xa_load(&drm_ras_xa, id);
-	if (node)
+	if (node && node->type == type)
 		kref_get(&node->ref);
+	else
+		node = NULL;
 	xa_unlock(&drm_ras_xa);
 
 	return node;
@@ -488,7 +510,7 @@ int drm_ras_nl_get_error_counter_dumpit(struct sk_buff *skb,
 
 	node_id = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID]);
 
-	node = drm_ras_node_get(node_id);
+	node = drm_ras_node_get(node_id, DRM_RAS_NODE_TYPE_ERROR_COUNTER);
 	if (!node)
 		return -ENOENT;
 
@@ -557,7 +579,7 @@ int drm_ras_nl_get_error_counter_doit(struct sk_buff *skb,
 	node_id = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID]);
 	error_id = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID]);
 
-	node = drm_ras_node_get(node_id);
+	node = drm_ras_node_get(node_id, DRM_RAS_NODE_TYPE_ERROR_COUNTER);
 	if (!node)
 		return -ENOENT;
 
@@ -592,7 +614,7 @@ int drm_ras_nl_clear_error_counter_doit(struct sk_buff *skb,
 	node_id = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID]);
 	error_id = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID]);
 
-	node = drm_ras_node_get(node_id);
+	node = drm_ras_node_get(node_id, DRM_RAS_NODE_TYPE_ERROR_COUNTER);
 	if (!node)
 		return -ENOENT;
 
@@ -627,7 +649,7 @@ int drm_ras_nl_get_error_threshold_doit(struct sk_buff *skb, struct genl_info *i
 	node_id = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID]);
 	error_id = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID]);
 
-	node = drm_ras_node_get(node_id);
+	node = drm_ras_node_get(node_id, DRM_RAS_NODE_TYPE_ERROR_COUNTER);
 	if (!node)
 		return -ENOENT;
 
@@ -663,11 +685,181 @@ int drm_ras_nl_set_error_threshold_doit(struct sk_buff *skb, struct genl_info *i
 	error_id = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID]);
 	threshold = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_THRESHOLD]);
 
-	node = drm_ras_node_get(node_id);
+	node = drm_ras_node_get(node_id, DRM_RAS_NODE_TYPE_ERROR_COUNTER);
 	if (!node)
 		return -ENOENT;
 
 	ret = set_node_error_threshold(node, error_id, threshold);
+	drm_ras_node_put(node);
+
+	return ret;
+}
+
+static struct drm_ras_node *get_retired_pages_node(const struct genl_info *info)
+{
+	struct nlattr *attr = info->attrs[DRM_RAS_A_RETIRED_PAGE_ATTRS_NODE_ID];
+	struct drm_ras_node *node;
+
+	node = drm_ras_node_get(nla_get_u32(attr), DRM_RAS_NODE_TYPE_RETIRED_PAGES);
+	if (!node)
+		NL_SET_BAD_ATTR(info->extack, attr);
+
+	return node;
+}
+
+static int msg_put_retired_page(struct sk_buff *msg, u32 node_id,
+				const struct drm_ras_retired_page *page)
+{
+	int ret;
+
+	ret = nla_put_u32(msg, DRM_RAS_A_RETIRED_PAGE_ATTRS_NODE_ID, node_id);
+	if (ret)
+		return ret;
+
+	ret = nla_put_uint(msg, DRM_RAS_A_RETIRED_PAGE_ATTRS_ADDRESS, page->address);
+	if (ret)
+		return ret;
+
+	ret = nla_put_uint(msg, DRM_RAS_A_RETIRED_PAGE_ATTRS_SIZE, page->size);
+	if (ret)
+		return ret;
+
+	return nla_put_u32(msg, DRM_RAS_A_RETIRED_PAGE_ATTRS_STATUS, page->status);
+}
+
+static int dump_retired_pages(struct sk_buff *skb, struct netlink_callback *cb,
+			      struct drm_ras_node *node)
+{
+	const struct genl_info *info = genl_info_dump(cb);
+	struct drm_ras_ctx *ctx = (void *)cb->ctx;
+	struct drm_ras_retired_page page;
+	void *hdr;
+	int ret;
+
+	for (;;) {
+		ret = node->query_retired_page(node, ctx->cursor, &page);
+		if (ret && ret != -ENOENT)
+			return ret;
+
+		/* Never zero, so the first message is checked as well */
+		cb->seq = page.generation + 1;
+		if (ret == -ENOENT)
+			return 0;
+
+		hdr = genlmsg_iput(skb, info);
+		if (!hdr)
+			return -EMSGSIZE;
+
+		ret = msg_put_retired_page(skb, node->id, &page);
+		if (ret) {
+			genlmsg_cancel(skb, hdr);
+			return ret;
+		}
+
+		genl_dump_check_consistent(cb, hdr);
+
+		genlmsg_end(skb, hdr);
+		ctx->cursor = page.address + 1;
+	}
+}
+
+/**
+ * drm_ras_nl_get_retired_pages_dumpit() - Dump the retired pages of a node
+ * @skb: Netlink message buffer
+ * @cb: Callback context for multi-part dumps
+ *
+ * Appends one message per retired page, in increasing address order. The
+ * dump resumes from the next address after a buffer overflow, and is flagged
+ * with %NLM_F_DUMP_INTR if the list changed between messages.
+ *
+ * Return: 0 if all pages fit in @skb, -EMSGSIZE if the buffer filled up
+ *         (requires multi-part continuation), or a negative error code on
+ *         failure.
+ */
+int drm_ras_nl_get_retired_pages_dumpit(struct sk_buff *skb,
+					struct netlink_callback *cb)
+{
+	const struct genl_info *info = genl_info_dump(cb);
+	struct drm_ras_node *node;
+	int ret;
+
+	if (!info->attrs || GENL_REQ_ATTR_CHECK(info, DRM_RAS_A_RETIRED_PAGE_ATTRS_NODE_ID))
+		return -EINVAL;
+
+	node = get_retired_pages_node(info);
+	if (!node)
+		return -ENOENT;
+
+	ret = dump_retired_pages(skb, cb, node);
+	drm_ras_node_put(node);
+
+	return ret;
+}
+
+static int doit_reply_retired_pages_info(struct genl_info *info, struct drm_ras_node *node)
+{
+	struct sk_buff *msg;
+	u64 max_pages;
+	void *hdr;
+	int ret;
+
+	if (!node->query_retired_pages_info)
+		return -EOPNOTSUPP;
+
+	ret = node->query_retired_pages_info(node, &max_pages);
+	if (ret)
+		return ret;
+
+	msg = genlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
+	if (!msg)
+		return -ENOMEM;
+
+	hdr = genlmsg_iput(msg, info);
+	if (!hdr) {
+		ret = -EMSGSIZE;
+		goto free_msg;
+	}
+
+	ret = nla_put_u32(msg, DRM_RAS_A_RETIRED_PAGE_ATTRS_NODE_ID, node->id);
+	if (ret)
+		goto cancel_msg;
+
+	ret = nla_put_uint(msg, DRM_RAS_A_RETIRED_PAGE_ATTRS_MAX_PAGES, max_pages);
+	if (ret)
+		goto cancel_msg;
+
+	genlmsg_end(msg, hdr);
+
+	return genlmsg_reply(msg, info);
+
+cancel_msg:
+	genlmsg_cancel(msg, hdr);
+free_msg:
+	nlmsg_free(msg);
+	return ret;
+}
+
+/**
+ * drm_ras_nl_get_retired_pages_info_doit() - Query the retired page limits of a node
+ * @skb: Netlink message buffer
+ * @info: Generic Netlink info containing attributes of the request
+ *
+ * Return: 0 on success, or negative errno on failure.
+ */
+int drm_ras_nl_get_retired_pages_info_doit(struct sk_buff *skb,
+					   struct genl_info *info)
+{
+	struct drm_ras_node *node;
+	int ret;
+
+	if (!info->attrs || GENL_REQ_ATTR_CHECK(info, DRM_RAS_A_RETIRED_PAGE_ATTRS_NODE_ID))
+		return -EINVAL;
+
+	node = get_retired_pages_node(info);
+	if (!node)
+		return -ENOENT;
+
+	ret = doit_reply_retired_pages_info(info, node);
 	drm_ras_node_put(node);
 
 	return ret;
@@ -687,14 +879,18 @@ int drm_ras_node_register(struct drm_ras_node *node)
 	if (!node->device_name || !node->node_name)
 		return -EINVAL;
 
-	/* Currently, only Error Counter Endpoints are supported */
-	if (node->type != DRM_RAS_NODE_TYPE_ERROR_COUNTER)
+	switch (node->type) {
+	case DRM_RAS_NODE_TYPE_ERROR_COUNTER:
+		if (!node->error_counter_range.last || !node->query_error_counter)
+			return -EINVAL;
+		break;
+	case DRM_RAS_NODE_TYPE_RETIRED_PAGES:
+		if (!node->query_retired_page)
+			return -EINVAL;
+		break;
+	default:
 		return -EINVAL;
-
-	/* Mandatory entries for Error Counter Node */
-	if (node->type == DRM_RAS_NODE_TYPE_ERROR_COUNTER &&
-	    (!node->error_counter_range.last || !node->query_error_counter))
-		return -EINVAL;
+	}
 
 	kref_init(&node->ref);
 	init_completion(&node->released);
