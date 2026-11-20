@@ -13,6 +13,7 @@ struct xe_device;
 	for (i = 0; i < DRM_XE_RAS_ERR_SEV_MAX; i++)
 
 int xe_drm_ras_init(struct xe_device *xe);
+int xe_drm_ras_register_retired_pages(struct xe_device *xe);
 void xe_drm_ras_event(struct xe_device *xe, u32 component, u32 severity, u32 value);
 
 #endif
