@@ -59,6 +59,16 @@ static const struct nla_policy drm_ras_telemetry_list_fields_nl_policy[DRM_RAS_A
 	[DRM_RAS_A_TELEMETRY_ATTRS_NODE_ID] = { .type = NLA_U32, },
 };
 
+/* DRM_RAS_CMD_GET_RETIRED_PAGES - dump */
+static const struct nla_policy drm_ras_get_retired_pages_nl_policy[DRM_RAS_A_RETIRED_PAGE_ATTRS_NODE_ID + 1] = {
+	[DRM_RAS_A_RETIRED_PAGE_ATTRS_NODE_ID] = { .type = NLA_U32, },
+};
+
+/* DRM_RAS_CMD_GET_RETIRED_PAGES_INFO - do */
+static const struct nla_policy drm_ras_get_retired_pages_info_nl_policy[DRM_RAS_A_RETIRED_PAGE_ATTRS_NODE_ID + 1] = {
+	[DRM_RAS_A_RETIRED_PAGE_ATTRS_NODE_ID] = { .type = NLA_U32, },
+};
+
 /* Ops table for drm_ras */
 static const struct genl_split_ops drm_ras_nl_ops[] = {
 	{
@@ -125,6 +135,20 @@ static const struct genl_split_ops drm_ras_nl_ops[] = {
 		.policy		= drm_ras_telemetry_list_fields_nl_policy,
 		.maxattr	= DRM_RAS_A_TELEMETRY_ATTRS_NODE_ID,
 		.flags		= GENL_CMD_CAP_DUMP,
+	},
+	{
+		.cmd		= DRM_RAS_CMD_GET_RETIRED_PAGES,
+		.dumpit		= drm_ras_nl_get_retired_pages_dumpit,
+		.policy		= drm_ras_get_retired_pages_nl_policy,
+		.maxattr	= DRM_RAS_A_RETIRED_PAGE_ATTRS_NODE_ID,
+		.flags		= GENL_ADMIN_PERM | GENL_CMD_CAP_DUMP,
+	},
+	{
+		.cmd		= DRM_RAS_CMD_GET_RETIRED_PAGES_INFO,
+		.doit		= drm_ras_nl_get_retired_pages_info_doit,
+		.policy		= drm_ras_get_retired_pages_info_nl_policy,
+		.maxattr	= DRM_RAS_A_RETIRED_PAGE_ATTRS_NODE_ID,
+		.flags		= GENL_ADMIN_PERM | GENL_CMD_CAP_DO,
 	},
 };
 

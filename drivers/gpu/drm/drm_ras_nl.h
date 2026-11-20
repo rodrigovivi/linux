@@ -34,6 +34,10 @@ int drm_ras_nl_telemetry_get_doit(struct sk_buff *skb, struct genl_info *info);
 int drm_ras_nl_telemetry_set_doit(struct sk_buff *skb, struct genl_info *info);
 int drm_ras_nl_telemetry_list_fields_dumpit(struct sk_buff *skb,
 					    struct netlink_callback *cb);
+int drm_ras_nl_get_retired_pages_dumpit(struct sk_buff *skb,
+					struct netlink_callback *cb);
+int drm_ras_nl_get_retired_pages_info_doit(struct sk_buff *skb,
+					   struct genl_info *info);
 
 enum {
 	DRM_RAS_NLGRP_ERROR_REPORT,
