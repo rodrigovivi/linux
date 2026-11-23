@@ -107,6 +107,29 @@ struct drm_ras_ctx {
 	unsigned long restart;
 };
 
+static void drm_ras_node_release(struct kref *ref)
+{
+	complete(&container_of(ref, struct drm_ras_node, ref)->released);
+}
+
+static void drm_ras_node_put(struct drm_ras_node *node)
+{
+	kref_put(&node->ref, drm_ras_node_release);
+}
+
+static struct drm_ras_node *drm_ras_node_get(u32 id)
+{
+	struct drm_ras_node *node;
+
+	xa_lock(&drm_ras_xa);
+	node = xa_load(&drm_ras_xa, id);
+	if (node)
+		kref_get(&node->ref);
+	xa_unlock(&drm_ras_xa);
+
+	return node;
+}
+
 /**
  * drm_ras_nl_list_nodes_dumpit() - Dump all registered RAS nodes
  * @skb: Netlink message buffer
@@ -131,6 +154,8 @@ int drm_ras_nl_list_nodes_dumpit(struct sk_buff *skb,
 	struct nlattr *hdr;
 	unsigned long id;
 	int ret = 0;
+
+	xa_lock(&drm_ras_xa);
 
 	xa_for_each_start(&drm_ras_xa, id, node, ctx->restart) {
 		hdr = genlmsg_iput(skb, info);
@@ -169,19 +194,18 @@ int drm_ras_nl_list_nodes_dumpit(struct sk_buff *skb,
 		genlmsg_end(skb, hdr);
 	}
 
+	xa_unlock(&drm_ras_xa);
+
 	if (ret == -EMSGSIZE)
 		ctx->restart = id;
 
 	return ret;
 }
 
-static int get_node_error_counter(u32 node_id, u32 error_id,
+static int get_node_error_counter(struct drm_ras_node *node, u32 error_id,
 				  const char **name, u32 *value)
 {
-	struct drm_ras_node *node;
-
-	node = xa_load(&drm_ras_xa, node_id);
-	if (!node || !node->query_error_counter)
+	if (!node->query_error_counter)
 		return -ENOENT;
 
 	if (error_id < node->error_counter_range.first ||
@@ -191,14 +215,21 @@ static int get_node_error_counter(u32 node_id, u32 error_id,
 	return node->query_error_counter(node, error_id, name, value);
 }
 
-static int get_node_error_threshold(u32 node_id, u32 error_id, const char **name, u32 *threshold)
+static int clear_node_error_counter(struct drm_ras_node *node, u32 error_id)
 {
-	struct drm_ras_node *node;
-
-	node = xa_load(&drm_ras_xa, node_id);
-	if (!node)
+	if (!node->clear_error_counter)
 		return -ENOENT;
 
+	if (error_id < node->error_counter_range.first ||
+	    error_id > node->error_counter_range.last)
+		return -EINVAL;
+
+	return node->clear_error_counter(node, error_id);
+}
+
+static int get_node_error_threshold(struct drm_ras_node *node, u32 error_id,
+				    const char **name, u32 *threshold)
+{
 	if (!node->query_error_threshold)
 		return -EOPNOTSUPP;
 
@@ -208,14 +239,8 @@ static int get_node_error_threshold(u32 node_id, u32 error_id, const char **name
 	return node->query_error_threshold(node, error_id, name, threshold);
 }
 
-static int set_node_error_threshold(u32 node_id, u32 error_id, u32 threshold)
+static int set_node_error_threshold(struct drm_ras_node *node, u32 error_id, u32 threshold)
 {
-	struct drm_ras_node *node;
-
-	node = xa_load(&drm_ras_xa, node_id);
-	if (!node)
-		return -ENOENT;
-
 	if (!node->set_error_threshold)
 		return -EOPNOTSUPP;
 
@@ -287,7 +312,7 @@ static int msg_reply_threshold(struct sk_buff *msg, u32 error_id, const char *er
 	return nla_put_u32(msg, DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_THRESHOLD, threshold);
 }
 
-static int doit_reply_value(struct genl_info *info, u32 node_id,
+static int doit_reply_value(struct genl_info *info, struct drm_ras_node *node,
 			    u32 error_id)
 {
 	struct sk_buff *msg;
@@ -306,8 +331,7 @@ static int doit_reply_value(struct genl_info *info, u32 node_id,
 		goto free_msg;
 	}
 
-	ret = get_node_error_counter(node_id, error_id,
-				     &error_name, &value);
+	ret = get_node_error_counter(node, error_id, &error_name, &value);
 	if (ret)
 		goto cancel_msg;
 
@@ -326,7 +350,8 @@ free_msg:
 	return ret;
 }
 
-static int doit_reply_threshold(struct genl_info *info, u32 node_id, u32 error_id)
+static int doit_reply_threshold(struct genl_info *info, struct drm_ras_node *node,
+				u32 error_id)
 {
 	const char *error_name;
 	struct sk_buff *msg;
@@ -344,7 +369,7 @@ static int doit_reply_threshold(struct genl_info *info, u32 node_id, u32 error_i
 		goto free_msg;
 	}
 
-	ret = get_node_error_threshold(node_id, error_id, &error_name, &threshold);
+	ret = get_node_error_threshold(node, error_id, &error_name, &threshold);
 	if (ret)
 		goto cancel_msg;
 
@@ -374,7 +399,8 @@ free_msg:
  *
  * Context: Process context only. Uses %GFP_KERNEL and multicasts to all
  *          netns, which is unbounded work; callers in interrupt handlers
- *          or other atomic context must defer event.
+ *          or other atomic context must defer event. Must not race
+ *          with drm_ras_node_unregister() for @node.
  *
  * Return: 0 on success, or negative errno on failure.
  */
@@ -462,15 +488,14 @@ int drm_ras_nl_get_error_counter_dumpit(struct sk_buff *skb,
 
 	node_id = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID]);
 
-	node = xa_load(&drm_ras_xa, node_id);
+	node = drm_ras_node_get(node_id);
 	if (!node)
 		return -ENOENT;
 
 	for (error_id = max(node->error_counter_range.first, ctx->restart);
 	     error_id <= node->error_counter_range.last;
 	     error_id++) {
-		ret = get_node_error_counter(node_id, error_id,
-					     &error_name, &value);
+		ret = get_node_error_counter(node, error_id, &error_name, &value);
 		/*
 		 * For non-contiguous range, driver return -ENOENT as indication
 		 * to skip this ID when listing all errors.
@@ -480,7 +505,7 @@ int drm_ras_nl_get_error_counter_dumpit(struct sk_buff *skb,
 			continue;
 		}
 		if (ret)
-			return ret;
+			break;
 
 		hdr = genlmsg_iput(skb, info);
 
@@ -497,6 +522,8 @@ int drm_ras_nl_get_error_counter_dumpit(struct sk_buff *skb,
 
 		genlmsg_end(skb, hdr);
 	}
+
+	drm_ras_node_put(node);
 
 	if (ret == -EMSGSIZE)
 		ctx->restart = error_id;
@@ -518,7 +545,9 @@ int drm_ras_nl_get_error_counter_dumpit(struct sk_buff *skb,
 int drm_ras_nl_get_error_counter_doit(struct sk_buff *skb,
 				      struct genl_info *info)
 {
+	struct drm_ras_node *node;
 	u32 node_id, error_id;
+	int ret;
 
 	if (!info->attrs ||
 	    GENL_REQ_ATTR_CHECK(info, DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID) ||
@@ -528,7 +557,14 @@ int drm_ras_nl_get_error_counter_doit(struct sk_buff *skb,
 	node_id = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID]);
 	error_id = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID]);
 
-	return doit_reply_value(info, node_id, error_id);
+	node = drm_ras_node_get(node_id);
+	if (!node)
+		return -ENOENT;
+
+	ret = doit_reply_value(info, node, error_id);
+	drm_ras_node_put(node);
+
+	return ret;
 }
 
 /**
@@ -546,6 +582,7 @@ int drm_ras_nl_clear_error_counter_doit(struct sk_buff *skb,
 {
 	struct drm_ras_node *node;
 	u32 node_id, error_id;
+	int ret;
 
 	if (!info->attrs ||
 	    GENL_REQ_ATTR_CHECK(info, DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID) ||
@@ -555,15 +592,14 @@ int drm_ras_nl_clear_error_counter_doit(struct sk_buff *skb,
 	node_id = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID]);
 	error_id = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID]);
 
-	node = xa_load(&drm_ras_xa, node_id);
-	if (!node || !node->clear_error_counter)
+	node = drm_ras_node_get(node_id);
+	if (!node)
 		return -ENOENT;
 
-	if (error_id < node->error_counter_range.first ||
-	    error_id > node->error_counter_range.last)
-		return -EINVAL;
+	ret = clear_node_error_counter(node, error_id);
+	drm_ras_node_put(node);
 
-	return node->clear_error_counter(node, error_id);
+	return ret;
 }
 
 /**
@@ -579,7 +615,9 @@ int drm_ras_nl_clear_error_counter_doit(struct sk_buff *skb,
  */
 int drm_ras_nl_get_error_threshold_doit(struct sk_buff *skb, struct genl_info *info)
 {
+	struct drm_ras_node *node;
 	u32 node_id, error_id;
+	int ret;
 
 	if (!info->attrs ||
 	    GENL_REQ_ATTR_CHECK(info, DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID) ||
@@ -589,7 +627,14 @@ int drm_ras_nl_get_error_threshold_doit(struct sk_buff *skb, struct genl_info *i
 	node_id = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID]);
 	error_id = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID]);
 
-	return doit_reply_threshold(info, node_id, error_id);
+	node = drm_ras_node_get(node_id);
+	if (!node)
+		return -ENOENT;
+
+	ret = doit_reply_threshold(info, node, error_id);
+	drm_ras_node_put(node);
+
+	return ret;
 }
 
 /**
@@ -604,7 +649,9 @@ int drm_ras_nl_get_error_threshold_doit(struct sk_buff *skb, struct genl_info *i
  */
 int drm_ras_nl_set_error_threshold_doit(struct sk_buff *skb, struct genl_info *info)
 {
+	struct drm_ras_node *node;
 	u32 node_id, error_id, threshold;
+	int ret;
 
 	if (!info->attrs ||
 	    GENL_REQ_ATTR_CHECK(info, DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID) ||
@@ -616,7 +663,14 @@ int drm_ras_nl_set_error_threshold_doit(struct sk_buff *skb, struct genl_info *i
 	error_id = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID]);
 	threshold = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_THRESHOLD]);
 
-	return set_node_error_threshold(node_id, error_id, threshold);
+	node = drm_ras_node_get(node_id);
+	if (!node)
+		return -ENOENT;
+
+	ret = set_node_error_threshold(node, error_id, threshold);
+	drm_ras_node_put(node);
+
+	return ret;
 }
 
 /**
@@ -642,6 +696,9 @@ int drm_ras_node_register(struct drm_ras_node *node)
 	    (!node->error_counter_range.last || !node->query_error_counter))
 		return -EINVAL;
 
+	kref_init(&node->ref);
+	init_completion(&node->released);
+
 	return xa_alloc(&drm_ras_xa, &node->id, node, xa_limit_32b, GFP_KERNEL);
 }
 EXPORT_SYMBOL(drm_ras_node_register);
@@ -650,10 +707,14 @@ EXPORT_SYMBOL(drm_ras_node_register);
  * drm_ras_node_unregister() - Unregister a previously registered node
  * @node: Node structure to unregister
  *
- * Removes the given node from the global node xarray using its ID.
+ * Removes the given node from the global node xarray using its ID, and waits
+ * for the netlink operations still using it. The caller must have stopped
+ * calling drm_ras_nl_error_event() for @node.
  */
 void drm_ras_node_unregister(struct drm_ras_node *node)
 {
 	xa_erase(&drm_ras_xa, node->id);
+	drm_ras_node_put(node);
+	wait_for_completion(&node->released);
 }
 EXPORT_SYMBOL(drm_ras_node_unregister);
