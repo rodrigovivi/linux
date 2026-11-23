@@ -1,0 +1,44 @@
+drm drm-fixes b6a9fa34ce4187cb69d3c588a4bbffc31ce5db8f
+	Linux 7.4-rc4
+drm-misc drm-misc-fixes 204a4125a7e3c3e414448a1dd76d161ba4bf8797
+	drm/ast: Add an option to disable Write-Combine
+drm-rust drm-rust-fixes 6628e7d4c6b25c8d18f1345e3a20d21829aae7e4
+	Linux 7.4-rc1
+drm-intel drm-intel-fixes e464a6356398a7050c13099eb5d684b9d2fbb318
+	drm/i915/alpm: Track the configured transcoder lifetime
+drm-xe drm-xe-fixes b6a9fa34ce4187cb69d3c588a4bbffc31ce5db8f
+	Linux 7.4-rc4
+drm-amdgpu drm-amdgpu-fixes b99cc7665fc83c0418a5f0d4af59ea120de84e38
+	drm/amdgpu: bypass IMU ucode loading for GC 11 APU
+drm drm-next ce0b5a66d0cce0f25b816a61b176a2b59dd16819
+	Merge tag 'drm-intel-next-2026-11-20' of https://gitlab.freedesktop.org/drm/i915/kernel into drm-next
+drm-misc drm-misc-next-fixes 9a96e169c9267af918d28fb291df948d83112807
+	drm/panthor: Move cache-flush after UPDATE(UNMAPPED)
+drm-rust drm-rust-next-fixes d511064b2e732b7152a542d589d07a4814c1b674
+	rust: drm: Remove unused flags argument from Registration::new()
+drm-intel drm-intel-next-fixes 6628e7d4c6b25c8d18f1345e3a20d21829aae7e4
+	Linux 7.4-rc1
+drm-xe drm-xe-next-fixes cee9395acd8043be0644b25c34bfa86623f2b935
+	Linux 7.3-rc1
+drm-amdgpu drm-amdgpu-next-fixes fbb201890156e04b062c4488d1b500de52367684
+	drm/amd/display: refresh cached HDMI FreeSync state
+drm-misc drm-misc-next 711f63bd509ea95e30662e7d183f359fc1bb59b2
+	drm/imx/tve: take i2c adapter module reference
+drm-rust drm-rust-next ffe6a7f7e0a826a23c640bae3b931efce5302b5a
+	drm/tyr: allow userspace buffers to be mismatched
+drm-intel drm-intel-next b17e8c17c57d49f168393801bc0cea2b9b21e0b3
+	drm/i915/psr: Check the transcoder for eDP Panel Replay
+drm-intel drm-intel-gt-next 4e9db08db75f55c920986ac929cfd82a4ee99f41
+	drm/i915/gem: Reset err for each fence entry
+drm-xe drm-xe-next 3fbc2f27779507dbb5809851e9efcac3457154a3
+	drm/xe/ras: Drop SIGID logging for sysctrl errors
+drm-amdgpu drm-amdgpu-next 83558fcf83cc911e09962ea17c883add596766c0
+	drm/amd/display: Restore PSR-SU guard in power module
+drm-intel topic/core-for-CI 9fa2f96677178cdbfe83b7fc714c081312f482bf
+	Revert "lockdep: Enable PROVE_RAW_LOCK_NESTING with PROVE_LOCKING."
+drm-xe topic/xe-for-CI 2a3310be28182bbbe040fae6c8dfca24c1812c26
+	drm/xe/pvc: Add GuC firmware definition
+drm topic/drm-next-nouveau-r570 6cc6e08d4542473d79ea83d9123d9d35e9c01c92
+	drm/nouveau/kms: add support for GB20x
+drm topic/pci-vgaarb-rework 93d41424caf7569ab50092a922477e2a881232b4
+	PCI/VGA: pass a data pointer to be used in the decode callback (v2)
