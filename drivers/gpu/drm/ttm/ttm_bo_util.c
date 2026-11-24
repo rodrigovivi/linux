@@ -202,6 +202,26 @@ out_src_iter:
 }
 EXPORT_SYMBOL(ttm_bo_move_memcpy);
 
+/**
+ * ttm_bo_move_null() - assign memory for a buffer object.
+ * @bo: The bo to assign the memory to.
+ * @new_mem: The memory to be assigned, or NULL.
+ *
+ * Free the current resource of @bo and assign @new_mem to it. If @new_mem is
+ * NULL or its memory type manager doesn't use a &struct ttm_tt, the bo's
+ * &struct ttm_tt, if any, is unpopulated and destroyed.
+ */
+void ttm_bo_move_null(struct ttm_buffer_object *bo,
+		      struct ttm_resource *new_mem)
+{
+	if (!new_mem || !ttm_manager_type(bo->bdev, new_mem->mem_type)->use_tt)
+		ttm_bo_tt_destroy(bo);
+
+	ttm_resource_free(bo, &bo->resource);
+	ttm_bo_assign_mem(bo, new_mem);
+}
+EXPORT_SYMBOL(ttm_bo_move_null);
+
 static void ttm_transfered_destroy(struct ttm_buffer_object *bo)
 {
 	struct ttm_transfer_obj *fbo;

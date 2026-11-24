@@ -356,19 +356,8 @@ static inline void ttm_bo_assign_mem(struct ttm_buffer_object *bo,
 	bo->resource = new_mem;
 }
 
-/**
- * ttm_bo_move_null - assign memory for a buffer object.
- * @bo: The bo to assign the memory to
- * @new_mem: The memory to be assigned.
- *
- * Assign the memory from new_mem to the memory of the buffer object bo.
- */
-static inline void ttm_bo_move_null(struct ttm_buffer_object *bo,
-				    struct ttm_resource *new_mem)
-{
-	ttm_resource_free(bo, &bo->resource);
-	ttm_bo_assign_mem(bo, new_mem);
-}
+void ttm_bo_move_null(struct ttm_buffer_object *bo,
+		      struct ttm_resource *new_mem);
 
 /**
  * ttm_bo_unreserve
