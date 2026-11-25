@@ -170,8 +170,9 @@ static u32 backlight_signal_to_luminance(const struct amdgpu_dm_backlight_caps *
 					     upper_signal - lower_signal);
 }
 
-static u32 convert_brightness_to_millipercent(const struct amdgpu_dm_backlight_caps *caps,
-					      u32 user_brightness)
+STATIC_IFN_KUNIT
+u32 convert_brightness_to_millipercent(const struct amdgpu_dm_backlight_caps *caps,
+				       u32 user_brightness)
 {
 	unsigned int min, max;
 	u32 signal, luminance;
@@ -189,6 +190,7 @@ static u32 convert_brightness_to_millipercent(const struct amdgpu_dm_backlight_c
 
 	return min_t(u32, luminance * 1000, 100000);
 }
+EXPORT_IF_KUNIT(convert_brightness_to_millipercent);
 
 STATIC_IFN_KUNIT
 void convert_custom_brightness(const struct amdgpu_dm_backlight_caps *caps,
@@ -257,21 +259,17 @@ scale:
 EXPORT_IF_KUNIT(convert_custom_brightness);
 
 STATIC_IFN_KUNIT
-u32 convert_brightness_from_user(const struct amdgpu_dm_backlight_caps *caps,
-				uint32_t brightness)
+u32 convert_millipercent_to_user(const struct amdgpu_dm_backlight_caps *caps,
+				 u32 millipercent)
 {
 	unsigned int min, max;
 
 	if (!get_brightness_range(caps, &min, &max))
-		return brightness;
+		max = MAX_BACKLIGHT_LEVEL;
 
-	convert_custom_brightness(caps, min, max, &brightness);
-
-	/* Rescale 0..max to min..max */
-	return min + DIV_ROUND_CLOSEST_ULL((u64)(max - min) * brightness, max);
+	return DIV_ROUND_CLOSEST_ULL((u64)min(millipercent, 100000U) * max, 100000);
 }
-
-EXPORT_IF_KUNIT(convert_brightness_from_user);
+EXPORT_IF_KUNIT(convert_millipercent_to_user);
 
 STATIC_IFN_KUNIT
 u32 convert_brightness_to_user(const struct amdgpu_dm_backlight_caps *caps,
@@ -309,6 +307,19 @@ struct dc_stream_state *dm_find_stream_with_link(
 }
 EXPORT_IF_KUNIT(dm_find_stream_with_link);
 
+/* Must match the panels mod_power_set_brightness() sends nits to in SDR */
+static bool dm_backlight_takes_nits(const struct dc_link *link)
+{
+	switch (link->backlight_control_type) {
+	case BACKLIGHT_CONTROL_VESA_AUX:
+		return true;
+	case BACKLIGHT_CONTROL_AMD_AUX:
+		return link->dpcd_sink_ext_caps.bits.oled;
+	default:
+		return false;
+	}
+}
+
 STATIC_IFN_KUNIT
 int amdgpu_dm_backlight_get_device_index(struct amdgpu_display_manager *dm,
 					 struct backlight_device *bd)
@@ -330,8 +341,7 @@ void amdgpu_dm_backlight_set_level(struct amdgpu_display_manager *dm,
 {
 	struct amdgpu_dm_backlight_caps *caps;
 	struct dc_link *link;
-	u32 brightness = 0;
-	u32 millipercent = 0;
+	u32 millipercent;
 	bool rc = false, reallow_idle = false;
 	struct drm_connector *connector;
 	struct dc_stream_state *stream;
@@ -363,20 +373,12 @@ void amdgpu_dm_backlight_set_level(struct amdgpu_display_manager *dm,
 	if (!stream)
 		return;
 
-	if (caps->aux_support) {
-		brightness = convert_brightness_from_user(caps, dm->brightness[bl_idx]);
-		/* Apply brightness quirk */
-		if (caps->brightness_mask)
-			brightness |= caps->brightness_mask;
-	} else {
-		millipercent = convert_brightness_to_millipercent(caps,
-								  user_brightness);
-	}
+	millipercent = convert_brightness_to_millipercent(caps, user_brightness);
 
 	if (trace_amdgpu_dm_brightness_enabled()) {
 		trace_amdgpu_dm_brightness(__builtin_return_address(0),
 					   user_brightness,
-					   brightness,
+					   millipercent,
 					   caps->aux_support,
 					   power_supply_is_system_supplied() > 0);
 	}
@@ -387,14 +389,10 @@ void amdgpu_dm_backlight_set_level(struct amdgpu_display_manager *dm,
 		reallow_idle = true;
 	}
 
-	if (caps->aux_support) {
-		rc = mod_power_set_backlight_nits(dm->power_module, stream, brightness,
-			AUX_BL_DEFAULT_TRANSITION_TIME_MS, false, true);
-	} else {
-		/* power module uses millipercent */
-		rc = mod_power_set_backlight_percent(dm->power_module, stream,
-						     millipercent, 0, false);
-	}
+	rc = mod_power_set_brightness(dm->power_module, stream, millipercent,
+				      dm_backlight_takes_nits(link) ?
+				      AUX_BL_DEFAULT_TRANSITION_TIME_MS : 0,
+				      caps->brightness_mask, false);
 
 	/*
 	 * Some kms clients create a ramped backlight transition effect
@@ -442,11 +440,12 @@ u32 amdgpu_dm_backlight_get_level(struct amdgpu_display_manager *dm, int bl_idx)
 	int ret;
 	struct amdgpu_dm_backlight_caps caps;
 	struct dc_link *link = (struct dc_link *)dm->backlight_link[bl_idx];
+	unsigned int panel_inst, millipercent;
 
 	amdgpu_dm_update_backlight_caps(dm, bl_idx);
 	caps = dm->backlight_caps[bl_idx];
 
-	if (caps.aux_support) {
+	if (dm_backlight_takes_nits(link)) {
 		u32 avg, peak;
 
 		if (!dc_link_get_backlight_level_nits(link, &avg, &peak))
@@ -459,7 +458,12 @@ u32 amdgpu_dm_backlight_get_level(struct amdgpu_display_manager *dm, int bl_idx)
 	if (ret == DC_ERROR_UNEXPECTED)
 		return dm->brightness[bl_idx];
 
-	return convert_brightness_to_user(&caps, ret);
+	if (!dc_get_edp_link_panel_inst(dm->dc, link, &panel_inst) ||
+	    !mod_power_get_hw_backlight_pwm_percent(dm->power_module, link,
+						    &millipercent, panel_inst))
+		return dm->brightness[bl_idx];
+
+	return convert_millipercent_to_user(&caps, millipercent);
 }
 EXPORT_IF_KUNIT(amdgpu_dm_backlight_get_level);
 
