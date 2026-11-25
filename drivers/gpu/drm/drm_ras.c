@@ -9,6 +9,7 @@
 #include <linux/netdevice.h>
 #include <linux/netlink.h>
 #include <linux/refcount.h>
+#include <linux/sort.h>
 #include <linux/xarray.h>
 #include <net/genetlink.h>
 
@@ -130,9 +131,8 @@
  *       to enforce permissions checks on telemetry operations.
  *
  * - RETIRED_PAGES:
- *     + The driver must implement the query_retired_page() callback, returning
- *       the retired page with the lowest address at or above a cursor, and
- *       -ENOENT when there is none.
+ *     + The driver must implement the query_retired_pages() callback, returning
+ *       a snapshot of all the retired pages of the node.
  *     + The driver can implement query_retired_pages_info() to report the
  *       maximum number of pages that can be retired.
  *
@@ -162,8 +162,12 @@
  * - drm_ras_nl_telemetry_list_fields_dumpit(): Implements the TELEMETRY_LIST_FIELDS
  *   dumpit operation, enumerating all telemetry fields and their supported
  *   access modes for a telemetry node.
+ * - drm_ras_nl_get_retired_pages_start(): GET_RETIRED_PAGES dump start operation,
+ *   taking a snapshot of the retired pages of a specific node.
  * - drm_ras_nl_get_retired_pages_dumpit(): Implements the GET_RETIRED_PAGES dumpit
- *   operation, listing the retired pages of a specific node.
+ *   operation, listing the retired pages of the snapshot.
+ * - drm_ras_nl_get_retired_pages_done(): GET_RETIRED_PAGES dump done operation,
+ *   freeing the snapshot.
  * - drm_ras_nl_get_retired_pages_info_doit(): Implements the GET_RETIRED_PAGES_INFO
  *   doit operation, fetching the retired page limits of a specific node.
  */
@@ -181,8 +185,10 @@ struct drm_ras_ctx {
 	unsigned long restart;
 	/* Node targeted by a telemetry get/set doit */
 	struct drm_ras_node *node;
-	/* Which retired page address to restart the dump from */
-	u64 cursor;
+	/* Snapshot of the retired pages, and the next one to dump */
+	struct drm_ras_retired_page *pages;
+	u32 count;
+	u32 next;
 };
 
 static_assert(sizeof(struct drm_ras_ctx) <= NETLINK_CTX_SIZE);
@@ -838,14 +844,50 @@ static int msg_put_retired_page(struct sk_buff *msg,
 	return nla_put_u32(msg, DRM_RAS_A_RETIRED_PAGE_ATTRS_STATUS, page->status);
 }
 
+static int cmp_retired_page(const void *a, const void *b)
+{
+	const struct drm_ras_retired_page *pa = a, *pb = b;
+
+	return pa->address < pb->address ? -1 : pa->address > pb->address;
+}
+
+/**
+ * drm_ras_nl_get_retired_pages_start() - Take a snapshot of the retired pages
+ * @cb: Callback context for multi-part dumps
+ *
+ * Return: 0 on success, or a negative error code on failure.
+ */
+int drm_ras_nl_get_retired_pages_start(struct netlink_callback *cb)
+{
+	const struct genl_info *info = genl_info_dump(cb);
+	struct drm_ras_ctx *ctx = (void *)cb->ctx;
+	struct drm_ras_node *node;
+	int ret;
+
+	if (!info->attrs || GENL_REQ_ATTR_CHECK(info, DRM_RAS_A_RETIRED_PAGE_ATTRS_NODE_ID))
+		return -EINVAL;
+
+	node = get_retired_pages_node(info);
+	if (!node)
+		return -ENOENT;
+
+	ret = node->query_retired_pages(node, &ctx->pages, &ctx->count);
+	drm_ras_node_put(node);
+	if (ret)
+		return ret;
+
+	sort(ctx->pages, ctx->count, sizeof(*ctx->pages), cmp_retired_page, NULL);
+
+	return 0;
+}
+
 /**
  * drm_ras_nl_get_retired_pages_dumpit() - Dump the retired pages of a node
  * @skb: Netlink message buffer
  * @cb: Callback context for multi-part dumps
  *
- * Appends one message per retired page, in increasing address order. The
- * dump resumes from the next address after a buffer overflow, and is flagged
- * with %NLM_F_DUMP_INTR if the list changed between messages.
+ * Appends one message per retired page of the snapshot, in increasing address
+ * order. The dump resumes from the next page after a buffer overflow.
  *
  * Return: 0 if all pages fit in @skb, -EMSGSIZE if the buffer filled up
  *         (requires multi-part continuation), or a negative error code on
@@ -856,51 +898,41 @@ int drm_ras_nl_get_retired_pages_dumpit(struct sk_buff *skb,
 {
 	const struct genl_info *info = genl_info_dump(cb);
 	struct drm_ras_ctx *ctx = (void *)cb->ctx;
-	struct drm_ras_retired_page page;
-	struct drm_ras_node *node;
 	void *hdr;
-	int ret;
+	int ret = 0;
 
-	if (!info->attrs || GENL_REQ_ATTR_CHECK(info, DRM_RAS_A_RETIRED_PAGE_ATTRS_NODE_ID))
-		return -EINVAL;
-
-	node = get_retired_pages_node(info);
-	if (!node)
-		return -ENOENT;
-
-	for (;;) {
-		ret = node->query_retired_page(node, ctx->cursor, &page);
-		if (ret && ret != -ENOENT)
-			break;
-
-		/* Never zero, so the first message is checked as well */
-		cb->seq = page.generation + 1;
-		if (ret == -ENOENT) {
-			ret = 0;
-			break;
-		}
-
+	for (; ctx->next < ctx->count; ctx->next++) {
 		hdr = genlmsg_iput(skb, info);
 		if (!hdr) {
 			ret = -EMSGSIZE;
 			break;
 		}
 
-		ret = msg_put_retired_page(skb, &page);
+		ret = msg_put_retired_page(skb, &ctx->pages[ctx->next]);
 		if (ret) {
 			genlmsg_cancel(skb, hdr);
 			break;
 		}
 
-		genl_dump_check_consistent(cb, hdr);
-
 		genlmsg_end(skb, hdr);
-		ctx->cursor = page.address + 1;
 	}
 
-	drm_ras_node_put(node);
-
 	return ret;
+}
+
+/**
+ * drm_ras_nl_get_retired_pages_done() - Free the retired pages snapshot
+ * @cb: Callback context for multi-part dumps
+ *
+ * Return: 0.
+ */
+int drm_ras_nl_get_retired_pages_done(struct netlink_callback *cb)
+{
+	struct drm_ras_ctx *ctx = (void *)cb->ctx;
+
+	kvfree(ctx->pages);
+
+	return 0;
 }
 
 /**
@@ -1299,7 +1331,7 @@ int drm_ras_node_register(struct drm_ras_node *node)
 			return -EINVAL;
 		break;
 	case DRM_RAS_NODE_TYPE_RETIRED_PAGES:
-		if (!node->query_retired_page)
+		if (!node->query_retired_pages)
 			return -EINVAL;
 		break;
 	default:

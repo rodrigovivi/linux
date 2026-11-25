@@ -327,11 +327,12 @@ operations:
       name: get-retired-pages
       doc: >-
            Retrieve the pages retired on a retired-pages node, one entry per
-           page. The dump is flagged as interrupted if the list changes while
-           it is being read.
+           page. The list is read once, when the dump starts.
       attribute-set: retired-page-attrs
       flags: [admin-perm]
       dump:
+        pre: drm-ras-nl-get-retired-pages-start
+        post: drm-ras-nl-get-retired-pages-done
         request:
           attributes:
             - node-id

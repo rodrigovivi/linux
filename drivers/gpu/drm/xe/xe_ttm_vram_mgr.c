@@ -241,17 +241,13 @@ static void xe_ttm_vram_retry_queued_pages(struct xe_ttm_vram_mgr *mgr)
 					    PAGE_SIZE, PAGE_SIZE, &pos->blocks,
 					    GPU_BUDDY_RANGE_ALLOCATION, NULL,
 					    &pos->used_visible_size)) {
-			if (pos->status != XE_PAGE_RESERVE_FAIL) {
-				pos->status = XE_PAGE_RESERVE_FAIL;
-				mgr->retired_gen++;
-			}
+			pos->status = XE_PAGE_RESERVE_FAIL;
 			continue;
 		}
 		--mgr->n_queued_pages;
 		list_del(&pos->queued_link);
 		++mgr->n_offlined_pages;
 		list_add(&pos->offlined_link, &mgr->offlined_pages);
-		mgr->retired_gen++;
 	}
 }
 
@@ -630,38 +626,28 @@ u64 xe_ttm_vram_get_avail(struct ttm_resource_manager *man)
 	return avail;
 }
 
-static void retired_page_update(struct drm_ras_retired_page *page, bool *found,
-				u64 cursor, u64 addr, enum drm_ras_retired_page_status status)
-{
-	if (addr < cursor || (*found && addr >= page->address))
-		return;
-
-	page->address = addr;
-	page->status = status;
-	*found = true;
-}
-
 /**
- * xe_ttm_vram_get_retired_page - Get the next retired VRAM page
+ * xe_ttm_vram_get_retired_pages - Get a snapshot of the retired VRAM pages
  * @xe: xe device instance
- * @cursor: lowest device address to consider
- * @page: filled with the retired page that has the lowest address >= @cursor
+ * @pages: set to an array of the retired pages, allocated with kvmalloc()
+ * @count: set to the number of pages in @pages
  *
- * Return: 0 on success, -ENOENT if no retired page is at or above @cursor.
+ * Return: 0 on success, negative error code otherwise.
  */
-int xe_ttm_vram_get_retired_page(struct xe_device *xe, u64 cursor,
-				 struct drm_ras_retired_page *page)
+int xe_ttm_vram_get_retired_pages(struct xe_device *xe, struct drm_ras_retired_page **pages,
+				  u32 *count)
 {
+	struct drm_ras_retired_page *array = NULL, *tmp;
 	struct xe_ttm_vram_offline_resource *pos;
 	struct xe_tile *tile;
-	bool found = false;
-	u32 gen = 0;
+	u32 n = 0;
 	u8 id;
 
 	for_each_tile(tile, xe, id) {
 		struct xe_vram_region *vr = tile->mem.vram;
 		struct ttm_resource_manager *man;
 		struct xe_ttm_vram_mgr *mgr;
+		size_t len;
 
 		man = ttm_manager_type(&xe->ttm, XE_PL_VRAM0 + id);
 		if (!man || !vr)
@@ -670,24 +656,36 @@ int xe_ttm_vram_get_retired_page(struct xe_device *xe, u64 cursor,
 
 		guard(mutex)(&mgr->lock);
 
-		gen += mgr->retired_gen;
+		len = list_count_nodes(&mgr->offlined_pages) + list_count_nodes(&mgr->queued_pages);
+		if (!len)
+			continue;
+
+		tmp = kvrealloc(array, array_size(n + len, sizeof(*array)), GFP_KERNEL);
+		if (!tmp) {
+			kvfree(array);
+			return -ENOMEM;
+		}
+		array = tmp;
 
 		list_for_each_entry(pos, &mgr->offlined_pages, offlined_link)
-			retired_page_update(page, &found, cursor, pos->addr + vr->dpa_base,
-					    DRM_RAS_RETIRED_PAGE_STATUS_RETIRED);
+			array[n++] = (struct drm_ras_retired_page) {
+				.address = pos->addr + vr->dpa_base,
+				.size = PAGE_SIZE,
+				.status = DRM_RAS_RETIRED_PAGE_STATUS_RETIRED,
+			};
 
 		list_for_each_entry(pos, &mgr->queued_pages, queued_link)
-			retired_page_update(page, &found, cursor, pos->addr + vr->dpa_base,
-					    pos->status == XE_PAGE_RESERVE_FAIL ?
-					    DRM_RAS_RETIRED_PAGE_STATUS_FAILED :
-					    DRM_RAS_RETIRED_PAGE_STATUS_PENDING);
+			array[n++] = (struct drm_ras_retired_page) {
+				.address = pos->addr + vr->dpa_base,
+				.size = PAGE_SIZE,
+				.status = pos->status == XE_PAGE_RESERVE_FAIL ?
+					  DRM_RAS_RETIRED_PAGE_STATUS_FAILED :
+					  DRM_RAS_RETIRED_PAGE_STATUS_PENDING,
+			};
 	}
 
-	page->generation = gen;
-	if (!found)
-		return -ENOENT;
-
-	page->size = PAGE_SIZE;
+	*pages = array;
+	*count = n;
 
 	return 0;
 }
@@ -892,7 +890,6 @@ static int xe_ttm_vram_reserve_page_at_addr(struct xe_device *xe, u64 addr,
 			/* Queue free(to-be-purged) pages */
 			++vram_mgr->n_queued_pages;
 			list_add(&nentry->queued_link, &vram_mgr->queued_pages);
-			vram_mgr->retired_gen++;
 		} else {
 			/* Immediately offline unoccupied pages */
 			/* Queue free(to-be-reserved) pages */
@@ -907,12 +904,10 @@ static int xe_ttm_vram_reserve_page_at_addr(struct xe_device *xe, u64 addr,
 					addr, ret);
 				++vram_mgr->n_queued_pages;
 				list_add(&nentry->queued_link, &vram_mgr->queued_pages);
-				vram_mgr->retired_gen++;
 				return 0;
 			}
 			++vram_mgr->n_offlined_pages;
 			list_add(&nentry->offlined_link, &vram_mgr->offlined_pages);
-			vram_mgr->retired_gen++;
 			return ret;
 		}
 	}

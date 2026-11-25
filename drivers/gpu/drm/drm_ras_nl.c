@@ -138,7 +138,9 @@ static const struct genl_split_ops drm_ras_nl_ops[] = {
 	},
 	{
 		.cmd		= DRM_RAS_CMD_GET_RETIRED_PAGES,
+		.start		= drm_ras_nl_get_retired_pages_start,
 		.dumpit		= drm_ras_nl_get_retired_pages_dumpit,
+		.done		= drm_ras_nl_get_retired_pages_done,
 		.policy		= drm_ras_get_retired_pages_nl_policy,
 		.maxattr	= DRM_RAS_A_RETIRED_PAGE_ATTRS_NODE_ID,
 		.flags		= GENL_ADMIN_PERM | GENL_CMD_CAP_DUMP,

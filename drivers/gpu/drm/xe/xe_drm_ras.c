@@ -273,10 +273,10 @@ null_info:
 	return ret;
 }
 
-static int query_retired_page(struct drm_ras_node *node, u64 cursor,
-			      struct drm_ras_retired_page *page)
+static int query_retired_pages(struct drm_ras_node *node,
+			       struct drm_ras_retired_page **pages, u32 *count)
 {
-	return xe_ttm_vram_get_retired_page(node->priv, cursor, page);
+	return xe_ttm_vram_get_retired_pages(node->priv, pages, count);
 }
 
 static int query_retired_pages_info(struct drm_ras_node *node, u64 *max_pages)
@@ -315,7 +315,7 @@ int xe_drm_ras_register_retired_pages(struct xe_device *xe)
 
 	node->node_name = "vram-retired-pages";
 	node->type = DRM_RAS_NODE_TYPE_RETIRED_PAGES;
-	node->query_retired_page = query_retired_page;
+	node->query_retired_pages = query_retired_pages;
 	node->query_retired_pages_info = query_retired_pages_info;
 	node->priv = xe;
 

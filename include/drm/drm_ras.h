@@ -38,11 +38,6 @@ struct drm_ras_retired_page {
 	u64 size;
 	/** @status: Retirement status (enum drm_ras_retired_page_status). */
 	enum drm_ras_retired_page_status status;
-	/**
-	 * @generation: Generation of the retired page list, changed by the
-	 * driver whenever a page is added, removed or changes status.
-	 */
-	u32 generation;
 };
 
 /**
@@ -204,24 +199,21 @@ struct drm_ras_node {
 	/* Retired-Pages Related Callbacks */
 
 	/**
-	 * @query_retired_page:
+	 * @query_retired_pages:
 	 *
 	 * This callback is used by drm-ras to list the retired pages of a node.
-	 * It must fill @page with the retired page that has the lowest address
-	 * greater than or equal to @cursor. @page->generation must be set even
-	 * when no page is found.
+	 * It must return in @pages an array, allocated with kvmalloc(), with
+	 * all the retired pages of the node, and their number in @count.
+	 * drm-ras frees the array with kvfree().
 	 *
-	 * The @query_retired_page is a mandatory callback for
+	 * The @query_retired_pages is a mandatory callback for
 	 * retired_pages_node.
 	 *
-	 * Returns: 0 on success,
-	 *          -ENOENT when no page is at or above @cursor, which ends the
-	 *                  list.
-	 *          Other negative values on errors that should terminate the
-	 *          netlink query.
+	 * Returns: 0 on success, negative error code on failure, in which case
+	 *          nothing must be left allocated.
 	 */
-	int (*query_retired_page)(struct drm_ras_node *node, u64 cursor,
-				  struct drm_ras_retired_page *page);
+	int (*query_retired_pages)(struct drm_ras_node *node,
+				   struct drm_ras_retired_page **pages, u32 *count);
 
 	/**
 	 * @query_retired_pages_info:

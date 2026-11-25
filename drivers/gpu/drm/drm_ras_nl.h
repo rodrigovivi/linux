@@ -17,6 +17,8 @@ int drm_ras_nl_pre_telemetry(const struct genl_split_ops *ops,
 void
 drm_ras_nl_post_telemetry(const struct genl_split_ops *ops,
 			  struct sk_buff *skb, struct genl_info *info);
+int drm_ras_nl_get_retired_pages_start(struct netlink_callback *cb);
+int drm_ras_nl_get_retired_pages_done(struct netlink_callback *cb);
 
 int drm_ras_nl_list_nodes_dumpit(struct sk_buff *skb,
 				 struct netlink_callback *cb);
