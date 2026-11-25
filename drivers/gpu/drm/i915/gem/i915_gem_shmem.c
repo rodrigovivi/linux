@@ -62,28 +62,92 @@ void shmem_sg_free_table(struct sg_table *st, struct address_space *mapping,
 	sg_free_table(st);
 }
 
-int shmem_sg_alloc_table(struct drm_i915_private *i915, struct sg_table *st,
-			 size_t size, struct intel_memory_region *mr,
-			 struct address_space *mapping,
-			 unsigned int max_segment)
+static int validate_set_page_count(size_t size, unsigned int *page_count,
+				   struct intel_memory_region *mr)
 {
-	unsigned int page_count; /* restricted by sg_alloc_table */
-	unsigned long i;
-	struct scatterlist *sg;
-	unsigned long next_pfn = 0;	/* suppress gcc warning */
-	gfp_t noreclaim;
-	int ret;
-
-	if (overflows_type(size / PAGE_SIZE, page_count))
+	if (overflows_type(size / PAGE_SIZE, *page_count))
 		return -E2BIG;
 
-	page_count = size / PAGE_SIZE;
 	/*
 	 * If there's no chance of allocating enough pages for the whole
 	 * object, bail early.
 	 */
 	if (size > resource_size(&mr->region))
 		return -ENOMEM;
+
+	*page_count = size / PAGE_SIZE;
+	return 0;
+}
+
+static struct folio *shmem_shrink_get_folio(struct address_space *mapping,
+					    unsigned long folio_index,
+					    gfp_t *gfp, unsigned int page_count,
+					    struct drm_i915_private *i915)
+{
+	struct folio *folio;
+
+	cond_resched();
+	folio = shmem_read_folio_gfp(mapping, folio_index, *gfp);
+	if (IS_ERR(folio)) {
+		i915_gem_shrink(NULL, i915, 2 * page_count, NULL,
+				I915_SHRINK_BOUND | I915_SHRINK_UNBOUND);
+
+		/*
+		 * We've tried hard to allocate the memory by reaping
+		 * our own buffer, now let the real VM do its job and
+		 * go down in flames if truly OOM.
+		 *
+		 * However, since graphics tend to be disposable,
+		 * defer the oom here by reporting the ENOMEM back
+		 * to userspace.
+		 *
+		 * Reclaim and warn, but no oom.
+		 */
+		*gfp = mapping_gfp_mask(mapping);
+
+		/*
+		 * Our bo are always dirty and so we require
+		 * kswapd to reclaim our pages (direct reclaim
+		 * does not effectively begin pageout of our
+		 * buffers on its own). However, direct reclaim
+		 * only waits for kswapd when under allocation
+		 * congestion. So as a result __GFP_RECLAIM is
+		 * unreliable and fails to actually reclaim our
+		 * dirty pages -- unless you try over and over
+		 * again with !__GFP_NORETRY. However, we still
+		 * want to fail this allocation rather than
+		 * trigger the out-of-memory killer and for
+		 * this we want __GFP_RETRY_MAYFAIL.
+		 */
+		*gfp |= __GFP_RETRY_MAYFAIL | __GFP_NOWARN;
+
+		/* Retry once after shrinking and gfp modification. */
+		cond_resched();
+		folio = shmem_read_folio_gfp(mapping, folio_index, *gfp);
+	}
+
+	return folio;
+}
+
+int shmem_sg_alloc_table(struct drm_i915_private *i915, struct sg_table *st,
+			 size_t size, struct intel_memory_region *mr,
+			 struct address_space *mapping,
+			 unsigned int max_segment)
+{
+	unsigned int page_count; /* restricted by sg_alloc_table */
+	unsigned long pages_done = 0;
+	struct scatterlist *sg;
+	unsigned long next_pfn = 0;	/* suppress gcc warning */
+	struct folio *folio = NULL;
+	gfp_t noreclaim;
+	int ret;
+
+	ret = validate_set_page_count(size, &page_count, mr);
+	if (ret)
+		return ret;
+
+	if (max_segment < PAGE_SIZE || !PAGE_ALIGNED(max_segment))
+		return -EINVAL;
 
 	if (sg_alloc_table(st, page_count, GFP_KERNEL | __GFP_NOWARN))
 		return -ENOMEM;
@@ -100,77 +164,52 @@ int shmem_sg_alloc_table(struct drm_i915_private *i915, struct sg_table *st,
 
 	sg = st->sgl;
 	st->nents = 0;
-	for (i = 0; i < page_count; i++) {
-		struct folio *folio;
+	while (pages_done < page_count) {
+		unsigned long folio_page_index;
 		unsigned long nr_pages;
-		const unsigned int shrink[] = {
-			I915_SHRINK_BOUND | I915_SHRINK_UNBOUND,
-			0,
-		}, *s = shrink;
 		gfp_t gfp = noreclaim;
 
-		do {
-			cond_resched();
-			folio = shmem_read_folio_gfp(mapping, i, gfp);
-			if (!IS_ERR(folio))
-				break;
-
-			if (!*s) {
+		if (!pages_done || (next_pfn >= folio_pfn(folio) + folio_nr_pages(folio))) {
+			/* Grab the next folio if we exhausted the current one. */
+			folio = shmem_shrink_get_folio(mapping, pages_done,
+						       &gfp, page_count, i915);
+			folio_page_index = 0;
+			if (IS_ERR(folio)) {
 				ret = PTR_ERR(folio);
 				goto err_sg;
 			}
-
-			i915_gem_shrink(NULL, i915, 2 * page_count, NULL, *s++);
-
+		} else {
 			/*
-			 * We've tried hard to allocate the memory by reaping
-			 * our own buffer, now let the real VM do its job and
-			 * go down in flames if truly OOM.
-			 *
-			 * However, since graphics tend to be disposable,
-			 * defer the oom here by reporting the ENOMEM back
-			 * to userspace.
+			 * Otherwise, we are still inside the same folio,
+			 * so just update its page index.
 			 */
-			if (!*s) {
-				/* reclaim and warn, but no oom */
-				gfp = mapping_gfp_mask(mapping);
+			folio_page_index = next_pfn - folio_pfn(folio);
+		}
 
-				/*
-				 * Our bo are always dirty and so we require
-				 * kswapd to reclaim our pages (direct reclaim
-				 * does not effectively begin pageout of our
-				 * buffers on its own). However, direct reclaim
-				 * only waits for kswapd when under allocation
-				 * congestion. So as a result __GFP_RECLAIM is
-				 * unreliable and fails to actually reclaim our
-				 * dirty pages -- unless you try over and over
-				 * again with !__GFP_NORETRY. However, we still
-				 * want to fail this allocation rather than
-				 * trigger the out-of-memory killer and for
-				 * this we want __GFP_RETRY_MAYFAIL.
-				 */
-				gfp |= __GFP_RETRY_MAYFAIL | __GFP_NOWARN;
-			}
-		} while (1);
+		nr_pages = min3(folio_nr_pages(folio) - folio_page_index,
+				page_count - pages_done, max_segment / PAGE_SIZE);
 
-		nr_pages = min3(folio_nr_pages(folio),
-				page_count - i, max_segment / PAGE_SIZE);
-
-		if (!i ||
+		if (!st->nents ||
 		    sg->length >= max_segment ||
 		    folio_pfn(folio) != next_pfn) {
-			if (i)
+			if (st->nents)
 				sg = sg_next(sg);
 
 			st->nents++;
-			sg_set_folio(sg, folio, nr_pages * PAGE_SIZE, 0);
+			sg_set_page(sg, folio_page(folio, folio_page_index),
+				    nr_pages * PAGE_SIZE, 0);
 		} else {
 			nr_pages = min(nr_pages, (max_segment - sg->length) / PAGE_SIZE);
 
 			sg->length += nr_pages * PAGE_SIZE;
 		}
-		next_pfn = folio_pfn(folio) + nr_pages;
-		i += nr_pages - 1;
+
+		/*
+		 * Store the next PFN, so contiguous physical pages
+		 * can be merged into the same SG entry.
+		 */
+		next_pfn = folio_pfn(folio) + folio_page_index + nr_pages;
+		pages_done += nr_pages;
 
 		/* Check that the i965g/gm workaround works. */
 		GEM_BUG_ON(gfp & __GFP_DMA32 && next_pfn >= 0x00100000UL);
@@ -184,7 +223,7 @@ int shmem_sg_alloc_table(struct drm_i915_private *i915, struct sg_table *st,
 	return 0;
 err_sg:
 	sg_mark_end(sg);
-	if (sg != st->sgl) {
+	if (st->nents) {
 		shmem_sg_free_table(st, mapping, false, false);
 	} else {
 		mapping_clear_unevictable(mapping);
