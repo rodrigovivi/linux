@@ -8947,10 +8947,10 @@ F:	drivers/gpu/drm/atmel-hlcdc/
 DRM DRIVERS FOR BRIDGE CHIPS
 M:	Neil Armstrong <neil.armstrong@linaro.org>
 M:	Dmitry Baryshkov <lumag@kernel.org>
+M:	Luca Ceresoli <luca.ceresoli@bootlin.com>
 M:	Robert Foss <rfoss@kernel.org>
 R:	Laurent Pinchart <Laurent.pinchart@ideasonboard.com>
 R:	Jernej Skrabec <jernej.skrabec@gmail.com>
-R:	Luca Ceresoli <luca.ceresoli@bootlin.com>
 S:	Maintained
 T:	git https://gitlab.freedesktop.org/drm/misc/kernel.git
 F:	Documentation/devicetree/bindings/display/bridge/
