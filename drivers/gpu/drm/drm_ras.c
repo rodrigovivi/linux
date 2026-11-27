@@ -169,6 +169,7 @@ static_assert(sizeof(struct drm_ras_ctx) <= NETLINK_CTX_SIZE);
 /**
  * drm_ras_node_get() - Look up a RAS node by ID and take a reference
  * @node_id: ID of the node to look up
+ * @type: Expected type of the node
  *
  * Looks the node up in the global xarray and, if found, takes a reference to
  * it so that it cannot be freed while the caller is using it. The lookup and
@@ -179,16 +180,19 @@ static_assert(sizeof(struct drm_ras_ctx) <= NETLINK_CTX_SIZE);
  *
  * The caller must drop the returned reference with drm_ras_node_put().
  *
- * Return: the referenced node, or NULL if no node with @node_id is registered.
+ * Return: the referenced node, or NULL if no node of @type with @node_id is
+ * registered.
  */
-static struct drm_ras_node *drm_ras_node_get(u32 node_id)
+static struct drm_ras_node *drm_ras_node_get(u32 node_id, enum drm_ras_node_type type)
 {
 	struct drm_ras_node *node;
 
 	xa_lock(&drm_ras_xa);
 	node = xa_load(&drm_ras_xa, node_id);
-	if (node)
+	if (node && node->type == type)
 		refcount_inc(&node->ref);
+	else
+		node = NULL;
 	xa_unlock(&drm_ras_xa);
 
 	return node;
@@ -412,7 +416,7 @@ static int doit_reply_value(struct genl_info *info, u32 node_id,
 	u32 value;
 	int ret;
 
-	node = drm_ras_node_get(node_id);
+	node = drm_ras_node_get(node_id, DRM_RAS_NODE_TYPE_ERROR_COUNTER);
 	if (!node)
 		return -ENOENT;
 
@@ -461,7 +465,7 @@ static int doit_reply_threshold(struct genl_info *info, u32 node_id, u32 error_i
 	u32 threshold;
 	int ret;
 
-	node = drm_ras_node_get(node_id);
+	node = drm_ras_node_get(node_id, DRM_RAS_NODE_TYPE_ERROR_COUNTER);
 	if (!node)
 		return -ENOENT;
 
@@ -603,7 +607,7 @@ int drm_ras_nl_get_error_counter_dumpit(struct sk_buff *skb,
 
 	node_id = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID]);
 
-	node = drm_ras_node_get(node_id);
+	node = drm_ras_node_get(node_id, DRM_RAS_NODE_TYPE_ERROR_COUNTER);
 	if (!node)
 		return -ENOENT;
 
@@ -699,7 +703,7 @@ int drm_ras_nl_clear_error_counter_doit(struct sk_buff *skb,
 	node_id = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID]);
 	error_id = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID]);
 
-	node = drm_ras_node_get(node_id);
+	node = drm_ras_node_get(node_id, DRM_RAS_NODE_TYPE_ERROR_COUNTER);
 	if (!node || !node->clear_error_counter) {
 		drm_ras_node_put(node);
 		return -ENOENT;
@@ -770,7 +774,7 @@ int drm_ras_nl_set_error_threshold_doit(struct sk_buff *skb, struct genl_info *i
 	error_id = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID]);
 	threshold = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_THRESHOLD]);
 
-	node = drm_ras_node_get(node_id);
+	node = drm_ras_node_get(node_id, DRM_RAS_NODE_TYPE_ERROR_COUNTER);
 	if (!node)
 		return -ENOENT;
 
@@ -808,10 +812,9 @@ int drm_ras_nl_pre_telemetry(const struct genl_split_ops *ops, struct sk_buff *s
 		return -EINVAL;
 
 	node_id = nla_get_u32(info->attrs[DRM_RAS_A_TELEMETRY_ATTRS_NODE_ID]);
-	node = drm_ras_node_get(node_id);
-	if (!node || node->type != DRM_RAS_NODE_TYPE_TELEMETRY) {
+	node = drm_ras_node_get(node_id, DRM_RAS_NODE_TYPE_TELEMETRY);
+	if (!node) {
 		NL_SET_BAD_ATTR(info->extack, info->attrs[DRM_RAS_A_TELEMETRY_ATTRS_NODE_ID]);
-		drm_ras_node_put(node);
 		return -ENOENT;
 	}
 
@@ -892,10 +895,9 @@ int drm_ras_nl_telemetry_list_fields_dumpit(struct sk_buff *skb, struct netlink_
 
 	node_id = nla_get_u32(info->attrs[DRM_RAS_A_TELEMETRY_ATTRS_NODE_ID]);
 
-	node = drm_ras_node_get(node_id);
-	if (!node || node->type != DRM_RAS_NODE_TYPE_TELEMETRY) {
+	node = drm_ras_node_get(node_id, DRM_RAS_NODE_TYPE_TELEMETRY);
+	if (!node) {
 		NL_SET_BAD_ATTR(info->extack, info->attrs[DRM_RAS_A_TELEMETRY_ATTRS_NODE_ID]);
-		drm_ras_node_put(node);
 		return -ENOENT;
 	}
 
