@@ -29,6 +29,41 @@ struct drm_ras_telemetry_field {
 };
 
 /**
+ * struct drm_ras_retired_page - A retired page reported by a driver
+ */
+struct drm_ras_retired_page {
+	/** @address: Device address of the page. */
+	u64 address;
+	/** @size: Size of the page in bytes. */
+	u64 size;
+	/** @status: Retirement status (enum drm_ras_retired_page_status). */
+	enum drm_ras_retired_page_status status;
+};
+
+/**
+ * struct drm_ras_retired_pages - A snapshot of the retired pages of a node
+ *
+ * Owned by drm-ras. Drivers only add pages to it with
+ * drm_ras_retired_pages_add().
+ */
+struct drm_ras_retired_pages {
+	/** @pages: Array of the retired pages. */
+	struct drm_ras_retired_page *pages;
+	/** @count: Number of pages in @pages. */
+	u32 count;
+	/** @capacity: Number of pages @pages can hold. */
+	u32 capacity;
+};
+
+/**
+ * struct drm_ras_retired_pages_info - Retired pages info of a node
+ */
+struct drm_ras_retired_pages_info {
+	/** @max_pages: Maximum number of pages that can be retired. */
+	u64 max_pages;
+};
+
+/**
  * struct drm_ras_node - A DRM RAS Node
  */
 struct drm_ras_node {
@@ -184,6 +219,34 @@ struct drm_ras_node {
 	int (*telemetry_set)(struct drm_ras_node *ep, u64 *field, s64 *value,
 			     s64 *status);
 
+	/* Retired-Pages Related Callbacks */
+
+	/**
+	 * @query_retired_pages:
+	 *
+	 * This callback is used by drm-ras to take a snapshot of the retired
+	 * pages of a node. It must add each retired page of the node to @list
+	 * with drm_ras_retired_pages_add().
+	 *
+	 * The @query_retired_pages is a mandatory callback for
+	 * retired_pages_node.
+	 *
+	 * Returns: 0 on success, negative error code on failure.
+	 */
+	int (*query_retired_pages)(struct drm_ras_node *node,
+				   struct drm_ras_retired_pages *list);
+
+	/**
+	 * @query_retired_pages_info:
+	 *
+	 * This callback is used by drm-ras to query the retired pages info of a
+	 * node.
+	 *
+	 * Returns: 0 on success, negative error code on failure.
+	 */
+	int (*query_retired_pages_info)(struct drm_ras_node *node,
+					struct drm_ras_retired_pages_info *info);
+
 	/** @priv: Driver private data */
 	void *priv;
 
@@ -209,11 +272,16 @@ int drm_ras_node_register(struct drm_ras_node *node);
 void drm_ras_node_unregister(struct drm_ras_node *node);
 int drm_ras_nl_error_event(struct drm_ras_node *node, u32 error_id, const char *error_name,
 			   u32 value);
+int drm_ras_retired_pages_add(struct drm_ras_retired_pages *list,
+			      const struct drm_ras_retired_page *page);
 #else
 static inline int drm_ras_node_register(struct drm_ras_node *node) { return 0; }
 static inline void drm_ras_node_unregister(struct drm_ras_node *node) { }
 static inline int drm_ras_nl_error_event(struct drm_ras_node *node, u32 error_id,
 					 const char *error_name, u32 value)
+{ return 0; }
+static inline int drm_ras_retired_pages_add(struct drm_ras_retired_pages *list,
+					    const struct drm_ras_retired_page *page)
 { return 0; }
 #endif
 

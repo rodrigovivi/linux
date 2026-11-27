@@ -69,6 +69,14 @@
  *     Each field contains the uAPI defined enum string, its numerical value,
  *     and its mode bitmask, which encodes read/write capabilities.
  *
+ * 11. GET_RETIRED_PAGES: Dump the retired pages of a given node.
+ *     Userspace must provide Node ID.
+ *     Returns one entry per page with its address, size and status.
+ *
+ * 12. GET_RETIRED_PAGES_INFO: Get the retired pages info of a given node.
+ *     Userspace must provide Node ID.
+ *     Returns the maximum number of pages that can be retired.
+ *
  * Node registration:
  *
  * - drm_ras_node_register(): Registers a new node and assigns
@@ -121,6 +129,13 @@
  *     + The driver can optionally provide a pre_doit callback, telemetry_pre(),
  *       to enforce permissions checks on telemetry operations.
  *
+ * - RETIRED_PAGES:
+ *     + The driver must implement the query_retired_pages() callback, adding
+ *       each retired page of the node to the snapshot of the dump with
+ *       drm_ras_retired_pages_add().
+ *     + The driver can implement query_retired_pages_info() to report the
+ *       maximum number of pages that can be retired.
+ *
  * Netlink handlers:
  *
  * - drm_ras_nl_list_nodes_dumpit(): Implements the LIST_NODES
@@ -147,9 +162,25 @@
  * - drm_ras_nl_telemetry_list_fields_dumpit(): Implements the TELEMETRY_LIST_FIELDS
  *   dumpit operation, enumerating all telemetry fields and their supported
  *   access modes for a telemetry node.
+ * - drm_ras_nl_pre_retired_pages(): GET_RETIRED_PAGES dump start operation,
+ *   taking a snapshot of the retired pages of a specific node.
+ * - drm_ras_nl_get_retired_pages_dumpit(): Implements the GET_RETIRED_PAGES dumpit
+ *   operation, listing the retired pages of the snapshot.
+ * - drm_ras_nl_post_retired_pages(): GET_RETIRED_PAGES dump done operation,
+ *   freeing the snapshot.
+ * - drm_ras_nl_get_retired_pages_info_doit(): Implements the GET_RETIRED_PAGES_INFO
+ *   doit operation, fetching the retired pages info of a specific node.
  */
 
 static DEFINE_XARRAY_ALLOC(drm_ras_xa);
+
+/* State of a GET_RETIRED_PAGES dump */
+struct drm_ras_retired_pages_ctx {
+	/* Snapshot of the retired pages, taken when the dump starts */
+	struct drm_ras_retired_pages snapshot;
+	/* Index of the next page of @snapshot to dump */
+	u32 next;
+};
 
 /*
  * Per-command netlink context. Overlaid on the callback storage (cb->ctx) for
@@ -162,6 +193,8 @@ struct drm_ras_ctx {
 	unsigned long restart;
 	/* Node targeted by a telemetry get/set doit */
 	struct drm_ras_node *node;
+	/* State of a retired pages dump */
+	struct drm_ras_retired_pages_ctx retired;
 };
 
 static_assert(sizeof(struct drm_ras_ctx) <= NETLINK_CTX_SIZE);
@@ -704,19 +737,23 @@ int drm_ras_nl_clear_error_counter_doit(struct sk_buff *skb,
 	error_id = nla_get_u32(info->attrs[DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID]);
 
 	node = drm_ras_node_get(node_id, DRM_RAS_NODE_TYPE_ERROR_COUNTER);
-	if (!node || !node->clear_error_counter) {
-		drm_ras_node_put(node);
+	if (!node)
 		return -ENOENT;
+
+	if (!node->clear_error_counter) {
+		ret = -ENOENT;
+		goto put_node;
 	}
 
 	if (error_id < node->error_counter_range.first ||
 	    error_id > node->error_counter_range.last) {
-		drm_ras_node_put(node);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto put_node;
 	}
 
 	ret = node->clear_error_counter(node, error_id);
 
+put_node:
 	drm_ras_node_put(node);
 
 	return ret;
@@ -782,6 +819,208 @@ int drm_ras_nl_set_error_threshold_doit(struct sk_buff *skb, struct genl_info *i
 
 	drm_ras_node_put(node);
 
+	return ret;
+}
+
+static struct drm_ras_node *get_retired_pages_node(const struct genl_info *info)
+{
+	struct nlattr *attr = info->attrs[DRM_RAS_A_RETIRED_PAGE_ATTRS_NODE_ID];
+	struct drm_ras_node *node;
+
+	node = drm_ras_node_get(nla_get_u32(attr), DRM_RAS_NODE_TYPE_RETIRED_PAGES);
+	if (!node)
+		NL_SET_BAD_ATTR(info->extack, attr);
+
+	return node;
+}
+
+static int msg_put_retired_page(struct sk_buff *msg,
+				const struct drm_ras_retired_page *page)
+{
+	int ret;
+
+	ret = nla_put_uint(msg, DRM_RAS_A_RETIRED_PAGE_ATTRS_ADDRESS, page->address);
+	if (ret)
+		return ret;
+
+	ret = nla_put_uint(msg, DRM_RAS_A_RETIRED_PAGE_ATTRS_SIZE, page->size);
+	if (ret)
+		return ret;
+
+	return nla_put_u32(msg, DRM_RAS_A_RETIRED_PAGE_ATTRS_STATUS, page->status);
+}
+
+/**
+ * drm_ras_retired_pages_add() - Add a page to a retired pages snapshot
+ * @list: Snapshot passed to the query_retired_pages() callback
+ * @page: Retired page to add
+ *
+ * Return: 0 on success, or -ENOMEM if @list cannot grow.
+ */
+int drm_ras_retired_pages_add(struct drm_ras_retired_pages *list,
+			      const struct drm_ras_retired_page *page)
+{
+	struct drm_ras_retired_page *pages;
+	u32 capacity;
+
+	if (list->count == list->capacity) {
+		capacity = max(16U, 2 * list->capacity);
+		pages = kvrealloc(list->pages, array_size(capacity, sizeof(*pages)), GFP_KERNEL);
+		if (!pages)
+			return -ENOMEM;
+
+		list->pages = pages;
+		list->capacity = capacity;
+	}
+
+	list->pages[list->count++] = *page;
+
+	return 0;
+}
+EXPORT_SYMBOL(drm_ras_retired_pages_add);
+
+/**
+ * drm_ras_nl_pre_retired_pages() - Take a snapshot of the retired pages
+ * @cb: Callback context for multi-part dumps
+ *
+ * Return: 0 on success, or a negative error code on failure.
+ */
+int drm_ras_nl_pre_retired_pages(struct netlink_callback *cb)
+{
+	const struct genl_info *info = genl_info_dump(cb);
+	struct drm_ras_ctx *ctx = (void *)cb->ctx;
+	struct drm_ras_node *node;
+	int ret;
+
+	if (!info->attrs || GENL_REQ_ATTR_CHECK(info, DRM_RAS_A_RETIRED_PAGE_ATTRS_NODE_ID))
+		return -EINVAL;
+
+	node = get_retired_pages_node(info);
+	if (!node)
+		return -ENOENT;
+
+	ret = node->query_retired_pages(node, &ctx->retired.snapshot);
+	drm_ras_node_put(node);
+	if (ret)
+		kvfree(ctx->retired.snapshot.pages);
+
+	return ret;
+}
+
+/**
+ * drm_ras_nl_get_retired_pages_dumpit() - Dump the retired pages of a node
+ * @skb: Netlink message buffer
+ * @cb: Callback context for multi-part dumps
+ *
+ * Appends one message per retired page of the snapshot. The dump resumes from
+ * the next page after a buffer overflow.
+ *
+ * Return: 0 if all pages fit in @skb, -EMSGSIZE if the buffer filled up
+ *         (requires multi-part continuation), or a negative error code on
+ *         failure.
+ */
+int drm_ras_nl_get_retired_pages_dumpit(struct sk_buff *skb,
+					struct netlink_callback *cb)
+{
+	const struct genl_info *info = genl_info_dump(cb);
+	struct drm_ras_ctx *ctx = (void *)cb->ctx;
+	struct nlattr *hdr;
+	int ret = 0;
+
+	for (; ctx->retired.next < ctx->retired.snapshot.count; ctx->retired.next++) {
+		hdr = genlmsg_iput(skb, info);
+		if (!hdr) {
+			ret = -EMSGSIZE;
+			break;
+		}
+
+		ret = msg_put_retired_page(skb, &ctx->retired.snapshot.pages[ctx->retired.next]);
+		if (ret) {
+			genlmsg_cancel(skb, hdr);
+			break;
+		}
+
+		genlmsg_end(skb, hdr);
+	}
+
+	return ret;
+}
+
+/**
+ * drm_ras_nl_post_retired_pages() - Free the retired pages snapshot
+ * @cb: Callback context for multi-part dumps
+ *
+ * Return: 0.
+ */
+int drm_ras_nl_post_retired_pages(struct netlink_callback *cb)
+{
+	struct drm_ras_ctx *ctx = (void *)cb->ctx;
+
+	kvfree(ctx->retired.snapshot.pages);
+
+	return 0;
+}
+
+/**
+ * drm_ras_nl_get_retired_pages_info_doit() - Query the retired pages info of a node
+ * @skb: Netlink message buffer
+ * @info: Generic Netlink info containing attributes of the request
+ *
+ * Return: 0 on success, or negative errno on failure.
+ */
+int drm_ras_nl_get_retired_pages_info_doit(struct sk_buff *skb,
+					   struct genl_info *info)
+{
+	struct drm_ras_retired_pages_info pages_info = {};
+	struct drm_ras_node *node;
+	struct sk_buff *msg;
+	struct nlattr *hdr;
+	int ret;
+
+	if (!info->attrs || GENL_REQ_ATTR_CHECK(info, DRM_RAS_A_RETIRED_PAGE_ATTRS_NODE_ID))
+		return -EINVAL;
+
+	node = get_retired_pages_node(info);
+	if (!node)
+		return -ENOENT;
+
+	if (!node->query_retired_pages_info) {
+		ret = -EOPNOTSUPP;
+		goto put_node;
+	}
+
+	ret = node->query_retired_pages_info(node, &pages_info);
+	if (ret)
+		goto put_node;
+
+	msg = genlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
+	if (!msg) {
+		ret = -ENOMEM;
+		goto put_node;
+	}
+
+	hdr = genlmsg_iput(msg, info);
+	if (!hdr) {
+		ret = -EMSGSIZE;
+		goto free_msg;
+	}
+
+	ret = nla_put_uint(msg, DRM_RAS_A_RETIRED_PAGE_ATTRS_MAX_PAGES, pages_info.max_pages);
+	if (ret)
+		goto cancel_msg;
+
+	genlmsg_end(msg, hdr);
+
+	drm_ras_node_put(node);
+
+	return genlmsg_reply(msg, info);
+
+cancel_msg:
+	genlmsg_cancel(msg, hdr);
+free_msg:
+	nlmsg_free(msg);
+put_node:
+	drm_ras_node_put(node);
 	return ret;
 }
 
@@ -1102,7 +1341,6 @@ int drm_ras_node_register(struct drm_ras_node *node)
 	if (!node->device_name || !node->node_name)
 		return -EINVAL;
 
-	/* Currently, only Error Counter and Telemetry endpoints are supported */
 	switch (node->type) {
 	case DRM_RAS_NODE_TYPE_ERROR_COUNTER:
 		/* Mandatory entries for Error Counter Node */
@@ -1112,6 +1350,10 @@ int drm_ras_node_register(struct drm_ras_node *node)
 	case DRM_RAS_NODE_TYPE_TELEMETRY:
 		/* Must provide telemetry_get, telemetry_set is optional */
 		if (!node->telemetry_get || !node->telemetry_fields)
+			return -EINVAL;
+		break;
+	case DRM_RAS_NODE_TYPE_RETIRED_PAGES:
+		if (!node->query_retired_pages)
 			return -EINVAL;
 		break;
 	default:

@@ -16,16 +16,33 @@ definitions:
     type: enum
     name: node-type
     value-start: 1
-    entries: [error-counter, telemetry]
+    entries: [error-counter, telemetry, retired-pages]
     doc: >-
          Type of the node. The error-counter nodes expose reliability counters
-         for a hardware/software component, and telemetry nodes expose an
-         interface for reading and writing telemetry values to a device.
+         for a hardware/software component, telemetry nodes expose an
+         interface for reading and writing telemetry values to a device, and
+         retired-pages nodes list the memory pages that have been taken out
+         of service.
   -
     type: flags
     name: telemetry-field-mode
     entries: [read, write]
     doc: Bitmask of access modes supported by a telemetry field.
+  -
+    type: enum
+    name: retired-page-status
+    value-start: 1
+    doc: Status of a retired page.
+    entries:
+      -
+        name: retired
+        doc: The page is reserved and out of service.
+      -
+        name: pending
+        doc: The retirement is queued, but the reservation is not complete yet.
+      -
+        name: failed
+        doc: The reservation failed, and the page may still be in use.
 
 attribute-sets:
   -
@@ -140,6 +157,30 @@ attribute-sets:
         doc: >-
              Bitmask of access modes (read/write) supported by the
              telemetry field.
+  -
+    name: retired-page-attrs
+    attributes:
+      -
+        name: node-id
+        type: u32
+        doc: Node ID targeted by this retired pages operation.
+      -
+        name: address
+        type: uint
+        doc: Device address of the retired page.
+      -
+        name: size
+        type: uint
+        doc: Size of the retired page in bytes.
+      -
+        name: status
+        type: u32
+        doc: Retirement status of the page.
+        enum: retired-page-status
+      -
+        name: max-pages
+        type: uint
+        doc: Maximum number of pages that can be retired.
 
 operations:
   list:
@@ -287,6 +328,37 @@ operations:
             - field
             - field-name
             - mode
+    -
+      name: get-retired-pages
+      doc: >-
+           Retrieve the pages retired on a retired-pages node, one entry per
+           page. The list is read once, when the dump starts.
+      attribute-set: retired-page-attrs
+      flags: [admin-perm]
+      dump:
+        pre: drm-ras-nl-pre-retired-pages
+        post: drm-ras-nl-post-retired-pages
+        request:
+          attributes:
+            - node-id
+        reply:
+          attributes:
+            - address
+            - size
+            - status
+    -
+      name: get-retired-pages-info
+      doc: >-
+           Retrieve the retired pages info of a retired-pages node.
+      attribute-set: retired-page-attrs
+      flags: [admin-perm]
+      do:
+        request:
+          attributes:
+            - node-id
+        reply:
+          attributes:
+            - max-pages
 
 mcast-groups:
   list:
