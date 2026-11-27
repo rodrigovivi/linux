@@ -511,6 +511,10 @@ eb_validate_vma(struct i915_execbuffer *eb,
 	if (unlikely(entry->flags & eb->invalid_flags))
 		return -EINVAL;
 
+	if (unlikely(i915_gem_object_is_readonly(vma->obj) &&
+		     entry->relocation_count))
+		return -EFAULT;
+
 	if (unlikely(entry->alignment &&
 		     !is_power_of_2_u64(entry->alignment)))
 		return -EINVAL;
