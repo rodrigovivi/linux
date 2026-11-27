@@ -1,0 +1,44 @@
+drm drm-fixes e9ee6617e6e6d2f0ed7ebe85644e04aaaf82bd94
+	Merge tag 'drm-intel-fixes-2026-11-26' of https://gitlab.freedesktop.org/drm/i915/kernel into drm-fixes
+drm-misc drm-misc-fixes e950f467b8adbfb2f460d9b9454280cdbf597885
+	drm/ttm: Destroy the ttm_tt in ttm_bo_move_null() when it's no longer needed
+drm-rust drm-rust-fixes 6628e7d4c6b25c8d18f1345e3a20d21829aae7e4
+	Linux 7.4-rc1
+drm-intel drm-intel-fixes 202103f76df364623ef3f64303f4ed070d41476b
+	drm/i915/bios: Add quirk to allow eDP joiner on ASUS ROG Strix SCAR 18
+drm-xe drm-xe-fixes 8f3b845bc30b42e25341693313afa7425ed3c7a4
+	drm/xe: Serialize migrate ULLS enter against a pending exit
+drm-amdgpu drm-amdgpu-fixes 8a37614bcd382da36337a271b8945d0dc0cdb111
+	drm/amdkfd: Correctly handle multi-xcc mqd size in CRIU restore
+drm drm-next ce0b5a66d0cce0f25b816a61b176a2b59dd16819
+	Merge tag 'drm-intel-next-2026-11-20' of https://gitlab.freedesktop.org/drm/i915/kernel into drm-next
+drm-misc drm-misc-next-fixes 9a96e169c9267af918d28fb291df948d83112807
+	drm/panthor: Move cache-flush after UPDATE(UNMAPPED)
+drm-rust drm-rust-next-fixes d511064b2e732b7152a542d589d07a4814c1b674
+	rust: drm: Remove unused flags argument from Registration::new()
+drm-intel drm-intel-next-fixes 6628e7d4c6b25c8d18f1345e3a20d21829aae7e4
+	Linux 7.4-rc1
+drm-xe drm-xe-next-fixes cee9395acd8043be0644b25c34bfa86623f2b935
+	Linux 7.3-rc1
+drm-amdgpu drm-amdgpu-next-fixes fbb201890156e04b062c4488d1b500de52367684
+	drm/amd/display: refresh cached HDMI FreeSync state
+drm-misc drm-misc-next 5ce32a0c94a827ff44ee60898c28060714dcff75
+	drm/drm_exec: fix kernel-doc string in drm_exec_retry
+drm-rust drm-rust-next abfb640b2374e26de8ff81d488c39d8254db538e
+	gpu: nova-core: gsp: remove unnecessary start of `gsp_falcon`
+drm-intel drm-intel-next accacc0e5e1f1446af365770e88d344b7786ac82
+	drm/i915/display: use str_enable_disable() more
+drm-intel drm-intel-gt-next 52d8717d2afd46db583674b1743797f9ddfc5e95
+	drm/i915: Reject relocation writes to RO userptr
+drm-xe drm-xe-next 213bb5a41de25187a05b070e609610af6e72ee96
+	drm/xe/xe_ras: Skip gpu_health sysfs commands when wedged
+drm-amdgpu drm-amdgpu-next a69db917063c539fa09325ea22f3ff7b0626b478
+	drm/amdkfd: Correctly handle multi-xcc mqd size in CRIU restore
+drm-intel topic/core-for-CI 94e077045a3b724e08614a2b462a4f9dd17e5b0b
+	ALSA: hda: intel: Remove unused free_on_error from azx_probe_continue()
+drm-xe topic/xe-for-CI 2a3310be28182bbbe040fae6c8dfca24c1812c26
+	drm/xe/pvc: Add GuC firmware definition
+drm topic/drm-next-nouveau-r570 6cc6e08d4542473d79ea83d9123d9d35e9c01c92
+	drm/nouveau/kms: add support for GB20x
+drm topic/pci-vgaarb-rework 93d41424caf7569ab50092a922477e2a881232b4
+	PCI/VGA: pass a data pointer to be used in the decode callback (v2)
