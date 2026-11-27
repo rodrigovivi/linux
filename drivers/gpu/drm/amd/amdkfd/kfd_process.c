@@ -1205,6 +1205,41 @@ static void kfd_process_profiler_release(struct kfd_process *p, struct kfd_proce
 	up_read(&adev->reset_domain->sem);
 }
 
+/* Allocate the MES process context and, in RS64 mode, its slot together. */
+int kfd_process_device_alloc_proc_ctx(struct kfd_process_device *pdd)
+{
+	struct amdgpu_device *adev = pdd->dev->adev;
+	int r;
+
+	if (pdd->proc_ctx_cpu_ptr)
+		return 0;
+
+	r = amdgpu_amdkfd_alloc_kernel_mem(adev, AMDGPU_MES_PROC_CTX_SIZE,
+					   AMDGPU_GEM_DOMAIN_GTT,
+					   &pdd->proc_ctx_bo,
+					   &pdd->proc_ctx_gpu_addr,
+					   &pdd->proc_ctx_cpu_ptr, false);
+	if (r) {
+		dev_err(adev->dev, "failed to allocate process context bo\n");
+		return r;
+	}
+	memset(pdd->proc_ctx_cpu_ptr, 0, AMDGPU_MES_PROC_CTX_SIZE);
+
+	if (!adev->mes.use_rs64mem)
+		return 0;
+
+	r = amdgpu_mes_alloc_proc_ctx_index(&adev->mes,
+					    &pdd->proc_ctx_array_index);
+	if (r) {
+		dev_err(adev->dev, "failed to allocate process context index\n");
+		amdgpu_amdkfd_free_kernel_mem(adev, &pdd->proc_ctx_bo);
+		pdd->proc_ctx_gpu_addr = 0;
+		pdd->proc_ctx_cpu_ptr = NULL;
+	}
+
+	return r;
+}
+
 static void kfd_process_destroy_pdds(struct kfd_process *p)
 {
 	int i;
@@ -1977,6 +2012,39 @@ err_reserve_ib_mem:
 }
 
 /*
+ * Keep the device out of runtime suspend until the pdd is destroyed. Unlike
+ * kfd_bind_process_to_device(), this doesn't need a VM on the device.
+ *
+ * Assumes that the process lock is held.
+ */
+int kfd_process_device_runtime_get(struct kfd_process_device *pdd)
+{
+	struct device *dev = adev_to_drm(pdd->dev->adev)->dev;
+	int err;
+
+	/*
+	 * make sure that runtime_usage counter is incremented just once
+	 * per pdd
+	 */
+	if (pdd->runtime_inuse)
+		return 0;
+
+	/*
+	 * signal runtime-pm system to auto resume and prevent
+	 * further runtime suspend once device pdd is created until
+	 * pdd is destroyed.
+	 */
+	err = pm_runtime_get_sync(dev);
+	if (err < 0) {
+		pm_runtime_put_autosuspend(dev);
+		return err;
+	}
+	pdd->runtime_inuse = true;
+
+	return 0;
+}
+
+/*
  * Direct the IOMMU to bind the process (specifically the pasid->mm)
  * to the device.
  * Unbinding occurs when the process dies or the device is removed.
@@ -1998,24 +2066,9 @@ struct kfd_process_device *kfd_bind_process_to_device(struct kfd_node *dev,
 	if (!pdd->drm_priv)
 		return ERR_PTR(-ENODEV);
 
-	/*
-	 * signal runtime-pm system to auto resume and prevent
-	 * further runtime suspend once device pdd is created until
-	 * pdd is destroyed.
-	 */
-	if (!pdd->runtime_inuse) {
-		err = pm_runtime_get_sync(adev_to_drm(dev->adev)->dev);
-		if (err < 0) {
-			pm_runtime_put_autosuspend(adev_to_drm(dev->adev)->dev);
-			return ERR_PTR(err);
-		}
-	}
-
-	/*
-	 * make sure that runtime_usage counter is incremented just once
-	 * per pdd
-	 */
-	pdd->runtime_inuse = true;
+	err = kfd_process_device_runtime_get(pdd);
+	if (err)
+		return ERR_PTR(err);
 
 	return pdd;
 }
