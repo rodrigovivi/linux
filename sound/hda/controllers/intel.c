@@ -1184,7 +1184,7 @@ static const struct dev_pm_ops azx_pm = {
 };
 
 
-static int azx_probe_continue(struct azx *chip, bool free_on_error);
+static int azx_probe_continue(struct azx *chip);
 
 #ifdef SUPPORT_VGA_SWITCHEROO
 static struct pci_dev *get_bound_vga(struct pci_dev *pci);
@@ -1211,7 +1211,7 @@ static void azx_vs_set_state(struct pci_dev *pci,
 		if (!disabled) {
 			dev_info(chip->card->dev,
 				 "Start delayed initialization\n");
-			if (azx_probe_continue(chip, false) < 0) {
+			if (azx_probe_continue(chip) < 0) {
 				hda->init_failed = 1;
 				dev_err(chip->card->dev, "initialization error\n");
 			}
@@ -1739,7 +1739,7 @@ static void azx_probe_work(struct work_struct *work)
 {
 	struct hda_intel *hda = container_of(work, struct hda_intel, probe_work.work);
 
-	if (azx_probe_continue(&hda->chip, false) < 0) {
+	if (azx_probe_continue(&hda->chip) < 0) {
 		hda->init_failed = 1;
 		complete_all(&hda->probe_wait);
 		snd_card_disconnect(hda->chip.card);
@@ -2362,7 +2362,7 @@ static const unsigned int azx_max_codecs[AZX_NUM_DRIVERS] = {
 	[AZX_DRIVER_TERA] = 1,
 };
 
-static int azx_probe_continue(struct azx *chip, bool free_on_error)
+static int azx_probe_continue(struct azx *chip)
 {
 	struct hda_intel *hda = container_of(chip, struct hda_intel, chip);
 	struct hdac_bus *bus = azx_bus(chip);
@@ -2452,18 +2452,15 @@ static int azx_probe_continue(struct azx *chip, bool free_on_error)
 	}
 
 out_free:
+	if (!hda->need_i915_power)
+		display_power(chip, false);
+
 	if (err < 0) {
 		if (hda->vga_switcheroo_registered)
 			dev_warn(&pci->dev, "GPU sound probed, but not operational: please add a quirk to driver_denylist\n");
-		if (free_on_error) {
-			pci_set_drvdata(pci, NULL);
-			snd_card_free(chip->card);
-		}
 		return err;
 	}
 
-	if (!hda->need_i915_power)
-		display_power(chip, false);
 	complete_all(&hda->probe_wait);
 	to_hda_bus(bus)->bus_probing = 0;
 	hda->probe_retry = 0;
