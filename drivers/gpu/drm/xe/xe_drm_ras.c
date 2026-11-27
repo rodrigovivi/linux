@@ -13,6 +13,7 @@
 #include "xe_device_types.h"
 #include "xe_drm_ras.h"
 #include "xe_ras.h"
+#include "xe_ttm_vram_mgr.h"
 #include "xe_wedge.h"
 
 static const char * const error_components[] = DRM_XE_RAS_ERROR_COMPONENT_NAMES;
@@ -270,6 +271,83 @@ free_param:
 null_info:
 	ras->info[i] = NULL;
 	return ret;
+}
+
+static int query_retired_pages(struct drm_ras_node *node, struct drm_ras_retired_pages *list)
+{
+	struct xe_device *xe = node->priv;
+	int idx, ret;
+
+	if (!drm_dev_enter(&xe->drm, &idx))
+		return -ENODEV;
+
+	ret = xe_ttm_vram_get_retired_pages(xe, list);
+
+	drm_dev_exit(idx);
+
+	return ret;
+}
+
+static int query_retired_pages_info(struct drm_ras_node *node,
+				    struct drm_ras_retired_pages_info *info)
+{
+	struct xe_device *xe = node->priv;
+	int idx, ret = 0;
+
+	if (!drm_dev_enter(&xe->drm, &idx))
+		return -ENODEV;
+
+	info->max_pages = xe_ras_get_max_pages(xe);
+	if (!info->max_pages)
+		ret = -EINVAL;
+
+	drm_dev_exit(idx);
+
+	return ret;
+}
+
+/**
+ * xe_drm_ras_register_retired_pages() - Register the retired VRAM pages node
+ * @xe: xe device instance
+ *
+ * Called once the retired page lists are populated.
+ *
+ * Return: 0 on success, negative error code otherwise.
+ */
+int xe_drm_ras_register_retired_pages(struct xe_device *xe)
+{
+	struct pci_dev *pdev = to_pci_dev(xe->drm.dev);
+	struct drm_ras_node *node;
+	int ret;
+
+	if (!xe->info.has_drm_ras || xe_ras_get_disable_vram_page_offline(xe))
+		return 0;
+
+	node = drmm_kzalloc(&xe->drm, sizeof(*node), GFP_KERNEL);
+	if (!node)
+		return -ENOMEM;
+
+	node->device_name = kasprintf(GFP_KERNEL, "%04x:%02x:%02x.%d",
+				      pci_domain_nr(pdev->bus), pdev->bus->number,
+				      PCI_SLOT(pdev->devfn), PCI_FUNC(pdev->devfn));
+	if (!node->device_name)
+		return -ENOMEM;
+
+	node->node_name = "vram-retired-pages";
+	node->type = DRM_RAS_NODE_TYPE_RETIRED_PAGES;
+	node->query_retired_pages = query_retired_pages;
+	node->query_retired_pages_info = query_retired_pages_info;
+	node->priv = xe;
+
+	ret = drm_ras_node_register(node);
+	if (ret) {
+		drm_err(&xe->drm, "Failed to register DRM RAS retired pages node (%pe)\n",
+			ERR_PTR(ret));
+		cleanup_node_param(node);
+		return ret;
+	}
+
+	return drmm_add_action_or_reset(&xe->drm, cleanup_node, node);
 }
 
 /**

@@ -10,6 +10,7 @@
 #include <drm/drm_managed.h>
 #include <drm/drm_drv.h>
 #include <drm/drm_buddy.h>
+#include <drm/drm_ras.h>
 #include <uapi/drm/xe_drm.h>
 
 #include <drm/ttm/ttm_placement.h>
@@ -623,6 +624,63 @@ u64 xe_ttm_vram_get_avail(struct ttm_resource_manager *man)
 	mutex_unlock(&mgr->lock);
 
 	return avail;
+}
+
+/**
+ * xe_ttm_vram_get_retired_pages - Get a snapshot of the retired VRAM pages
+ * @xe: xe device instance
+ * @list: drm-ras snapshot to add the retired pages to
+ *
+ * Return: 0 on success, negative error code otherwise.
+ */
+int xe_ttm_vram_get_retired_pages(struct xe_device *xe, struct drm_ras_retired_pages *list)
+{
+	struct xe_ttm_vram_offline_resource *pos;
+	struct drm_ras_retired_page page;
+	struct xe_tile *tile;
+	u8 id;
+	int ret;
+
+	for_each_tile(tile, xe, id) {
+		struct xe_vram_region *vr = tile->mem.vram;
+		struct ttm_resource_manager *man;
+		struct xe_ttm_vram_mgr *mgr;
+
+		man = ttm_manager_type(&xe->ttm, XE_PL_VRAM0 + id);
+		if (!man || !vr)
+			continue;
+		mgr = to_xe_ttm_vram_mgr(man);
+
+		guard(mutex)(&mgr->lock);
+
+		list_for_each_entry(pos, &mgr->offlined_pages, offlined_link) {
+			page = (struct drm_ras_retired_page) {
+				.address = pos->addr + vr->dpa_base,
+				.size = PAGE_SIZE,
+				.status = DRM_RAS_RETIRED_PAGE_STATUS_RETIRED,
+			};
+
+			ret = drm_ras_retired_pages_add(list, &page);
+			if (ret)
+				return ret;
+		}
+
+		list_for_each_entry(pos, &mgr->queued_pages, queued_link) {
+			page = (struct drm_ras_retired_page) {
+				.address = pos->addr + vr->dpa_base,
+				.size = PAGE_SIZE,
+				.status = pos->status == XE_PAGE_RESERVE_FAIL ?
+					  DRM_RAS_RETIRED_PAGE_STATUS_FAILED :
+					  DRM_RAS_RETIRED_PAGE_STATUS_PENDING,
+			};
+
+			ret = drm_ras_retired_pages_add(list, &page);
+			if (ret)
+				return ret;
+		}
+	}
+
+	return 0;
 }
 
 static int xe_ttm_vram_purge_page(struct xe_device *xe, struct xe_bo *bo)
